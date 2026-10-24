@@ -142,21 +142,9 @@
        "kind": "sub",
        "dim": "count",
        "a": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "objects_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         },
-         {
-          "kind": "input",
-          "id": "part_type",
-          "dim": "enum:part_type"
-         }
-        ]
+        "kind": "input",
+        "id": "objects_per_part",
+        "dim": "count"
        },
        "b": {
         "kind": "input",
@@ -338,21 +326,9 @@
        }
       },
       "b": {
-       "kind": "lookup",
-       "dim": "count",
-       "table_id": "objects_per_part",
-       "keys": [
-        {
-         "kind": "input",
-         "id": "shape",
-         "dim": "enum:shape"
-        },
-        {
-         "kind": "input",
-         "id": "part_type",
-         "dim": "enum:part_type"
-        }
-       ]
+       "kind": "input",
+       "id": "objects_per_part",
+       "dim": "count"
       }
      }
     },
@@ -570,21 +546,9 @@
          "dim": "count"
         },
         "else": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "merge_result_part_type",
-           "dim": "enum:merge_result_part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "merge_result_objects_per_part",
+         "dim": "count"
         }
        },
        "b": {
@@ -763,38 +727,14 @@
          }
         },
         "then": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "merge_gets_per_source_part_cached",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "merge_gets_per_source_part_cached",
+         "dim": "count"
         },
         "else": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "merge_gets_per_source_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "merge_gets_per_source_part",
+         "dim": "count"
         }
        }
       }
@@ -874,21 +814,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "mutation_objects_written",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "mutation_kind",
-            "dim": "enum:mutation_kind"
-           },
-           {
-            "kind": "const",
-            "value": "compact",
-            "dim": "enum:part_type"
-           }
-          ]
+          "kind": "input",
+          "id": "objects_per_compact_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -909,21 +837,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "mutation_objects_written",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "mutation_kind",
-            "dim": "enum:mutation_kind"
-           },
-           {
-            "kind": "const",
-            "value": "wide",
-            "dim": "enum:part_type"
-           }
-          ]
+          "kind": "input",
+          "id": "mutation_objects_written",
+          "dim": "count"
          }
         }
        },
@@ -1521,16 +1437,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "cached_miss_gets_per_part_read",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "cached_miss_gets_per_part_read",
+         "dim": "count"
         }
        },
        "else": {
@@ -1624,16 +1533,9 @@
             "dim": "count"
            },
            "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "shape_columns",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
+            "kind": "input",
+            "id": "shape_columns",
+            "dim": "count"
            }
           },
           "b": {
@@ -1719,16 +1621,9 @@
           "dim": "count"
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "shape_columns",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "shape_columns",
+          "dim": "count"
          }
         }
        }
@@ -1792,21 +1687,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "startup_gets_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
-          },
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "startup_gets_per_part",
+         "dim": "count"
         }
        },
        "b": {
@@ -2184,21 +2067,9 @@
            "dim": "count"
           },
           "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "const",
-             "value": "wide",
-             "dim": "enum:part_type"
-            }
-           ]
+           "kind": "input",
+           "id": "objects_per_wide_part",
+           "dim": "count"
           }
          },
          "b": {
@@ -2229,21 +2100,9 @@
            }
           },
           "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ]
+           "kind": "input",
+           "id": "objects_per_part",
+           "dim": "count"
           }
          }
         },

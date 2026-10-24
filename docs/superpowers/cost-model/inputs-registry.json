@@ -15,7 +15,7 @@
       "default": 20480,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -42,7 +42,7 @@
       "default": 500,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -69,7 +69,7 @@
       "default": 40,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -96,7 +96,7 @@
       "default": 3,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "replicas": [
           1,
           6
@@ -128,7 +128,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "shards": [
           1,
           1
@@ -163,7 +163,7 @@
       "default": "same_az",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -198,7 +198,7 @@
       "default": "1",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -215,7 +215,7 @@
     {
       "id": "shape",
       "block": "schema",
-      "label": "Table shape: narrow = 5 UInt64 columns, wide = 40 UInt64 columns, types = the 21-column complex-type mix of objects-per-part.types-fit",
+      "label": "Table preset: narrow = 5 UInt64 columns, wide = 40, types = the 21-column typed table of the s3 report",
       "kind": "input",
       "scope": "cluster",
       "unit": "",
@@ -229,7 +229,7 @@
       "default": "narrow",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -237,9 +237,875 @@
       },
       "hint": null,
       "ui": {
-        "tier": "setting",
+        "tier": "advanced",
         "name": null,
         "short": "Table width"
+      },
+      "status": "ok",
+      "presets": {
+        "narrow": {
+          "columns": 5,
+          "streams_per_column": 1,
+          "skip_index_files_per_part": 0,
+          "projections": 0,
+          "empty_files_per_wide_part": 0
+        },
+        "wide": {
+          "columns": 40,
+          "streams_per_column": 1,
+          "skip_index_files_per_part": 0,
+          "projections": 0,
+          "empty_files_per_wide_part": 0
+        },
+        "types": {
+          "columns": 21,
+          "streams_per_column": 3.1904761904761907,
+          "skip_index_files_per_part": 1,
+          "projections": 1,
+          "empty_files_per_wide_part": 12
+        }
+      }
+    },
+    {
+      "id": "columns",
+      "block": "schema",
+      "label": "Columns of the table: a Wide part writes files per column stream, statistics are read once per column",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 40,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "standard deployment profile",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.columns WHERE database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "columns": "count()"
+        }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "Columns"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "streams_per_column",
+      "block": "schema",
+      "label": "Serialization streams per column, on average: 1 for numbers, 2 for String, Nullable, Array and LowCardinality, 4 for Map, more for JSON",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "standard deployment profile",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(length(substreams)) FROM (SELECT column, any(substreams) AS substreams FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' GROUP BY column)",
+        "mapping": {
+          "streams_per_column": "avg(length(substreams))"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Streams per column"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "skip_index_files_per_part",
+      "block": "schema",
+      "label": "Skip-index files per part: 1 when every skip index fits packed_skip_index_max_bytes (packed into skp_idx.packed), plus 2 per larger index",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "skip_index_files_per_part": [
+          0,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "standard deployment profile",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.data_skipping_indices WHERE database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "skip_index_files_per_part": "1 when count() > 0 and the indexes are small"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Skip-index files per part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "projections",
+      "block": "schema",
+      "label": "Projections of the table: each is a Compact part of its own inside every part",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "projections": [
+          0,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "standard deployment profile",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.projections WHERE database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "projections": "count()"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Projections"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "empty_files_per_wide_part",
+      "block": "schema",
+      "label": "Empty files of a Wide part (JSON streams with no data): s3 stores no object for them, s3_plain_rewritable stores one",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "empty_files_per_wide_part": [
+          0,
+          12
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "standard deployment profile",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(c) FROM (SELECT name, countIf(bytes_on_disk = 0) AS c FROM system.parts_columns WHERE active AND part_type = 'Wide' AND database = '<db>' AND table = '<table>' GROUP BY name)",
+        "mapping": {
+          "empty_files_per_wide_part": "avg(c), approximate: an empty column counts its files"
+        }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Empty files per Wide part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "wide_part_streams",
+      "block": "schema",
+      "label": "Serialization streams of a Wide part: columns x streams_per_column",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+          "kind": "input",
+          "id": "columns",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "streams_per_column",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:140",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Streams per Wide part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "objects_per_compact_part",
+      "block": "schema",
+      "label": "Objects of a Compact part: 9 metadata files, data.bin and its marks, skip-index files, 10 per projection",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "coef",
+            "id": "part_metadata_files",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "coef",
+            "id": "compact_part_data_files",
+            "dim": "count"
+          }
+        },
+        "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "skip_index_files_per_part",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+              "kind": "input",
+              "id": "projections",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "coef",
+              "id": "projection_part_objects",
+              "dim": "count"
+            }
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp:53",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Objects per Compact part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "objects_per_wide_part",
+      "block": "schema",
+      "label": "Objects of a Wide part on s3: 9 metadata files, a .bin and a marks file per stream, skip-index files, 10 per projection",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "coef",
+            "id": "part_metadata_files",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+              "kind": "coef",
+              "id": "files_per_wide_stream",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "input",
+              "id": "wide_part_streams",
+              "dim": "count"
+            }
+          }
+        },
+        "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "skip_index_files_per_part",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+              "kind": "input",
+              "id": "projections",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "coef",
+              "id": "projection_part_objects",
+              "dim": "count"
+            }
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:140",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Objects per Wide part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_result_objects_per_part",
+      "block": "schema",
+      "label": "Objects of a merge result part on s3: an inserted part's count when the result has the inserted part type, else the count of the result's type",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "merge_result_part_type",
+            "dim": "enum:merge_result_part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:merge_result_part_type"
+          }
+        },
+        "then": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+            },
+            "b": {
+              "kind": "const",
+              "value": "compact",
+              "dim": "enum:part_type"
+            }
+          },
+          "then": {
+            "kind": "input",
+            "id": "objects_per_part",
+            "dim": "count"
+          },
+          "else": {
+            "kind": "input",
+            "id": "objects_per_compact_part",
+            "dim": "count"
+          }
+        },
+        "else": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+            },
+            "b": {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+            }
+          },
+          "then": {
+            "kind": "input",
+            "id": "objects_per_part",
+            "dim": "count"
+          },
+          "else": {
+            "kind": "input",
+            "id": "objects_per_wide_part",
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTask.cpp:586",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Objects per merge result"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_copy_parts",
+      "block": "inserts",
+      "label": "UploadPartCopy requests to copy one file past the first upload buffer: object_bytes / s3_min_upload_part_size, rounded up",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "ceil_to",
+        "dim": "count",
+        "x": {
+          "kind": "div",
+          "dim": "count",
+          "on_zero": "unavailable",
+          "a": {
+            "kind": "input",
+            "id": "object_bytes",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "multipart_next_part_bytes",
+            "dim": "B"
+          }
+        },
+        "step": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3/copyS3File.cpp:347",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Copy parts per large file"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_objects_per_wide_part",
+      "block": "schema",
+      "label": "Objects of a Wide part on s3_plain_rewritable: the s3 objects plus one per empty file",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "input",
+          "id": "objects_per_wide_part",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "empty_files_per_wide_part",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Objects per Wide part (plain)"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_metadata_files",
+      "block": "schema",
+      "label": "Metadata files of every part: primary.cidx, count.txt, checksums.txt and 6 more",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "part_metadata_files",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp:407",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Metadata files per part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "compact_part_data_files",
+      "block": "schema",
+      "label": "Data files of a Compact part: data.bin and its marks",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "compact_part_data_files",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp:53",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Data files per Compact part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "files_per_wide_stream",
+      "block": "schema",
+      "label": "Files per serialization stream of a Wide part: a .bin and a marks file",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "files_per_wide_stream",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:140",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Files per Wide stream"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "projection_part_objects",
+      "block": "schema",
+      "label": "Objects of one projection part (Compact) inside a part",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "projection_part_objects",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:70",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Objects per projection"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_load_files",
+      "block": "schema",
+      "label": "Small files read per part when a server loads it",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "part_load_files",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:1504",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Files read per part load"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_compact_source_extra_gets",
+      "block": "schema",
+      "label": "GETs per Compact merge source beyond one seek per column",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "merge_compact_source_extra_gets",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:94",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Fixed GETs per Compact source"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_cached_compact_source_gets",
+      "block": "schema",
+      "label": "GETs per Compact merge source through the cache",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "merge_cached_compact_source_gets",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:94",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Cached GETs per Compact source"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_wide_source_extra_gets",
+      "block": "schema",
+      "label": "GETs per Wide merge source beyond the per-stream reads",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "merge_wide_source_extra_gets",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:96",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Fixed GETs per Wide source"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mutation_rewritten_metadata_files",
+      "block": "schema",
+      "label": "Metadata files a mutation rewrites in every Wide part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "mutation_rewritten_metadata_files",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1162",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Metadata files per mutation"
       },
       "status": "ok"
     },
@@ -260,7 +1126,7 @@
       "default": "plain",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -287,7 +1153,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -309,7 +1175,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -331,7 +1197,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -353,7 +1219,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -375,7 +1241,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -397,7 +1263,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -419,7 +1285,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -441,7 +1307,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -463,7 +1329,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -485,7 +1351,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -507,7 +1373,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -529,7 +1395,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -551,7 +1417,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -573,7 +1439,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -595,7 +1461,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -617,7 +1483,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -639,7 +1505,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -661,7 +1527,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -683,7 +1549,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -705,7 +1571,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
@@ -727,7 +1593,7 @@
       "default": 10485760,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:78",
@@ -754,7 +1620,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:85",
@@ -781,7 +1647,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:82",
@@ -810,7 +1676,7 @@
       "default": "compact_if_any_below_minimum",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
@@ -837,7 +1703,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:735",
@@ -883,7 +1749,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:848",
@@ -924,7 +1790,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:915",
@@ -954,7 +1820,7 @@
       "default": "1",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:11680",
@@ -989,7 +1855,7 @@
       "default": "0",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6428",
@@ -1138,7 +2004,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6402",
@@ -1165,7 +2031,7 @@
       "default": 33554432,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:51",
@@ -1195,7 +2061,7 @@
       "default": 16777216,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:52",
@@ -1225,7 +2091,7 @@
       "default": 500,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/S3Defines.h:30",
@@ -1255,7 +2121,7 @@
       "default": 2,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/S3Defines.h:29",
@@ -1285,7 +2151,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:98",
@@ -1312,7 +2178,7 @@
       "default": 33554432,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/S3Defines.h:26",
@@ -1341,7 +2207,7 @@
       "default": "exp_buffers_single_put_up_to_first",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:180",
@@ -1371,7 +2237,7 @@
       "default": 1048576,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -1529,7 +2395,7 @@
         }
       },
       "coef": null,
-      "validity": {
+      "verified_range": {
         "object_bytes": [
           0,
           8405385216
@@ -1620,7 +2486,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:180",
@@ -1647,7 +2513,7 @@
       "default": 1048449,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:209",
@@ -1674,7 +2540,7 @@
       "default": 268402944,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:232",
@@ -1701,7 +2567,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:162",
@@ -1728,7 +2594,7 @@
       "default": 65409,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:155",
@@ -1755,7 +2621,7 @@
       "default": 1048449,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:178",
@@ -1785,7 +2651,7 @@
       "default": "data",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Interpreters/executeQuery.cpp:2894",
@@ -1817,7 +2683,7 @@
       "default": 1048449,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:178",
@@ -1875,7 +2741,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:5609",
@@ -1905,7 +2771,7 @@
       "default": "native",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Server/TCPHandler.cpp:1414",
@@ -1937,7 +2803,7 @@
       "default": 1048576,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -1969,7 +2835,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -2001,7 +2867,7 @@
       "default": 100000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -2033,7 +2899,7 @@
       "default": 10485760,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -2065,7 +2931,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -2097,7 +2963,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -2132,7 +2998,7 @@
       "default": "1",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7225",
@@ -2164,7 +3030,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7228",
@@ -2191,7 +3057,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:2393",
@@ -2222,7 +3088,7 @@
       "default": "enable",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:2357",
@@ -2254,7 +3120,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:2379",
@@ -2284,7 +3150,7 @@
       "default": "query",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Server/TCPHandler.cpp:1497",
@@ -2386,7 +3252,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/DeduplicateInsert.cpp:26",
@@ -2413,7 +3279,7 @@
       "default": 450,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7239",
@@ -2440,7 +3306,7 @@
       "default": 200,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7252",
@@ -2467,7 +3333,7 @@
       "default": 50,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7249",
@@ -2494,7 +3360,7 @@
       "default": 10485760,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Core/Settings.cpp:7234",
@@ -2523,7 +3389,7 @@
       "default": "size_count_or_deadline",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp:680",
@@ -2699,7 +3565,7 @@
         ]
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle#parts-per-insert",
@@ -3821,7 +4687,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
@@ -3848,7 +4714,7 @@
       "default": 480,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:556",
@@ -3875,7 +4741,7 @@
       "default": 161061273600,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:474",
@@ -3902,7 +4768,7 @@
       "default": 5,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:885",
@@ -3929,7 +4795,7 @@
       "default": 100,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:636",
@@ -3956,7 +4822,7 @@
       "default": 64,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -3988,7 +4854,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_effective_fan_in",
-      "validity": {
+      "verified_range": {
         "merge_size_ratio": [
           18.21,
           472.95
@@ -5957,7 +6823,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5994,7 +6860,7 @@
       "default": "5",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "bucket key of merge_fan_in_distribution",
@@ -6031,7 +6897,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_fan_in_distribution",
-      "validity": {
+      "verified_range": {
         "merge_size_ratio": [
           18.21,
           472.95
@@ -6077,7 +6943,7 @@
       "default": "5-8",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "bucket key of merge_result_size_distribution",
@@ -6114,7 +6980,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_result_size_distribution",
-      "validity": {
+      "verified_range": {
         "merge_size_ratio": [
           18.21,
           472.95
@@ -6152,7 +7018,7 @@
       "default": "local_unless_fetch_condition",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp:224",
@@ -6179,7 +7045,7 @@
       "default": 3600,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1284",
@@ -6206,7 +7072,7 @@
       "default": 10737418240,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1294",
@@ -6233,7 +7099,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1304",
@@ -6260,7 +7126,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1341",
@@ -6287,7 +7153,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1348",
@@ -6316,7 +7182,7 @@
       "default": "cas_layout_26_8",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h:397",
@@ -6343,7 +7209,7 @@
       "default": 60,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cas_gc_interval_s": [
           10,
           60
@@ -6382,7 +7248,7 @@
       "default": "wait_interval_after_round",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp:349",
@@ -6433,7 +7299,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp:81",
@@ -6455,7 +7321,7 @@
       "default": 5000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:66",
@@ -6484,7 +7350,7 @@
       "default": "local_scratch_until_commit",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:984",
@@ -6513,7 +7379,7 @@
       "default": "sum_of_committing_part_blob_bytes",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:593",
@@ -6537,7 +7403,7 @@
       "default": "head_then_publish_or_observe",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:397",
@@ -6564,7 +7430,7 @@
       "default": 10,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:646",
@@ -6586,7 +7452,7 @@
       "default": 4,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:3320",
@@ -6608,7 +7474,7 @@
       "default": 9,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:3428",
@@ -6630,7 +7496,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cas_hash_hit_fraction": [
           0,
           1
@@ -6667,7 +7533,7 @@
       "default": 1048576,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6699,7 +7565,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6726,7 +7592,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6753,7 +7619,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6780,7 +7646,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6807,7 +7673,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6834,7 +7700,7 @@
       "default": 10,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:74",
@@ -6856,7 +7722,7 @@
       "default": 5000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -6893,7 +7759,7 @@
       "default": "insert_compact",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -6925,7 +7791,7 @@
       "default": "fresh",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -6965,7 +7831,7 @@
       "default": "deferred_round",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -6992,7 +7858,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cas_mutation_marks_hit_fraction": [
           0,
           1
@@ -7024,7 +7890,7 @@
       "default": 13000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "measured 13 019 B (5-column Compact) and 13 751 B (5-column Wide) in cas-branches",
@@ -7056,7 +7922,7 @@
       "default": 5000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:65",
@@ -7078,7 +7944,7 @@
       "default": 305,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cas_table_cleanup_period_s": [
           60,
           310
@@ -7110,7 +7976,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -7137,7 +8003,7 @@
       "default": 128,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cas_ref_log_tail_records": [
           0,
           256
@@ -7173,7 +8039,7 @@
       "default": "blob_delete",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -7206,7 +8072,7 @@
       "default": null,
       "rule": null,
       "coef": "cas_objects_per_part",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           100,
           4000000
@@ -7244,7 +8110,7 @@
       "default": null,
       "rule": null,
       "coef": "cas_branch_population",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           100,
           4000000
@@ -7281,7 +8147,7 @@
       "default": null,
       "rule": null,
       "coef": "gc_round_requests",
-      "validity": {
+      "verified_range": {
         "cas_pool_objects": [
           1017,
           9949
@@ -7318,7 +8184,7 @@
       "default": null,
       "rule": null,
       "coef": "gc_round_duration",
-      "validity": {
+      "verified_range": {
         "cas_pool_objects": [
           1017,
           9949
@@ -7364,7 +8230,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp:690",
@@ -7396,7 +8262,7 @@
       "default": null,
       "rule": null,
       "coef": "reclaim_delay_periods",
-      "validity": {
+      "verified_range": {
         "cas_gc_interval_s": [
           10,
           60
@@ -7444,7 +8310,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
@@ -7513,7 +8379,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
@@ -7546,7 +8412,7 @@
         "dim": "1"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient reclaim_delay_periods",
@@ -7579,7 +8445,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7612,7 +8478,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7645,7 +8511,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7678,7 +8544,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7711,7 +8577,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7744,7 +8610,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7777,7 +8643,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
@@ -7810,7 +8676,7 @@
         "dim": "ms"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_duration",
@@ -7843,7 +8709,7 @@
         "dim": "ms"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_duration",
@@ -7869,7 +8735,7 @@
       "default": "insert",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Interpreters/PartLog.cpp:67",
@@ -7894,7 +8760,7 @@
       "default": "sender",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:469",
@@ -7927,7 +8793,7 @@
       "default": "PutObject",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:567",
@@ -7952,7 +8818,7 @@
       "default": "rejected_before_store",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:116",
@@ -7977,7 +8843,7 @@
       "default": "attempts",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:852",
@@ -8007,7 +8873,7 @@
       "default": null,
       "rule": null,
       "coef": "acquire_requests",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           1000,
           200000
@@ -8045,7 +8911,7 @@
       "default": null,
       "rule": null,
       "coef": "acquire_bytes",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8079,7 +8945,7 @@
       "default": null,
       "rule": null,
       "coef": "local_exec_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8112,7 +8978,7 @@
       "default": null,
       "rule": null,
       "coef": "fetch_fraction",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8146,7 +9012,7 @@
       "default": null,
       "rule": null,
       "coef": "zero_copy_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8179,7 +9045,7 @@
       "default": null,
       "rule": null,
       "coef": "startup_requests_after_restart",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8214,7 +9080,7 @@
       "default": null,
       "rule": null,
       "coef": "retry_outcome_mix",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8246,7 +9112,7 @@
       "default": null,
       "rule": null,
       "coef": "failed_upload_residue",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -8273,7 +9139,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8305,7 +9171,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8337,7 +9203,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8369,7 +9235,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8405,7 +9271,7 @@
       "default": "update_column",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8437,7 +9303,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8469,7 +9335,7 @@
       "default": 3,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8501,7 +9367,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": {
+      "verified_range": {
         "cache_miss_fraction": [
           0,
           1
@@ -8538,7 +9404,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8570,7 +9436,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8602,7 +9468,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8639,7 +9505,7 @@
       "default": "s3",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
@@ -8665,7 +9531,7 @@
       "default": "GetObject",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/IDisk.cpp:254",
@@ -8692,7 +9558,7 @@
       "default": "le_4KiB",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:188",
@@ -8714,7 +9580,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8746,7 +9612,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8778,7 +9644,7 @@
       "default": 0,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8810,7 +9676,7 @@
       "default": 100,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1769",
@@ -8837,7 +9703,7 @@
       "default": 300,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2362",
@@ -8868,7 +9734,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8899,7 +9765,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2394",
@@ -8939,7 +9805,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -8980,7 +9846,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:3425",
@@ -9030,7 +9896,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9079,7 +9945,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
@@ -9152,7 +10018,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": {
+      "verified_range": {
         "merge_size_ratio": [
           18.21,
           472.95
@@ -9197,7 +10063,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9228,7 +10094,7 @@
         "dim": "count"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9269,7 +10135,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9346,7 +10212,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9373,7 +10239,7 @@
       "default": 8192,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:72",
@@ -9418,7 +10284,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9458,7 +10324,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9498,7 +10364,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "preset default",
@@ -9525,7 +10391,7 @@
       "default": null,
       "rule": null,
       "coef": "mutation_compact_gets_per_full_granule",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9537,27 +10403,56 @@
     {
       "id": "objects_per_part",
       "block": "schema",
-      "label": "S3 objects per part: one per part file (9 metadata files, data files per column stream, skp_idx.packed, projection parts)",
-      "kind": "measured",
+      "label": "Objects of an inserted part on s3, by its part type",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "objects_per_part",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "objects_per_compact_part",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "objects_per_wide_part",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:274",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT part_type, avg(c) FROM (SELECT part_type, name, length(arrayFilter(x -> 1, files)) AS c FROM (SELECT p.part_type, p.name, groupArray(r.local_path) AS files FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name)) GROUP BY part_type",
@@ -9565,7 +10460,12 @@
           "objects_per_part": "avg objects per active part by part_type"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Objects per part",
+        "name": null
+      }
     },
     {
       "id": "object_size_distribution",
@@ -9587,7 +10487,7 @@
       "default": null,
       "rule": null,
       "coef": "object_size_distribution",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9614,7 +10514,7 @@
       "default": null,
       "rule": null,
       "coef": "insert_tx_checks",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9646,7 +10546,7 @@
       "default": null,
       "rule": null,
       "coef": "bytes_per_get",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9673,7 +10573,7 @@
       "default": null,
       "rule": null,
       "coef": "stats_gets_per_column",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9700,7 +10600,7 @@
       "default": null,
       "rule": null,
       "coef": "warm_gets_per_stream_read",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9727,7 +10627,7 @@
       "default": null,
       "rule": null,
       "coef": "gets_per_stream_read",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9744,26 +10644,25 @@
     {
       "id": "shape_columns",
       "block": "schema",
-      "label": "Columns of a table shape (the statistics files a part read loads)",
-      "kind": "pinned",
+      "label": "Statistics files read per part: one per column",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape"
-        ],
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "input",
+        "id": "columns",
         "dim": "count"
       },
-      "default": null,
-      "rule": null,
-      "coef": "shape_columns",
-      "validity": null,
+      "coef": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/experiments/cold-select.cache-off.json:29",
-        "version": "0.3.0"
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:1386",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT count() FROM system.columns WHERE database = '<db>' AND table = '<table>'",
@@ -9771,31 +10670,62 @@
           "shape_columns": "count()"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Statistics files per part",
+        "name": null
+      }
     },
     {
       "id": "cached_miss_gets_per_part_read",
       "block": "reads_cache",
-      "label": "GetObject per part read that misses the filesystem cache (segments)",
-      "kind": "measured",
+      "label": "GETs per part read through the cache on a miss: 2 x read streams - 1",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "cached_miss_gets_per_part_read",
-      "validity": null,
+      "rule": {
+        "kind": "sub",
+        "dim": "count",
+        "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+            "kind": "const",
+            "value": 2,
+            "dim": "count"
+          },
+          "b": {
+            "kind": "input",
+            "id": "read_streams_per_part",
+            "dim": "count"
+          }
+        },
+        "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:188",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
@@ -9803,7 +10733,12 @@
           "cached_miss_gets_per_part_read": "with cold caches"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Cache-miss GETs per part read",
+        "name": null
+      }
     },
     {
       "id": "cached_miss_bytes_per_part_read",
@@ -9823,7 +10758,7 @@
       "default": null,
       "rule": null,
       "coef": "cached_miss_bytes_per_part_read",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9850,7 +10785,7 @@
       "default": null,
       "rule": null,
       "coef": "cache_fill_io_per_byte",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9877,7 +10812,7 @@
       "default": null,
       "rule": null,
       "coef": "metadata_bytes_per_object",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9904,7 +10839,7 @@
       "default": null,
       "rule": null,
       "coef": "metadata_iops_per_object_write",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9931,7 +10866,7 @@
       "default": null,
       "rule": null,
       "coef": "metadata_iops_per_part_write",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -9948,27 +10883,83 @@
     {
       "id": "startup_gets_per_part",
       "block": "topology_recovery",
-      "label": "GetObject per active part when a server loads its tables",
-      "kind": "measured",
+      "label": "GETs per part at a server start: 9 small files, plus statistics once per column and the archive index without the cache (one segment with it)",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "cache_enabled",
-          "shape"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "startup_gets_per_part",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+          },
+          "b": {
+            "kind": "const",
+            "value": "1",
+            "dim": "enum:cache_enabled"
+          }
+        },
+        "then": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "coef",
+            "id": "part_load_files",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+          }
+        },
+        "else": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+              "kind": "coef",
+              "id": "part_load_files",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "input",
+              "id": "shape_columns",
+              "dim": "count"
+            }
+          },
+          "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:1504",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT value FROM system.events WHERE event = 'S3GetObject'",
@@ -9976,7 +10967,12 @@
           "startup_gets_per_part": "S3GetObject after a restart / active parts"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Startup GETs per part",
+        "name": null
+      }
     },
     {
       "id": "startup_requests",
@@ -9997,7 +10993,7 @@
       "default": null,
       "rule": null,
       "coef": "startup_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -10014,27 +11010,74 @@
     {
       "id": "merge_gets_per_source_part",
       "block": "merges",
-      "label": "GetObject per merged source part without the cache: Compact columns + 3, Wide 2 x columns + 1",
-      "kind": "measured",
+      "label": "GETs per merge source part without the cache: Compact one seek per column plus 3, Wide 2 per stream plus 1",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "merge_gets_per_source_part",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          }
+        },
+        "then": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "columns",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "coef",
+            "id": "merge_compact_source_extra_gets",
+            "dim": "count"
+          }
+        },
+        "else": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+              "kind": "coef",
+              "id": "files_per_wide_stream",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "input",
+              "id": "wide_part_streams",
+              "dim": "count"
+            }
+          },
+          "b": {
+            "kind": "coef",
+            "id": "merge_wide_source_extra_gets",
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": null,
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeReaderCompact.cpp:219",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
@@ -10042,32 +11085,66 @@
           "merge_gets_per_source_part": "GETs per merged source part"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Merge GETs per source part",
+        "name": null
+      }
     },
     {
       "id": "merge_gets_per_source_part_cached",
       "block": "merges",
-      "label": "GetObject per merged source part through the filesystem cache",
-      "kind": "measured",
+      "label": "GETs per merge source part through the cache: Compact 3, Wide 1 per stream plus 1",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "merge_gets_per_source_part_cached",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          }
+        },
+        "then": {
+          "kind": "coef",
+          "id": "merge_cached_compact_source_gets",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "wide_part_streams",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "coef",
+            "id": "merge_wide_source_extra_gets",
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": null,
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeReaderStream.cpp:270",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
@@ -10075,7 +11152,12 @@
           "merge_gets_per_source_part_cached": "GETs per merged source part with the cache"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Cached merge GETs per source part",
+        "name": null
+      }
     },
     {
       "id": "delete_calls_per_removed_part",
@@ -10090,7 +11172,7 @@
       "default": null,
       "rule": null,
       "coef": "delete_calls_per_removed_part",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:609",
@@ -10117,7 +11199,7 @@
       "default": null,
       "rule": null,
       "coef": "empty_part_objects",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2742",
@@ -10139,7 +11221,7 @@
       "default": null,
       "rule": null,
       "coef": "mutation_entry_objects",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMutationEntry.cpp:73",
@@ -10151,27 +11233,65 @@
     {
       "id": "mutation_objects_written",
       "block": "mutations_deletes",
-      "label": "Objects written per mutated part (narrow shape): Compact rewrites all, Wide the changed streams and 7 metadata files",
-      "kind": "measured",
+      "label": "Objects a mutation writes per Wide part: ALTER DELETE rewrites the part, UPDATE of one column and lightweight DELETE write one stream and 7 metadata files",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "mutation_kind",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "mutation_objects_written",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "mutation_kind",
+            "dim": "enum:mutation_kind"
+          },
+          "b": {
+            "kind": "const",
+            "value": "delete",
+            "dim": "enum:mutation_kind"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "objects_per_wide_part",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "coef",
+            "id": "files_per_wide_stream",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "coef",
+            "id": "mutation_rewritten_metadata_files",
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT avg(ProfileEvents['S3PutObject']) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart'",
@@ -10179,7 +11299,12 @@
           "mutation_objects_written": "PUTs per MutatePart row"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Mutation objects per Wide part",
+        "name": null
+      }
     },
     {
       "id": "mutation_gets_per_part",
@@ -10201,7 +11326,7 @@
       "default": null,
       "rule": null,
       "coef": "mutation_gets_per_part",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
@@ -10234,7 +11359,7 @@
       "default": null,
       "rule": null,
       "coef": "catchup_requests_per_missed_part",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
@@ -10373,7 +11498,7 @@
         }
       },
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6402",
@@ -10408,7 +11533,7 @@
       "default": "PutObject",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
@@ -10433,7 +11558,7 @@
       "default": "fixed",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:138",
@@ -10445,22 +11570,39 @@
     {
       "id": "plain_meta_objects_per_part",
       "block": "schema",
-      "label": "s3plain directory objects per part: one __meta/<dir>/prefix.path for the part and one per projection",
-      "kind": "pinned",
+      "label": "Directories per part on s3_plain_rewritable: the part's and one per projection",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "plain_meta_objects_per_part",
-      "validity": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "projections",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
@@ -10472,7 +11614,12 @@
           "plain_meta_objects_per_part": "1 + projections of the table"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Directories per part",
+        "name": null
+      }
     },
     {
       "id": "plain_dir_create_requests",
@@ -10492,7 +11639,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_dir_create_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
@@ -10519,7 +11666,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_rename_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
@@ -10551,7 +11698,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_copy_on_hardlink",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
@@ -10583,7 +11730,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_unlink_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
@@ -10615,7 +11762,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_dir_remove_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
@@ -10632,27 +11779,56 @@
     {
       "id": "plain_objects_per_part",
       "block": "schema",
-      "label": "s3plain objects per part: one per part file, empty files included (s3 stores no blob for them)",
-      "kind": "measured",
+      "label": "Objects of an inserted part on s3_plain_rewritable, by its part type",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "plain_objects_per_part",
-      "validity": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "objects_per_compact_part",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "plain_objects_per_wide_part",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT part_type, avg(c) FROM (SELECT p.part_type, p.name, count() AS c FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name) GROUP BY part_type",
@@ -10660,7 +11836,12 @@
           "plain_objects_per_part": "avg objects per active part by part_type"
         }
       },
-      "status": "ok"
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "Objects per part (plain)",
+        "name": null
+      }
     },
     {
       "id": "plain_empty_part_objects",
@@ -10675,7 +11856,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_empty_part_objects",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
@@ -10697,7 +11878,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_expired_part_extra_files",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
@@ -10726,7 +11907,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_startup_requests",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
@@ -10753,7 +11934,7 @@
       "default": null,
       "rule": null,
       "coef": "plain_local_metadata_bytes_per_object",
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "source",
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
@@ -10780,7 +11961,7 @@
       "default": null,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "manual allocation; read only when volumes_per_replica is a number",
@@ -10812,7 +11993,7 @@
       "default": 3000,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
@@ -10844,7 +12025,7 @@
       "default": 125,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
@@ -10878,7 +12059,7 @@
       "default": "auto",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "auto picks the cheapest feasible layout of the billing contract",
@@ -10910,7 +12091,7 @@
       "default": 1.3,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "provisioned capacity = data_bytes x this factor; the rig shows the headroom exists (the probe_local_volume capacity peak and merge-natural allocated peaks exceed the final active bytes, docs/superpowers/reports/2026-10-24-storage-cost-ebs) but its small parts do not size it",
@@ -10944,7 +12125,7 @@
       "default": "ssd_256kib_merged_sequential",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "provider",
         "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
@@ -10966,7 +12147,7 @@
       "default": 262144,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "provider",
         "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
@@ -10995,7 +12176,7 @@
       "default": "inserts",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -11025,7 +12206,7 @@
       "default": "write",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -11063,7 +12244,7 @@
       "default": "1MiB",
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "table key",
@@ -11096,7 +12277,7 @@
       "default": null,
       "rule": null,
       "coef": "io_bytes_per_op",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           1000,
           300000
@@ -11133,7 +12314,7 @@
       "default": null,
       "rule": null,
       "coef": "op_write_bytes",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           30000,
           400000
@@ -11165,7 +12346,7 @@
       "default": null,
       "rule": null,
       "coef": "insert_write_overhead_rows",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           1000,
           300000
@@ -11204,7 +12385,7 @@
       "default": null,
       "rule": null,
       "coef": "io_request_size_distribution",
-      "validity": {
+      "verified_range": {
         "insert_rows": [
           1000,
           300000
@@ -11236,7 +12417,7 @@
       "default": 4,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "provider",
         "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured syscall-proxy spread on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 I/Os per MiB (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
@@ -11263,7 +12444,7 @@
       "default": 1,
       "rule": null,
       "coef": null,
-      "validity": null,
+      "verified_range": null,
       "evidence": {
         "kind": "assumed",
         "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",

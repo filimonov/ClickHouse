@@ -1,78 +1,5 @@
 [
   {
-    "id": "objects_per_part",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape",
-        "part_type"
-      ],
-      "values": {
-        "narrow|compact": 11,
-        "narrow|wide": 19,
-        "types|compact": 22,
-        "types|wide": 154,
-        "wide|compact": 11,
-        "wide|wide": 89
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        600000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k1",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k2",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k3",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k1",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k2",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k3",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k1",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k2",
-        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k3",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k1",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k2",
-        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide/wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
-      "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part; the types row holds for the types-fit schema only (types-holdout validates the per-stream rule, 158 objects)"
-    }
-  },
-  {
     "id": "object_size_distribution",
     "kind": "table",
     "dim": "1",
@@ -101,7 +28,8 @@
         "wide|wide|le_4KiB": 0.5393
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         20000,
         400000
@@ -155,7 +83,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 0,
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "insert_rows": [
         1000,
         600000
@@ -202,7 +131,8 @@
     "kind": "scalar",
     "dim": "B",
     "value": 4096,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         600000
@@ -250,7 +180,8 @@
     "kind": "scalar",
     "dim": "req",
     "value": 1.1727,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         5000,
         600000
@@ -321,7 +252,8 @@
     "kind": "scalar",
     "dim": "req",
     "value": 31.758,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         5000,
         600000
@@ -392,7 +324,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 1,
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -424,7 +357,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 2,
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -464,7 +398,8 @@
         "types": 33210.8
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -496,79 +431,6 @@
     "note": "The statistics reads ask for the archive from their offset to its end, so bytes per GET follow the statistics archive more than the query range."
   },
   {
-    "id": "shape_columns",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape"
-      ],
-      "values": {
-        "narrow": 5,
-        "wide": 40,
-        "types": 21
-      }
-    },
-    "validity": null,
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "source",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/experiments/cold-select.cache-off.json:29",
-      "version": "26.8@09d0772a842"
-    },
-    "status": "ok"
-  },
-  {
-    "id": "cached_miss_gets_per_part_read",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape"
-      ],
-      "values": {
-        "wide": 5,
-        "types": 7,
-        "narrow": 5
-      }
-    },
-    "validity": {
-      "read_streams_per_part": [
-        3,
-        4
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
-        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3",
-        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k1",
-        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k2",
-        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "requests and bytes of the warm pass after a restart (setup ledger), per part read"
-    }
-  },
-  {
     "id": "cached_miss_bytes_per_part_read",
     "kind": "table",
     "dim": "B",
@@ -582,7 +444,8 @@
         "narrow": 802473.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -620,7 +483,8 @@
     "kind": "scalar",
     "dim": "1",
     "value": 1.0208,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -655,7 +519,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 1,
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "read_streams_per_part": [
         3,
         4
@@ -683,56 +548,6 @@
     }
   },
   {
-    "id": "startup_gets_per_part",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "cache_enabled",
-        "shape"
-      ],
-      "values": {
-        "0|narrow": 15,
-        "0|wide": 50,
-        "1|narrow": 10,
-        "1|wide": 10
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        100000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3/startup/intact/k1",
-        "cost-20261024T094831Z/s3/startup/intact/k2",
-        "cost-20261024T094831Z/s3/startup/intact/k3",
-        "cost-20261024T094831Z/s3_cached/startup/intact/k1",
-        "cost-20261024T094831Z/s3_cached/startup/intact/k2",
-        "cost-20261024T094831Z/s3_cached/startup/intact/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "per part: its 9 small files and statistics.packed once per column plus once (no cache); 9 files and statistics.packed once (cache)",
-      "startup_seconds": [
-        2.15,
-        3.18
-      ]
-    }
-  },
-  {
     "id": "startup_requests",
     "kind": "table",
     "dim": "count",
@@ -750,7 +565,8 @@
         "1|DeleteObject": 3
       }
     },
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "insert_rows": [
         1000,
         100000
@@ -785,117 +601,12 @@
     }
   },
   {
-    "id": "merge_gets_per_source_part",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape",
-        "part_type"
-      ],
-      "values": {
-        "narrow|compact": 8,
-        "narrow|wide": 11,
-        "wide|compact": 43,
-        "wide|wide": 81
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        400000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k1",
-        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k2",
-        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k3",
-        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k1",
-        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k2",
-        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k3",
-        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k1",
-        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k2",
-        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k3",
-        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k1",
-        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k2",
-        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
-      "rule": "Compact columns + 3, Wide 2 x columns + 1"
-    }
-  },
-  {
-    "id": "merge_gets_per_source_part_cached",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape",
-        "part_type"
-      ],
-      "values": {
-        "narrow|compact": 3,
-        "narrow|wide": 6,
-        "wide|compact": 3,
-        "wide|wide": 41
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        400000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k1",
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k2",
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k3",
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k1",
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k2",
-        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k3",
-        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k1",
-        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k2",
-        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k3",
-        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k1",
-        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k2",
-        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
-      "rule": "Compact 3, Wide columns + 1"
-    }
-  },
-  {
     "id": "delete_calls_per_removed_part",
     "kind": "scalar",
     "dim": "count",
     "value": 1,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -913,7 +624,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 8,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -930,7 +642,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 1,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -943,77 +656,12 @@
     "status": "ok"
   },
   {
-    "id": "mutation_objects_written",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "mutation_kind",
-        "part_type"
-      ],
-      "values": {
-        "delete|compact": 11,
-        "delete|wide": 19,
-        "lightweight_delete|compact": 11,
-        "lightweight_delete|wide": 9,
-        "update_column|compact": 11,
-        "update_column|wide": 9
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        400000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k1",
-        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k2",
-        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k3",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k1",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k2",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k3",
-        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
-        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
-        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
-        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
-        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
-        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
-        "cost-20261024T094831Z/s3/mutation/wide-delete/k1",
-        "cost-20261024T094831Z/s3/mutation/wide-delete/k2",
-        "cost-20261024T094831Z/s3/mutation/wide-delete/k3",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k1",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k2",
-        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k3",
-        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k1",
-        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k2",
-        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k3",
-        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k1",
-        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k2",
-        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "PutObject per table of the mutation window (per-file attribution) / its parts, minus the mutation_<n>.txt object"
-    }
-  },
-  {
     "id": "mutation_compact_gets_per_full_granule",
     "kind": "scalar",
     "dim": "count",
     "value": 2,
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "insert_rows": [
         1000,
         100000
@@ -1081,7 +729,8 @@
         "1|update_column|wide": 2
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         400000
@@ -1128,6 +777,195 @@
     "fit": {
       "method": "least GetObject per table of the mutation window over the repeats (per-file attribution) / its parts",
       "spread": "a Compact part read takes up to one more GetObject (data.bin) in some repeats; the tolerance is per part"
+    }
+  },
+  {
+    "id": "part_metadata_files",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 9,
+    "basis": "derived",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp:407",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "primary.cidx, count.txt, serialization.json, statistics.packed, columns.txt, columns_substreams.txt, metadata_version.txt, default_compression_codec.txt, checksums.txt: one object each per part"
+    }
+  },
+  {
+    "id": "compact_part_data_files",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 2,
+    "basis": "derived",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp:53",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "data.bin and data.cmrk4 hold every column of a Compact part"
+    }
+  },
+  {
+    "id": "files_per_wide_stream",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 2,
+    "basis": "derived",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:140",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "a Wide part writes a .bin and a marks file per serialization stream"
+    }
+  },
+  {
+    "id": "projection_part_objects",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 10,
+    "basis": "fitted",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:70",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "objects of one Compact projection part under <name>.proj/, read from objects-per-part.types-fit and confirmed by objects-per-part.types-holdout (another schema, same projection count)"
+    }
+  },
+  {
+    "id": "part_load_files",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 9,
+    "basis": "derived",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:1504",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "small files read per part at load: 8 metadata files and the marks the index granularity comes from"
+    }
+  },
+  {
+    "id": "merge_compact_source_extra_gets",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 3,
+    "basis": "fitted",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:94",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GETs per Compact merge source beyond one seek per column (no cache), measured at 5 and 40 columns"
+    }
+  },
+  {
+    "id": "merge_cached_compact_source_gets",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 3,
+    "basis": "fitted",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:94",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GETs per Compact merge source through the cache: data.bin and its marks are a few cache segments, measured at 5 and 40 columns"
+    }
+  },
+  {
+    "id": "merge_wide_source_extra_gets",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "basis": "fitted",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md:96",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GETs per Wide merge source beyond the per-stream reads, measured at 5 columns, hold-out at 40"
+    }
+  },
+  {
+    "id": "mutation_rewritten_metadata_files",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 7,
+    "basis": "derived",
+    "verified_range": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1162",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "metadata files a Wide-part mutation always rewrites (checksums.txt, columns.txt and the other 5)"
     }
   }
 ]

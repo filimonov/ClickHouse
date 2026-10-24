@@ -1,34 +1,5 @@
 [
   {
-    "id": "plain_meta_objects_per_part",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape"
-      ],
-      "values": {
-        "narrow": 1,
-        "wide": 1,
-        "types": 2
-      }
-    },
-    "validity": null,
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "source",
-      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
-      "version": "26.8@09d0772a842"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "one directory per part and one per projection (the types shape has one projection)"
-    }
-  },
-  {
     "id": "plain_dir_create_requests",
     "kind": "table",
     "dim": "count",
@@ -46,7 +17,8 @@
         "ListObjectsV2": 0
       }
     },
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -63,7 +35,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 1,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -93,7 +66,8 @@
         "ListObjectsV2": 0
       }
     },
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -126,7 +100,8 @@
         "ListObjectsV2": 0
       }
     },
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -156,7 +131,8 @@
         "ListObjectsV2": 0
       }
     },
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -173,7 +149,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 11,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -189,69 +166,12 @@
     }
   },
   {
-    "id": "plain_objects_per_part",
-    "kind": "table",
-    "dim": "count",
-    "value": {
-      "index": [
-        "shape",
-        "part_type"
-      ],
-      "values": {
-        "narrow|compact": 11,
-        "narrow|wide": 19,
-        "wide|compact": 11,
-        "wide|wide": 89
-      }
-    },
-    "validity": {
-      "insert_rows": [
-        1000,
-        400000
-      ]
-    },
-    "tolerance": {
-      "abs": 0,
-      "rel": 0
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k1",
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k2",
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k3",
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k1",
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k2",
-        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k3",
-        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k1",
-        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k2",
-        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k3",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "fit": {
-      "method": "objects per active part from system.remote_data_paths; no types entry: its empty-file blobs depend on the JSON columns (6 per column with two typed paths in a Wide part)"
-    }
-  },
-  {
     "id": "plain_expired_part_extra_files",
     "kind": "scalar",
     "dim": "count",
     "value": 2,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0
@@ -307,7 +227,8 @@
         "1|per_dir|ListObjectsV2": 1
       }
     },
-    "validity": {
+    "basis": "derived",
+    "verified_range": {
       "replicas": [
         1,
         3
@@ -342,7 +263,8 @@
     "kind": "scalar",
     "dim": "B",
     "value": 0,
-    "validity": null,
+    "basis": "derived",
+    "verified_range": null,
     "tolerance": {
       "abs": 0,
       "rel": 0

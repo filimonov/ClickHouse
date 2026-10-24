@@ -70,8 +70,8 @@ Paths are under `tmp/src-26.8/src/`.
   packed. A projection is a part of its own under `<name>.proj/`, Compact here: 10 objects.
 - **Shapes.** narrow = 5 `UInt64` columns, wide = 40, types = the 21-column schema of `objects-per-part.types-fit`
   (`k` plus 5 `Nullable(UInt64)`, 5 `Array(UInt32)`, 5 `LowCardinality(String)`, 3 `Map`, 2 `JSON`, a `minmax` index,
-  one projection). The `types` row of `objects_per_part` holds for that schema only; `types-holdout` (another mix)
-  validates the per-stream rule above: 158 objects per Wide part, predicted and measured. The part type of every
+  one projection). The shapes are presets of the table quantities (§Formulas from source); `types-holdout` (another mix, 69
+  streams) validates the per-stream rule above: 158 objects per Wide part, predicted and measured. The part type of every
   insert is computed from the registry predicate `part_type_predicate` and asserted against `system.parts`.
 
 ### Multipart {#multipart}
@@ -281,11 +281,51 @@ both policies unless two are shown (`s3` / `s3_cached`).
 
 Every assertion held in every ok record (part types from the registry predicate, `object_writes == objects_total`, full rewrite of Compact mutations, dropped objects deleted, restart before the cold read, `window.crossing` empty).
 
+## Formulas from source {#source-formulas}
+
+Per-part counts are registry derivations over the table quantities `columns`, `streams_per_column`,
+`skip_index_files_per_part` and `projections`, built from the operation graphs above. The shapes the cards measured are
+verification points: every formula reproduces every measured point exactly. Outside the verified range (`columns`
+5–40, `streams_per_column` 1–3.29) the formulas apply unchanged.
+
+| Quantity | Formula | Graph |
+|---|---|---|
+| `wide_part_streams` | `columns` × `streams_per_column` | §Insert, stream table |
+| `objects_per_compact_part` | `part_metadata_files` (9) + `compact_part_data_files` (2) + `skip_index_files_per_part` + `projections` × `projection_part_objects` (10) | §Insert |
+| `objects_per_wide_part` | 9 + `files_per_wide_stream` (2) × `wide_part_streams` + skip-index files + 10 × `projections` | §Insert |
+| `objects_per_part` | the Compact or the Wide count, by `part_type`; a merge result reads them by `merge_result_part_type` | §Insert |
+| `shape_columns` | `columns` | §Reads |
+| `cached_miss_gets_per_part_read` | 2 × `read_streams_per_part` − 1 | §Reads |
+| `startup_gets_per_part` | no cache: `part_load_files` (9) + `shape_columns` + 1; cache: 9 + 1 | §Startup |
+| `merge_gets_per_source_part` | Compact: `columns` + `merge_compact_source_extra_gets` (3); Wide: 2 × `wide_part_streams` + `merge_wide_source_extra_gets` (1) | §Merge |
+| `merge_gets_per_source_part_cached` | Compact: `merge_cached_compact_source_gets` (3); Wide: `wide_part_streams` + 1 | §Merge |
+| `mutation_objects_written` | per Wide part: `delete` writes `objects_per_wide_part`; `update_column` and `lightweight_delete` write one stream, 2 + `mutation_rewritten_metadata_files` (7); a Compact part writes `objects_per_compact_part` | §Mutation |
+
+Verification points. A preset is (`columns`, `streams_per_column`, skip-index files, projections):
+
+| Point | Preset | Quantity | Measured | Formula |
+|---|---|---|---|---|
+| narrow | 5, 1, 0, 0 | objects per Compact / Wide part | 11 / 19 | 11 / 19 |
+| wide | 40, 1, 0, 0 | objects per Compact / Wide part | 11 / 89 | 11 / 89 |
+| `mid-wide` | 20, 1, 0, 0 | objects per Wide part | 49 | 49 |
+| types (`types-fit`) | 21, 67/21, 1, 1 | objects per Compact / Wide part | 22 / 154 | 22 / 154 |
+| `types-holdout` | 21, 69/21, 1, 1 | objects per Wide part | 158 | 158 |
+| narrow, wide | 5 and 40 columns | startup GETs per part, no cache / cache | 15, 50 / 10, 10 | 15, 50 / 10, 10 |
+| narrow, wide | 5 and 40 columns | merge GETs per Compact source, no cache / cache | 8, 43 / 3, 3 | 8, 43 / 3, 3 |
+| narrow, wide | 5 and 40 columns | merge GETs per Wide source, no cache / cache | 11, 81 / 6, 41 | 11, 81 / 6, 41 |
+| narrow, wide, types | 3, 3 and 4 read streams | cache-miss GETs per part read | 5, 5, 7 | 5, 5, 7 |
+| narrow | 5, 1, 0, 0 | mutation objects per Wide part: delete / update / lightweight delete; per Compact part | 19 / 9 / 9; 11 | 19 / 9 / 9; 11 |
+
+`part_metadata_files`, `compact_part_data_files`, `files_per_wide_stream`, `part_load_files` and
+`mutation_rewritten_metadata_files` are read from the source (`basis: derived`). `projection_part_objects` and the
+three merge constants are read from the measured points (`basis: fitted`): the source explains the per-column and
+per-stream terms, not the fixed reads.
+
 ## Coefficients {#coefficients}
 
 | Coefficient | Evidence | Value | Tolerance | Fit | Hold-out |
 |---|---|---|---|---|---|
-| `objects_per_part` | measured | narrow/compact: 11; narrow/wide: 19; types/compact: 22; types/wide: 154; wide/compact: 11; wide/wide: 89 | 0 | `objects-per-part.narrow-compact`, `objects-per-part.narrow-wide`, `objects-per-part.types-fit-compact`, `objects-per-part.types-fit-wide`, `objects-per-part.wide-compact` | `objects-per-part.wide-compact-2`, `objects-per-part.wide-wide` |
+| `objects_per_part` | derivation, verified | formula (§Formulas from source); measured narrow/compact: 11; narrow/wide: 19; types/compact: 22; types/wide: 154; wide/compact: 11; wide/wide: 89 | 0 | `objects-per-part.narrow-compact`, `objects-per-part.narrow-wide`, `objects-per-part.types-fit-compact`, `objects-per-part.types-fit-wide`, `objects-per-part.wide-compact` | `objects-per-part.wide-compact-2`, `objects-per-part.wide-wide` |
 | `object_size_distribution` | measured | narrow/compact/1MiB_32MiB: 0.0909; narrow/compact/4KiB_1MiB: 0.0909; narrow/compact/gt_32MiB: 0.0; narrow/compact/le_4KiB: 0.8182; narrow/wide/1MiB_32MiB: 0.2632; narrow/wide/4KiB_1MiB: 0.0526; narrow/wide/gt_32MiB: 0.0; narrow/wide/le_4KiB: 0.6842; wide/compact/1MiB_32MiB: 0.0909; wide/compact/4KiB_1MiB: 0.0909; wide/compact/gt_32MiB: 0.0; wide/compact/le_4KiB: 0.8182; wide/wide/1MiB_32MiB: 0.0; wide/wide/4KiB_1MiB: 0.4607; wide/wide/gt_32MiB: 0.0; wide/wide/le_4KiB: 0.5393 | abs 0.05, rel 0 | `objects-per-part.narrow-compact`, `objects-per-part.narrow-wide`, `objects-per-part.wide-compact`, `objects-per-part.wide-wide` | `objects-per-part.wide-compact-2` |
 | `insert_tx_checks` | measured | 0 | 0 | `objects-per-part.narrow-compact`, `objects-per-part.narrow-wide`, `objects-per-part.wide-compact` | `objects-per-part.wide-compact-2`, `objects-per-part.wide-wide` |
 | `metadata_bytes_per_object` | measured | 4096 | abs 0, rel 0.08 | `objects-per-part.narrow-compact`, `objects-per-part.narrow-wide`, `objects-per-part.wide-compact` | `objects-per-part.mid-wide`, `objects-per-part.wide-wide` |
@@ -294,21 +334,30 @@ Every assertion held in every ok record (part types from the registry predicate,
 | `stats_gets_per_column` | measured | 1 | 0 | `cold-select.cache-off` | `cold-select.cache-off-narrow`, `cold-select.cache-off-types` |
 | `gets_per_stream_read` | measured | 2 | 0 | `cold-select.cache-off` | `cold-select.cache-off-narrow`, `cold-select.cache-off-types` |
 | `bytes_per_get` | measured | wide: 67992.8; types: 33210.8 | abs 0, rel 0.25 | `cold-select.cache-off`, `cold-select.cache-off-types` | `cold-select.cache-off-types-2` |
-| `shape_columns` | source | narrow: 5; wide: 40; types: 21 | 0 | `cold-select.cache-off`, `cold-select.cache-off-types` | `cold-select.cache-off-types-2` |
-| `cached_miss_gets_per_part_read` | measured | wide: 5; types: 7; narrow: 5 | 0 | `cold-select.cache-on`, `cold-select.cache-on-narrow`, `cold-select.cache-on-types` | `cold-select.cache-on-narrow-2`, `cold-select.cache-on-types-2` |
+| `shape_columns` | derivation, verified | formula (§Formulas from source); measured narrow: 5; wide: 40; types: 21 | 0 | `cold-select.cache-off`, `cold-select.cache-off-types` | `cold-select.cache-off-types-2` |
+| `cached_miss_gets_per_part_read` | derivation, verified | formula (§Formulas from source); measured wide: 5; types: 7; narrow: 5 | 0 | `cold-select.cache-on`, `cold-select.cache-on-narrow`, `cold-select.cache-on-types` | `cold-select.cache-on-narrow-2`, `cold-select.cache-on-types-2` |
 | `cached_miss_bytes_per_part_read` | measured | wide: 1003955.0; types: 914467.5; narrow: 802473.0 | abs 0, rel 0.25 | `cold-select.cache-on`, `cold-select.cache-on-narrow`, `cold-select.cache-on-types` | `cold-select.cache-on-narrow-2`, `cold-select.cache-on-types-2` |
 | `cache_fill_io_per_byte` | measured | 1.0208 | abs 0.01, rel 0 | `cold-select.cache-on`, `cold-select.cache-on-types` | `cold-select.cache-on-types-2` |
 | `warm_gets_per_stream_read` | measured | 1 | 0 | `cold-select.warm-off` | `cold-select.warm-off-types` |
-| `startup_gets_per_part` | measured | 0/narrow: 15; 0/wide: 50; 1/narrow: 10; 1/wide: 10 | 0 | `startup.intact` | `startup.wide-parts` |
+| `startup_gets_per_part` | derivation, verified | formula (§Formulas from source); measured 0/narrow: 15; 0/wide: 50; 1/narrow: 10; 1/wide: 10 | 0 | `startup.intact` | `startup.wide-parts` |
 | `startup_requests` | measured | 0/PutObject: 2; 0/GetObject: 5; 0/DeleteObject: 2; 1/PutObject: 3; 1/GetObject: 6; 1/DeleteObject: 3 | 0 | `startup.intact` | `startup.wide-parts` |
-| `merge_gets_per_source_part` | measured | narrow/compact: 8; narrow/wide: 11; wide/compact: 43; wide/wide: 81 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
-| `merge_gets_per_source_part_cached` | measured | narrow/compact: 3; narrow/wide: 6; wide/compact: 3; wide/wide: 41 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
+| `merge_gets_per_source_part` | derivation, verified | formula (§Formulas from source); measured narrow/compact: 8; narrow/wide: 11; wide/compact: 43; wide/wide: 81 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
+| `merge_gets_per_source_part_cached` | derivation, verified | formula (§Formulas from source); measured narrow/compact: 3; narrow/wide: 6; wide/compact: 3; wide/wide: 41 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
 | `delete_calls_per_removed_part` | source | 1 | 0 | `drop.partition`, `drop.ttl`, `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `drop.partition-2`, `drop.partition-3 (consumed)` |
 | `empty_part_objects` | source | 8 | 0 | `drop.partition`, `drop.ttl` | `drop.partition-2`, `drop.partition-3 (consumed)` |
 | `mutation_entry_objects` | source | 1 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.update-mixed-4` |
-| `mutation_objects_written` | measured | delete/compact: 11; delete/wide: 19; lightweight_delete/compact: 11; lightweight_delete/wide: 9; update_column/compact: 11; update_column/wide: 9 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
+| `mutation_objects_written` | derivation, verified | formula (§Formulas from source); measured delete/compact: 11; delete/wide: 19; lightweight_delete/compact: 11; lightweight_delete/wide: 9; update_column/compact: 11; update_column/wide: 9 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
 | `mutation_compact_gets_per_full_granule` | measured | 2 | 0 | `mutation.compact-10k`, `mutation.compact-small-2`, `mutation.compact-update-one-column` | `mutation.compact-20k`, `mutation.compact-30k (consumed)`, `mutation.compact-45k` |
 | `mutation_gets_per_part` | measured | 0/delete/compact: 3; 0/delete/wide: 16; 0/lightweight_delete/compact: 3; 0/lightweight_delete/wide: 14; 0/update_column/compact: 2; 0/update_column/wide: 7; 1/delete/compact: 3; 1/delete/wide: 10; 1/lightweight_delete/compact: 3; 1/lightweight_delete/wide: 3; 1/update_column/compact: 2; 1/update_column/wide: 2 | abs 1, rel 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
+| `part_metadata_files` | source (`Storages/MergeTree/MergedBlockOutputStream.cpp:407`) | 9 | 0 | verification points | – |
+| `compact_part_data_files` | source (`Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp:53`) | 2 | 0 | verification points | – |
+| `files_per_wide_stream` | source (`Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:140`) | 2 | 0 | verification points | – |
+| `projection_part_objects` | fitted (`objects-per-part.types-fit`) | 10 | 0 | verification points | – |
+| `part_load_files` | source (`Storages/MergeTree/IMergeTreeDataPart.cpp:1504`) | 9 | 0 | verification points | – |
+| `merge_compact_source_extra_gets` | fitted (`merge-only`) | 3 | 0 | verification points | – |
+| `merge_cached_compact_source_gets` | fitted (`merge-only`) | 3 | 0 | verification points | – |
+| `merge_wide_source_extra_gets` | fitted (`merge-only`) | 1 | 0 | verification points | – |
+| `mutation_rewritten_metadata_files` | source (`Storages/MergeTree/MutateTask.cpp:1162`) | 7 | 0 | verification points | – |
 
 Source-derived (`source`) counts are exact on the deterministic cards listed as fit; they need no hold-out. Every measured coefficient has a fit edge and a distinct hold-out edge in `coverage.json`, both `done`, per policy.
 
@@ -357,8 +406,9 @@ Each is `evidence.kind: assumed` in the registry or stated in a prediction:
   within 300 s at the rates the page models.
 - **One expired part per expiry operation** by default (`expiry_operations_per_month` = expired parts).
 - **Parts leave retention at their final size** (`expired_parts_per_month` = parts inserted / `merge_size_ratio`).
-- **Mutation counts are the narrow shape's** (5 `UInt64` columns). The granule rule is measured on `UPDATE`; `DELETE`
-  and lightweight `DELETE` of Compact parts are assumed to seek the same way.
+- **Mutation reads per part are the narrow shape's** (`mutation_gets_per_part`, 5 `UInt64` columns). The objects a
+  mutation writes follow the part formulas, one stream per updated column. The granule rule is measured on `UPDATE`;
+  `DELETE` and lightweight `DELETE` of Compact parts are assumed to seek the same way.
 - **Mutated parts are at their final size** (`mutated_part_rows` = `part_rows` × `merge_size_ratio`), like the
   expired parts.
 - **A merge result is a first-level merge** (`merge_result_rows` = `part_rows` × `merge_effective_fan_in`) for its

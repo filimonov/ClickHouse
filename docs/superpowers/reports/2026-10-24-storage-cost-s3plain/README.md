@@ -72,7 +72,7 @@ Paths are under `tmp/src-26.8/src/`. `OPS` is
 - **Part files:** one object per file. Unlike `s3`, empty files get an object too
   (`Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313`): a Wide part of the types shape has 6 more objects
   per `JSON` column with two typed paths (166 and 170 against 154 and 158 on `s3`), and the empty part that covers a
-  dropped or expired part has 11 objects (`s3`: 8). `plain_objects_per_part` carries the plain counts.
+  dropped or expired part has 11 objects (`s3`: 8). `plain_objects_per_part` carries the plain counts (§Formulas).
 - **Drop and expiry:** each dropped or expired part gets its own empty covering part (`drop.partition-2`, `-3`); a
   partitioned part has `partition.dat` and `minmax_<key>.idx` besides the shape's files.
 - **Part removal** (`Storages/MergeTree/DataPartStorageOnDiskBase.cpp:1120`, `:1266`): rename to `delete_tmp_`
@@ -96,8 +96,8 @@ Two hold-outs predicted from the first fit missed and were consumed; both correc
   storage supports empty files without blobs (`Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313`, `:400`);
   the plain-rewritable storage does not, `s3` metadata does. A Wide part with two `JSON` columns of two typed paths
   has 12 more objects than on `s3` (`objects-per-part.types-holdout`: 348 `PutObject` against 324 predicted). The
-  fresh hold-out `types-holdout-single` was exact at 174, but it backs no edge: `plain_objects_per_part` has no
-  `types` row (the blob count depends on the `JSON` columns), so the cells cannot evaluate a types-shape case.
+  fresh hold-out `types-holdout-single` was exact at 174, but it backs no edge. The cells count these objects with
+  `empty_files_per_wide_part` (§Formulas).
 - **One empty covering part per dropped part.** `DROP PARTITION` over three parts wrote three empty parts of 11
   objects and removed all six (`drop.partition-3`: 45 `PutObject`, 75 `HeadObject`, 72 `CopyObject`, 150
   `DeleteObject` against 17 / 51 / 50 / 104 predicted for one empty part). `initCoverageWithNewEmptyParts` makes one
@@ -156,14 +156,14 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 
 | Coefficient | Evidence | Value |
 |---|---|---|
-| `plain_meta_objects_per_part` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111) | narrow: 1, wide: 1, types: 2 |
+| `plain_meta_objects_per_part` | derivation, verified | 1 + `projections` (one directory per part and per projection, `OPS:111`); measured narrow: 1, wide: 1, types: 2 |
 | `plain_dir_create_requests` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125) | PutObject: 1, HeadObject: 1 |
 | `plain_rename_requests` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239) | 1 |
 | `plain_copy_on_hardlink` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456) | HeadObject: 1, CopyObject: 1 |
 | `plain_unlink_requests` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390) | HeadObject: 1, CopyObject: 1, DeleteObject: 2 |
 | `plain_dir_remove_requests` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297) | PutObject: 1, DeleteObject: 1 |
 | `plain_empty_part_objects` | source (Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313) | 11 |
-| `plain_objects_per_part` | measured | narrow/compact: 11, narrow/wide: 19, wide/compact: 11, wide/wide: 89 |
+| `plain_objects_per_part` | derivation, verified | Compact: `objects_per_compact_part`; Wide: `plain_objects_per_wide_part` (§Formulas); measured narrow/compact: 11, narrow/wide: 19, wide/compact: 11, wide/wide: 89 |
 | `plain_expired_part_extra_files` | source (Storages/MergeTree/MergeTreePartition.cpp:470) | 2 |
 | `plain_startup_requests` | measured | 0/fixed/PutObject: 1, 0/fixed/HeadObject: 1, 0/fixed/GetObject: 5, 0/per_dir/GetObject: 1, 0/fixed/CopyObject: 1, 0/fixed/DeleteObject: 2, 0/fixed/ListObjectsV2: 6, 0/per_dir/ListObjectsV2: 1, 1/fixed/PutObject: 2, 1/fixed/HeadObject: 2, 1/fixed/GetObject: 6, 1/per_dir/GetObject: 1, 1/fixed/CopyObject: 2, 1/fixed/DeleteObject: 4, 1/fixed/ListObjectsV2: 6, 1/per_dir/ListObjectsV2: 1 |
 | `plain_local_metadata_bytes_per_object` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87) | 0 |
@@ -178,14 +178,19 @@ Every s3plain coefficient a cell uses has fit and hold-out edges in `coverage.js
 |---|---|---|
 | `storage` | none | `lifecycle` |
 | `inserts` | per part: `plain_meta_objects_per_part` × (`plain_dir_create_requests` + `plain_rename_requests`) | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` |
-| `merges` | directory requests of the result; sources removed file by file (`plain_unlink_requests`, `plain_dir_remove_requests`) instead of `DeleteObjects`; the removal rows are `unavailable` when `large_objects_per_part` + `large_objects_per_merge_result` > 0 (multipart copy of a removed file, unmeasured) | `lifecycle` |
+| `merges` | directory requests of the result; sources removed file by file (`plain_unlink_requests`, `plain_dir_remove_requests`) instead of `DeleteObjects`; a removed file past 32 MiB is copied aside by multipart copy (predicted from source, not measured) | `lifecycle` |
 | `mutations` | unconditional `not_supported` state with the gate's reason; no rows | — |
-| `deletes` | one empty covering part of `plain_empty_part_objects` files per expired part, with its directory requests; expired parts (shape files + `plain_expired_part_extra_files`) and empty parts removed file by file; removal rows `unavailable` under the same condition | `mutation_deletes` |
+| `deletes` | one empty covering part of `plain_empty_part_objects` files per expired part, with its directory requests; expired parts (shape files + `plain_expired_part_extra_files`) and empty parts removed file by file; large files of expired parts copied by multipart copy as in `merges` | `mutation_deletes` |
 | `reads` | none | `reads_cache` |
 | `recovery` | the `s3` fixed term (`startup_requests`) replaced by `plain_startup_requests`: fixed + per part directory; part loads cover active and outdated parts (`Storages/MergeTree/MergeTreeData.cpp:3656`) | `startup_recovery` |
 | `local_disk` | no metadata files (`plain_local_metadata_bytes_per_object` = 0); the cache size | `objects_per_part_by_shape` |
 
-All `objects_per_part` lookups of the `s3` cells read `plain_objects_per_part`. The cells reuse `s3`-owned
+All `objects_per_part` reads of the `s3` cells read `plain_objects_per_part`: the `s3` part formulas
+(`s3` report, §Formulas from source) plus one object per empty file of a Wide part, `plain_objects_per_wide_part` =
+`objects_per_wide_part` + `empty_files_per_wide_part`. Verification points: 11 / 19 objects per narrow Compact / Wide
+part, 11 / 89 wide, and per types Wide part 166 (`types-fit`, 154 + 12) and 170 (`types-holdout`, 158 + 12, from its
+348 `PutObject` for two parts with two directories each). The types preset sets `empty_files_per_wide_part` = 12: 6
+per `JSON` column with two typed paths. The cells reuse `s3`-owned
 coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the
 plain records add `validation` edges for them.
 
@@ -193,28 +198,31 @@ plain records add `validation` edges for them.
 
 - **One table per server** in the fixed startup term: the table and `detached` directories sit in `fixed`. Reason:
   the startup cards run one table; each further table adds 2 `GetObject` and 2 `ListObjectsV2` per start.
-- **Expired parts and merge sources keep the shape's directory count** (`plain_meta_objects_per_part`, which counts
-  the projection directory for `types`).
+- **Expired parts and merge sources keep the table's directory count** (`plain_meta_objects_per_part` = 1 +
+  `projections`).
 - **Partitioned expired parts with one partition key column** (`plain_expired_part_extra_files` = 2). Reason: `DROP
   PARTITION` needs a partition key; a TTL-only table has `ttl.txt` instead (one file: `drop.ttl` measured 12).
-- **Validity of the measured tables.** `plain_objects_per_part` holds for `insert_rows` 1 000–400 000, the
-  measured range (the 1 000-row validation `objects-per-part.narrow-compact-1k` is exact). `plain_startup_requests` was measured on one replica; its validity `replicas` 1–3 is an
+- **Verified range.** `plain_objects_per_part` was verified for `insert_rows` 1 000–400 000 (the 1 000-row
+  validation `objects-per-part.narrow-compact-1k` is exact). `plain_startup_requests` was measured on one replica; its validity `replicas` 1–3 is an
   extrapolation: the counts are per replica, and a start of a replicated table adds Keeper requests, not S3 ones.
 - The `s3` cell assumptions (merge results Wide, local merges per replica, TTL path for expiry) carry over.
 
 ## Open items and limits {#open-items}
 
-- **Multipart copy on removal.** A part file past 32 MiB is copied aside by multipart copy
-  (`IO/S3/copyS3File.cpp:673`, pieces of `min_upload_part_size`, `:347`). No case measured it; the removal rows of `merges` and `deletes`
-  are `unavailable` for workloads with large part files until a case does.
+- **Multipart copy on removal: predicted from source, not measured.** A part file past 32 MiB is copied aside by
+  multipart copy (`IO/S3/copyS3File.cpp:673`, pieces of `min_upload_part_size`, `:347`). Per large removed file the
+  cells price `CreateMultipartUpload`, `multipart_copy_parts` = ceil(`object_bytes` / `min_upload_part_size`)
+  `UploadPartCopy` and `CompleteMultipartUpload` in place of the `CopyObject`; the `HeadObject` and both
+  `DeleteObject`s stay. Merge sources count `large_objects_per_part`, expired parts `large_objects_per_merge_result`.
+  No case measured it.
 - **TTL-only expiry** removes parts with `ttl.txt` (one extra file), not the two partition files the cell assumes.
 - **Lightweight `UPDATE`** (patch parts) is possible on `s3plain` with both block columns enabled; no cell prices it.
 - **Replication** applicability is recorded here; its requests are measured by the replication report.
 - **Lifecycle seeds** (`small-inserts`, `merge-natural`, `merge-forced` with `s3plain` policies) stay `planned`: the
   `s3plain` merges are measured by `merge-only` cases instead.
 - **Removal at the window edge.** The report run has 1 `FAILED` passes, all timing: 1 `window_crossing`. A `window_crossing` is an unlink or cache read that finished after the window; an `assertions_failed` pass is a removal tail after the window or one retried request. The cards wait for the outdated parts to leave `system.parts`, not for the copies' deletes. They are not in `measurements.jsonl`; §Reconciliation lists the edges they thin out.
-- **Types shape on s3plain.** `plain_objects_per_part` has no `types` row, so a types-shape workload evaluates
-  `unavailable` on `s3plain` (fail-closed) until the count is modelled per `JSON` column.
+- **Empty files of other `JSON` layouts.** `empty_files_per_wide_part` is 6 per `JSON` column with two typed paths
+  in the measured tables; other layouts are not measured.
 - **Replication applicability** is recorded in §Replication and by `s3plain` in the replication cards'
   `model_variants`; `coverage/1` has no per-card `variants` field with a source reference (`additionalProperties: false`).
 
@@ -228,7 +236,7 @@ change, the predictions of `2f20606ffe6`, the draft cells and the builders: 6 MA
 | M1 | The mutation refusal is too broad: a lightweight `UPDATE` (patch parts) passes once both block columns are enabled (`MergeTreeData.cpp:12630`) | Closed by scope: the gate refuses the mutation kinds the cost model prices (`ALTER UPDATE`, `ALTER DELETE`, lightweight `DELETE`); its reason now names the patch-part exception and cites `:12630`, `:12635`. No variant's cells price patch parts |
 | M2 | `types` predictions miss the empty-file blobs (348 / 340, not 324 / 316) | Confirmed by the run: `objects-per-part.types-holdout` falsified and consumed. Fixed: `plain_objects_per_part` (own counts); fresh hold-out `objects-per-part.types-holdout-single` |
 | M3 | Delete cells use 11 files for partitioned and TTL parts (13 / 12 measured) | Fixed: `plain_expired_part_extra_files` (2, one partition key column); the TTL-only case (one extra file) is an assumption in §Assumptions |
-| M4 | Removing a file past 32 MiB is a multipart copy (`copyS3File.cpp:673`), not one `CopyObject` | Fixed fail-closed: the removal rows of `merges` and `deletes` evaluate to `unavailable` when `large_objects_per_part` + `large_objects_per_merge_result` > 0 (merge sources are usually merge results); open item |
+| M4 | Removing a file past 32 MiB is a multipart copy (`copyS3File.cpp:673`), not one `CopyObject` | Fixed: the removal rows of `merges` and `deletes` price the multipart copy from source, not measured (§Open items) |
 | M5 | `plain_empty_part_objects` is used but not registered | Fixed: registered (pinned, `DiskObjectStorageTransaction.cpp:313`) |
 | M6 | Recovery loads files of active parts only; outdated parts are loaded too (`MergeTreeData.cpp:3656`) | Fixed in the `s3plain` cell (active + outdated); the same term of the `s3` cell is reported to its owner |
 | m1 | Hard-link edges rest on unlink cases; the startup note claims three cached access checks | Fixed: no edges for `plain_copy_on_hardlink`; the note says one check, two with the cache |

@@ -4,7 +4,8 @@
     "kind": "scalar",
     "dim": "1",
     "value": 6.1437,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "merge_size_ratio": [
         18.21,
         472.95
@@ -115,7 +116,8 @@
         "9-12": 0.0051
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "merge_size_ratio": [
         18.21,
         472.95
@@ -215,7 +217,8 @@
         "9-16": 0.0017
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "merge_size_ratio": [
         18.21,
         472.95

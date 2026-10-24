@@ -145,21 +145,9 @@
         "kind": "sub",
         "dim": "count",
         "a": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "plain_objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "plain_objects_per_part",
+         "dim": "count"
         },
         "b": {
          "kind": "input",
@@ -189,16 +177,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "plain_meta_objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "plain_meta_objects_per_part",
+         "dim": "count"
         }
        },
        "b": {
@@ -385,16 +366,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "plain_meta_objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "plain_meta_objects_per_part",
+         "dim": "count"
         }
        },
        "b": {
@@ -447,21 +421,9 @@
        }
       },
       "b": {
-       "kind": "lookup",
-       "dim": "count",
-       "table_id": "plain_objects_per_part",
-       "keys": [
-        {
-         "kind": "input",
-         "id": "shape",
-         "dim": "enum:shape"
-        },
-        {
-         "kind": "input",
-         "id": "part_type",
-         "dim": "enum:part_type"
-        }
-       ]
+       "kind": "input",
+       "id": "plain_objects_per_part",
+       "dim": "count"
       }
      }
     },
@@ -704,21 +666,31 @@
           "dim": "count"
          },
          "else": {
-          "kind": "lookup",
+          "kind": "branch",
           "dim": "count",
-          "table_id": "plain_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
+          "cond": {
+           "op": "==",
+           "a": {
             "kind": "input",
             "id": "merge_result_part_type",
             "dim": "enum:merge_result_part_type"
+           },
+           "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:merge_result_part_type"
            }
-          ]
+          },
+          "then": {
+           "kind": "input",
+           "id": "objects_per_compact_part",
+           "dim": "count"
+          },
+          "else": {
+           "kind": "input",
+           "id": "plain_objects_per_wide_part",
+           "dim": "count"
+          }
          }
         },
         "b": {
@@ -752,16 +724,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -787,115 +752,65 @@
         }
        },
        "b": {
-        "kind": "branch",
+        "kind": "mul",
         "dim": "count",
-        "cond": {
-         "op": ">",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
          "a": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "large_objects_per_part",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "large_objects_per_merge_result",
-           "dim": "count"
-          }
+          "kind": "input",
+          "id": "merge_removals_per_month",
+          "dim": "count"
          },
          "b": {
-          "kind": "const",
-          "value": 0,
+          "kind": "input",
+          "id": "replicas",
           "dim": "count"
          }
         },
-        "then": {
-         "kind": "const",
-         "value": "unavailable",
-         "dim": "count"
-        },
-        "else": {
-         "kind": "mul",
+        "b": {
+         "kind": "add",
          "dim": "count",
          "a": {
           "kind": "mul",
           "dim": "count",
           "a": {
            "kind": "input",
-           "id": "merge_removals_per_month",
+           "id": "plain_objects_per_part",
            "dim": "count"
           },
           "b": {
-           "kind": "input",
-           "id": "replicas",
-           "dim": "count"
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:plain_op"
+            }
+           ]
           }
          },
          "b": {
-          "kind": "add",
+          "kind": "mul",
           "dim": "count",
           "a": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ]
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_unlink_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "PutObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           },
           "b": {
-           "kind": "mul",
+           "kind": "lookup",
            "dim": "count",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_meta_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_dir_remove_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "PutObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:plain_op"
+            }
+           ]
           }
          }
         }
@@ -912,26 +827,53 @@
      "scope": "variant",
      "basis": "predicted",
      "expr": {
-      "kind": "mul",
+      "kind": "add",
       "dim": "count",
       "a": {
        "kind": "mul",
-       "dim": "1",
+       "dim": "count",
        "a": {
-        "kind": "input",
-        "id": "merge_results_per_month",
-        "dim": "count"
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "merge_results_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
        },
        "b": {
         "kind": "input",
-        "id": "replicas",
+        "id": "large_objects_per_merge_result",
         "dim": "count"
        }
       },
       "b": {
-       "kind": "input",
-       "id": "large_objects_per_merge_result",
-       "dim": "count"
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
+       }
       }
      }
     },
@@ -985,26 +927,53 @@
      "scope": "variant",
      "basis": "predicted",
      "expr": {
-      "kind": "mul",
+      "kind": "add",
       "dim": "count",
       "a": {
        "kind": "mul",
-       "dim": "1",
+       "dim": "count",
        "a": {
-        "kind": "input",
-        "id": "merge_results_per_month",
-        "dim": "count"
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "merge_results_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
        },
        "b": {
         "kind": "input",
-        "id": "replicas",
+        "id": "large_objects_per_merge_result",
         "dim": "count"
        }
       },
       "b": {
-       "kind": "input",
-       "id": "large_objects_per_merge_result",
-       "dim": "count"
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
+       }
       }
      }
     },
@@ -1071,38 +1040,14 @@
          }
         },
         "then": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "merge_gets_per_source_part_cached",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "merge_gets_per_source_part_cached",
+         "dim": "count"
         },
         "else": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "merge_gets_per_source_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+         "kind": "input",
+         "id": "merge_gets_per_source_part",
+         "dim": "count"
         }
        }
       }
@@ -1140,16 +1085,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "plain_meta_objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "plain_meta_objects_per_part",
+         "dim": "count"
         }
        },
        "b": {
@@ -1166,115 +1104,65 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "mul",
        "dim": "count",
-       "cond": {
-        "op": ">",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
         "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": 0,
+         "kind": "input",
+         "id": "replicas",
          "dim": "count"
         }
        },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
-        "kind": "mul",
+       "b": {
+        "kind": "add",
         "dim": "count",
         "a": {
          "kind": "mul",
          "dim": "count",
          "a": {
           "kind": "input",
-          "id": "merge_removals_per_month",
+          "id": "plain_objects_per_part",
           "dim": "count"
          },
          "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         },
         "b": {
-         "kind": "add",
+         "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ]
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_unlink_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "HeadObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          },
          "b": {
-          "kind": "mul",
+          "kind": "lookup",
           "dim": "count",
-          "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_dir_remove_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "HeadObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         }
        }
@@ -1290,36 +1178,9 @@
      "scope": "variant",
      "basis": "predicted",
      "expr": {
-      "kind": "branch",
+      "kind": "sub",
       "dim": "count",
-      "cond": {
-       "op": ">",
-       "a": {
-        "kind": "add",
-        "dim": "count",
-        "a": {
-         "kind": "input",
-         "id": "large_objects_per_part",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "input",
-         "id": "large_objects_per_merge_result",
-         "dim": "count"
-        }
-       },
-       "b": {
-        "kind": "const",
-        "value": 0,
-        "dim": "count"
-       }
-      },
-      "then": {
-       "kind": "const",
-       "value": "unavailable",
-       "dim": "count"
-      },
-      "else": {
+      "a": {
        "kind": "mul",
        "dim": "count",
        "a": {
@@ -1343,21 +1204,9 @@
          "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "input",
-            "id": "part_type",
-            "dim": "enum:part_type"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_objects_per_part",
+          "dim": "count"
          },
          "b": {
           "kind": "lookup",
@@ -1376,16 +1225,9 @@
          "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          },
          "b": {
           "kind": "lookup",
@@ -1400,6 +1242,29 @@
           ]
          }
         }
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
        }
       }
      }
@@ -1413,36 +1278,82 @@
      "scope": "variant",
      "basis": "predicted",
      "expr": {
-      "kind": "branch",
+      "kind": "mul",
       "dim": "count",
-      "cond": {
-       "op": ">",
+      "a": {
+       "kind": "mul",
+       "dim": "count",
        "a": {
-        "kind": "add",
-        "dim": "count",
-        "a": {
-         "kind": "input",
-         "id": "large_objects_per_part",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "input",
-         "id": "large_objects_per_merge_result",
-         "dim": "count"
-        }
+        "kind": "input",
+        "id": "merge_removals_per_month",
+        "dim": "count"
        },
        "b": {
-        "kind": "const",
-        "value": 0,
+        "kind": "input",
+        "id": "replicas",
         "dim": "count"
        }
       },
-      "then": {
-       "kind": "const",
-       "value": "unavailable",
-       "dim": "count"
-      },
-      "else": {
+      "b": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "plain_objects_per_part",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_unlink_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "DeleteObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "plain_meta_objects_per_part",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_dir_remove_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "DeleteObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "op_kind": "UploadPartCopy",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
        "kind": "mul",
        "dim": "count",
        "a": {
@@ -1460,70 +1371,15 @@
         }
        },
        "b": {
-        "kind": "add",
-        "dim": "count",
-        "a": {
-         "kind": "mul",
-         "dim": "count",
-         "a": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "input",
-            "id": "part_type",
-            "dim": "enum:part_type"
-           }
-          ]
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_unlink_requests",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "DeleteObject",
-            "dim": "enum:plain_op"
-           }
-          ]
-         }
-        },
-        "b": {
-         "kind": "mul",
-         "dim": "count",
-         "a": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_dir_remove_requests",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "DeleteObject",
-            "dim": "enum:plain_op"
-           }
-          ]
-         }
-        }
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
        }
+      },
+      "b": {
+       "kind": "input",
+       "id": "multipart_copy_parts",
+       "dim": "count"
       }
      }
     }
@@ -1651,16 +1507,9 @@
            }
           },
           "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           }
          },
          "b": {
@@ -1687,160 +1536,6 @@
         }
        },
        "b": {
-        "kind": "branch",
-        "dim": "count",
-        "cond": {
-         "op": ">",
-         "a": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "large_objects_per_part",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "large_objects_per_merge_result",
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "const",
-          "value": 0,
-          "dim": "count"
-         }
-        },
-        "then": {
-         "kind": "const",
-         "value": "unavailable",
-         "dim": "count"
-        },
-        "else": {
-         "kind": "mul",
-         "dim": "count",
-         "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "expired_parts_per_month",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "replicas",
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "add",
-            "dim": "count",
-            "a": {
-             "kind": "lookup",
-             "dim": "count",
-             "table_id": "plain_objects_per_part",
-             "keys": [
-              {
-               "kind": "input",
-               "id": "shape",
-               "dim": "enum:shape"
-              },
-              {
-               "kind": "input",
-               "id": "part_type",
-               "dim": "enum:part_type"
-              }
-             ]
-            },
-            "b": {
-             "kind": "coef",
-             "id": "plain_expired_part_extra_files",
-             "dim": "count"
-            }
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_unlink_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "PutObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
-          },
-          "b": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_meta_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_dir_remove_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "PutObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
-          }
-         }
-        }
-       }
-      },
-      "b": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": ">",
-        "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
-        },
-        "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
-        }
-       },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
         "kind": "mul",
         "dim": "count",
         "a": {
@@ -1864,9 +1559,18 @@
           "kind": "mul",
           "dim": "count",
           "a": {
-           "kind": "coef",
-           "id": "plain_empty_part_objects",
-           "dim": "count"
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "plain_objects_per_part",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "coef",
+            "id": "plain_expired_part_extra_files",
+            "dim": "count"
+           }
           },
           "b": {
            "kind": "lookup",
@@ -1885,16 +1589,9 @@
           "kind": "mul",
           "dim": "count",
           "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           },
           "b": {
            "kind": "lookup",
@@ -1908,6 +1605,70 @@
             }
            ]
           }
+         }
+        }
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "coef",
+          "id": "plain_empty_part_objects",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "PutObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "PutObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         }
        }
@@ -1949,16 +1710,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -1975,275 +1729,6 @@
         }
        },
        "b": {
-        "kind": "branch",
-        "dim": "count",
-        "cond": {
-         "op": ">",
-         "a": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "large_objects_per_part",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "large_objects_per_merge_result",
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "const",
-          "value": 0,
-          "dim": "count"
-         }
-        },
-        "then": {
-         "kind": "const",
-         "value": "unavailable",
-         "dim": "count"
-        },
-        "else": {
-         "kind": "mul",
-         "dim": "count",
-         "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "expired_parts_per_month",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "replicas",
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "add",
-            "dim": "count",
-            "a": {
-             "kind": "lookup",
-             "dim": "count",
-             "table_id": "plain_objects_per_part",
-             "keys": [
-              {
-               "kind": "input",
-               "id": "shape",
-               "dim": "enum:shape"
-              },
-              {
-               "kind": "input",
-               "id": "part_type",
-               "dim": "enum:part_type"
-              }
-             ]
-            },
-            "b": {
-             "kind": "coef",
-             "id": "plain_expired_part_extra_files",
-             "dim": "count"
-            }
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_unlink_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "HeadObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
-          },
-          "b": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_meta_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_dir_remove_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "HeadObject",
-              "dim": "enum:plain_op"
-             }
-            ]
-           }
-          }
-         }
-        }
-       }
-      },
-      "b": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": ">",
-        "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
-        },
-        "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
-        }
-       },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
-        "kind": "mul",
-        "dim": "count",
-        "a": {
-         "kind": "mul",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "expired_parts_per_month",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
-         }
-        },
-        "b": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "coef",
-           "id": "plain_empty_part_objects",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_unlink_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "HeadObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
-         },
-         "b": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_dir_remove_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "HeadObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
-         }
-        }
-       }
-      }
-     }
-    },
-    {
-     "row_type": "request",
-     "op_kind": "CopyObject",
-     "outcome_class": "ok",
-     "category": null,
-     "route": null,
-     "scope": "variant",
-     "basis": "predicted",
-     "expr": {
-      "kind": "add",
-      "dim": "count",
-      "a": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": ">",
-        "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
-        },
-        "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
-        }
-       },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
         "kind": "mul",
         "dim": "count",
         "a": {
@@ -2270,21 +1755,163 @@
            "kind": "add",
            "dim": "count",
            "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ]
+            "kind": "input",
+            "id": "plain_objects_per_part",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "coef",
+            "id": "plain_expired_part_extra_files",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "coef",
+          "id": "plain_empty_part_objects",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "CopyObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "sub",
+      "dim": "count",
+      "a": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "plain_objects_per_part",
+            "dim": "count"
            },
            "b": {
             "kind": "coef",
@@ -2309,16 +1936,9 @@
           "kind": "mul",
           "dim": "count",
           "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           },
           "b": {
            "kind": "lookup",
@@ -2334,39 +1954,8 @@
           }
          }
         }
-       }
-      },
-      "b": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": ">",
-        "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
-        },
-        "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
-        }
        },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
+       "b": {
         "kind": "mul",
         "dim": "count",
         "a": {
@@ -2411,16 +2000,9 @@
           "kind": "mul",
           "dim": "count",
           "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           },
           "b": {
            "kind": "lookup",
@@ -2436,6 +2018,29 @@
           }
          }
         }
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
        }
       }
      }
@@ -2452,229 +2057,246 @@
       "kind": "add",
       "dim": "count",
       "a": {
-       "kind": "branch",
+       "kind": "mul",
        "dim": "count",
-       "cond": {
-        "op": ">",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
         "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": 0,
+         "kind": "input",
+         "id": "replicas",
          "dim": "count"
         }
        },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
-        "kind": "mul",
+       "b": {
+        "kind": "add",
         "dim": "count",
         "a": {
          "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "input",
-          "id": "expired_parts_per_month",
-          "dim": "count"
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "plain_objects_per_part",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "coef",
+           "id": "plain_expired_part_extra_files",
+           "dim": "count"
+          }
          },
          "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         },
         "b": {
-         "kind": "add",
+         "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "add",
-           "dim": "count",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "plain_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ]
-           },
-           "b": {
-            "kind": "coef",
-            "id": "plain_expired_part_extra_files",
-            "dim": "count"
-           }
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_unlink_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "DeleteObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          },
          "b": {
-          "kind": "mul",
+          "kind": "lookup",
           "dim": "count",
-          "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_dir_remove_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "DeleteObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         }
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "mul",
        "dim": "count",
-       "cond": {
-        "op": ">",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
         "a": {
-         "kind": "add",
-         "dim": "count",
-         "a": {
-          "kind": "input",
-          "id": "large_objects_per_part",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "input",
-          "id": "large_objects_per_merge_result",
-          "dim": "count"
-         }
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": 0,
+         "kind": "input",
+         "id": "replicas",
          "dim": "count"
         }
        },
-       "then": {
-        "kind": "const",
-        "value": "unavailable",
-        "dim": "count"
-       },
-       "else": {
-        "kind": "mul",
+       "b": {
+        "kind": "add",
         "dim": "count",
         "a": {
          "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "input",
-          "id": "expired_parts_per_month",
+          "kind": "coef",
+          "id": "plain_empty_part_objects",
           "dim": "count"
          },
          "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         },
         "b": {
-         "kind": "add",
+         "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "coef",
-           "id": "plain_empty_part_objects",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_unlink_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "DeleteObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          },
          "b": {
-          "kind": "mul",
+          "kind": "lookup",
           "dim": "count",
-          "a": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_dir_remove_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "DeleteObject",
-             "dim": "enum:plain_op"
-            }
-           ]
-          }
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
          }
         }
        }
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "op_kind": "CreateMultipartUpload",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "expired_parts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "input",
+       "id": "large_objects_per_merge_result",
+       "dim": "count"
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "op_kind": "UploadPartCopy",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "expired_parts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "input",
+       "id": "multipart_copy_parts",
+       "dim": "count"
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "op_kind": "CompleteMultipartUpload",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "expired_parts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "input",
+       "id": "large_objects_per_merge_result",
+       "dim": "count"
       }
      }
     }
@@ -2739,16 +2361,9 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "cached_miss_gets_per_part_read",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
+         "kind": "input",
+         "id": "cached_miss_gets_per_part_read",
+         "dim": "count"
         }
        },
        "else": {
@@ -2842,16 +2457,9 @@
             "dim": "count"
            },
            "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "shape_columns",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
+            "kind": "input",
+            "id": "shape_columns",
+            "dim": "count"
            }
           },
           "b": {
@@ -2937,16 +2545,9 @@
           "dim": "count"
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "shape_columns",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "shape_columns",
+          "dim": "count"
          }
         }
        }
@@ -3031,16 +2632,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -3140,16 +2734,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -3225,21 +2812,9 @@
         }
        },
        "b": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "startup_gets_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         }
-        ]
+        "kind": "input",
+        "id": "startup_gets_per_part",
+        "dim": "count"
        }
       },
       "b": {
@@ -3305,16 +2880,9 @@
            }
           },
           "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "plain_meta_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            }
-           ]
+           "kind": "input",
+           "id": "plain_meta_objects_per_part",
+           "dim": "count"
           }
          },
          "b": {
@@ -3415,16 +2983,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -3524,16 +3085,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -3633,16 +3187,9 @@
           }
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_meta_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_meta_objects_per_part",
+          "dim": "count"
          }
         },
         "b": {
@@ -3705,21 +3252,9 @@
           "dim": "count"
          },
          "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "plain_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "const",
-            "value": "wide",
-            "dim": "enum:part_type"
-           }
-          ]
+          "kind": "input",
+          "id": "plain_objects_per_wide_part",
+          "dim": "count"
          }
         },
         "b": {

@@ -40,7 +40,8 @@
         "s3|mutation|sender|GetObject": 11.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         200000
@@ -116,7 +117,8 @@
         "s3|mutation": 1.0008047623536769
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "part_rows": [
         50000,
         200000
@@ -198,7 +200,8 @@
         "s3|mutation|PutObject": 11.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "source_parts": [
         1,
         4
@@ -262,7 +265,8 @@
         "mutation|receiver|HeadObject": 1.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "part_rows": [
         50000,
         200000
@@ -318,7 +322,8 @@
         "s3|mutation": 0.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "inserts": [
         24,
         24
@@ -429,7 +434,8 @@
         "s3|PutObject": 12.6
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "missed_parts_per_restart": [
         0,
         5
@@ -485,7 +491,8 @@
         "s3|PutObject": 1
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "active_parts": [
         3,
         3
@@ -538,7 +545,8 @@
         "s3|rejected_before_store|PutObject|attempts": 1
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "nth": [
         3,
         7
@@ -603,7 +611,8 @@
         "cas": 0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "upload_parts": [
         2,
         4

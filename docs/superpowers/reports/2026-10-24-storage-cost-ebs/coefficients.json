@@ -17,7 +17,8 @@
         "reads|write": -4.8e-05
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         300000
@@ -281,7 +282,8 @@
         "reads|read|>1MiB": 0.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         300000
@@ -455,7 +457,8 @@
         "recovery": 0.0
       }
     },
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         30000,
         400000
@@ -641,7 +644,8 @@
     "kind": "scalar",
     "dim": "count",
     "value": 1258.1,
-    "validity": {
+    "basis": "fitted",
+    "verified_range": {
       "insert_rows": [
         1000,
         300000
