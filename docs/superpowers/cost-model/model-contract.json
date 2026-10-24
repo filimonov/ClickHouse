@@ -1,10 +1,10 @@
 {
  "schema": "contract/1",
- "version": "76ef4bc67aacfb6c",
+ "version": "71537558b0fe1af1",
  "manifest": {
-  "code_sha256": "47f9bfc36da0dc16f131bcab2c0f0895eb62878c31dde85db2753dc897474b33",
+  "code_sha256": "957f24069b62656edbf89d79cbff6e33e565f0061a04eb6b3afc11eccbfabafe",
   "code_files": {
-   "billing.js": "190a45779f3bed307410d6ffc0998593bff5c193d3090cd54caf15757d4be0fc",
+   "billing.js": "ba7eacb22d2b837541e99e148fd4935f2e76e4aa42eb5fd1788c107cc4971bf8",
    "contract.js": "ab36253ad853095547580b9c4f0918b535630b1158d58a3822102295f39eff82",
    "model.js": "f97820f06af3384888e16a24dafcc9572344feaedd32694c723d672b4557b890",
    "pipeline.js": "c97b93a43c2e3b2d6e708a614d1023478570a31c68d1924e12eeab3ee413d73e",
@@ -14,11 +14,11 @@
    "viewmodel.js": "a1e87da7458675aceb6372a386cd642927f61ce300fc4694c79b996700e3b2ce"
   },
   "code_missing": [],
-  "contract_version": "76ef4bc67aacfb6c",
+  "contract_version": "71537558b0fe1af1",
   "registry_version": "0.3.0",
-  "registry_sha256": "88935a26eac4a6b3c2506f9569fb04e08954dafd08071f59e489338574b08797",
+  "registry_sha256": "0b587da98c213754eeeb22deb5f59b5ca10c504f09ce6a88935d45457e7686d0",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "9613062960ed967ec15fb00342f67b935241f045f9dee0925699e01d3b49dce0",
+  "coverage_sha256": "026874d2cf4ec8abd886119d441f14728583948d09c95701cc80f6378fc8ee24",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -79,9 +79,9 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "fc36280e93dbf441a20addbd1b6a9e2d00747ca15c357bb8c4fed69572159d30"
+  "breakeven_sha256": "c26cc918cb54a79782bab72f25d0c5f509c3058cd7db403676170e3962335349"
  },
- "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 61 coefficient(s): 43 measured, 18 pinned to source. 58 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 61 coefficient(s): 43 measured, 18 pinned to source. 58 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 14 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -201,6 +201,36 @@
     "version": "0.1.0"
    },
    "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "topology",
+   "block": "simple",
+   "label": "Replica placement: same_az (replicas of a shard in one availability zone; interserver traffic not charged) or cross_az (each fetched part crosses zones; charged per GB in each direction)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "same_az",
+    "cross_az"
+   ],
+   "table": null,
+   "default": "same_az",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT hostName() FROM clusterAllReplicas('<cluster>', system.one)",
+    "mapping": {
+     "topology": "cross_az when the replica hosts of one shard run in different availability zones (see the cloud console or instance metadata)"
+    }
+   },
    "status": "ok"
   },
   {
@@ -8015,39 +8045,6 @@
    "status": "ok"
   },
   {
-   "id": "replacement_requests_per_part",
-   "block": "topology_recovery",
-   "label": "Requests per part when a new replica joins a populated table (cut: replacement.default is a P2 case)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "variant_id",
-     "replication_op"
-    ],
-    "dim": "count"
-   },
-   "default": 0,
-   "rule": null,
-   "coef": "replacement_requests_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
-    "mapping": {
-     "replacement_requests_per_part": "not measured: the replacement card is cut"
-    }
-   },
-   "status": "unsupported"
-  },
-  {
    "id": "retry_outcome_mix",
    "block": "reliability",
    "label": "Extra request attempts per failed attempt, and how many of them reach the store, per fault class",
@@ -8112,60 +8109,6 @@
      "failed_upload_residue": "S3CreateMultipartUpload - S3CompleteMultipartUpload - S3AbortMultipartUpload uploads stay open"
     }
    },
-   "status": "ok"
-  },
-  {
-   "id": "fetch_retry_rate",
-   "block": "reliability",
-   "label": "Fetch attempts per fetched part when the interserver connection drops (cut: fault-fetch is a P2 case)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "variant_id"
-    ],
-    "dim": "1"
-   },
-   "default": 0,
-   "rule": null,
-   "coef": "fetch_retry_rate",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
-    "mapping": {
-     "fetch_retry_rate": "not measured: the fault-fetch case is cut"
-    }
-   },
-   "status": "unsupported"
-  },
-  {
-   "id": "replacement_rate",
-   "block": "topology_recovery",
-   "label": "Replica replacements per month (a new replica fetches every part)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "user input; non-zero needs replacement_requests_per_part, which is unsupported (cut)",
-    "version": "0.3.0"
-   },
-   "hint": null,
    "status": "ok"
   },
   {
@@ -15777,19 +15720,19 @@
     "local_volumes": "not_applicable"
    },
    "mutations": {
-    "objects_per_part_by_shape": "not_supported",
-    "thresholds": "not_supported",
-    "multipart_graph": "not_supported",
-    "lifecycle": "not_supported",
-    "mutation_deletes": "not_supported",
-    "reads_cache": "not_supported",
-    "startup_recovery": "not_supported",
-    "replication": "not_supported",
-    "faults": "not_supported",
-    "cas_branches": "not_supported",
-    "cas_gc": "not_supported",
-    "cas_lease": "not_supported",
-    "local_volumes": "not_supported"
+    "objects_per_part_by_shape": "not_applicable",
+    "thresholds": "not_applicable",
+    "multipart_graph": "not_applicable",
+    "lifecycle": "not_applicable",
+    "mutation_deletes": "supported",
+    "reads_cache": "not_applicable",
+    "startup_recovery": "not_applicable",
+    "replication": "not_applicable",
+    "faults": "not_applicable",
+    "cas_branches": "not_applicable",
+    "cas_gc": "not_applicable",
+    "cas_lease": "not_applicable",
+    "local_volumes": "not_applicable"
    },
    "deletes": {
     "objects_per_part_by_shape": "not_applicable",
@@ -16281,6 +16224,100 @@
         "kind": "input",
         "id": "ebs_sequential_ios_per_mib",
         "dim": "req/MiB"
+       }
+      }
+     },
+     {
+      "row_type": "transfer",
+      "op_kind": "interserver",
+      "outcome_class": "all",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "GiB",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "topology",
+         "dim": "enum:topology"
+        },
+        "b": {
+         "kind": "const",
+         "value": "cross_az",
+         "dim": "enum:topology"
+        }
+       },
+       "then": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "mul",
+         "dim": "GiB",
+         "a": {
+          "kind": "div",
+          "dim": "GiB/s",
+          "a": {
+           "kind": "input",
+           "id": "ingest_rate",
+           "dim": "GiB/day"
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          },
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "acquire_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "ebs",
+            "dim": "enum:variant_id"
+           },
+           {
+            "kind": "const",
+            "value": "insert",
+            "dim": "enum:result_type"
+           }
+          ]
+         }
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "GiB"
        }
       }
      }
@@ -17536,6 +17573,100 @@
           "dim": "enum:replication_op"
          }
         ]
+       }
+      }
+     },
+     {
+      "row_type": "transfer",
+      "op_kind": "interserver",
+      "outcome_class": "all",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "GiB",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "topology",
+         "dim": "enum:topology"
+        },
+        "b": {
+         "kind": "const",
+         "value": "cross_az",
+         "dim": "enum:topology"
+        }
+       },
+       "then": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "mul",
+         "dim": "GiB",
+         "a": {
+          "kind": "div",
+          "dim": "GiB/s",
+          "a": {
+           "kind": "input",
+           "id": "ingest_rate",
+           "dim": "GiB/day"
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          },
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "acquire_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "s3",
+            "dim": "enum:variant_id"
+           },
+           {
+            "kind": "const",
+            "value": "insert",
+            "dim": "enum:result_type"
+           }
+          ]
+         }
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "GiB"
        }
       }
      }
@@ -19875,6 +20006,100 @@
         }
        }
       }
+     },
+     {
+      "row_type": "transfer",
+      "op_kind": "interserver",
+      "outcome_class": "all",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "GiB",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "topology",
+         "dim": "enum:topology"
+        },
+        "b": {
+         "kind": "const",
+         "value": "cross_az",
+         "dim": "enum:topology"
+        }
+       },
+       "then": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "mul",
+         "dim": "GiB",
+         "a": {
+          "kind": "div",
+          "dim": "GiB/s",
+          "a": {
+           "kind": "input",
+           "id": "ingest_rate",
+           "dim": "GiB/day"
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          },
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "acquire_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "s3plain",
+            "dim": "enum:variant_id"
+           },
+           {
+            "kind": "const",
+            "value": "insert",
+            "dim": "enum:result_type"
+           }
+          ]
+         }
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "GiB"
+       }
+      }
      }
     ],
     "allocation": null,
@@ -20771,7 +20996,51 @@
     "states": [
      {
       "id": "not_supported",
-      "cond": true,
+      "cond": {
+       "kind": "branch",
+       "dim": "count",
+       "cond": {
+        "op": "!=",
+        "a": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "mutations_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "mutated_compact_parts_per_month",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "input",
+          "id": "mutated_wide_parts_per_month",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       }
+      },
       "reason": "s3_plain_rewritable cannot perform mutations (ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is possible only with enable_block_number_column and enable_block_offset_column): a plain metadata storage reports no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805); checkMutationIsPossible refuses every mutation on such a disk (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240); a lightweight DELETE runs as ALTER UPDATE _row_exists, the same check (tmp/src-26.8/src/Interpreters/InterpreterDeleteQuery.cpp:200); that is the default lightweight_delete_mode (tmp/src-26.8/src/Core/Settings.cpp:5070); a lightweight UPDATE (patch parts) needs enable_block_number_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12630); and enable_block_offset_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12635); which is off by default (tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2013)"
      }
     ]
@@ -23369,6 +23638,100 @@
         "dim": "s"
        },
        "dim": "count"
+      }
+     },
+     {
+      "row_type": "transfer",
+      "op_kind": "interserver",
+      "outcome_class": "all",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "GiB",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "topology",
+         "dim": "enum:topology"
+        },
+        "b": {
+         "kind": "const",
+         "value": "cross_az",
+         "dim": "enum:topology"
+        }
+       },
+       "then": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "mul",
+         "dim": "GiB",
+         "a": {
+          "kind": "div",
+          "dim": "GiB/s",
+          "a": {
+           "kind": "input",
+           "id": "ingest_rate",
+           "dim": "GiB/day"
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          },
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "acquire_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "cas",
+            "dim": "enum:variant_id"
+           },
+           {
+            "kind": "const",
+            "value": "insert",
+            "dim": "enum:result_type"
+           }
+          ]
+         }
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "GiB"
+       }
       }
      }
     ],
@@ -28395,7 +28758,51 @@
   "s3plain": [
    {
     "id": "not_supported",
-    "cond": true,
+    "cond": {
+     "kind": "branch",
+     "dim": "count",
+     "cond": {
+      "op": "!=",
+      "a": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "mutations_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "mutated_compact_parts_per_month",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "mutated_wide_parts_per_month",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "const",
+       "value": 0,
+       "dim": "count"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "count"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "count"
+     }
+    },
     "reason": "s3_plain_rewritable cannot perform mutations (ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is possible only with enable_block_number_column and enable_block_offset_column): a plain metadata storage reports no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805); checkMutationIsPossible refuses every mutation on such a disk (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240); a lightweight DELETE runs as ALTER UPDATE _row_exists, the same check (tmp/src-26.8/src/Interpreters/InterpreterDeleteQuery.cpp:200); that is the default lightweight_delete_mode (tmp/src-26.8/src/Core/Settings.cpp:5070); a lightweight UPDATE (patch parts) needs enable_block_number_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12630); and enable_block_offset_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12635); which is off by default (tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2013)",
     "operation": "mutations"
    }

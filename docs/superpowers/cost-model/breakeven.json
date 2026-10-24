@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "76ef4bc67aacfb6c",
+ "contract_version": "71537558b0fe1af1",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -31,8 +31,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6285.699433247024,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -56,8 +56,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6458.295912160468,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -81,8 +81,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6803.488869987357,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -106,8 +106,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 7485.041227758199,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -131,8 +131,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 8805.779501182818,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -156,8 +156,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 11447.256048032057,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -176,7 +176,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -189,6 +189,15 @@
        "x_between": [
         15000,
         30000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "s3plain",
+       "x_between": [
+        30000,
+        60000
        ],
        "extrapolated": false
       }
@@ -219,8 +228,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6285.699433247024,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -244,8 +253,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6458.295912160468,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -269,8 +278,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6803.488869987357,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -294,8 +303,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 7485.041227758199,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -319,8 +328,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 8805.779501182818,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -344,8 +353,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 11447.256048032057,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -364,7 +373,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -377,6 +386,15 @@
        "x_between": [
         500,
         1000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "s3plain",
+       "x_between": [
+        1000,
+        2000
        ],
        "extrapolated": false
       }
@@ -405,8 +423,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3350.235634993679,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -430,8 +448,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6803.488869987357,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -455,8 +473,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 13701.161782091778,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -480,8 +498,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 20577.651473137666,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -500,7 +518,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -538,8 +556,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3866.0239828233757,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -563,8 +581,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3886.7278419799136,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -588,8 +606,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3928.135560292989,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -613,8 +631,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4010.95099691914,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -638,8 +656,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4176.5818701714425,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -663,8 +681,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4507.843616676047,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -683,7 +701,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -726,8 +744,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3866.0239828233757,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -751,8 +769,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3886.7278419799136,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -776,8 +794,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3928.135560292989,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -801,8 +819,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4010.95099691914,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -826,8 +844,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4176.5818701714425,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -851,8 +869,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4507.843616676047,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -871,7 +889,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -912,8 +930,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1916.2859619646763,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -937,8 +955,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3928.135560292989,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -962,8 +980,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 7951.8347569496145,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -987,8 +1005,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 11975.533953606238,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -1007,7 +1025,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1045,8 +1063,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 424.3556647246446,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1070,8 +1088,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 542.1212945028927,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1095,8 +1113,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 777.6525540593889,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1120,8 +1138,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1248.7150731723812,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1145,8 +1163,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2160.116195030889,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1170,8 +1188,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3962.4423551153814,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1190,7 +1208,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1223,8 +1241,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 424.3556647246446,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1248,8 +1266,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 542.1212945028927,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1273,8 +1291,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 777.6525540593889,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1298,8 +1316,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1248.7150731723812,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1323,8 +1341,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2160.116195030889,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1348,8 +1366,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3962.4423551153814,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1368,7 +1386,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1399,8 +1417,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 386.2508370296945,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1424,8 +1442,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 777.6525540593889,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1449,8 +1467,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1560.455988118778,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -1474,8 +1492,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2333.0164849025587,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -1494,7 +1512,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1532,8 +1550,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 595.3708070210341,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1557,8 +1575,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 889.7779381614066,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1582,8 +1600,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1478.5909602438257,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1607,8 +1625,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2605.0182446069894,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1632,8 +1650,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4857.872813333317,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1657,8 +1675,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 9363.581950785972,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1678,7 +1696,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1711,8 +1729,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 595.3708070210341,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1736,8 +1754,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 889.7779381614066,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1761,8 +1779,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1478.5909602438257,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1786,8 +1804,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2605.0182446069894,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1811,8 +1829,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4857.872813333317,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1836,8 +1854,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 9363.581950785972,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1857,7 +1875,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -1888,8 +1906,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1478.5909602438257,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1913,8 +1931,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2916.283680487651,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -1938,8 +1956,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 5791.6691209753035,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -1963,8 +1981,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 8667.054561462952,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -1983,7 +2001,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
@@ -2021,8 +2039,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2445.64305937624,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2046,8 +2064,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2790.74537251801,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2071,8 +2089,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3472.1322052116752,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2096,8 +2114,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4792.52366418888,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2121,8 +2139,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 7433.306582143289,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2146,8 +2164,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 12714.872418052108,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2166,13 +2184,23 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "s3plain",
+       "x_between": [
+        5000,
+        10000
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     },
     "ingest_rate": {
@@ -2199,8 +2227,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2445.64305937624,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2224,8 +2252,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2790.74537251801,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2249,8 +2277,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3472.1322052116752,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2274,8 +2302,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 4792.52366418888,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2299,8 +2327,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 7433.306582143289,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2324,8 +2352,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 12714.872418052108,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2344,13 +2372,23 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "s3plain",
+       "x_between": [
+        125,
+        250
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     },
     "replicas": {
@@ -2375,8 +2413,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 1140.6942662671827,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2400,8 +2438,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 2310.8221325343657,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2425,8 +2463,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 3472.1322052116752,
+         "state": "ok",
          "extrapolated": false
         },
         "cas": {
@@ -2450,8 +2488,8 @@
          "extrapolated": false
         },
         "s3plain": {
-         "value": null,
-         "state": "not_supported",
+         "value": 6922.498010423352,
+         "state": "ok",
          "extrapolated": true
         },
         "cas": {
@@ -2470,7 +2508,7 @@
        "ok"
       ],
       "s3plain": [
-       "not_supported"
+       "ok"
       ],
       "cas": [
        "unavailable"
