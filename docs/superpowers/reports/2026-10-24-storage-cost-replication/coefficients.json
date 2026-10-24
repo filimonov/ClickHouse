@@ -434,7 +434,7 @@
     },
     "validity": {
       "missed_parts_per_restart": [
-        5,
+        0,
         5
       ]
     },

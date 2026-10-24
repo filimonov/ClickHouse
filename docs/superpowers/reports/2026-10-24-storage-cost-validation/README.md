@@ -249,9 +249,17 @@ tolerance; sender rows subtract the originator's own reads of the matching `repl
 |---|---|---|
 | `s3` `recovery` | the `not_supported` state for missed parts is gone; `GetObject` and `PutObject` rows add restarts × replicas × `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3][op]` for replicas > 1 | `766a9e5b7eb` |
 | `s3` `recovery` startup rows | kept: at 3 active narrow parts they give `GetObject` 50, `PutObject` 2, `DeleteObject` 2; the replicated restart measured 48, 1, 1 (`startup_requests_after_restart[s3]`, tolerance 2) | `766a9e5b7eb` |
-| `s3` `inserts` | the follower's 9 load reads per fetched part (`acquire_requests[s3][insert][receiver][GetObject]`) are priced; the sender rows were | `5f51532da31` |
-| `cas` `recovery` (new) | startup `startup_requests_after_restart[cas][op]` per restart (validity: 3 active parts) and catch-up rows as on `s3`; applicability `startup_recovery: supported` | `766a9e5b7eb` |
 | registry `catchup_requests_per_missed_part` | table index `[variant_id, replication_op]`, as the coefficient | `766a9e5b7eb` |
+| `catchup_requests_per_missed_part` validity | `missed_parts_per_restart` [0, 5]: the rows are exactly 0 at 0 missed parts, and both restart cases fetched 5 | review fix 3 (§[Review](#review)) |
+
+Not wired, because the page could not check their validity against the presets (`presets.js` `coverageProblems`
+checks every reached coefficient):
+
+- **`s3` `inserts` follower load reads** (9 `GetObject` per fetched part, `acquire_requests[s3][insert][receiver]`):
+  the coefficient's validity is `part_rows` 50 000–200 000, which the presets' small inserts leave unchecked. Wired
+  at `5f51532da31`, removed again; the follower's load reads stay unpriced (§[Open items](#open-items)).
+- **`cas` `recovery`**: `startup_requests_after_restart[cas]` was measured at 3 active parts (`active_parts`, which
+  the presets do not resolve). Wired at `766a9e5b7eb`, removed again; the cell stays `unsupported_cut`.
 
 ## Hold-out ledger {#ledger}
 
@@ -314,7 +322,7 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | phase-0 README wording | `amplification-run` is 30 h of P2 |
 | D14 cuts | `gc-under-load.default`: case and edges `cut`; `amplification-run.2h` was already cut |
 | leftovers | removed: worktrees `tmp/s3b_wt`, `tmp/s3r/wt`; the untracked `raw/*/cost-20261024T07*` and `raw/merge-forced/` slices of the s3 report. `tmp/rig-repl` did not exist; `tmp/s3p` holds no worktree |
-| s3 `inserts` follower reads (reviewer question) | priced (§[Wiring](#wiring)) |
+| s3 `inserts` follower reads (reviewer question) | not priced: validity unchecked by the presets (§[Wiring](#wiring)); open item |
 
 ## Open items {#open-items}
 
@@ -325,6 +333,8 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | CAS uploads per part for other data | Tier 2: a mark-collapse rule from compressed block sizes, or a measured count per data profile |
 | `acquire_bytes[cas]` as bytes per part | Tier 2: refit as bytes per part (manifest size per file) |
 | snapshot reads inside `S3Card` windows on CAS | Tier 2: snapshot after the window end; today no cell prices them |
+| `s3` follower load reads on inserts | Tier 2: a small-part replication-fetch case to extend `acquire_requests` validity to the presets' part sizes, then the `inserts` row of `5f51532da31` |
+| `cas` `recovery` | Tier 2: a CAS restart case at several active part counts (startup requests per part) |
 
 ## Review {#review}
 
@@ -335,7 +345,7 @@ One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_val
 |---|---|---|---|
 | 1 | MAJOR | `cas_objects_per_part` priced its upper bound as an exact count (wide Wide 80 against 41.33 measured) | closed: the value is the measured count of the shape generators; the bound is stated as the data-dependent ceiling (§[CAS shapes](#cas-shapes)) |
 | 2 | MAJOR | `types-holdout-2` checks a band, not the coefficient | closed: its edges are `validation`; point hold-outs `narrow-wide-2`, `wide-wide-2`, `types-fit-wide-2` predicted at `168f71aea78`, exact in run `cost-20261024T162519Z` |
-| 3 | MAJOR | catch-up validity `inserts_while_down` is no registry input, so the page cannot flag extrapolation | closed: validity is `missed_parts_per_restart` [5, 5] (both restart cases fetched 5 parts) |
+| 3 | MAJOR | catch-up validity `inserts_while_down` is no registry input, so the page cannot flag extrapolation | closed: validity is `missed_parts_per_restart` [0, 5] (exact at 0; both restart cases fetched 5 parts). The CAS recovery cell and the s3 follower load row are withdrawn: their validity parameters cannot be checked against the presets |
 | 4 | MINOR | placement prose listed `.mrk*`/`.cmrk*` and omitted the inline spill | closed: exact suffixes (`ContentAddressedTransaction.cpp:77`) and the spill (`:998`) |
 | 5 | MINOR | "same final sizes" in all nine merge records | closed: `s3` repeat 2 ended with 27, 23, 6, 6, 1, 1 |
 | 6 | MINOR | `s3plain` byte ratio 1.0008 | closed: 1.0005 |

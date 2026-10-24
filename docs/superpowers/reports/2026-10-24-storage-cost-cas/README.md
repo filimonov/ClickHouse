@@ -288,7 +288,7 @@ Pinned (registry, source-derived, reconciled exactly by the named cases): `cas_k
 | `gc` | `cas_gc`, `lifecycle` (retired parts) | supported |
 | `lease` | `cas_lease` | supported |
 | `reads` | `reads_cache` | unsupported_cut: `cold-select` on `cas` not measured |
-| `recovery` | `startup_recovery` | supported: startup and catch-up requests per restart from the replication report's tables (wired in the validation report) |
+| `recovery` | `startup_recovery` | unsupported_cut: the replication report measured CAS startup at 3 active parts only (validation report §Wiring) |
 
 The `lease` cell holds the idle-time traffic of a server: the mount lease renewal and, per table, the MergeTree
 cleanup thread's listing of the table's files (a catalog GET and a LIST per run, every `cas_table_cleanup_period_s`:
@@ -336,7 +336,7 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
   `cas_branch_population` hold-out `types-holdout` on `cas` is therefore replaced by the CAS-owned
   `cas-branches.mix-holdout-2`. Hence `reads` is `unsupported_cut`. The validation report
   (`docs/superpowers/reports/2026-10-24-storage-cost-validation`) ran the shape cards on `cas` and `cas_cached` after
-  `S3Card` opened to every policy, and wired `recovery` from the replication report's tables.
+  `S3Card` opened to every policy; `recovery` stays `unsupported_cut`.
 - **Multipart blobs.** A blob above the first upload buffer (32 MiB) is a multipart upload; the `inserts` cell prices
   one `PutObject` per blob. `staging-peak` blobs were 32 012 225 B, just below the buffer.
 - **Snapshot regime.** Past 256 ref log records since a table's last snapshot, a fold reads each record about twice

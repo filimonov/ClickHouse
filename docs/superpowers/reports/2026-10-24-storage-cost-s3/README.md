@@ -324,7 +324,7 @@ Applicability lists, per cell, exactly the families whose rules or coefficients 
 | Cell | Families | Rows |
 |---|---|---|
 | `storage` | `lifecycle` | active `data_bytes` × replicas; outdated: merged-away bytes, ingest × (`write_amplification_rule` − 1), held for `old_parts_lifetime` |
-| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph`, `replication` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject`: the sender's reads and the receiver's 9 load reads per part |
+| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject` (the sender's reads) |
 | `merges` | `lifecycle`, `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | result writes with multipart rows, source `GetObject` (cache branch), one `DeleteObjects` per removed source |
 | `mutations` | `mutation_deletes`, `multipart_graph` | writes per Compact and Wide part with multipart rows, `mutation_<n>.txt` writes and removals (plain `MergeTree` only), `GetObject` per part, `DeleteObjects` |
 | `deletes` | `mutation_deletes` | one empty part per expiry operation, one `DeleteObjects` per expired part and per empty part |
@@ -332,9 +332,10 @@ Applicability lists, per cell, exactly the families whose rules or coefficients 
 | `recovery` | `startup_recovery` | access checks, part and history loads per restart; catch-up `GetObject` and `PutObject` per missed part when replicas > 1 |
 | `local_disk` | `objects_per_part_by_shape` | metadata of active and outdated parts plus the cache size |
 
-The follower rows of `inserts` are the sender's reads (`objects_per_part`: one `GetObject` per object, as
-`acquire_requests[s3][insert][sender]` measures) and the receiver's load reads
-(`acquire_requests[s3][insert][receiver][GetObject]` = 9 per part, narrow and Wide). Catch-up after a restart reads
+The follower row of `inserts` is the sender's reads (`objects_per_part`: one `GetObject` per object, as
+`acquire_requests[s3][insert][sender]` measures). The receiver's 9 load reads per part
+(`acquire_requests[s3][insert][receiver][GetObject]`) are not priced: that coefficient's validity (50 000–200 000
+rows per part) does not cover the presets (validation report §Wiring). Catch-up after a restart reads
 the replication report's table: `GetObject` and `PutObject` = restarts × replicas × `missed_parts_per_restart` ×
 `catchup_requests_per_missed_part[s3][op]`, for replicas > 1. The startup rows stay: at 3 active narrow parts they
 give `GetObject` 50, `PutObject` 2, `DeleteObject` 2, and the replicated restart measured 48, 1, 1

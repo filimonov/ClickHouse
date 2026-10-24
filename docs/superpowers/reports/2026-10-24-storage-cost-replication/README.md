@@ -329,7 +329,7 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 | `local_exec_requests` | variant_id, result_type, replication_op | abs 1.0, rel 0 | {"source_parts": [1, 4]} | the follower's requests per merge or mutation result it executed itself; merge rows are for 4 Compact sources of 50 000 rows (the per-source rule is in the README) |
 | `zero_copy_requests` | result_type, replication_role, replication_op | abs 0, rel 0 | {"part_rows": [50000, 200000]} | as acquire_requests, with allow_remote_fs_zero_copy_replication = 1 |
 | `fetch_fraction` | variant_id, result_type | abs 0.05, rel 0.0 | {"inserts": [24, 24], "prefer_fetch_merged_part_time_threshold": [3600, 3600], "prefer_fetch_merged_part_size_threshold": [10737418240, 10737418240]} | follower fetches / follower acquisitions per result type (cards/replication.py follower_split), mean of K=3 |
-| `catchup_requests_per_missed_part` | variant_id, replication_op | abs 0, rel 0.25 | {"missed_parts_per_restart": [5, 5]} (both cases fetched 5 parts) | requests of both replicas after the follower's first catch-up fetch / parts it fetched, from the raw ledger with maintenance excluded; K=1; an absent key is 0 |
+| `catchup_requests_per_missed_part` | variant_id, replication_op | abs 0, rel 0.25 | {"missed_parts_per_restart": [0, 5]} (exact at 0; both cases fetched 5 parts) | requests of both replicas after the follower's first catch-up fetch / parts it fetched, from the raw ledger with maintenance excluded; K=1; an absent key is 0 |
 | `startup_requests_after_restart` | variant_id, replication_op | abs 2, rel 0 | {"active_parts": [3, 3]} | the follower's requests from its start to its first catch-up fetch, maintenance excluded; K=1; an absent key is 0 |
 | `retry_outcome_mix` | variant_id, fault_class, replication_op, attempt_kind | abs 0, rel 0 | {"nth": [3, 7]} | per failed attempt: attempts (attempt_kind attempts) and attempts the store saw (store_reached: upstream outcome other than not_sent) of the fault case minus the fault-free insert (faults.none); an absent key is 0 |
 | `failed_upload_residue` | variant_id | abs 0, rel 0 | {"upload_parts": [2, 3]} | incomplete multipart bytes in the replay after the window, before any rig abort |
@@ -394,12 +394,11 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 - **Fault outcomes are checked in the fit, not the card.** The cards assert that each fault fired and its retry
   chain; the billable split (`store_reached`) is derived from the records' ledger counts when the coefficient is
   fitted. A card assertion of it needs a rerun and is parked (§[Review](#review)).
-- **s3 and CAS `recovery` cells read the catch-up table.** The s3 cell prices catch-up `GetObject` and `PutObject`
-  as `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
-  `catchup_requests_per_missed_part[variant_id][replication_op]` for replicas > 1, and the s3 `inserts` cell adds the
-  receiver's load reads (`acquire_requests[s3][insert][receiver][GetObject]`); the CAS `recovery` cell also prices
-  `startup_requests_after_restart[cas]` per restart (validity: 3 active parts). Wiring:
-  `docs/superpowers/reports/2026-10-24-storage-cost-validation` §Wiring.
+- **The s3 `recovery` cell reads the catch-up table.** It prices catch-up `GetObject` and `PutObject` as
+  `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
+  `catchup_requests_per_missed_part[variant_id][replication_op]` for replicas > 1. The receiver's load reads in
+  `inserts` and a CAS `recovery` cell are not wired: their validity parameters (`part_rows`, `active_parts`) cannot
+  be checked against the presets (`docs/superpowers/reports/2026-10-24-storage-cost-validation` §Wiring).
 - **Records come from the card before `bac037b336d`.** Every fault record was measured with the card that asserted
   the upper residue bound; the k2/k3 CAS failures are that assertion. The validation report reran
   `faults.multipart-abort` on CAS and the fresh hold-out `faults.multipart-abort-part3c` with the current card.
