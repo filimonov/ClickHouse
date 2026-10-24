@@ -19,7 +19,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | 1. Ledger | done | this file |
 | 2. Spec review rounds (Codex) until no MAJOR | done | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (applied, rev 4.1); r5: 0 MAJOR, 2 MINOR, READY (applied, rev 4.2). Findings per round 25 → 18 → 15 → 6 → 2 |
 | 3. Implementation plan (`writing-plans`) | done | three plans: `docs/superpowers/plans/2026-10-24-storage-cost-{phase0-rig,research,calculator}.md`; Codex plan review r1: 3 CRITICAL, ~30 MAJOR, 2 MINOR (`tmp/codex_plan_r1_findings.md`) → plans rewritten (frozen schemas in Plan 1 Task 0, experiment manifests, coverage evidence edges, evaluator+billing+drill pulled into phase 0, classic-script distribution, proxy framing, Keeper config, window semantics); r2: 4 CRITICAL, ~24 MAJOR (`tmp/codex_plan_r2_findings.md`) → plans revision 3 (Expect negotiation, traced writes, process generations, bounded replay, table coefficients + lookup, EBS formulas owner, CardContext, cleanup order, manual provisioning path, lock rules, closure in the Node suite). Stop rule: two rounds done; remaining issues are for per-task reviewers |
-| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Task 14 done by the implementer 03:40: live gate exit 0, five PASS with exact predictions (s3 insert 11/11 PUT; multipart Create 1/UploadPart 3/Complete 4/Abort 4; CAS cohort 40/40 reclaimed in 12.9 s; 0 `Expect` rows; `write` syscall); estimate P1 14.5 h, P1+P2 17.8 h → no cuts; in review (opus) |
+| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Tasks 0–14 complete (yardstick 330, tools 38, Node 57 tests); phase-0 gate passed twice (runs 013942Z and 015941Z); Task 15 (Codex phase-0 review + dispositions) in progress 04:05 |
 | 5. Umbrella review of the branch | pending | |
 | 6. Look & feel in a browser at several resolutions | pending | |
 | 7. Fix and repeat 5–7 | pending | |
@@ -99,3 +99,30 @@ cell bills the interserver bytes); predictions committed in `3157c681db5` before
   `cd` into their replica dir); `cost probe` ignored failed record assertions; observer aborts were not replayed;
   closure_check could not read an array `formulas.json`.
 | 2026-10-24 03:57 | Step 4: Task 14 fix round 1 just dispatched (03:56); implementer editing the phase-0 README; no live run yet (last runs 013942Z/014123Z); no codex/RustFS/own server processes | none |
+| A7 | 2026-10-24 | The downloaded `clickhouse` 26.8 is a self-extracting binary: on first start it decompressed itself in place (5.4 GB, mtime 01:24:40), so the executed binary hash `b2cd3084…` differs from the download hash `2a61ec2a…` recorded at download time. Records will carry both. Not tampering. | ruled (Task 15 R15) |
+| A8 | 2026-10-24 | CAS request origin cannot be derived from key families: GC HEADs/DELETEs the same blob keys foreground publishes (`CasGc.cpp:580`). Classification by family remains an inventory aid; request origin uses GC-round windows from `system.cas_gc_log`; with `gc: measure` CAS cards report integrated totals and are stochastic. | ruled (Task 15 R7) |
+| 2026-10-24 04:26 | Step 4: Task 15 implementer active (ledger/proxy/runner/cli tests and schema examples edited in the last 15 min; R1–R9 in progress); no live run yet; no codex/RustFS/own server processes | none |
+
+### Phase-0 review and gate re-run {#phase0-review}
+
+Task 15 (Codex phase-0 review, verdict REVISE: 18 MAJOR, 5 MINOR) is closed: all MAJORs and 4 MINORs fixed
+test-first (`5be403b1793` calculator, `8c167405454` yardstick); dispositions per finding in
+`docs/superpowers/cost-model/measurement-contract.md` §Review. Gate re-run on the committed code: `cost probe`
+exit 0, five PASS, run `cost-20261024T024945Z`, `rig_commit` `8c1674054543`. Every record replays exactly from its
+raw ledger slice (`closure_check.py --mode dev` ok).
+
+| Probe | Verdict | Prediction vs ledger after the review fixes |
+|---|---|---|
+| `probe_s3_insert` | PASS | r1 `PutObject` 11 = 11; billed with 0.8 `active` byte-hours |
+| `probe_replicated_fetch` | PASS | r1 Put 11, Get 11; r2 Put 11, Get 9 in 8..11; relay r1 32 064 B out, 292 B in, both billed; two cells `inserts`/`recovery` billed once and allocated |
+| `probe_multipart_fault` | PASS | Create 1, UploadPart 3 (2 ok + 1 accepted-dropped), Complete 4, Abort 4 (not sent), exact; residue 40 939 368 B; incomplete 3 794..4 849 byte-hours |
+| `probe_cas_gc_cohort` | PASS | causal origin: r1 foreground Put 196 in 40..2000 (maintenance 40), Head 21 in 20..2000 (maintenance 40); 40/40 reclaimed in 13.6 s; garbage 1 922 byte-hours, metadata 77 byte-hours now billed |
+| `probe_local_volume` | PASS | `write` only, 3 800 calls inside the window (3 setup writes now excluded); 1 944 IOPS, 121.4 MiB/s; `single` 6 GiB gp3, $0.48/month, shown with the workstation limitations |
+
+- **Cut decision:** unchanged, no cuts. The runtime estimate (P1 14.5 h, P1+P2 17.8 h) is under the 72 h budget; the
+  review changed no card's scope.
+- **Parked:** the probe acceptance ranges (`2000` upper bounds, fetch `8..11`) are assumptions, not derivations;
+  replace them with tolerances from independent repetitions in the research plan. Cut propagation to presets waits
+  for `presets.js`.
+- **Defects found while fixing:** `contract.load` rejected unconditional (`cond: true`) states; the drill's old
+  per-op totals hid outcome swaps; the trace counted 3 pre-window writes as window demand.

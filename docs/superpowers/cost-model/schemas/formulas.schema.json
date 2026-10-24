@@ -89,6 +89,7 @@
               "outcome_class": {
                 "enum": [
                   "ok",
+                  "accepted_dropped",
                   "client_error",
                   "server_error",
                   "dropped",
@@ -136,6 +137,53 @@
               },
               "expr": {
                 "$ref": "#/$defs/node"
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9]XX$"
+                  }
+                ],
+                "description": "Optional: upstream status (or class) the preset free list matches on"
+              },
+              "s3_code": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "condition": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "caller": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "r1",
+                      "r2",
+                      "r3",
+                      "rig"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -222,6 +270,33 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/node"
+          }
+        },
+        "excluded": {
+          "type": "array",
+          "description": "Optional: record usage the cell deliberately does not price; any other unmodelled usage is a drill problem.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "op",
+                  "category"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "reason"
+            ],
+            "additionalProperties": false
           }
         }
       },

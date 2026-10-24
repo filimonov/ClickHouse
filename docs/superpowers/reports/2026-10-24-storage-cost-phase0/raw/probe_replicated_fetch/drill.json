@@ -1,8 +1,26 @@
 {
   "probe": "probe_replicated_fetch",
-  "measurement_id": "cost-20261024T015941Z/s3/probe_replicated_fetch/gate/k1",
+  "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+  "contract": {
+    "code_sha256": "214448f6810204752417b0c05abf2edb4f9211a5e609a6027406d75536896e5b",
+    "contract_version": "1",
+    "registry_version": "0.1.0",
+    "coverage_version": "0.1.0",
+    "billing_version": "0.1.0",
+    "evidence": [
+      {
+        "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
+        "raw_sha256sums": "0f93acd007bd7a10c3366fbab6ff8bb90d69427d6fa933e41f625885eb125a7a"
+      }
+    ]
+  },
   "cells": {
-    "probe_replicated_fetch": {
+    "probe_replicated_fetch.inserts": {
+      "group": "s3",
+      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "state": "ok",
+      "unavailable_reasons": [],
       "stage1_inputs": {
         "inputs": {
           "data_bytes": 20480,
@@ -14,6 +32,47 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
+          "probe_active_gib_months": 2.018266155836675e-12,
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_error_requests": 0,
+          "probe_get_requests": 20,
+          "probe_head_error_requests": 0,
+          "probe_head_requests": 0,
+          "probe_interserver_gib": 0.000029861927032470703,
+          "probe_interserver_to_gib": 2.7194619178771973e-7,
+          "probe_list_requests": 0,
+          "probe_put_requests": 22,
+          "probe_r1_active_gib_months": 1.2077060265854975e-12,
+          "probe_r2_active_gib_months": 8.10560129251178e-13,
+          "probe_r2_get_requests": 9
+        },
+        "coefs": {
+          "s3_max_single_part_upload_size": 33554432,
+          "s3_min_upload_part_size": 16777216,
+          "compressed_block_frame_bytes": 25,
+          "cas_expect_continue_min_bytes": 1048576,
+          "cas_inline_cap_bytes": 1048576
+        },
+        "observations": {
+          "inputs": {
+            "probe_active_gib_months": 2.018266155836675e-12,
+            "probe_batch_delete_requests": 0,
+            "probe_delete_requests": 0,
+            "probe_get_error_requests": 0,
+            "probe_get_requests": 20,
+            "probe_head_error_requests": 0,
+            "probe_head_requests": 0,
+            "probe_interserver_gib": 0.000029861927032470703,
+            "probe_interserver_to_gib": 2.7194619178771973e-7,
+            "probe_list_requests": 0,
+            "probe_put_requests": 22,
+            "probe_r1_active_gib_months": 1.2077060265854975e-12,
+            "probe_r2_active_gib_months": 8.10560129251178e-13,
+            "probe_r2_get_requests": 9
+          }
+        },
+        "prediction_parameters": {
           "part_files": [
             "data.bin",
             "data.cmrk4",
@@ -27,14 +86,141 @@
             "default_compression_codec.txt",
             "checksums.txt"
           ],
-          "receiver_load_reads_expected": 9,
+          "receiver_load_reads_expected": 9
+        }
+      },
+      "stage2_rows": [
+        {
+          "row": "request PutObject ok r1",
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "outcome_class": "ok",
+          "caller": "r1",
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 11,
+          "measured": 11,
+          "expected": 11,
+          "exact": true,
+          "state": "ok",
+          "group_predicted": 11
+        },
+        {
+          "row": "storage active all",
+          "row_type": "storage",
+          "op_kind": "active",
+          "outcome_class": "all",
+          "caller": null,
+          "category": "active",
+          "route": null,
+          "branch_taken": [],
+          "predicted": 1.2077060265854975e-12,
+          "measured": 2.018266155836675e-12,
+          "expected": null,
+          "exact": true,
+          "state": "ok"
+        }
+      ],
+      "stage3_ledger_summary": {
+        "by_row": {
+          "request PutObject": {
+            "rows": 1,
+            "quantity": 11
+          },
+          "storage active": {
+            "rows": 1,
+            "quantity": 1.2077060265854975e-12
+          }
+        },
+        "states": [],
+        "extrapolated": false,
+        "allocation": null,
+        "notes": []
+      },
+      "stage4_billing_lines": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 11,
+          "money": 0.000054999999999999995,
+          "share": 0.5,
+          "aggregate_quantity": 22,
+          "aggregate_money": 0.00010999999999999999,
+          "basis": "quantity",
+          "note": "0.005 per 1000"
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "unit": "GB-month",
+          "quantity": 1.2077060265854975e-12,
+          "money": 2.7777238611466438e-14,
+          "share": 0.5983878900673737,
+          "aggregate_quantity": 2.0182661558366755e-12,
+          "aggregate_money": 4.6420121584243535e-14,
+          "basis": "quantity",
+          "note": "active 2.0182661558366755e-12 GiB-months"
+        }
+      ],
+      "billing_total": 0.000055000000027777235,
+      "stage5_allocation": {
+        "group": "s3",
+        "provisioning": null
+      },
+      "evidence": {
+        "statement": "Measured on one workstation: a local RustFS store behind the ledger proxy and loopback interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.",
+        "limitations": [
+          "process_io includes embedded Keeper on replica 1",
+          "host diskstats include RustFS, proxy and unrelated activity",
+          "directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely",
+          "page cache not dropped (no root)"
+        ],
+        "mode": "deterministic",
+        "inventory_initial": "declared",
+        "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "ledger_complete": true,
+        "open_attempts": 0,
+        "bounds": {
+          "byte_hours": {
+            "active": {
+              "lower": 1.5671867566666666,
+              "upper": 1.5819806519444441
+            }
+          }
+        }
+      }
+    },
+    "probe_replicated_fetch.recovery": {
+      "group": "s3",
+      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "state": "ok",
+      "unavailable_reasons": [],
+      "stage1_inputs": {
+        "inputs": {
+          "data_bytes": 20480,
+          "ingest_rate": 500,
+          "retention_days": 40,
+          "replicas": 3,
+          "shards": 1,
+          "cache_enabled": "1",
+          "shape": "narrow",
+          "part_type": "wide",
+          "type_mix": "plain",
+          "probe_active_gib_months": 2.018266155836675e-12,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
+          "probe_get_error_requests": 0,
           "probe_get_requests": 20,
+          "probe_head_error_requests": 0,
           "probe_head_requests": 0,
           "probe_interserver_gib": 0.000029861927032470703,
+          "probe_interserver_to_gib": 2.7194619178771973e-7,
           "probe_list_requests": 0,
           "probe_put_requests": 22,
+          "probe_r1_active_gib_months": 1.2077060265854975e-12,
+          "probe_r2_active_gib_months": 8.10560129251178e-13,
           "probe_r2_get_requests": 9
         },
         "coefs": {
@@ -45,83 +231,159 @@
           "cas_inline_cap_bytes": 1048576
         },
         "observations": {
-          "probe_batch_delete_requests": 0,
-          "probe_delete_requests": 0,
-          "probe_get_requests": 20,
-          "probe_head_requests": 0,
-          "probe_interserver_gib": 0.000029861927032470703,
-          "probe_list_requests": 0,
-          "probe_put_requests": 22,
-          "probe_r2_get_requests": 9
+          "inputs": {
+            "probe_active_gib_months": 2.018266155836675e-12,
+            "probe_batch_delete_requests": 0,
+            "probe_delete_requests": 0,
+            "probe_get_error_requests": 0,
+            "probe_get_requests": 20,
+            "probe_head_error_requests": 0,
+            "probe_head_requests": 0,
+            "probe_interserver_gib": 0.000029861927032470703,
+            "probe_interserver_to_gib": 2.7194619178771973e-7,
+            "probe_list_requests": 0,
+            "probe_put_requests": 22,
+            "probe_r1_active_gib_months": 1.2077060265854975e-12,
+            "probe_r2_active_gib_months": 8.10560129251178e-13,
+            "probe_r2_get_requests": 9
+          }
+        },
+        "prediction_parameters": {
+          "part_files": [
+            "data.bin",
+            "data.cmrk4",
+            "primary.cidx",
+            "count.txt",
+            "serialization.json",
+            "statistics.packed",
+            "columns.txt",
+            "columns_substreams.txt",
+            "metadata_version.txt",
+            "default_compression_codec.txt",
+            "checksums.txt"
+          ],
+          "receiver_load_reads_expected": 9
         }
       },
       "stage2_rows": [
         {
-          "row": "request PutObject ok",
+          "row": "request GetObject ok r1",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "outcome_class": "ok",
+          "caller": "r1",
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 11,
+          "measured": 11,
+          "expected": 11,
+          "exact": true,
+          "state": "ok",
+          "group_predicted": 11
+        },
+        {
+          "row": "request PutObject ok r2",
           "row_type": "request",
           "op_kind": "PutObject",
           "outcome_class": "ok",
-          "branch_taken": [],
-          "predicted": 22,
-          "measured": 22,
-          "expected": 22,
-          "exact": true,
-          "upstream_ok": 22,
-          "op_predicted": 22
-        },
-        {
-          "row": "request GetObject ok",
-          "row_type": "request",
-          "op_kind": "GetObject",
-          "outcome_class": "ok",
+          "caller": "r2",
+          "category": null,
+          "route": null,
           "branch_taken": [],
           "predicted": 11,
-          "measured": 20,
-          "expected": {
-            "min": 19,
-            "max": 22
-          },
+          "measured": 11,
+          "expected": 11,
           "exact": true,
-          "upstream_ok": 20,
-          "op_predicted": 20
+          "state": "ok",
+          "group_predicted": 11
         },
         {
-          "row": "request GetObject ok",
+          "row": "request GetObject ok r2",
           "row_type": "request",
           "op_kind": "GetObject",
           "outcome_class": "ok",
+          "caller": "r2",
+          "category": null,
+          "route": null,
           "branch_taken": [],
           "predicted": 9,
-          "measured": 20,
+          "measured": 9,
           "expected": {
-            "min": 19,
-            "max": 22
+            "min": 8,
+            "max": 11
           },
           "exact": true,
-          "upstream_ok": 20,
-          "op_predicted": 20
+          "state": "ok",
+          "group_predicted": 9
         },
         {
-          "row": "transfer interserver all",
-          "row_type": "transfer",
-          "op_kind": "interserver",
+          "row": "storage active all",
+          "row_type": "storage",
+          "op_kind": "active",
           "outcome_class": "all",
+          "caller": null,
+          "category": "active",
+          "route": null,
+          "branch_taken": [],
+          "predicted": 8.10560129251178e-13,
+          "measured": 2.018266155836675e-12,
+          "expected": null,
+          "exact": true,
+          "state": "ok"
+        },
+        {
+          "row": "transfer interserver_from_target all",
+          "row_type": "transfer",
+          "op_kind": "interserver_from_target",
+          "outcome_class": "all",
+          "caller": null,
+          "category": null,
+          "route": "ec2_ec2_cross_az",
           "branch_taken": [],
           "predicted": 0.000029861927032470703,
-          "measured": null,
+          "measured": 0.000029861927032470703,
           "expected": null,
-          "exact": null
+          "exact": true,
+          "state": "ok"
+        },
+        {
+          "row": "transfer interserver_to_target all",
+          "row_type": "transfer",
+          "op_kind": "interserver_to_target",
+          "outcome_class": "all",
+          "caller": null,
+          "category": null,
+          "route": "ec2_ec2_cross_az",
+          "branch_taken": [],
+          "predicted": 2.7194619178771973e-7,
+          "measured": 2.7194619178771973e-7,
+          "expected": null,
+          "exact": true,
+          "state": "ok"
         }
       ],
       "stage3_ledger_summary": {
-        "by_row_type": {
-          "request": {
-            "rows": 3,
-            "quantity": 42
+        "by_row": {
+          "request GetObject": {
+            "rows": 2,
+            "quantity": 20
           },
-          "transfer": {
+          "request PutObject": {
+            "rows": 1,
+            "quantity": 11
+          },
+          "storage active": {
+            "rows": 1,
+            "quantity": 8.10560129251178e-13
+          },
+          "transfer interserver_from_target": {
             "rows": 1,
             "quantity": 0.000029861927032470703
+          },
+          "transfer interserver_to_target": {
+            "rows": 1,
+            "quantity": 2.7194619178771973e-7
           }
         },
         "states": [],
@@ -130,6 +392,92 @@
         "notes": []
       },
       "stage4_billing_lines": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 11,
+          "money": 0.000054999999999999995,
+          "share": 0.5,
+          "aggregate_quantity": 22,
+          "aggregate_money": 0.00010999999999999999,
+          "basis": "quantity",
+          "note": "0.005 per 1000"
+        },
+        {
+          "rule_id": "get_and_other",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 20,
+          "money": 0.000008000000000000001,
+          "share": 1,
+          "aggregate_quantity": 20,
+          "aggregate_money": 0.000008000000000000001,
+          "basis": "quantity",
+          "note": "0.0004 per 1000"
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "unit": "GB-month",
+          "quantity": 8.10560129251178e-13,
+          "money": 1.8642882972777093e-14,
+          "share": 0.4016121099326263,
+          "aggregate_quantity": 2.0182661558366755e-12,
+          "aggregate_money": 4.6420121584243535e-14,
+          "basis": "quantity",
+          "note": "active 2.0182661558366755e-12 GiB-months"
+        },
+        {
+          "rule_id": "ec2_ec2_cross_az",
+          "scope": "variant",
+          "unit": "GB",
+          "quantity": 0.000030133873224258423,
+          "money": 3.0133873224258423e-7,
+          "share": 1,
+          "aggregate_quantity": 0.000030133873224258423,
+          "aggregate_money": 3.0133873224258423e-7,
+          "basis": "quantity",
+          "note": "0.01 per GB, each_direction"
+        }
+      ],
+      "billing_total": 0.00006330133875088547,
+      "stage5_allocation": {
+        "group": "s3",
+        "provisioning": null
+      },
+      "evidence": {
+        "statement": "Measured on one workstation: a local RustFS store behind the ledger proxy and loopback interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.",
+        "limitations": [
+          "process_io includes embedded Keeper on replica 1",
+          "host diskstats include RustFS, proxy and unrelated activity",
+          "directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely",
+          "page cache not dropped (no root)"
+        ],
+        "mode": "deterministic",
+        "inventory_initial": "declared",
+        "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "ledger_complete": true,
+        "open_attempts": 0,
+        "bounds": {
+          "byte_hours": {
+            "active": {
+              "lower": 1.5671867566666666,
+              "upper": 1.5819806519444441
+            }
+          }
+        }
+      }
+    }
+  },
+  "groups": {
+    "s3": {
+      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "cells": [
+        "probe_replicated_fetch.inserts",
+        "probe_replicated_fetch.recovery"
+      ],
+      "lines": [
         {
           "rule_id": "put_copy_post_list",
           "unit": "requests",
@@ -151,19 +499,113 @@
           "scope": "variant"
         },
         {
+          "rule_id": "storage",
+          "unit": "GB-month",
+          "quantity": 2.0182661558366755e-12,
+          "money": 4.6420121584243535e-14,
+          "tiers": [
+            {
+              "from_gb": 0,
+              "up_to_gb": 51200,
+              "gb": 2.0182661558366755e-12,
+              "price_per_gb_month": 0.023,
+              "money": 4.6420121584243535e-14
+            }
+          ],
+          "note": "active 2.0182661558366755e-12 GiB-months",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "by_category": {
+            "active": 2.0182661558366755e-12
+          },
+          "scope": "variant"
+        },
+        {
           "rule_id": "ec2_ec2_cross_az",
           "unit": "GB",
-          "quantity": 0.000029861927032470703,
-          "money": 2.98619270324707e-7,
+          "quantity": 0.000030133873224258423,
+          "money": 3.0133873224258423e-7,
           "tiers": null,
           "note": "0.01 per GB, each_direction",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
           "scope": "variant"
         }
       ],
-      "billing_total": 0.0001182986192703247,
-      "stage5_allocation": null,
-      "measurement_id": "cost-20261024T015941Z/s3/probe_replicated_fetch/gate/k1"
+      "total": 0.00011830133877866269,
+      "provisioning": null,
+      "allocation": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "money": 0.00010999999999999999,
+          "basis": "quantity",
+          "shares": {
+            "probe_replicated_fetch.inserts": {
+              "weight": 11,
+              "fraction": 0.5,
+              "money": 0.000054999999999999995
+            },
+            "probe_replicated_fetch.recovery": {
+              "weight": 11,
+              "fraction": 0.5,
+              "money": 0.000054999999999999995
+            }
+          }
+        },
+        {
+          "rule_id": "get_and_other",
+          "scope": "variant",
+          "money": 0.000008000000000000001,
+          "basis": "quantity",
+          "shares": {
+            "probe_replicated_fetch.inserts": {
+              "weight": 0,
+              "fraction": 0,
+              "money": 0
+            },
+            "probe_replicated_fetch.recovery": {
+              "weight": 20,
+              "fraction": 1,
+              "money": 0.000008000000000000001
+            }
+          }
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "money": 4.6420121584243535e-14,
+          "basis": "quantity",
+          "shares": {
+            "probe_replicated_fetch.inserts": {
+              "weight": 1.2077060265854975e-12,
+              "fraction": 0.5983878900673737,
+              "money": 2.7777238611466438e-14
+            },
+            "probe_replicated_fetch.recovery": {
+              "weight": 8.10560129251178e-13,
+              "fraction": 0.4016121099326263,
+              "money": 1.8642882972777093e-14
+            }
+          }
+        },
+        {
+          "rule_id": "ec2_ec2_cross_az",
+          "scope": "variant",
+          "money": 3.0133873224258423e-7,
+          "basis": "quantity",
+          "shares": {
+            "probe_replicated_fetch.inserts": {
+              "weight": 0,
+              "fraction": 0,
+              "money": 0
+            },
+            "probe_replicated_fetch.recovery": {
+              "weight": 0.000030133873224258423,
+              "fraction": 1,
+              "money": 3.0133873224258423e-7
+            }
+          }
+        }
+      ]
     }
   },
   "mismatches": []

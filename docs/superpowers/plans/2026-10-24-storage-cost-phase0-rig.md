@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Binary `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46`, commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`; both recorded in every `Measurement`.
+- Binary `tmp/bin/26.8/clickhouse`: download sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` (`tmp/bin/SHA256SUMS`), executed sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (the self-extracting binary rewrites itself on first start); source commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`. Every `Measurement` records `binary_download_sha256`, `binary_sha256`, `commit` and the rig's `rig_commit`.
 - Store: RustFS binary on `127.0.0.1:19121`, bucket `yardstick-cost`, credentials `clickhouse`/`clickhouse`, path-style. Proxy caller ports `r1=19131, r2=19132, r3=19133, rig=19134`. Server ports: `port_base + 10 × (i − 1)`: tcp `+0`, http `+1`, interserver `+2`; Keeper client `port_base + 8`, Keeper Raft `port_base + 9` (replica 1 only); `port_base` default `19700`. Server listeners bind `127.0.0.1`; relay `i` binds `127.0.1.<i>:<interserver port of i>`.
 - Supported rig policies (exactly): `s3, s3plain, cas, local, s3_cached, s3plain_cached, cas_cached`. Model variant ids (exactly): `ebs, s3, s3plain, cas`; rig policy `local` measures variant `ebs`; `*_cached` policies measure the `cache_enabled = 1` branch of the remote variants.
 - Maintenance controls never use `SYSTEM STOP MERGES`: no-merge cards use the table setting `max_parts_to_merge_at_once = 1` (`NO_MERGES`); GC via `cas_gc_enabled` in the disk config; TTL only where declared; lease and GC traffic inside a window is classified by key family into the `maintenance` bucket, never into `foreground`.

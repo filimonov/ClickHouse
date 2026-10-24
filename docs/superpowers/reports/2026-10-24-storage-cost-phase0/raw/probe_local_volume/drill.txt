@@ -9,31 +9,45 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   write_syscall = write
-   data_dir_io = [object Object]
-   data_dir_write_syscalls = write
    probe_batch_delete_requests = 0
    probe_block_capacity_gib = 0.23952865600585938
-   probe_block_iops = 1830.3611822891498
-   probe_block_mibps = 114.15796834578468
+   probe_block_iops = 1944.221313781971
+   probe_block_mibps = 121.35504822382852
    probe_delete_requests = 0
+   probe_get_error_requests = 0
    probe_get_requests = 0
+   probe_head_error_requests = 0
    probe_head_requests = 0
    probe_list_requests = 0
    probe_put_requests = 0
-   window_s = 2.077732
 2. rows (branch | predicted | measured | expected | exact)
    block_capacity capacity all | - | 0.23952865600585938 | null | null | null
-   block_io iops all | - | 1830.3611822891498 | null | null | null
-   block_io mibps all | - | 114.15796834578468 | null | null | null
+   block_io iops all | - | 1944.221313781971 | null | null | null
+   block_io mibps all | - | 121.35504822382852 | null | null | null
 3. ledger summary
-   block_capacity: 1 rows, quantity 0.23952865600585938
-   block_io: 2 rows, quantity 1944.5191506349345
-4. billing
+   block_capacity capacity: 1 rows, quantity 0.23952865600585938
+   block_io iops: 1 rows, quantity 1944.221313781971
+   block_io mibps: 1 rows, quantity 121.35504822382852
+4. billing (this cell's allocated share)
+   block_capacity: 6 GiB-month = $0.48
+   block_iops: 0 IOPS-month above baseline = $0
+   block_mibps: 0 MiB/s-month above baseline = $0
+   total = $0.48
+   evidence: deterministic, inventory declared, ledger complete
+   - process_io includes embedded Keeper on replica 1
+   - host diskstats include RustFS, proxy and unrelated activity
+   - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
+   - page cache not dropped (no root)
+   - IOPS and MiB/s are syscall demand averaged over the window; page cache and writeback sit between them and the device, so they are not device peaks
+== group ebs: probe_local_volume
+4. billing lines (billed once for the group)
    block_capacity: 6 GiB-month = $0.48
    block_iops: 0 IOPS-month above baseline = $0
    block_mibps: 0 MiB/s-month above baseline = $0
    total = $0.48
 5. allocation
-   single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s = $0.48/month
+   block_capacity $0.48 by quantity: probe_local_volume $0.48
+   block_iops $0 by quantity: probe_local_volume $0
+   block_mibps $0 by quantity: probe_local_volume $0
+   provisioning single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s = $0.48/month
 OK probe_local_volume: 1 cell(s)

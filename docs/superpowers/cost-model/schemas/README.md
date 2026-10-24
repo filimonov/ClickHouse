@@ -21,7 +21,7 @@ python3 utils/storage-cost-calculator/tools/test_artifacts.py
 
 | Artifact | Schema doc | Validator | Example |
 |---|---|---|---|
-| Ledger row (`ledger-row/1`, JSONL) | `ledger-row.schema.json` | `validate_ledger_row` | `ledger-row-attempt.json`, `ledger-row-mark.json` |
+| Ledger row (`ledger-row/1`, JSONL) | `ledger-row.schema.json` | `validate_ledger_row` | `ledger-row-attempt.json`, `ledger-row-batch-delete.json`, `ledger-row-mark.json` |
 | Measurement (`measurement/1`) | `measurement.schema.json` | `validate_measurement` | `measurement-ok.json`, `-unsupported.json`, `-failed.json` |
 | Prediction (`prediction/1`) | `prediction.schema.json` | `validate_prediction` | `prediction.json` |
 | Experiment (`experiment/1`) | `experiment.schema.json` | `validate_experiment` | `experiment.json` |
@@ -36,6 +36,9 @@ Every validator returns a list of `"<path>: <message>"` strings. An empty list m
 - **Strict keys.** Unknown keys are problems, except inside free-form objects (`effective_counts`, `observations`, `params`, settings, `inputs`, `tolerance` maps).
 - **Measurement id.** `measurement_id` must equal `<run_id>/<policy>/<card>/<case_id>/k<k>`. `experiment_id` must equal `<card>.<case_id>`. The same holds for experiments.
 - **Measurement status.** `ok` carries all result sections. `UNSUPPORTED` carries only `reason`. `FAILED` carries `reason` and `diagnostics`, and may carry `partial` with any subset of the `ok` sections. Each present section is validated.
+- **Ledger row.** `error` and `delete_keys` are optional. `delete_keys` lists the keys a `DeleteObjects` request names; the proxy parses it before forwarding.
+- **Measurement identity.** `binary_sha256` is the executed binary, `binary_download_sha256` the downloaded one (null when no `SHA256SUMS` lists it); a self-extracting `clickhouse` differs between the two. `commit` is the binary's source commit, `rig_commit` the rig's.
+- **Measurement sections.** `window.open_attempts` lists workload attempts that had no row at the window end, and `ledger.complete` is false when it is non-empty. Counts include `accepted_dropped` (upstream ok, reply lost) and `upstream_4xx`. `inventory.note` (optional) says why `initial` is `declared`; `inventory.reclassified` lists the `reclassify` calls. A clipped `local.*.trace` carries `window`, `outside`, `files` and `crossing`.
 - **Prediction.** Each expected count is an integer or `{"min","max"}`. Callers and ops come from the ledger enums.
 - **Coverage.** Evidence rows with role `holdout` or `validation` need a non-null `prediction_commit`. Only `fit` rows may carry null.
 - **Registry.** Ids are unique. `enum` is required for `value_type` `enum`, `table` for `table`. A `rule` exists exactly for `derivation`. Precedence groups never share members. `default_locked` and `rules` keys are group members. Set members, group members and table index ids must be registered quantities.
@@ -50,6 +53,9 @@ A node is `{"kind": K, "dim": str, ...}`. `K` is one of `input`, `coef`, `lookup
 - Enums are `const` nodes with `dim` `enum:<name>`.
 - **Dims** are products of base units with integer exponents joined by `*` and `/` (`GiB*h`, `req/s`); `1` is the neutral unit. The evaluator expands these aliases first: `GiB_h` = `GiB*h`, `GiB_xfer` = `GiB`, `count` = `1`, `iops` = `req/s`, `mibps` = `MiB/s`. `checkDims` requires `add`/`sub`/`min`/`max`/`branch` operands to equal the declared dim, `mul` and `div` declared dims to equal the product or quotient of the operand dims, and `price` to declare `USD`.
 - `branch.cond` is `{"op": "<"|"<="|">"|">="|"=="|"!=", "a": node, "b": node}`.
+- `min` and `max` take `args[]` (one or more nodes); `add`, `sub`, `mul` and `div` take `a` and `b`.
+- **Rows.** `outcome_class` is `ok`, `accepted_dropped`, `client_error`, `server_error`, `dropped` or `all`. Request rows may carry `status` (integer or class such as `4XX`), `s3_code` and `condition`, which the billing preset's free list matches on, and `caller`, which the drill reconciles with.
+- **Exclusions.** A cell may list `excluded: [{kind: op|category, id, reason}]`: record usage it deliberately does not price. The drill reports any other usage the cells do not cover.
 
 Worked examples, each a standalone node validated with `validate_node(node, "$", False, tables={"objects_per_part": 2})`:
 
@@ -58,6 +64,7 @@ Worked examples, each a standalone node validated with `validate_node(node, "$",
 | `example-part-type.json` | `branch` on `input` vs `coef`, enum-valued `const` leaves |
 | `example-objects-per-part.json` | `lookup` keyed by an `input` and a `var`, wrapped in the `sum_over` that binds the var |
 | `example-multipart-parts.json` | 1 part up to the first buffer, else `1 + ceil_to((size - first_buffer) / part_size, 1)` |
+| `example-min-max.json` | `max(1, min(parts_inserted, 10000, 500))`; also evaluated by `model.test.js` |
 
 `coefficients.json` entries (`{id, kind: scalar|table, dim, value, validity, tolerance, evidence, status}`) are produced per report and have no validator here. A table value is `{"index": [...], "values": {"<k1>|<k2>": number}}`.
 

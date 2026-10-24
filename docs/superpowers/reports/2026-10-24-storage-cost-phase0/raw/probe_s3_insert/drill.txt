@@ -9,20 +9,36 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   part_files = data.bin,data.cmrk4,primary.cidx,count.txt,serialization.json,statistics.packed,columns.txt,columns_substreams.txt,metadata_version.txt,default_compression_codec.txt,checksums.txt
+   probe_active_gib_months = 1.0394807199733486e-12
    probe_batch_delete_requests = 0
    probe_delete_requests = 0
+   probe_get_error_requests = 0
    probe_get_requests = 0
+   probe_head_error_requests = 0
    probe_head_requests = 0
    probe_list_requests = 0
    probe_put_requests = 11
 2. rows (branch | predicted | measured | expected | exact)
-   request PutObject ok | - | 11 | 11 | 11 | true
+   request PutObject ok r1 | - | 11 | 11 | 11 | true
+   storage active all | - | 1.0394807199733486e-12 | 1.0394807199733486e-12 | null | true
 3. ledger summary
-   request: 1 rows, quantity 11
-4. billing
+   request PutObject: 1 rows, quantity 11
+   storage active: 1 rows, quantity 1.0394807199733486e-12
+4. billing (this cell's allocated share)
    put_copy_post_list: 11 requests = $0.000054999999999999995
-   total = $0.000054999999999999995
+   storage: 1.0394807199733486e-12 GB-month = $2.3908056559387016e-14
+   total = $0.00005500000002390805
+   evidence: deterministic, inventory declared, ledger complete
+   - process_io includes embedded Keeper on replica 1
+   - host diskstats include RustFS, proxy and unrelated activity
+   - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
+   - page cache not dropped (no root)
+== group s3: probe_s3_insert
+4. billing lines (billed once for the group)
+   put_copy_post_list: 11 requests = $0.000054999999999999995
+   storage: 1.0394807199733486e-12 GB-month = $2.3908056559387016e-14
+   total = $0.00005500000002390805
 5. allocation
-   none
+   put_copy_post_list $0.000054999999999999995 by quantity: probe_s3_insert $0.000054999999999999995
+   storage $2.3908056559387016e-14 by quantity: probe_s3_insert $2.3908056559387016e-14
 OK probe_s3_insert: 1 cell(s)

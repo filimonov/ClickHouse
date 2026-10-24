@@ -58,6 +58,14 @@
         },
         "delete_keys": {
           "type": "integer"
+        },
+        "accepted_dropped": {
+          "type": "integer",
+          "description": "upstream ok whose reply to the caller was lost; billed"
+        },
+        "upstream_4xx": {
+          "type": "integer",
+          "description": "upstream errors with a 4XX status"
         }
       },
       "required": [
@@ -74,7 +82,9 @@
         "list_pages",
         "list_keys",
         "delete_calls",
-        "delete_keys"
+        "delete_keys",
+        "accepted_dropped",
+        "upstream_4xx"
       ],
       "additionalProperties": false
     },
@@ -129,10 +139,27 @@
           ]
         },
         "binary_sha256": {
-          "type": "string"
+          "type": "string",
+          "description": "sha256 of the executed binary (a self-extracting download rewrites itself on first start)"
+        },
+        "binary_download_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "sha256 of the binary as downloaded, from the SHA256SUMS that lists it"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "commit": {
-          "type": "string"
+          "type": "string",
+          "description": "source commit the binary was built from"
+        },
+        "rig_commit": {
+          "type": "string",
+          "description": "HEAD of the rig worktree that produced the record"
         },
         "pass_dir": {
           "type": "string"
@@ -189,6 +216,39 @@
               "items": {
                 "type": "integer"
               }
+            },
+            "open_attempts": {
+              "type": "array",
+              "description": "Workload attempts begun before the window end that never produced a row; non-empty means request totals are lower bounds.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "integer"
+                  },
+                  "caller": {
+                    "enum": [
+                      "r1",
+                      "r2",
+                      "r3",
+                      "rig"
+                    ]
+                  },
+                  "op": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "seq",
+                  "caller",
+                  "op",
+                  "key"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -196,7 +256,8 @@
             "end_seq",
             "t_start_us",
             "t_end_us",
-            "crossing"
+            "crossing",
+            "open_attempts"
           ],
           "additionalProperties": false
         },
@@ -244,6 +305,10 @@
               "additionalProperties": {
                 "$ref": "#/$defs/Counts"
               }
+            },
+            "complete": {
+              "type": "boolean",
+              "description": "false when window.open_attempts is non-empty"
             }
           },
           "required": [
@@ -251,7 +316,8 @@
             "maintenance",
             "setup",
             "teardown",
-            "rig"
+            "rig",
+            "complete"
           ],
           "additionalProperties": false
         },
@@ -397,11 +463,75 @@
                           ],
                           "additionalProperties": false
                         }
+                      },
+                      "window": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ],
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "window [t0, t1] in seconds; only calls fully inside count"
+                      },
+                      "outside": {
+                        "type": "integer",
+                        "description": "calls entirely outside the window"
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "one trace per server generation"
+                      },
+                      "crossing": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "pid": {
+                              "type": "string"
+                            },
+                            "syscall": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "start": {
+                              "type": "number"
+                            },
+                            "end": {
+                              "type": "number"
+                            },
+                            "bytes": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "pid",
+                            "syscall",
+                            "path",
+                            "start",
+                            "end",
+                            "bytes"
+                          ],
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "required": [
                       "tool",
-                      "syscalls"
+                      "syscalls",
+                      "window",
+                      "outside",
+                      "files",
+                      "crossing"
                     ],
                     "additionalProperties": false
                   },
@@ -487,12 +617,66 @@
             },
             "uncertain_identities": {
               "type": "integer"
+            },
+            "note": {
+              "type": "string",
+              "description": "Optional: why the initial inventory is declared rather than verified."
+            },
+            "reclassified": {
+              "type": "array",
+              "description": "reclassify calls (category, time, evidence, identities) so the record replays from its raw ledger slice",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "enum": [
+                      "active",
+                      "outdated",
+                      "garbage",
+                      "temporary",
+                      "incomplete",
+                      "detached",
+                      "metadata"
+                    ]
+                  },
+                  "t_us": {
+                    "type": "integer"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                },
+                "required": [
+                  "category",
+                  "t_us",
+                  "evidence",
+                  "keys"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
             "initial",
             "byte_hours",
-            "uncertain_identities"
+            "uncertain_identities",
+            "reclassified"
           ],
           "additionalProperties": false
         },
@@ -543,7 +727,9 @@
         "scale",
         "mode",
         "binary_sha256",
+        "binary_download_sha256",
         "commit",
+        "rig_commit",
         "pass_dir",
         "status",
         "effective_counts",
@@ -615,10 +801,27 @@
           ]
         },
         "binary_sha256": {
-          "type": "string"
+          "type": "string",
+          "description": "sha256 of the executed binary (a self-extracting download rewrites itself on first start)"
+        },
+        "binary_download_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "sha256 of the binary as downloaded, from the SHA256SUMS that lists it"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "commit": {
-          "type": "string"
+          "type": "string",
+          "description": "source commit the binary was built from"
+        },
+        "rig_commit": {
+          "type": "string",
+          "description": "HEAD of the rig worktree that produced the record"
         },
         "pass_dir": {
           "type": "string"
@@ -645,7 +848,9 @@
         "scale",
         "mode",
         "binary_sha256",
+        "binary_download_sha256",
         "commit",
+        "rig_commit",
         "pass_dir",
         "status",
         "reason"
@@ -703,10 +908,27 @@
           ]
         },
         "binary_sha256": {
-          "type": "string"
+          "type": "string",
+          "description": "sha256 of the executed binary (a self-extracting download rewrites itself on first start)"
+        },
+        "binary_download_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "sha256 of the binary as downloaded, from the SHA256SUMS that lists it"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "commit": {
-          "type": "string"
+          "type": "string",
+          "description": "source commit the binary was built from"
+        },
+        "rig_commit": {
+          "type": "string",
+          "description": "HEAD of the rig worktree that produced the record"
         },
         "pass_dir": {
           "type": "string"
@@ -1146,7 +1368,9 @@
         "scale",
         "mode",
         "binary_sha256",
+        "binary_download_sha256",
         "commit",
+        "rig_commit",
         "pass_dir",
         "status",
         "reason",

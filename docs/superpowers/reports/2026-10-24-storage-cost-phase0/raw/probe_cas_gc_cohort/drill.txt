@@ -9,41 +9,60 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   expect_negotiated_rows = 0
-   blob_files_per_part = data.bin
-   parts = 20
-   cohort_reclaimed = 40
-   cohort_size = 40
-   deleting_callers = r1
-   expect_matches_source = true
-   gc_rounds_reclaiming = 2
-   probe_active_gib_months = 3.9208445947509555e-11
+   probe_active_gib_months = 4.143142398224247e-11
    probe_batch_delete_requests = 2
    probe_delete_requests = 42
-   probe_garbage_gib_months = 2.2928012676921188e-9
-   probe_get_requests = 327
-   probe_head_requests = 61
+   probe_garbage_gib_months = 2.453139146784238e-9
+   probe_get_error_requests = 11
+   probe_get_requests = 381
+   probe_head_error_requests = 20
+   probe_head_requests = 41
    probe_list_requests = 14
-   probe_put_requests = 208
-   reclaim_delay_s = 12.875028
+   probe_metadata_gib_months = 9.878270635615236e-11
+   probe_put_requests = 237
 2. rows (branch | predicted | measured | expected | exact)
-   request PutObject ok | - | 208 | 208 | {"min":40,"max":2000} | null
-   request HeadObject ok | - | 61 | 61 | {"min":20,"max":2000} | null
-   request GetObject ok | - | 327 | 327 | null | null
-   request ListObjectsV2 ok | - | 14 | 14 | null | null
-   request DeleteObject ok | - | 42 | 42 | null | null
-   request DeleteObjects ok | - | 2 | 2 | null | null
-   storage garbage all | - | 2.2928012676921188e-9 | null | null | null
-   storage active all | - | 3.9208445947509555e-11 | null | null | null
+   request PutObject ok | - | 237 | 237 | {"min":40,"max":2000} | true
+   request HeadObject ok | - | 41 | 41 | {"min":20,"max":2000} | true
+   request HeadObject client_error | - | 20 | 20 | {"min":20,"max":2000} | true
+   request GetObject ok | - | 381 | 381 | null | true
+   request GetObject client_error | - | 11 | 11 | null | true
+   request ListObjectsV2 ok | - | 14 | 14 | null | true
+   request DeleteObject ok | - | 42 | 42 | null | true
+   request DeleteObjects ok | - | 2 | 2 | null | true
+   storage active all | - | 4.143142398224247e-11 | 4.143142398224247e-11 | null | true
+   storage garbage all | - | 2.453139146784238e-9 | 2.453139146784238e-9 | null | true
+   storage metadata all | - | 9.878270635615236e-11 | 9.878270635615236e-11 | null | true
 3. ledger summary
-   request: 6 rows, quantity 654
-   storage: 2 rows, quantity 2.3320097136396284e-9
-4. billing
-   put_copy_post_list: 222 requests = $0.00111
-   get_and_other: 388 requests = $0.0001552
+   request PutObject: 1 rows, quantity 237
+   request HeadObject: 2 rows, quantity 61
+   request GetObject: 2 rows, quantity 392
+   request ListObjectsV2: 1 rows, quantity 14
+   request DeleteObject: 1 rows, quantity 42
+   request DeleteObjects: 1 rows, quantity 2
+   storage active: 1 rows, quantity 4.143142398224247e-11
+   storage garbage: 1 rows, quantity 2.453139146784238e-9
+   storage metadata: 1 rows, quantity 9.878270635615236e-11
+4. billing (this cell's allocated share)
+   put_copy_post_list: 251 requests = $0.001255
+   get_and_other: 453 requests = $0.0001812
    delete_cancel: 44 requests = $0
-   storage: 2.3320097136396284e-9 GB-month = $5.3636223413711455e-11
-   total = $0.0012652000536362237
+   storage: 2.5933532771226325e-9 GB-month = $5.964712537382054e-11
+   total = $0.0014362000596471255
+   evidence: stochastic, inventory declared, ledger complete
+   - process_io includes embedded Keeper on replica 1
+   - host diskstats include RustFS, proxy and unrelated activity
+   - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
+   - page cache not dropped (no root)
+== group cas: probe_cas_gc_cohort
+4. billing lines (billed once for the group)
+   put_copy_post_list: 251 requests = $0.001255
+   get_and_other: 453 requests = $0.0001812
+   delete_cancel: 44 requests = $0
+   storage: 2.5933532771226325e-9 GB-month = $5.964712537382054e-11
+   total = $0.0014362000596471255
 5. allocation
-   none
+   put_copy_post_list $0.001255 by quantity: probe_cas_gc_cohort $0.001255
+   get_and_other $0.0001812 by quantity: probe_cas_gc_cohort $0.0001812
+   delete_cancel $0 by quantity: probe_cas_gc_cohort $0
+   storage $5.964712537382054e-11 by quantity: probe_cas_gc_cohort $5.964712537382054e-11
 OK probe_cas_gc_cohort: 1 cell(s)

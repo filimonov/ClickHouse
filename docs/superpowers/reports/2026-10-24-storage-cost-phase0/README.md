@@ -10,15 +10,19 @@ doc_type: 'reference'
 # Storage cost calculator — phase-0 gate {#phase0-gate}
 
 All five acceptance probes of design §5.3 pass on the pinned binary: every prediction was committed
-(`3157c681db5`) before the gate run, and every deterministic count matches the ledger exactly.
+(`3157c681db5`) before the gate run, and every deterministic count matches the ledger exactly. The gate was re-run
+after the phase-0 review fixes (`docs/superpowers/cost-model/measurement-contract.md` §Review); the numbers below are
+from that run.
 
 | Item | Value |
 |---|---|
-| Binary | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
-| Source | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Gate run | `cost-20261024T015941Z`, after the completed formulas cells; the earlier passing run `cost-20261024T013942Z` had the same counts |
+| Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` (`tmp/bin/SHA256SUMS`; record field `binary_download_sha256`) |
+| Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`binary_sha256`): the self-extracting download decompressed itself in place on its first start |
+| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` (`commit`) |
+| Rig commit | `8c1674054543686c66e23bf5377e14ff54d66274` (`rig_commit`), a clean tree for `utils/` |
+| Gate run | `cost-20261024T024945Z`; the pre-review gate run was `cost-20261024T015941Z` |
 | Store | RustFS binary behind the ledger proxy, bucket `yardstick-cost` |
-| Records | `measurements.jsonl` (five `measurement/1` records) |
+| Records | `measurements.jsonl` (five `measurement/1` records); each replays exactly from its `raw/<probe>/ledger.jsonl[.gz]` (`closure_check.py`) |
 
 ## Gate results {#gate-results}
 
@@ -31,20 +35,33 @@ PASS probe_local_volume
 exit 0
 ```
 
-Each PASS means: the pass is `ok`, every record assertion holds, `drill.mjs` reconciles the probe's formulas
-cell against the ledger with no mismatch, and `render_check.mjs` finds every value and money line in the page
-markup. Drill-downs are in `raw/<probe>/drill.{txt,json}`.
+Each PASS means: the pass is `ok` (a failed assertion makes it `FAILED`), cleanup succeeded, `drill.mjs`
+reconciles the probe's formulas cells inside a validated contract with no problem, and `render_check.mjs` finds
+every value, money line, allocation and evidence block in the page markup. Drill-downs are in
+`raw/<probe>/drill.{txt,json}`.
 
-Every op a prediction names is a row of the probe's cell in `formulas.json`, so the drill checks and bills all of
-them. An exact prediction is a `const` row; a predicted range is an `input` row the drill fills from the record's
-observations (`probe_<op>_requests`, `probe_r2_get_requests`), and the drill checks the measured total against the
-range. The drill compares one total per op across all its rows and callers: the split of an op into `ok` and
-`server_error` rows (the injected 500s of the multipart probe) is used for billing but is not reconciled against
-the ledger's outcomes. The fetch cell also bills the bytes r1's relay shipped as `ec2_ec2_cross_az` transfer.
+What the drill checks:
+
+- **Requests** per caller (or all callers), op and outcome class (`ok`, `accepted_dropped`, `client_error` = 4XX,
+  `server_error`, `dropped`). An exact prediction is a `const` row; a range is an `input` row filled from the
+  record's `observations.inputs`, which must be registered measured quantities. Measured foreground counts must lie
+  in the prediction's range, widened by its tolerance for stochastic cards.
+- **Residuals.** Every op, outcome class, storage category with byte-hours and interserver direction in the record
+  must be covered by a row, or the drill fails with `unmodelled residual`.
+- **Storage** rows bill each category's upper byte-hour bound as GiB-months; **transfer** rows bill both relay
+  directions as `ec2_ec2_cross_az`.
+- **Billing and allocation.** A record's cells are billed once; each line's money is allocated back to the cells
+  by quantity. The fetch probe has two cells, `inserts` (r1 writes the part, storage r1 created) and `recovery`
+  (r1 serves it, r2 fetches and loads it, storage r2 created, interserver bytes), sharing the storage tier.
+- **Evidence** (limitations, inventory, ledger completeness, byte-hour bounds) is shown under every price.
+
+The ledger is complete in all five records (`window.open_attempts` empty) and `inventory.initial` is `declared`:
+RustFS cannot list incomplete uploads by directory prefix.
 
 ### `probe_s3_insert` {#probe-s3-insert}
 
 One 1000-row `INSERT` into a 3-column `ReplicatedMergeTree` on the `s3` disk. Zero crossing attempts, 1000 rows.
+Billed: 11 PUTs and 0.8 `active` byte-hours.
 
 | Caller | Op | Predicted | Ledger |
 |---|---|---|---|
@@ -62,8 +79,16 @@ The same insert on r1 of a 2-replica table; r2 fetches the part.
 | r2 | `PutObject` | 11 | 11 |
 | r2 | `GetObject` | 8..11 (9 expected) | 9 |
 
-Other evidence: relay of r1 `from_target` 32 064 bytes, relay of r2 0 bytes; `ReplicatedPartFetches` r1 0,
-r2 1; `system.part_log` on r2 has one `DownloadPart` row; rows equal on both replicas.
+Other evidence: relay of r1 `from_target` 32 064 bytes and `to_target` 292 bytes, relay of r2 0 bytes;
+`ReplicatedPartFetches` r1 0, r2 1; `system.part_log` on r2 has one `DownloadPart` row; rows equal on both
+replicas.
+
+| Line (billed once) | Money | `inserts` | `recovery` |
+|---|---|---|---|
+| `put_copy_post_list` (22 PUTs) | $0.00011 | $0.000055 | $0.000055 |
+| `get_and_other` (20 GETs) | $0.000008 | $0 | $0.000008 |
+| `storage` (1.6 byte-hours, by creator) | $4.6e-14 | $2.8e-14 | $1.9e-14 |
+| `ec2_ec2_cross_az` (32 356 bytes, both directions) | $3.0e-7 | $0 | $3.0e-7 |
 
 ### `probe_multipart_fault` {#probe-multipart-fault}
 
@@ -74,9 +99,9 @@ without forwarding it. The disk sets `s3_retry_attempts = 1`.
 | Caller | Op | Predicted | Ledger |
 |---|---|---|---|
 | r1 | `CreateMultipartUpload` | 1 | 1 |
-| r1 | `UploadPart` | 3 | 3 |
-| r1 | `CompleteMultipartUpload` | 4 | 4 |
-| r1 | `AbortMultipartUpload` | 4 | 4 |
+| r1 | `UploadPart` | 3 | 3 (2 `ok`, 1 `accepted_dropped`: the store took part 2, the reply was dropped) |
+| r1 | `CompleteMultipartUpload` | 4 | 4 (`server_error`: injected, never sent) |
+| r1 | `AbortMultipartUpload` | 4 | 4 (`server_error`: injected, never sent) |
 | r1 | `PutObject` | 1..14 | 14 |
 | r1 | `DeleteObjects`, `DeleteObject` | 0..1, 0..14 | 0, 0 |
 
@@ -87,23 +112,28 @@ without forwarding it. The disk sets `s3_retry_attempts = 1`.
 | Incomplete bytes before the abort (lower and upper replay) | 40 939 368 .. 40 953 993 | 40 939 368, 40 939 368 |
 | Object at the upload key | none | none |
 | Incomplete bytes after the rig's abort | 0 | 0 |
-| `incomplete` byte-hours in the window | > 0 | 3 851 .. 5 039 |
+| `incomplete` byte-hours in the window | > 0 | 3 794 .. 4 849 |
 
-The drill bills the incomplete-storage line as storage (`storage: 6.43e-9 GB-month`).
+The drill bills incomplete parts and the 14 PUT objects (62.6..63.8 `active` byte-hours) as storage, and the
+accepted-but-dropped part upload as a PUT.
 
 ### `probe_cas_gc_cohort` {#probe-cas-gc-cohort}
 
-20 inserts on the CAS disk, then `DROP TABLE ... SYNC` with GC rounds every 5 s. Stochastic card.
+20 inserts on the CAS disk, then `DROP TABLE ... SYNC` with GC rounds every 5 s. Stochastic card. Request origin
+is causal: requests inside the caller's own GC rounds (`system.cas_gc_log`; r1 3 rounds, r2 3) are maintenance.
+The cell prices foreground plus maintenance: 237 PUTs, 41 + 20 (404) HEADs, 381 + 11 (404) GETs, 14 LISTs,
+42 + 2 deletes, and three storage categories.
 
 | Check | Predicted | Measured |
 |---|---|---|
-| r1 `PutObject` | 40..2000 | 208 |
-| r1 `HeadObject` | 20..2000 | 61 |
+| r1 foreground `PutObject` | 40..2000 | 196 (maintenance 40) |
+| r1 foreground `HeadObject` | 20..2000 | 21 (maintenance 40) |
 | Cohort (blob and manifest objects r1 created) | nonempty | 40 (20 blobs, 20 manifests) |
 | Cohort reclaimed by `DeleteObject(s)` | all | 40 of 40, by r1 |
 | `system.cas_gc_log` `Finish` rows that deleted objects | > 0 | 2 |
-| `reclaim_delay_s` (DROP to last cohort deletion) | > 0 | 12.9 |
-| `garbage` byte-hours | > 0 | 1 796.6 .. 1 797.2 |
+| `reclaim_delay_s` (DROP to last cohort deletion) | > 0 | 13.6 |
+| `garbage` byte-hours | > 0 | 1 922.3 .. 1 922.8 |
+| `active`, `metadata` byte-hours | billed | 32.4 .. 32.5, 77.3 .. 77.4 |
 | Ledger rows with `expect_negotiated` | 0 | 0 |
 
 ### `probe_local_volume` {#probe-local-volume}
@@ -113,15 +143,16 @@ The drill bills the incomplete-storage line as storage (`storage: 6.43e-9 GB-mon
 | Check | Predicted | Measured |
 |---|---|---|
 | S3 requests | none | none |
-| Write syscalls under the data directory | `write` only | `write` only: 3 803 calls, 248 711 389 bytes |
-| Size histogram (bytes: calls) | present | 4096: 1400, 1048576: 200, 262144: 200, 2048: 200, ... |
+| Write syscalls under the data directory, inside the window | `write` only | `write` only: 3 800 calls, 248 711 380 bytes |
+| Size histogram (bytes: calls) | present | 4096: 1400, 256: 400, 512: 400, 1048576: 200, ... |
 | `proc_io.write_bytes` of r1 | > 0 | > 0 |
 | Union peak of allocated bytes, r1 | > 0 | 257 191 936 |
 | Device, filesystem | recorded | `dm-1`, `ext4` |
 
-Demand carried into pricing: capacity 0.24 GiB, 1 830 syscall IOPS, 114.2 MiB/s (window averages over 2.08 s).
-`allocateVolumes` picks `single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s` at $0.48 per month (the IOPS-per-GiB cap
-sets the size).
+Syscall accounting is clipped to the window: 6 data-directory calls outside it (setup and teardown) and none
+crossing an edge are excluded. Demand carried into pricing: capacity 0.24 GiB, 1 944 syscall IOPS, 121.4 MiB/s
+(window averages over 1.95 s). `allocateVolumes` picks `single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s` at $0.48 per
+month (the IOPS-per-GiB cap sets the size). The drill shows the workstation limitations under that price.
 
 ## Source facts established {#source-facts}
 
@@ -171,7 +202,14 @@ All paths are under `tmp/src-26.8/`. The prediction files list every reference w
 - **Second run (`cost-20261024T013627Z`): no `write` under the data directory.** Cause, from the trace: the
   `local` disk path was relative too, so the server wrote the table under `r1/tmp/cas-yardstick/...`. Fix: the
   runner makes the pass directory absolute. The prediction (`write`) was right; the attribution was not.
-- No prediction was changed after a measurement.
+- **Review rerun, first attempt (`cost-20261024T024148Z`), interrupted on purpose** to add `inventory.reclassified`
+  before the final run; its four finished probes drilled with no problem. The interrupt left the local probe's
+  server running; it was stopped and the run's prefix was verified empty.
+- **Review run `cost-20261024T024451Z`** passed on an uncommitted tree; the gate was re-run as
+  `cost-20261024T024945Z` after the code commit so `rig_commit` names the code that ran.
+- No prediction was changed after a measurement. The multipart cell's `UploadPart 3` row became `ok 2` plus
+  `accepted_dropped 1` (the fault rule drops the reply of the first part-2 attempt), and the fetch cell was split by
+  operation; the predicted totals are unchanged.
 
 ## Limitations {#limitations}
 

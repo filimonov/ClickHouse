@@ -1,8 +1,26 @@
 {
   "probe": "probe_s3_insert",
-  "measurement_id": "cost-20261024T015941Z/s3/probe_s3_insert/gate/k1",
+  "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+  "contract": {
+    "code_sha256": "214448f6810204752417b0c05abf2edb4f9211a5e609a6027406d75536896e5b",
+    "contract_version": "1",
+    "registry_version": "0.1.0",
+    "coverage_version": "0.1.0",
+    "billing_version": "0.1.0",
+    "evidence": [
+      {
+        "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
+        "raw_sha256sums": "0f93acd007bd7a10c3366fbab6ff8bb90d69427d6fa933e41f625885eb125a7a"
+      }
+    ]
+  },
   "cells": {
     "probe_s3_insert": {
+      "group": "s3",
+      "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+      "state": "ok",
+      "unavailable_reasons": [],
       "stage1_inputs": {
         "inputs": {
           "data_bytes": 20480,
@@ -14,22 +32,12 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
-          "part_files": [
-            "data.bin",
-            "data.cmrk4",
-            "primary.cidx",
-            "count.txt",
-            "serialization.json",
-            "statistics.packed",
-            "columns.txt",
-            "columns_substreams.txt",
-            "metadata_version.txt",
-            "default_compression_codec.txt",
-            "checksums.txt"
-          ],
+          "probe_active_gib_months": 1.0394807199733486e-12,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
+          "probe_get_error_requests": 0,
           "probe_get_requests": 0,
+          "probe_head_error_requests": 0,
           "probe_head_requests": 0,
           "probe_list_requests": 0,
           "probe_put_requests": 11
@@ -42,34 +50,76 @@
           "cas_inline_cap_bytes": 1048576
         },
         "observations": {
-          "probe_batch_delete_requests": 0,
-          "probe_delete_requests": 0,
-          "probe_get_requests": 0,
-          "probe_head_requests": 0,
-          "probe_list_requests": 0,
-          "probe_put_requests": 11
+          "inputs": {
+            "probe_active_gib_months": 1.0394807199733486e-12,
+            "probe_batch_delete_requests": 0,
+            "probe_delete_requests": 0,
+            "probe_get_error_requests": 0,
+            "probe_get_requests": 0,
+            "probe_head_error_requests": 0,
+            "probe_head_requests": 0,
+            "probe_list_requests": 0,
+            "probe_put_requests": 11
+          }
+        },
+        "prediction_parameters": {
+          "part_files": [
+            "data.bin",
+            "data.cmrk4",
+            "primary.cidx",
+            "count.txt",
+            "serialization.json",
+            "statistics.packed",
+            "columns.txt",
+            "columns_substreams.txt",
+            "metadata_version.txt",
+            "default_compression_codec.txt",
+            "checksums.txt"
+          ]
         }
       },
       "stage2_rows": [
         {
-          "row": "request PutObject ok",
+          "row": "request PutObject ok r1",
           "row_type": "request",
           "op_kind": "PutObject",
           "outcome_class": "ok",
+          "caller": "r1",
+          "category": null,
+          "route": null,
           "branch_taken": [],
           "predicted": 11,
           "measured": 11,
           "expected": 11,
           "exact": true,
-          "upstream_ok": 11,
-          "op_predicted": 11
+          "state": "ok",
+          "group_predicted": 11
+        },
+        {
+          "row": "storage active all",
+          "row_type": "storage",
+          "op_kind": "active",
+          "outcome_class": "all",
+          "caller": null,
+          "category": "active",
+          "route": null,
+          "branch_taken": [],
+          "predicted": 1.0394807199733486e-12,
+          "measured": 1.0394807199733486e-12,
+          "expected": null,
+          "exact": true,
+          "state": "ok"
         }
       ],
       "stage3_ledger_summary": {
-        "by_row_type": {
-          "request": {
+        "by_row": {
+          "request PutObject": {
             "rows": 1,
             "quantity": 11
+          },
+          "storage active": {
+            "rows": 1,
+            "quantity": 1.0394807199733486e-12
           }
         },
         "states": [],
@@ -80,6 +130,67 @@
       "stage4_billing_lines": [
         {
           "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 11,
+          "money": 0.000054999999999999995,
+          "share": 1,
+          "aggregate_quantity": 11,
+          "aggregate_money": 0.000054999999999999995,
+          "basis": "quantity",
+          "note": "0.005 per 1000"
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "unit": "GB-month",
+          "quantity": 1.0394807199733486e-12,
+          "money": 2.3908056559387016e-14,
+          "share": 1,
+          "aggregate_quantity": 1.0394807199733486e-12,
+          "aggregate_money": 2.3908056559387016e-14,
+          "basis": "quantity",
+          "note": "active 1.0394807199733486e-12 GiB-months"
+        }
+      ],
+      "billing_total": 0.00005500000002390805,
+      "stage5_allocation": {
+        "group": "s3",
+        "provisioning": null
+      },
+      "evidence": {
+        "statement": "Measured on one workstation: a local RustFS store behind the ledger proxy and loopback interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.",
+        "limitations": [
+          "process_io includes embedded Keeper on replica 1",
+          "host diskstats include RustFS, proxy and unrelated activity",
+          "directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely",
+          "page cache not dropped (no root)"
+        ],
+        "mode": "deterministic",
+        "inventory_initial": "declared",
+        "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "ledger_complete": true,
+        "open_attempts": 0,
+        "bounds": {
+          "byte_hours": {
+            "active": {
+              "lower": 0.799586915,
+              "upper": 0.8147777647222221
+            }
+          }
+        }
+      }
+    }
+  },
+  "groups": {
+    "s3": {
+      "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+      "cells": [
+        "probe_s3_insert"
+      ],
+      "lines": [
+        {
+          "rule_id": "put_copy_post_list",
           "unit": "requests",
           "quantity": 11,
           "money": 0.000054999999999999995,
@@ -87,11 +198,59 @@
           "note": "0.005 per 1000",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "scope": "variant"
+        },
+        {
+          "rule_id": "storage",
+          "unit": "GB-month",
+          "quantity": 1.0394807199733486e-12,
+          "money": 2.3908056559387016e-14,
+          "tiers": [
+            {
+              "from_gb": 0,
+              "up_to_gb": 51200,
+              "gb": 1.0394807199733486e-12,
+              "price_per_gb_month": 0.023,
+              "money": 2.3908056559387016e-14
+            }
+          ],
+          "note": "active 1.0394807199733486e-12 GiB-months",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "by_category": {
+            "active": 1.0394807199733486e-12
+          },
+          "scope": "variant"
         }
       ],
-      "billing_total": 0.000054999999999999995,
-      "stage5_allocation": null,
-      "measurement_id": "cost-20261024T015941Z/s3/probe_s3_insert/gate/k1"
+      "total": 0.00005500000002390805,
+      "provisioning": null,
+      "allocation": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "money": 0.000054999999999999995,
+          "basis": "quantity",
+          "shares": {
+            "probe_s3_insert": {
+              "weight": 11,
+              "fraction": 1,
+              "money": 0.000054999999999999995
+            }
+          }
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "money": 2.3908056559387016e-14,
+          "basis": "quantity",
+          "shares": {
+            "probe_s3_insert": {
+              "weight": 1.0394807199733486e-12,
+              "fraction": 1,
+              "money": 2.3908056559387016e-14
+            }
+          }
+        }
+      ]
     }
   },
   "mismatches": []
