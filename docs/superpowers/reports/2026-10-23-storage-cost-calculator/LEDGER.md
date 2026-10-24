@@ -173,11 +173,11 @@ The whole-branch review of Plan 1 (8 Important, 4 deferred items to fix before P
 
 | Open item | Placement |
 |---|---|
-| EBS `io_bytes_per_op` for mutations, deletes, reads, recovery | Tier 2 (cut by the EBS report) |
+| EBS `io_bytes_per_op` for mutations, deletes, reads, recovery | Task 6 (replacement) |
 | CAS natural-merge validation: the lifecycle card's snapshot reads reach the store after the cutoff | Tier 2 |
 | CAS uploads per part for other data (mark collapse rule) | Tier 2 |
 | `acquire_bytes[cas]` as bytes per part | Tier 2 |
 | `s3` follower load reads on inserts (9 `GetObject` per fetched part) unpriced | Tier 2 |
 | CAS `recovery` cell (startup measured at 3 active parts only) | Tier 2 |
 | `closure_check.py --mode final` at `639dbbd22ee`: 2 problems, both outside this task's edges: support entry `ebs/storage/local_volumes`; the presets test (the `metrics` preset's `insert_rows` 1000 lies outside `io_bytes_per_op` [80 000, 300 000] and `plain_objects_per_part` [5 000, 400 000]) | owners: EBS and s3plain reports |
-| Yardstick test `test_phase0_coverage_declares_duration_floors` pins phase-0 duration floors that Plan 2 coverage changed | controller ruling pending |
+| Yardstick test `test_phase0_coverage_declares_duration_floors` pinned phase-0 floors that Plan 2 coverage replaced | closed: the test keeps the invariants (controller ruling) |

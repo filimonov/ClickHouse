@@ -532,16 +532,19 @@ class EstimateRegistryTest(unittest.TestCase):
             self.assertIn('absent.json', err.getvalue())
 
     def test_phase0_coverage_declares_duration_floors(self):
+        """Every case declares a positive duration within its timeout; the paced amplification run keeps its 2 h floor.
+
+        The phase-0 estimate seeded 120 s (600 s for gc-* and replication-*) per case. The research tasks replaced
+        those seeds with measured floors (60 s where the median pass is shorter), including on the seed cases
+        themselves, so the per-family equality no longer describes the file; the estimate reads whatever is declared.
+        """
         with open(os.path.join(cli.REPO, 'docs', 'superpowers', 'cost-model', 'coverage.json')) as f:
             cov = json.load(f)
         cases = {(c['name'], k['case_id']): k for c in cov['cards'] for k in c['cases']}
         amp = cases[('amplification-run', 'amplification-run')]
-        self.assertEqual((amp['duration_s'], amp['timeout_s']), (7200, 14400))
+        self.assertEqual((amp['duration_s'], amp['timeout_s'], amp['status']), (7200, 14400, 'cut'))
         for (card, case), k in cases.items():
-            if card == 'amplification-run':
-                continue
-            want = 600 if card.startswith('gc-') or case.startswith('replication-') else 120
-            self.assertEqual(k['duration_s'], want, (card, case))
+            self.assertGreater(k['duration_s'], 0, (card, case))
             self.assertGreaterEqual(k['timeout_s'], k['duration_s'], (card, case))
 
 

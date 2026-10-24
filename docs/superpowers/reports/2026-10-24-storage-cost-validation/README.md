@@ -317,7 +317,7 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | `merge_effective_fan_in`, `merge_fan_in_distribution`, `merge_result_size_distribution` | validated on `s3` and `s3plain`; on `cas` the records fail on the card's own snapshot reads, with identical merge history |
 | `failed_upload_residue` | 0 on every variant within `upload_parts` 2–4; a part answered after the abort started stays in the replay's upper bound (replication report) |
 | `local_exec_requests` | per merge of 4 Compact sources; `GetObject` scales with sources (8 per source on `s3`, `s3plain`), so the per-merge value holds at 4 sources only |
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not measured: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. The EBS report cut those cells (`unsupported_cut`, edges `cut`; its §Cut operations) |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not measured: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. Placed on Task 6 (replacement): write bytes from `/proc` in one untraced ops run on `local`, reads as a derivation from the s3 cold-read bytes and the D16 floor |
 
 ## Carried items {#carried}
 
@@ -337,7 +337,7 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 
 | Item | Placement |
 |---|---|
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | Tier 2: traced passes of those operations on `local` (cut by the EBS report) |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | Task 6 (replacement) |
 | CAS natural-merge validation | Tier 2: the lifecycle card's snapshot reads must leave the window, or be excluded as observer traffic, before the cutoff assertion can hold on CAS |
 | CAS uploads per part for other data | Tier 2: a mark-collapse rule from compressed block sizes, or a measured count per data profile |
 | `acquire_bytes[cas]` as bytes per part | Tier 2: refit as bytes per part (manifest size per file) |
@@ -358,7 +358,7 @@ One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_val
 | 4 | MINOR | placement prose listed `.mrk*`/`.cmrk*` and omitted the inline spill | closed: exact suffixes (`ContentAddressedTransaction.cpp:77`) and the spill (`:998`) |
 | 5 | MINOR | "same final sizes" in all nine merge records | closed: `s3` repeat 2 ended with 27, 23, 6, 6, 1, 1 |
 | 6 | MINOR | `s3plain` byte ratio 1.0008 | closed: 1.0005 |
-| 7 | MINOR | EBS placement named evidence that does not exist | closed: the EBS report cut those cells; placement Tier 2 |
+| 7 | MINOR | EBS placement named evidence that does not exist | closed: placement is Task 6 (replacement), with the method it uses |
 
 ## Reproduce {#reproduce}
 
