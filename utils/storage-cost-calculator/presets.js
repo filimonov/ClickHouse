@@ -27,6 +27,8 @@
         async_insert: '0', shape: 'wide', merge_size_ratio: 256,
         // Append-only: logs are never updated or deleted in place, so no mutation of any kind runs.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        // Searches over recent logs: 2,000 parts read a day that miss the cache. One rolling restart a month.
+        select_part_reads_per_day: 2000, restarts_per_month: 1,
       },
       locks: ['ingest_rate', 'retention_days'],
     },
@@ -42,6 +44,8 @@
         async_insert: '1', shape: 'narrow', merge_size_ratio: 256,
         // Append-only: samples are never rewritten; expiry is by TTL or partition drop, not by mutation.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        // Dashboards re-read history often: 5,000 parts read a day that miss the cache. One rolling restart a month.
+        select_part_reads_per_day: 5000, restarts_per_month: 1,
       },
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
@@ -63,6 +67,8 @@
         // affected partitions (300 parts a month). The CAS rate is the same 30 a month per second (30 / 2,628,000 s).
         mutations_per_month: 30, mutation_kind: 'update_column', mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 300,
         cas_mutations_per_s: 30 / 2628000, cas_parts_per_mutation: 10,
+        // Reports scan wide date ranges: 20,000 parts read a day that miss the cache. One rolling restart a month.
+        select_part_reads_per_day: 20000, restarts_per_month: 1,
       },
       locks: ['data_bytes', 'retention_days'],
     },
@@ -79,17 +85,19 @@
         async_insert: '0', shape: 'wide', merge_size_ratio: 450,
         // Append-only: an archive is written once and expires by partition drop.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        // Rare lookups: 200 parts read a day. One restart a month.
+        select_part_reads_per_day: 200, restarts_per_month: 1,
       },
       locks: ['data_bytes', 'retention_days'],
     },
     // The standard deployment: what the workload knobs alone describe. Wide table, async inserts on (the async buffer
-    // flushes ~1 MiB, the registry default), default merges, a modest number of cold part reads, no mutations, 3
-    // replicas in one zone, filesystem cache on. Everything else stays at its registry default.
+    // flushes ~1 MiB, the registry default), default merges, a modest number of cold part reads, one restart a month,
+    // no mutations, 3 replicas in one zone, filesystem cache on. Everything else stays at its registry default.
     custom: {
       label: 'Custom',
-      description: 'A typical deployment: wide table, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, no ALTER UPDATE/DELETE; edit any input',
+      description: 'A typical deployment: wide table, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, one restart a month, no ALTER UPDATE/DELETE; edit any input',
       values: {
-        replicas: 3, topology: 'same_az', shape: 'wide', async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000,
+        replicas: 3, topology: 'same_az', shape: 'wide', async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000, restarts_per_month: 1,
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: [],
