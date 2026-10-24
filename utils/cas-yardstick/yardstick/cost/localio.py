@@ -215,49 +215,20 @@ _RESUMED = re.compile(r'^(?:(\d+)\s+)?(\d+\.\d+)\s+<\.\.\. (\w+) resumed>.*\)\s+
 _DURATION = re.compile(r'<(\d+\.\d+)>\s*$')
 
 
-def parse_strace(paths, path_filter=None, window=None) -> dict:
-    """Per-syscall count, returned bytes and size histogram for fds that resolve to absolute paths.
+def _strace_calls(files):
+    """`(syscall, path, ret, pid, start, end)` of every finished call on an fd that resolves to an absolute path.
 
-    `paths` is one trace file or a list (one per server generation). Sockets, pipes and ttys carry no leading `/`
-    in the `-yy` decoration and are not counted. Failed calls (negative return) are skipped. With `window`
-    `(t0_s, t1_s)`, only calls that start and end inside it count; a call that straddles an edge is listed in
-    `crossing`, and the rest are counted in `outside`. A call's end is its start plus the `-T` duration.
+    Unfinished calls are joined with their `resumed` line; pids do not carry over between generations. A call's end
+    is its start plus the `-T` duration.
     """
-    files = [paths] if isinstance(paths, str) else list(paths)
-    syscalls: dict = {}
-    crossing: list = []
-    outside = 0
     pending: dict = {}
-
-    def record(name: str, fd_path: str, ret: int, pid=None, start=None, end=None) -> None:
-        nonlocal outside
-        if ret < 0 or (path_filter and not path_filter(fd_path)):
-            return
-        if window is not None:
-            t0, t1 = window
-            if start >= t0 and end <= t1:
-                pass
-            elif start <= t1 and end >= t0:
-                crossing.append({'pid': pid or '', 'syscall': name, 'path': fd_path, 'start': start, 'end': end,
-                                 'bytes': ret if name not in ('fsync', 'fdatasync') else 0})
-                return
-            else:
-                outside += 1
-                return
-        entry = syscalls.setdefault(name, {'count': 0, 'bytes': 0, 'size_histogram': {}})
-        entry['count'] += 1
-        if name not in ('fsync', 'fdatasync'):
-            entry['bytes'] += ret
-            if ret > 0:
-                bucket = size_bucket(ret)
-                entry['size_histogram'][bucket] = entry['size_histogram'].get(bucket, 0) + 1
 
     def duration(line):
         d = _DURATION.search(line)
         return float(d.group(1)) if d else 0.0
 
     for path in files:
-        pending.clear()  # pids do not carry over between generations
+        pending.clear()
         with open(path, errors='replace') as f:
             for raw in f:
                 line = raw.rstrip('\n')
@@ -270,17 +241,173 @@ def parse_strace(paths, path_filter=None, window=None) -> dict:
                     call = pending.pop(m.group(1), None)
                     if call and call[0] == m.group(3):
                         end = call[2] + duration(line) if _DURATION.search(line) else float(m.group(2))
-                        record(call[0], call[1], int(m.group(4)), m.group(1), call[2], end)
+                        yield call[0], call[1], int(m.group(4)), m.group(1), call[2], end
                     continue
                 m, done = _CALL.match(line), _DONE.match(line)
                 if m and done:
                     start = float(m.group(2))
-                    record(m.group(3), re.sub(r' \(deleted\)$', '', m.group(5)), int(done.group(1)), m.group(1), start,
+                    yield (m.group(3), re.sub(r' \(deleted\)$', '', m.group(5)), int(done.group(1)), m.group(1), start,
                            start + duration(line))
+
+
+def parse_strace(paths, path_filter=None, window=None) -> dict:
+    """Per-syscall count, returned bytes and size histogram for fds that resolve to absolute paths.
+
+    `paths` is one trace file or a list (one per server generation). Sockets, pipes and ttys carry no leading `/`
+    in the `-yy` decoration and are not counted. Failed calls (negative return) are skipped. With `window`
+    `(t0_s, t1_s)`, only calls that start and end inside it count; a call that straddles an edge is listed in
+    `crossing`, and the rest are counted in `outside`. A call's end is its start plus the `-T` duration.
+    """
+    files = [paths] if isinstance(paths, str) else list(paths)
+    syscalls: dict = {}
+    crossing: list = []
+    outside = 0
+    for name, fd_path, ret, pid, start, end in _strace_calls(files):
+        if ret < 0 or (path_filter and not path_filter(fd_path)):
+            continue
+        if window is not None:
+            t0, t1 = window
+            if start >= t0 and end <= t1:
+                pass
+            elif start <= t1 and end >= t0:
+                crossing.append({'pid': pid or '', 'syscall': name, 'path': fd_path, 'start': start, 'end': end,
+                                 'bytes': ret if name not in ('fsync', 'fdatasync') else 0})
+                continue
+            else:
+                outside += 1
+                continue
+        entry = syscalls.setdefault(name, {'count': 0, 'bytes': 0, 'size_histogram': {}})
+        entry['count'] += 1
+        if name not in ('fsync', 'fdatasync'):
+            entry['bytes'] += ret
+            if ret > 0:
+                bucket = size_bucket(ret)
+                entry['size_histogram'][bucket] = entry['size_histogram'].get(bucket, 0) + 1
     out = {'tool': 'strace', 'syscalls': syscalls}
     if window is not None:
         out.update(window=list(window), crossing=crossing, outside=outside, files=files)
     return out
+
+
+READ_SYSCALLS = ('read', 'pread64', 'readv')
+WRITE_SYSCALLS = ('write', 'pwrite64', 'writev')
+
+
+def ebs_ios(size: int, max_io_bytes: int) -> int:
+    """I/O operations one request of `size` bytes counts under a provider rule of at most `max_io_bytes` per I/O."""
+    return -(-size // max_io_bytes)
+
+
+def parse_strace_by(paths, classify, windows: dict, max_io_bytes: int) -> dict:
+    """One pass over the traces: per window, per path class and per direction, the calls inside the window.
+
+    `classify(path)` names the class of a path (None drops it). `windows` maps a name to `(t0_s, t1_s)`; a call
+    counts in a window when it starts and ends inside it, and a call that straddles a window edge is counted in
+    that window's `crossing`. Per direction: `count`, `bytes`, `ebs_ios` (each request counted on its own under
+    `max_io_bytes`, no merge credit) and `size_histogram` (power-of-two upper bounds); fsync calls are counted
+    separately, with no bytes.
+    """
+    files = [paths] if isinstance(paths, str) else list(paths)
+
+    def empty():
+        return {'count': 0, 'bytes': 0, 'ebs_ios': 0, 'size_histogram': {}}
+
+    out = {w: {'classes': {}, 'crossing': 0} for w in windows}
+    for name, fd_path, ret, _pid, start, end in _strace_calls(files):
+        if ret < 0:
+            continue
+        cls = classify(fd_path)
+        if cls is None:
+            continue
+        for w, (t0, t1) in windows.items():
+            if not (start >= t0 and end <= t1):
+                if start <= t1 and end >= t0:
+                    out[w]['crossing'] += 1
+                continue
+            entry = out[w]['classes'].setdefault(cls, {'write': empty(), 'read': empty(), 'fsync': 0})
+            if name in ('fsync', 'fdatasync'):
+                entry['fsync'] += 1
+                continue
+            if ret == 0:
+                continue  # end of file: no bytes move
+            d = entry['write' if name in WRITE_SYSCALLS else 'read']
+            d['count'] += 1
+            d['bytes'] += ret
+            d['ebs_ios'] += ebs_ios(ret, max_io_bytes)
+            bucket = size_bucket(ret)
+            d['size_histogram'][bucket] = d['size_histogram'].get(bucket, 0) + 1
+    return out
+
+
+class ProcIoSampler:
+    """`/proc/<pid>/io` every `interval_s`: `[t_us, pid, read_bytes, write_bytes]` rows for rate peaks.
+
+    `pid_of()` is asked on every tick, so a restarted server is followed; rows of different pids never pair.
+    """
+
+    def __init__(self, pid_of, interval_s: float = 1.0, reader=proc_io):
+        self.pid_of, self.interval_s, self.reader = pid_of, interval_s, reader
+        self._rows: list = []
+        self._stop = threading.Event()
+        self._thread = None
+        self._error: BaseException | None = None
+
+    def _sample(self) -> None:
+        pid = self.pid_of()
+        try:
+            io = self.reader(pid)
+        except (FileNotFoundError, ProcessLookupError):
+            return  # the process is between generations; the next tick sees the new pid
+        self._rows.append([_now_us(), pid, io['read_bytes'], io['write_bytes']])
+
+    def _run(self) -> None:
+        try:
+            while not self._stop.wait(self.interval_s):
+                self._sample()
+        except BaseException as e:  # noqa: BLE001 (handed to stop(): a dead sampler must not pass for an idle server)
+            self._error = e
+
+    def start(self) -> None:
+        self._sample()
+        self._thread = threading.Thread(target=self._run, name='proc-io-sampler', daemon=True)
+        self._thread.start()
+
+    def stop(self) -> list:
+        self._stop.set()
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
+        self._sample()
+        return self._rows
+
+
+def rate_intervals(rows: list, t0_us: int, t1_us: int, field: int = 3) -> list:
+    """`(seconds, bytes)` between consecutive samples of one pid that both lie in `[t0_us, t1_us]`."""
+    inside = [r for r in rows if t0_us <= r[0] <= t1_us]
+    return [((b[0] - a[0]) / 1e6, b[field] - a[field]) for a, b in zip(inside, inside[1:]) if a[1] == b[1] and b[0] > a[0]]
+
+
+def peak_factor(rows: list, t0_us: int, t1_us: int, baseline_bps: float = 0.0) -> dict:
+    """Peak over mean of the `write_bytes` rate in `[t0_us, t1_us]`, both net of a constant `baseline_bps`.
+
+    The peak is the largest single-interval rate (one sampling interval, about 1 s); the mean is total bytes over
+    total time. ValueError when the window has no interval or no net write.
+    """
+    intervals = rate_intervals(rows, t0_us, t1_us)
+    if not intervals:
+        raise ValueError(f'no sampling interval inside [{t0_us}, {t1_us}]')
+    seconds = sum(s for s, _ in intervals)
+    mean = sum(b for _, b in intervals) / seconds - baseline_bps
+    if mean <= 0:
+        raise ValueError(f'no net write in [{t0_us}, {t1_us}]: mean {mean} B/s after a {baseline_bps} B/s baseline')
+    peak = max(b / s for s, b in intervals) - baseline_bps
+    return {'peak_bps': peak, 'mean_bps': mean, 'peak_factor': peak / mean, 'intervals': len(intervals),
+            'seconds': seconds}
+
+
+def net_io(delta_io: dict, baseline_bps: dict, wall_s: float) -> dict:
+    """Process I/O of a phase minus what the idle baseline (embedded Keeper, background flushes) does in `wall_s`."""
+    return {k: delta_io[k] - baseline_bps.get(k, 0.0) * wall_s for k in ('read_bytes', 'write_bytes')}
 
 
 def limitations(pass_dir: str, local_dirs, drop_caches_path: str = DROP_CACHES, traced: bool = False) -> list:

@@ -1,0 +1,62 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "io-sizes.idle",
+  "policy": "local",
+  "inputs": {
+    "ebs_max_io_bytes": 262144,
+    "phases": [],
+    "inserts": 0
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "baseline.write_bps.r1": {
+        "min": 0,
+        "basis": "derived",
+        "reason": "a counter delta is never negative"
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part files are written through a buffer of DBMS_DEFAULT_BUFFER_SIZE",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromFile.h",
+      "line": 34
+    },
+    {
+      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: no write request is larger",
+      "path": "tmp/src-26.8/src/Core/Defines.h",
+      "line": 22
+    },
+    {
+      "claim": "local reads use a buffer of max_read_buffer_size = 1 MiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 404
+    },
+    {
+      "claim": "local_filesystem_read_method is pread_threadpool: reads are pread syscalls",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7168
+    },
+    {
+      "claim": "min_bytes_to_use_direct_io is 0: reads go through the page cache",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 1820
+    },
+    {
+      "claim": "fsync_after_insert is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 615
+    },
+    {
+      "claim": "fsync_part_directory is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 619
+    }
+  ],
+  "prediction_commit": "pending"
+}

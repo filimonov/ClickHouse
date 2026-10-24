@@ -1,0 +1,37 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "small-inserts.default",
+  "card": "small-inserts",
+  "case_id": "default",
+  "policies": [
+    "local"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "quiet_s": 60,
+    "quiesce_timeout_s": 900,
+    "rows": 1000,
+    "inserts": 1000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 2400,
+  "description": "1000 back-to-back inserts of 1000 rows into a 5-column UInt64 table with natural merges, then a wait until no merge has run for 60 s. Run on `local` for EBS demand: proc_io series, peak factor."
+}

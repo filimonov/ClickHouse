@@ -46,7 +46,7 @@ class TwoTables(CostCard):
 class DefaultsTest(unittest.TestCase):
     def test_cards_registry_holds_the_phase0_and_lifecycle_cards(self):
         self.assertEqual(sorted(cards.CARDS), ['amplification-run', 'async-inserts', 'boundaries', 'gc-scale',
-                                               'merge-forced', 'merge-natural', 'probe_cas_expect',
+                                               'io-sizes', 'merge-forced', 'merge-natural', 'probe_cas_expect',
                                                'probe_cas_gc_cohort', 'probe_local_volume', 'probe_multipart_fault',
                                                'probe_replicated_fetch', 'probe_s3_insert', 'small-inserts'])
 

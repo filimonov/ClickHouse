@@ -13,10 +13,12 @@ from . import measurements
 from .cards.base import CardContext, check_replicas, run_measured
 from .cluster import Cluster, GenerationCrashed
 from .ledger import Inventory
-from .localio import DirSampler, Tracer, device_of, limitations, parse_strace, replica_paths
+from .localio import DirSampler, ProcIoSampler, Tracer, device_of, limitations, parse_strace, replica_paths
 
 VARIANTS = {'local': 'ebs', 's3': 's3', 's3plain': 's3plain', 'cas': 'cas'}
 SAMPLE_INTERVAL_S = 0.5
+# EBS demand peaks (variant `ebs`): `/proc/<pid>/io` per replica at this interval, into `observations.proc_io_series`.
+PROC_IO_INTERVAL_S = 1.0
 CLOSING_OPS = ('CompleteMultipartUpload', 'AbortMultipartUpload')
 UNLISTED_UPLOADS_NOTE = ('objects listed empty; incomplete uploads not enumerable on RustFS rc.3; '
                          'prior passes abort their uploads from the ledger')
@@ -118,6 +120,8 @@ class _Pass:
         self.cluster_up = False
         self.teardown_done = False
         self.samplers: list = []
+        self.io_samplers: dict = {}
+        self.io_series: dict = {}
         self.hashes: list = []
         self.initial: dict = {}
 
@@ -235,6 +239,10 @@ class _Pass:
                                            SAMPLE_INTERVAL_S)
             sampler.start()
             self.samplers.append(sampler)
+            if self.common['variant'] == 'ebs':
+                io = ProcIoSampler(lambda i=i: self.cluster.generations[i][-1]['pid'], PROC_IO_INTERVAL_S)
+                io.start()
+                self.io_samplers[f'r{i}'] = io
         result = run_measured(card, self.ctx)
         card.complete(self.ctx, timeout_s=self.manifest.get('timeout_s', 300))
         wall_s = time.monotonic() - t0
@@ -245,9 +253,11 @@ class _Pass:
         card.teardown(self.ctx)
         self.mark('teardown_end')
         deps.proxy.flush()
+        observations = dict(result.get('observations', {}))
+        if self.io_series:
+            observations['proc_io_series'] = self.io_series
         self.sections.update(effective_counts=result.get('effective_counts', {}),
-                             observations=result.get('observations', {}), unit_count=result['unit_count'],
-                             wall_s=wall_s)
+                             observations=observations, unit_count=result['unit_count'], wall_s=wall_s)
         self.collect_ledger()
         self.sections['observations'] = {**self.sections['observations'], **card.observe(self.ctx, dict(self.sections))}
         self.sections['assertions'] = {
@@ -282,6 +292,8 @@ class _Pass:
                               'attribution': 'process_io', 'trace': None,
                               'limitations': limitations(self.pass_dir, local_dirs, traced=traced)}
         self.samplers = []
+        self.io_series = {name: io.stop() for name, io in self.io_samplers.items()}
+        self.io_samplers = {}
         self.sections['local'] = local
 
     def pass_attempts(self, rows: list) -> dict:
@@ -368,6 +380,8 @@ class _Pass:
         step('clear_faults', deps.proxy.clear_faults)
         for sampler in self.samplers:
             step('sampler', sampler.stop)
+        for io in self.io_samplers.values():
+            step('proc_io_sampler', io.stop)
         if self.cluster_up and not self.teardown_done:
             step('teardown', lambda: self.card.teardown(self.ctx))
         if self.cluster is not None:

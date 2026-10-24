@@ -1,0 +1,120 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "io-sizes.narrow-wide",
+  "policy": "local",
+  "inputs": {
+    "ebs_max_io_bytes": 262144,
+    "phases": [
+      "insert",
+      "merge",
+      "select"
+    ],
+    "inserts": 10
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "baseline.write_bps.r1": {
+        "min": 0,
+        "basis": "derived",
+        "reason": "a counter delta is never negative"
+      },
+      "inserts.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.io_bytes.write": {
+        "min": 0.95,
+        "max": 3.0,
+        "basis": "assumption",
+        "reason": "every part file is written once; page rounding and metadata files add a little; the bound allows unknown overhead"
+      },
+      "merges.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.io_bytes.write": {
+        "min": 0.95,
+        "max": 3.0,
+        "basis": "assumption",
+        "reason": "every part file is written once; page rounding and metadata files add a little; the bound allows unknown overhead"
+      },
+      "merges.io_bytes.read": {
+        "min": 0.5,
+        "max": 2.5,
+        "basis": "assumption",
+        "reason": "a merge or full scan reads every column file of its parts once; marks and index files add a little"
+      },
+      "reads.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.io_bytes.read": {
+        "min": 0.5,
+        "max": 2.5,
+        "basis": "assumption",
+        "reason": "a merge or full scan reads every column file of its parts once; marks and index files add a little"
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part files are written through a buffer of DBMS_DEFAULT_BUFFER_SIZE",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromFile.h",
+      "line": 34
+    },
+    {
+      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: no write request is larger",
+      "path": "tmp/src-26.8/src/Core/Defines.h",
+      "line": 22
+    },
+    {
+      "claim": "local reads use a buffer of max_read_buffer_size = 1 MiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 404
+    },
+    {
+      "claim": "local_filesystem_read_method is pread_threadpool: reads are pread syscalls",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7168
+    },
+    {
+      "claim": "min_bytes_to_use_direct_io is 0: reads go through the page cache",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 1820
+    },
+    {
+      "claim": "fsync_after_insert is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 615
+    },
+    {
+      "claim": "fsync_part_directory is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 619
+    }
+  ],
+  "prediction_commit": "pending"
+}

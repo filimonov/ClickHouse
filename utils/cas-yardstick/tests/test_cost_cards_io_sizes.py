@@ -1,0 +1,140 @@
+"""Fixture tests of the EBS demand card (`io-sizes`, R1), its manifests and the demand arithmetic."""
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from types import SimpleNamespace
+
+from yardstick.cost import localio
+from yardstick.cost.cards import CARDS, io_sizes, probes
+
+TOOLS = os.path.join(probes.REPO, 'utils', 'storage-cost-calculator', 'tools')
+sys.path.insert(0, TOOLS)
+import artifacts  # noqa: E402
+
+R = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-ebs')
+EXPERIMENTS = os.path.join(R, 'experiments')
+with open(os.path.join(probes.REPO, 'docs', 'superpowers', 'cost-model', 'inputs-registry.json')) as _f:
+    REGISTRY = {q['id']: q for q in json.load(_f)['quantities']}
+MIB = 1 << 20
+
+
+def manifest(experiment_id):
+    with open(os.path.join(EXPERIMENTS, f'{experiment_id}.json')) as f:
+        m = json.load(f)
+    m['params']['report_dir'] = R
+    return m
+
+
+class ManifestsTest(unittest.TestCase):
+    def test_every_manifest_validates_and_runs_on_local(self):
+        for name in sorted(os.listdir(EXPERIMENTS)):
+            with open(os.path.join(EXPERIMENTS, name)) as f:
+                m = json.load(f)
+            self.assertEqual(artifacts.validate_experiment(m), [], name)
+            self.assertIn(m['card'], CARDS, name)
+            self.assertEqual(m['policies'], ['local'], name)
+
+    def test_io_sizes_manifests_trace_and_use_the_registry_io_size(self):
+        for name in sorted(n for n in os.listdir(EXPERIMENTS) if n.startswith('io-sizes.')):
+            p = manifest(name[:-5])['params']
+            self.assertIs(p['trace'], True, name)
+            self.assertEqual(p['ebs_max_io_bytes'], REGISTRY['ebs_max_io_bytes']['default'], name)
+            self.assertLessEqual(set(p['phases']), set(io_sizes.PHASE_OPS), name)
+
+    def test_every_prediction_validates_and_cites_the_pinned_source(self):
+        for name in sorted(os.listdir(os.path.join(R, 'predictions'))):
+            with open(os.path.join(R, 'predictions', name)) as f:
+                pred = json.load(f)
+            self.assertEqual(artifacts.validate_prediction(pred), [], name)
+            self.assertEqual(pred['policy'], 'local', name)
+            self.assertEqual(pred['expected']['foreground'], {}, name)  # a local disk sends no S3 request
+            for ref in pred['source_refs']:
+                self.assertTrue(ref['path'].startswith('tmp/src-26.8/'), ref)
+                with open(os.path.join(probes.REPO, ref['path'])) as f:
+                    self.assertLessEqual(ref['line'], sum(1 for _ in f), ref)
+
+    def test_card_registered_traced_with_an_idle_control(self):
+        card = CARDS['io-sizes']
+        self.assertIsInstance(card, io_sizes.IoSizes)
+        self.assertTrue(card.trace)
+        self.assertEqual((card.policies, card.replicas), (('local',), 2))
+
+
+class DemandArithmeticTest(unittest.TestCase):
+    def test_size_distribution_buckets_and_rejects_empty(self):
+        got = io_sizes.size_distribution({'4096': 2, '1024': 1, '1048576': 1, '2097152': 0})
+        self.assertAlmostEqual(got['<=4KiB'], 0.75)
+        self.assertAlmostEqual(got['1MiB'], 0.25)
+        self.assertEqual(set(got), {label for label, _ in io_sizes.SIZE_BUCKETS})
+        with self.assertRaises(ValueError):
+            io_sizes.size_distribution({})
+
+    def test_ios_per_mib_under_the_256_kib_rule(self):
+        self.assertEqual(io_sizes.ios_per_mib({'bytes': 2 * MIB, 'ebs_ios': 8}), 4.0)
+        with self.assertRaises(ValueError):
+            io_sizes.ios_per_mib({'bytes': 0, 'ebs_ios': 0})
+
+    def test_phase_summary_subtracts_the_idle_baseline(self):
+        phase = {'name': 'insert', 'wall_s': 10.0, 'logical_bytes': 1_000_000,
+                 'proc_io': {'read_bytes': 0, 'write_bytes': 1_500_000},
+                 'traced': {'table': {'write': {'count': 4, 'bytes': 1_000_000, 'ebs_ios': 4,
+                                                'size_histogram': {'262144': 4}},
+                                      'read': {'count': 0, 'bytes': 0, 'ebs_ios': 0, 'size_histogram': {}}},
+                            'keeper': {'write': {'count': 9, 'bytes': 900, 'ebs_ios': 9, 'size_histogram': {'128': 9}}}}}
+        s = io_sizes.phase_summary(phase, {'write_bytes': 40_000.0, 'read_bytes': 0.0})
+        # 1.5 MB written in 10 s, 40 kB/s of it the baseline: 1.1 MB net per 1 MB of parts.
+        self.assertEqual(s['net_write_bytes'], 1_100_000)
+        self.assertAlmostEqual(s['io_bytes']['write'], 1.1)
+        self.assertEqual(s['io_bytes']['read'], 0.0)
+        self.assertEqual(s['request_size_distribution']['write']['256KiB'], 1.0)  # the Keeper's writes are not the volume's
+        self.assertNotIn('read', s['ebs_ios_per_mib'])
+        with self.assertRaises(ValueError):
+            io_sizes.phase_summary({**phase, 'logical_bytes': 0}, {})
+
+
+class IdleCardTest(unittest.TestCase):
+    """`observe` on a fixture pass: the baseline phase's rate is what the other phases subtract."""
+
+    TRACE = ('11 100.500000 pwrite64(5</p/r1/keeper/log/changelog_1.bin>, "x"..., 4096, 0) = 4096 <0.000100>\n'
+             '11 120.000000 write(6</p/local/r1/store/t/all_1_1_0/data.bin>, "x"..., 1048576) = 1048576 <0.001000>\n'
+             '11 120.500000 write(7</p/r1/data/system/part_log/x.bin>, "x"..., 1000) = 1000 <0.000100>\n')
+
+    def test_observe_subtracts_the_keeper_baseline(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with open(localio.Tracer(tmp, 1, 0).path(), 'w') as f:
+            f.write(self.TRACE)
+        card = io_sizes.IoSizes()
+        ctx = SimpleNamespace(pass_dir=tmp, local_dirs=['/p/local/r1'],
+                              cluster=SimpleNamespace(run_dir=lambda i: f'/p/r{i}'),
+                              manifest=manifest('io-sizes.narrow-compact'))
+        io = lambda w: {'read_bytes': 0, 'write_bytes': w}  # noqa: E731
+        card.state(ctx)['phases'] = {
+            'baseline': {'name': 'baseline', 't0_us': 100_000_000, 't1_us': 110_000_000, 'wall_s': 10.0,
+                         'logical_bytes': 0, 'proc_io': {'r1': io(50_000), 'r2': io(10_000)}},
+            'insert': {'name': 'insert', 't0_us': 119_000_000, 't1_us': 121_000_000, 'wall_s': 2.0,
+                       'logical_bytes': 1_000_000, 'proc_io': {'r1': io(1_060_000), 'r2': io(2_000)}}}
+        out = card.observe(ctx, {})
+        self.assertEqual(out['baseline']['bps']['r1']['write_bytes'], 5000.0)
+        self.assertEqual(out['baseline']['r1_minus_r2_write_bps'], 4000.0)
+        self.assertAlmostEqual(out['baseline']['traced_keeper_write_bps'], 409.6)
+        insert = out['phases']['insert']['summary']
+        self.assertEqual(insert['net_write_bytes'], 1_050_000)  # 1 060 000 minus 2 s x 5 kB/s
+        self.assertAlmostEqual(out['inserts.io_bytes.write'], 1.05)
+        self.assertEqual(insert['traced_table_bytes']['write'], 1_048_576)
+        self.assertEqual(insert['traced_bytes']['write'], 1_049_576)  # table and server classes, not Keeper
+        self.assertEqual(out['inserts.ebs_ios_per_mib.write'], (4 + 1) / (1_049_576 / MIB))
+        self.assertEqual(out['inserts.max_request_bucket.write'], 1048576)
+
+    def test_manifest_without_trace_is_refused(self):
+        m = manifest('io-sizes.narrow-compact')
+        m['params']['trace'] = False
+        with self.assertRaisesRegex(ValueError, 'trace = true'):
+            io_sizes.IoSizes().measured(SimpleNamespace(manifest=m, pass_dir='x'))
+
+
+if __name__ == '__main__':
+    unittest.main()

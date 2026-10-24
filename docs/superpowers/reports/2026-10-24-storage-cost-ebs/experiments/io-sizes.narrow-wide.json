@@ -1,0 +1,46 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "io-sizes.narrow-wide",
+  "card": "io-sizes",
+  "case_id": "narrow-wide",
+  "policies": [
+    "local"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "trace": true,
+    "ebs_max_io_bytes": 262144,
+    "baseline_s": 10,
+    "phases": [
+      "insert",
+      "merge",
+      "select"
+    ],
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "rows": 300000,
+    "inserts": 200,
+    "optimize": "OPTIMIZE TABLE {table} FINAL",
+    "select": "SELECT * FROM {table} FORMAT Null"
+  },
+  "scale": 0.05,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Fit: 10 inserts of 300 000 rows into 5 UInt64 columns (Wide parts), OPTIMIZE FINAL, full scan."
+}

@@ -1,0 +1,150 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "small-inserts.default",
+  "policy": "local",
+  "inputs": {
+    "parts_per_insert": 1,
+    "inserted_part_type": "Compact"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "quiesced": true,
+      "inserted_parts": 1000,
+      "inserted_rows": 1000000,
+      "merges": {
+        "basis": "derived",
+        "reason": "every merge takes at least two parts, and the selector merges a pile of equal parts",
+        "min": 1,
+        "max": 999
+      },
+      "fan_in_min": {
+        "basis": "derived",
+        "reason": "at least two parts per merge",
+        "min": 2
+      },
+      "fan_in_max": {
+        "basis": "derived",
+        "reason": "max_parts_to_merge_at_once",
+        "max": 100
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a natural merge takes at least two parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.cpp",
+      "line": 283
+    },
+    {
+      "claim": "and at most max_parts_to_merge_at_once = 100",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 636
+    },
+    {
+      "claim": "an insert below min_insert_block_size_rows is one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "the type starts Wide; the predicate turns it Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6402
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compact marks with substreams are .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "pending"
+}

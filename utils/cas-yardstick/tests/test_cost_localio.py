@@ -1,4 +1,6 @@
+import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -346,3 +348,78 @@ class ServerShTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EbsDemandHelpersTest(unittest.TestCase):
+    """Request-size parsing by path class and window, rate peaks and the idle baseline (EBS demand, R1)."""
+
+    TRACE = (
+        '101 100.000000 write(5</d/t/all_1_1_0/data.bin>, "x"..., 1048576) = 1048576 <0.001000>\n'
+        '101 100.010000 write(5</d/t/all_1_1_0/data.bin>, "x"..., 300000) = 300000 <0.001000>\n'
+        '101 100.020000 pwrite64(6</d/k/log/changelog.bin>, "x"..., 4096, 0) = 4096 <0.000100>\n'
+        '102 100.030000 pread64(7</d/t/all_1_1_0/data.bin>, <unfinished ...>\n'
+        '101 100.031000 fsync(5</d/t/all_1_1_0/data.bin>) = 0 <0.002000>\n'
+        '102 100.040000 <... pread64 resumed>"x"..., 262144, 0) = 262144 <0.010000>\n'
+        '101 100.050000 read(8</d/t/all_1_1_0/columns.txt>, "", 4096) = 0 <0.000010>\n'
+        '101 100.060000 write(9<socket:[1]>, "x", 10) = 10 <0.000010>\n'
+        '101 101.500000 write(5</d/t/all_2_2_0/data.bin>, "x"..., 100) = 100 <0.000010>\n'
+        '101 101.999900 write(5</d/t/all_2_2_0/data.bin>, "x"..., 100) = 100 <0.001000>\n'
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.path = os.path.join(self.tmp, 'strace.r1.g0.txt')
+        with open(self.path, 'w') as f:
+            f.write(self.TRACE)
+
+    def classify(self, path):
+        return 'table' if path.startswith('/d/t/') else 'keeper' if path.startswith('/d/k/') else None
+
+    def test_parse_strace_by_classes_windows_and_ebs_ios(self):
+        out = localio.parse_strace_by(self.path, self.classify, {'a': (100.0, 101.0), 'b': (101.0, 102.0)}, 262144)
+        table = out['a']['classes']['table']
+        # 1 MiB = 4 I/Os of 256 KiB, 300000 B = 2, the 256 KiB pread = 1; the zero-byte read moves nothing.
+        self.assertEqual(table['write'], {'count': 2, 'bytes': 1348576, 'ebs_ios': 6,
+                                          'size_histogram': {'1048576': 1, '524288': 1}})
+        self.assertEqual(table['read'], {'count': 1, 'bytes': 262144, 'ebs_ios': 1, 'size_histogram': {'262144': 1}})
+        self.assertEqual(table['fsync'], 1)
+        self.assertEqual(out['a']['classes']['keeper']['write']['bytes'], 4096)
+        # The call that ends after 102.0 straddles window b's edge.
+        self.assertEqual(out['b']['classes']['table']['write']['count'], 1)
+        self.assertEqual(out['b']['crossing'], 1)
+        self.assertNotIn('socket', json.dumps(out))
+
+    def test_parse_strace_unchanged_by_the_shared_reader(self):
+        out = localio.parse_strace(self.path, window=(100.0, 101.0))
+        self.assertEqual(out['syscalls']['write']['count'], 2)  # the socket write has no absolute path
+        self.assertEqual(out['syscalls']['pread64']['bytes'], 262144)
+
+    def test_peak_factor_from_a_synthetic_series(self):
+        # 1 s samples of cumulative write_bytes: 1, 1, 5, 1 MB/s; a restart (pid 8) never pairs with pid 7.
+        rows = [[0, 7, 0, 0], [1_000_000, 7, 0, 1_000_000], [2_000_000, 7, 0, 2_000_000],
+                [3_000_000, 7, 0, 7_000_000], [4_000_000, 7, 0, 8_000_000], [5_000_000, 8, 0, 0]]
+        got = localio.peak_factor(rows, 0, 5_000_000)
+        self.assertEqual((got['intervals'], got['mean_bps'], got['peak_bps']), (4, 2_000_000, 5_000_000))
+        self.assertAlmostEqual(got['peak_factor'], 2.5)
+        net = localio.peak_factor(rows, 0, 5_000_000, baseline_bps=1_000_000)
+        self.assertAlmostEqual(net['peak_factor'], 4.0)
+        with self.assertRaises(ValueError):
+            localio.peak_factor(rows, 0, 500_000)
+        with self.assertRaises(ValueError):
+            localio.peak_factor(rows, 0, 5_000_000, baseline_bps=3_000_000)
+
+    def test_net_io_subtracts_the_idle_baseline(self):
+        got = localio.net_io({'read_bytes': 500, 'write_bytes': 10_000, 'rchar': 1}, {'write_bytes': 100.0}, 20)
+        self.assertEqual(got, {'read_bytes': 500, 'write_bytes': 8000})
+
+    def test_proc_io_sampler_follows_the_live_pid(self):
+        pids = iter([7, 7, 8, 8, 8, 8, 8, 8])
+        sampler = localio.ProcIoSampler(lambda: next(pids, 8), 0.01,
+                                        reader=lambda pid: {'read_bytes': pid, 'write_bytes': pid * 10})
+        sampler.start()
+        time.sleep(0.05)
+        rows = sampler.stop()
+        self.assertEqual(rows[0][1:], [7, 7, 70])
+        self.assertEqual(rows[-1][1:], [8, 8, 80])
+

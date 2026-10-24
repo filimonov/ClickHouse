@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 from yardstick.cost import measurements, runner
 from yardstick.cost.cards.base import CostCard
@@ -546,6 +547,20 @@ class RunnerTest(RunnerFixture):
         record = self.go(policy='local')
         self.assertEqual((record['variant'], record['status']), ('ebs', 'ok'))
         self.assertTrue(os.path.isdir(os.path.join(record['pass_dir'], 'local', 'r1')))
+
+    def test_ebs_variant_records_a_proc_io_series_per_replica(self):
+        rows = iter(range(100))
+        fake_io = lambda pid: {'read_bytes': 0, 'write_bytes': 1000 * next(rows)}  # noqa: E731
+        real = runner.ProcIoSampler
+        with mock.patch.object(runner, 'ProcIoSampler', lambda pid_of, interval: real(pid_of, 0.01, reader=fake_io)):
+            self.card.on_measured = self.writes(2)
+            record = self.go(policy='local')
+            other = self.go(policy='s3')
+        series = record['observations']['proc_io_series']['r1']
+        self.assertGreaterEqual(len(series), 2)
+        self.assertEqual([len(r) for r in series], [4] * len(series))
+        self.assertTrue(all(b[3] > a[3] for a, b in zip(series, series[1:])))
+        self.assertNotIn('proc_io_series', other['observations'])
 
     def test_cached_policy_maps_to_base_variant(self):
         self.assertEqual(runner.variant_of('s3plain_cached'), ('s3plain', True))
