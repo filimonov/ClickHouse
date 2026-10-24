@@ -355,6 +355,69 @@
        ]
       }
      }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "parts_inserted_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "sub",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "count"
+        }
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "acquire_requests",
+       "keys": [
+        {
+         "kind": "const",
+         "value": "s3",
+         "dim": "enum:variant_id"
+        },
+        {
+         "kind": "const",
+         "value": "insert",
+         "dim": "enum:result_type"
+        },
+        {
+         "kind": "const",
+         "value": "receiver",
+         "dim": "enum:replication_role"
+        },
+        {
+         "kind": "const",
+         "value": "GetObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     }
     }
    ],
    "allocation": null,
@@ -2152,7 +2215,8 @@
   "inserts": {
    "objects_per_part_by_shape": "supported",
    "thresholds": "supported",
-   "multipart_graph": "supported"
+   "multipart_graph": "supported",
+   "replication": "supported"
   },
   "merges": {
    "lifecycle": "supported",
