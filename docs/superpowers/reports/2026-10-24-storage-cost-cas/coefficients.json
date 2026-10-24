@@ -1,0 +1,352 @@
+[
+ {
+  "id": "cas_objects_per_part",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "shape",
+    "part_type"
+   ],
+   "values": {
+    "narrow|compact": 1,
+    "narrow|wide": 10
+   }
+  },
+  "validity": {
+   "insert_rows": [
+    100,
+    4000000
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+   "version": "0.3.0",
+   "measurement_ids": [
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k3",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k3"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "distinct blob uploads per part: Compact 1 (data.bin; data.cmrk4 and primary.cidx are inline); Wide 2 per substream (.bin and .cmrk2), files with equal bytes collapsing into one upload; a String column has 2 substreams (.bin, .size.bin), Nullable 2, Array 2, LowCardinality 2",
+  "holdout_measurements": [
+   "cost-20261024T082909Z/cas/cas-branches/inline/k1",
+   "cost-20261024T082909Z/cas/cas-branches/inline/k2",
+   "cost-20261024T082909Z/cas/cas-branches/inline/k3",
+   "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k1",
+   "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k2",
+   "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k3"
+  ]
+ },
+ {
+  "id": "cas_branch_population",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "cas_write",
+    "cas_branch"
+   ],
+   "values": {
+    "insert_compact|fresh": 1,
+    "insert_compact|hash_hit": 0,
+    "insert_compact|adoption": 0,
+    "insert_compact|inline": 10,
+    "insert_wide|fresh": 10,
+    "insert_wide|hash_hit": 0,
+    "insert_wide|adoption": 0,
+    "insert_wide|inline": 9,
+    "mutate_one_column|fresh": 1,
+    "mutate_one_column|hash_hit": 1,
+    "mutate_one_column|adoption": 8,
+    "mutate_one_column|inline": 9,
+    "reinsert_identical|fresh": 0,
+    "reinsert_identical|hash_hit": 1,
+    "reinsert_identical|adoption": 0,
+    "reinsert_identical|inline": 10
+   }
+  },
+  "validity": {
+   "insert_rows": [
+    100,
+    4000000
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+   "version": "0.3.0",
+   "measurement_ids": [
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+    "cost-20261024T082909Z/cas/cas-branches/fresh/k3",
+    "cost-20261024T082909Z/cas/cas-branches/hash-hit/k1",
+    "cost-20261024T082909Z/cas/cas-branches/hash-hit/k2",
+    "cost-20261024T082909Z/cas/cas-branches/hash-hit/k3",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
+    "cost-20261024T082909Z/cas/cas-branches/adoption/k3",
+    "cost-20261024T082909Z/cas/cas-branches/staging-peak/k1",
+    "cost-20261024T082909Z/cas/cas-branches/staging-peak/k2",
+    "cost-20261024T082909Z/cas/cas-branches/staging-peak/k3"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "observed": {
+   "cas-branches.fresh": {
+    "adoption": 0,
+    "fresh": 1,
+    "hash_hit": 0,
+    "inline": 10,
+    "resurrect": 0
+   },
+   "cas-branches.adoption": {
+    "adoption": 8,
+    "fresh": 11,
+    "hash_hit": 1,
+    "inline": 18,
+    "resurrect": 0
+   }
+  }
+ },
+ {
+  "id": "gc_round_requests",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "gc_round_term"
+   ],
+   "values": {
+    "fold_get": 17,
+    "fold_put": 5,
+    "fold_list": 4,
+    "fold_get_per_manifest": 1.0,
+    "fold_get_per_tail_log_record": 1.0,
+    "deferred_get": 12,
+    "deferred_put": 1,
+    "deferred_list": 3,
+    "per_blob_object": 0
+   }
+  },
+  "validity": {
+   "cas_pool_objects": [
+    1017,
+    9949
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+   "version": "0.3.0",
+   "measurement_ids": [
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "fit": {
+   "method": "per op and key family of the first (fold) and second (Deferred) manual round on a populated pool; the fold reads one manifest per new part and one ref log record per transaction (3 per inserted part); heartbeat rows (gc_hb) excluded",
+   "residuals": {
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1": 0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2": 0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3": 0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1": 0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2": 0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3": 0
+   }
+  },
+  "unsupported_terms": {
+   "mounts": "cut by owner directive D14 (gc-scale.mounts-2.10k)",
+   "ref_growth": "cut by owner directive D14 (gc-scale.refgrowth-{low,high}.10k); past the 256-record snapshot threshold the fold reads each log about twice (objects-100k: 3156 ref_stream GETs for 1484 stream objects)"
+  }
+ },
+ {
+  "id": "gc_round_duration",
+  "kind": "table",
+  "dim": "ms",
+  "value": {
+   "index": [
+    "gc_round_term"
+   ],
+   "values": {
+    "fold_base": 260.4,
+    "fold_per_part": 2.924,
+    "deferred_round": 26.5
+   }
+  },
+  "validity": {
+   "cas_pool_objects": [
+    1017,
+    9949
+   ]
+  },
+  "tolerance": {
+   "abs": 17.8,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+   "version": "0.3.0",
+   "measurement_ids": [
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "fit": {
+   "method": "least squares of the fold round duration_ms (system.cas_gc_log Finish) on the pool parts; the tolerance covers the hold-out residuals too",
+   "residuals": {
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1": 12.0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2": -10.0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3": -2.0,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1": 2.3,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2": -1.7,
+    "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3": -0.7
+   },
+   "holdout_residuals": {
+    "cost-20261024T082909Z/cas/gc-scale/objects-3k/k1": 14.8,
+    "cost-20261024T082909Z/cas/gc-scale/objects-3k/k2": 17.8,
+    "cost-20261024T082909Z/cas/gc-scale/objects-3k/k3": 10.8
+   }
+  }
+ },
+ {
+  "id": "reclaim_delay_periods",
+  "kind": "table",
+  "dim": "1",
+  "value": {
+   "index": [
+    "gc_stage"
+   ],
+   "values": {
+    "condemn": 0.8558,
+    "manifest_delete": 0.8532,
+    "blob_delete": 2.822
+   }
+  },
+  "validity": {
+   "cas_gc_interval_s": [
+    10,
+    60
+   ]
+  },
+  "tolerance": {
+   "abs": 1.0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+   "version": "0.3.0",
+   "measurement_ids": [
+    "cost-20261024T082909Z/cas/gc-lifecycle/drop/k1",
+    "cost-20261024T082909Z/cas/gc-lifecycle/drop/k2",
+    "cost-20261024T082909Z/cas/gc-lifecycle/drop/k3"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "stage_rounds": {
+   "condemn": 1,
+   "manifest_delete": 1,
+   "blob_delete": 3
+  },
+  "rule": "seconds from retirement to a stage = value x (cas_gc_interval_s + round duration); the value is (rounds to the stage - phase of the retire in its interval), phase in [0, 1): the tolerance is that phase",
+  "fit_seconds_at_10s": {
+   "condemn": [
+    8.644668,
+    8.834646
+   ],
+   "manifest_delete": [
+    8.616741,
+    8.809454
+   ],
+   "blob_delete": [
+    28.859274,
+    28.934649
+   ]
+  },
+  "spread": {
+   "condemn": [
+    0.8486,
+    0.8658
+   ],
+   "manifest_delete": [
+    0.8459,
+    0.8634
+   ],
+   "blob_delete": [
+    2.7976,
+    2.8354
+   ]
+  },
+  "holdout_periods": {
+   "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k1": {
+    "condemn": 0.9652,
+    "manifest_delete": 0.9648,
+    "blob_delete": 2.9642
+   },
+   "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k2": {
+    "condemn": 0.9687,
+    "manifest_delete": 0.9682,
+    "blob_delete": 2.9624
+   },
+   "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k3": {
+    "condemn": 0.9838,
+    "manifest_delete": 0.9831,
+    "blob_delete": 2.9736
+   },
+   "cost-20261024T082909Z/cas/gc-lifecycle/merge/k1": {
+    "condemn": 0.7942,
+    "manifest_delete": 0.792,
+    "blob_delete": 2.7831
+   },
+   "cost-20261024T082909Z/cas/gc-lifecycle/merge/k2": {
+    "condemn": 0.8636,
+    "manifest_delete": 0.8539,
+    "blob_delete": 2.8577
+   },
+   "cost-20261024T082909Z/cas/gc-lifecycle/merge/k3": {
+    "condemn": 0.76,
+    "manifest_delete": 0.7576,
+    "blob_delete": 2.7689
+   }
+  }
+ }
+]

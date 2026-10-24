@@ -1,0 +1,5468 @@
+{
+ "schema": "formulas/1",
+ "owner": "cas",
+ "variant": "cas",
+ "applicability": {
+  "storage": {
+   "objects_per_part_by_shape": "supported",
+   "cas_gc": "supported"
+  },
+  "inserts": {
+   "objects_per_part_by_shape": "supported",
+   "cas_branches": "supported"
+  },
+  "merges": {
+   "cas_branches": "supported"
+  },
+  "mutations": {
+   "cas_branches": "supported"
+  },
+  "deletes": {
+   "cas_branches": "supported"
+  },
+  "reads": {
+   "reads_cache": "unsupported_cut"
+  },
+  "recovery": {
+   "startup_recovery": "unsupported_cut"
+  },
+  "gc": {
+   "cas_gc": "supported"
+  },
+  "lease": {
+   "cas_lease": "supported"
+  },
+  "local_disk": {
+   "cas_branches": "supported"
+  }
+ },
+ "cells": {
+  "inserts": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "insert_rate",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "parts_per_insert",
+         "dim": "1"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 7,
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "insert_rate",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "parts_per_insert",
+         "dim": "1"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "lookup",
+          "table_id": "cas_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ],
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_hash_hit_fraction",
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 7,
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "insert_rate",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "parts_per_insert",
+         "dim": "1"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "lookup",
+        "table_id": "cas_objects_per_part",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "shape",
+          "dim": "enum:shape"
+         },
+         {
+          "kind": "input",
+          "id": "part_type",
+          "dim": "enum:part_type"
+         }
+        ],
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": [
+    {
+     "kind": "lookup",
+     "table_id": "cas_objects_per_part",
+     "keys": [
+      {
+       "kind": "input",
+       "id": "shape",
+       "dim": "enum:shape"
+      },
+      {
+       "kind": "input",
+       "id": "part_type",
+       "dim": "enum:part_type"
+      }
+     ],
+     "dim": "count"
+    },
+    {
+     "kind": "input",
+     "id": "cas_hash_hit_fraction",
+     "dim": "1"
+    }
+   ]
+  },
+  "merges": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "insert_rate",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "sub",
+         "a": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "dim": "1"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "lookup",
+            "table_id": "cas_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "branch",
+              "dim": "enum:part_type",
+              "cond": {
+               "op": "<",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "coef",
+                 "id": "merge_effective_fan_in",
+                 "dim": "1"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "part_bytes_uncompressed",
+                 "dim": "B"
+                },
+                "dim": "B"
+               },
+               "b": {
+                "kind": "input",
+                "id": "min_bytes_for_wide_part",
+                "dim": "B"
+               }
+              },
+              "then": {
+               "kind": "const",
+               "value": "compact",
+               "dim": "enum:part_type"
+              },
+              "else": {
+               "kind": "const",
+               "value": "wide",
+               "dim": "enum:part_type"
+              }
+             }
+            ],
+            "dim": "count"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_hash_hit_fraction",
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 2,
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 7,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "insert_rate",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "sub",
+         "a": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "dim": "1"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "coef",
+           "id": "merge_effective_fan_in",
+           "dim": "1"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "cas_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ],
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 2,
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 7,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "lookup",
+          "table_id": "cas_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "branch",
+            "dim": "enum:part_type",
+            "cond": {
+             "op": "<",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "input",
+               "id": "part_bytes_uncompressed",
+               "dim": "B"
+              },
+              "dim": "B"
+             },
+             "b": {
+              "kind": "input",
+              "id": "min_bytes_for_wide_part",
+              "dim": "B"
+             }
+            },
+            "then": {
+             "kind": "const",
+             "value": "compact",
+             "dim": "enum:part_type"
+            },
+            "else": {
+             "kind": "const",
+             "value": "wide",
+             "dim": "enum:part_type"
+            }
+           }
+          ],
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_hash_hit_fraction",
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "insert_rate",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "sub",
+         "a": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "dim": "1"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "lookup",
+        "table_id": "cas_objects_per_part",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "shape",
+          "dim": "enum:shape"
+         },
+         {
+          "kind": "branch",
+          "dim": "enum:part_type",
+          "cond": {
+           "op": "<",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "coef",
+             "id": "merge_effective_fan_in",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "part_bytes_uncompressed",
+             "dim": "B"
+            },
+            "dim": "B"
+           },
+           "b": {
+            "kind": "input",
+            "id": "min_bytes_for_wide_part",
+            "dim": "B"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": "compact",
+           "dim": "enum:part_type"
+          },
+          "else": {
+           "kind": "const",
+           "value": "wide",
+           "dim": "enum:part_type"
+          }
+         }
+        ],
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": [
+    {
+     "kind": "coef",
+     "id": "merge_effective_fan_in",
+     "dim": "1"
+    },
+    {
+     "kind": "lookup",
+     "table_id": "cas_objects_per_part",
+     "keys": [
+      {
+       "kind": "input",
+       "id": "shape",
+       "dim": "enum:shape"
+      },
+      {
+       "kind": "branch",
+       "dim": "enum:part_type",
+       "cond": {
+        "op": "<",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+         },
+         "b": {
+          "kind": "input",
+          "id": "part_bytes_uncompressed",
+          "dim": "B"
+         },
+         "dim": "B"
+        },
+        "b": {
+         "kind": "input",
+         "id": "min_bytes_for_wide_part",
+         "dim": "B"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": "compact",
+        "dim": "enum:part_type"
+       },
+       "else": {
+        "kind": "const",
+        "value": "wide",
+        "dim": "enum:part_type"
+       }
+      }
+     ],
+     "dim": "count"
+    }
+   ]
+  },
+  "mutations": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_mutations_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_mutations_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_parts_per_mutation",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_mutated_columns",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "const",
+            "value": 2,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "const",
+             "value": 2,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "sub",
+             "a": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_mutation_marks_hit_fraction",
+              "dim": "1"
+             },
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 9,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_mutations_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_mutations_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_parts_per_mutation",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_mutated_columns",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_mutation_marks_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 9,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_mutations_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 3,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_mutations_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_parts_per_mutation",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_mutated_columns",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_mutations_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  },
+  "deletes": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_parts_per_dropped_table",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 3,
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_parts_per_dropped_table",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "1"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2,
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  },
+  "gc": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "div",
+         "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "b": {
+          "kind": "add",
+          "a": {
+           "kind": "input",
+           "id": "cas_gc_interval_s",
+           "dim": "s"
+          },
+          "b": {
+           "kind": "div",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_base",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "lookup",
+              "table_id": "gc_round_duration",
+              "keys": [
+               {
+                "kind": "const",
+                "value": "fold_per_part",
+                "dim": "enum:gc_round_term"
+               }
+              ],
+              "dim": "ms"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "add",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "div",
+                 "a": {
+                  "kind": "mul",
+                  "a": {
+                   "kind": "input",
+                   "id": "insert_rate",
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "input",
+                   "id": "parts_per_insert",
+                   "dim": "1"
+                  },
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "sub",
+                  "a": {
+                   "kind": "coef",
+                   "id": "merge_effective_fan_in",
+                   "dim": "1"
+                  },
+                  "b": {
+                   "kind": "const",
+                   "value": 1,
+                   "dim": "1"
+                  },
+                  "dim": "1"
+                 },
+                 "dim": "1/s",
+                 "on_zero": "unavailable"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "cas_mutations_per_s",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "cas_parts_per_mutation",
+                 "dim": "count"
+                },
+                "dim": "1/s"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_gc_interval_s",
+               "dim": "s"
+              },
+              "dim": "count"
+             },
+             "dim": "ms"
+            },
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1000,
+            "dim": "ms/s"
+           },
+           "dim": "s",
+           "on_zero": "unavailable"
+          },
+          "dim": "s"
+         },
+         "dim": "1/s",
+         "on_zero": "unavailable"
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "count",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "const",
+           "value": 0,
+           "dim": "1/s"
+          }
+         },
+         "then": {
+          "kind": "add",
+          "a": {
+           "kind": "lookup",
+           "table_id": "gc_round_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "fold_get",
+             "dim": "enum:gc_round_term"
+            }
+           ],
+           "dim": "count"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_tables",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_ref_log_tail_records",
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "else": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "const",
+             "value": 8,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "lookup",
+             "table_id": "gc_round_requests",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "deferred_get",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "count"
+            },
+            "dim": "count"
+           },
+           "b": {
+            "kind": "add",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_requests",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_get",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "count"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_tables",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_ref_log_tail_records",
+              "dim": "count"
+             },
+             "dim": "count"
+            },
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 9,
+           "dim": "1"
+          },
+          "dim": "count",
+          "on_zero": "unavailable"
+         }
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "div",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "coef",
+             "id": "merge_effective_fan_in",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1/s",
+           "on_zero": "unavailable"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_mutations_per_s",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_parts_per_mutation",
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "lookup",
+         "table_id": "gc_round_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_get_per_manifest",
+           "dim": "enum:gc_round_term"
+          }
+         ],
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "input",
+          "id": "cas_gc_interval_s",
+          "dim": "s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "gc_round_duration",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_base",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_per_part",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_gc_interval_s",
+              "dim": "s"
+             },
+             "dim": "count"
+            },
+            "dim": "ms"
+           },
+           "dim": "ms"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+         },
+         "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": ">",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "sub",
+             "a": {
+              "kind": "coef",
+              "id": "merge_effective_fan_in",
+              "dim": "1"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             },
+             "dim": "1"
+            },
+            "dim": "1/s",
+            "on_zero": "unavailable"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_mutations_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_mutation",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1/s"
+         }
+        },
+        "then": {
+         "kind": "lookup",
+         "table_id": "gc_round_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_put",
+           "dim": "enum:gc_round_term"
+          }
+         ],
+         "dim": "count"
+        },
+        "else": {
+         "kind": "div",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "const",
+            "value": 8,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "lookup",
+            "table_id": "gc_round_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "deferred_put",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "table_id": "gc_round_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "fold_put",
+             "dim": "enum:gc_round_term"
+            }
+           ],
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 9,
+          "dim": "1"
+         },
+         "dim": "count",
+         "on_zero": "unavailable"
+        }
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "input",
+          "id": "cas_gc_interval_s",
+          "dim": "s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "gc_round_duration",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_base",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_per_part",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_gc_interval_s",
+              "dim": "s"
+             },
+             "dim": "count"
+            },
+            "dim": "ms"
+           },
+           "dim": "ms"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+         },
+         "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": ">",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "sub",
+             "a": {
+              "kind": "coef",
+              "id": "merge_effective_fan_in",
+              "dim": "1"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             },
+             "dim": "1"
+            },
+            "dim": "1/s",
+            "on_zero": "unavailable"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_mutations_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_mutation",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1/s"
+         }
+        },
+        "then": {
+         "kind": "lookup",
+         "table_id": "gc_round_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_list",
+           "dim": "enum:gc_round_term"
+          }
+         ],
+         "dim": "count"
+        },
+        "else": {
+         "kind": "div",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "const",
+            "value": 8,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "lookup",
+            "table_id": "gc_round_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "deferred_list",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "table_id": "gc_round_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "fold_list",
+             "dim": "enum:gc_round_term"
+            }
+           ],
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 9,
+          "dim": "1"
+         },
+         "dim": "count",
+         "on_zero": "unavailable"
+        }
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "input",
+         "id": "gc_heartbeat_requests_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "1"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "div",
+        "a": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "input",
+          "id": "cas_gc_interval_s",
+          "dim": "s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "gc_round_duration",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_base",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_per_part",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_gc_interval_s",
+              "dim": "s"
+             },
+             "dim": "count"
+            },
+            "dim": "ms"
+           },
+           "dim": "ms"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+         },
+         "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "input",
+         "id": "gc_heartbeat_requests_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "1"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "div",
+        "a": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "input",
+          "id": "cas_gc_interval_s",
+          "dim": "s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "gc_round_duration",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_base",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_per_part",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_gc_interval_s",
+              "dim": "s"
+             },
+             "dim": "count"
+            },
+            "dim": "ms"
+           },
+           "dim": "ms"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+         },
+         "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "div",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "parts_per_insert",
+                "dim": "1"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "sub",
+               "a": {
+                "kind": "coef",
+                "id": "merge_effective_fan_in",
+                "dim": "1"
+               },
+               "b": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+               },
+               "dim": "1"
+              },
+              "dim": "1/s",
+              "on_zero": "unavailable"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_mutations_per_s",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_parts_per_mutation",
+              "dim": "count"
+             },
+             "dim": "1/s"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_table_drops_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_dropped_table",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "sub",
+          "a": {
+           "kind": "const",
+           "value": 1,
+           "dim": "1"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_hash_hit_fraction",
+           "dim": "1"
+          },
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_table_drops_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_dropped_table",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "lookup",
+          "table_id": "cas_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ],
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "sub",
+         "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_hash_hit_fraction",
+          "dim": "1"
+         },
+         "dim": "1"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2,
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "div",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "parts_per_insert",
+                "dim": "1"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "sub",
+               "a": {
+                "kind": "coef",
+                "id": "merge_effective_fan_in",
+                "dim": "1"
+               },
+               "b": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+               },
+               "dim": "1"
+              },
+              "dim": "1/s",
+              "on_zero": "unavailable"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_mutations_per_s",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_parts_per_mutation",
+              "dim": "count"
+             },
+             "dim": "1/s"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_table_drops_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_dropped_table",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "sub",
+          "a": {
+           "kind": "const",
+           "value": 1,
+           "dim": "1"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_hash_hit_fraction",
+           "dim": "1"
+          },
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 3,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "sub",
+             "a": {
+              "kind": "coef",
+              "id": "merge_effective_fan_in",
+              "dim": "1"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             },
+             "dim": "1"
+            },
+            "dim": "1/s",
+            "on_zero": "unavailable"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_mutations_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_mutation",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_table_drops_per_s",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_parts_per_dropped_table",
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "div",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "parts_per_insert",
+                "dim": "1"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "sub",
+               "a": {
+                "kind": "coef",
+                "id": "merge_effective_fan_in",
+                "dim": "1"
+               },
+               "b": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+               },
+               "dim": "1"
+              },
+              "dim": "1/s",
+              "on_zero": "unavailable"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_mutations_per_s",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_parts_per_mutation",
+              "dim": "count"
+             },
+             "dim": "1/s"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_table_drops_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_dropped_table",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "sub",
+          "a": {
+           "kind": "const",
+           "value": 1,
+           "dim": "1"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_hash_hit_fraction",
+           "dim": "1"
+          },
+          "dim": "1"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "input",
+        "id": "cas_table_drops_per_s",
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObjects",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "branch",
+       "dim": "1/s",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "sub",
+             "a": {
+              "kind": "coef",
+              "id": "merge_effective_fan_in",
+              "dim": "1"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             },
+             "dim": "1"
+            },
+            "dim": "1/s",
+            "on_zero": "unavailable"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_mutations_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_mutation",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_table_drops_per_s",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_parts_per_dropped_table",
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "1/s"
+        }
+       },
+       "then": {
+        "kind": "add",
+        "a": {
+         "kind": "div",
+         "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "b": {
+          "kind": "add",
+          "a": {
+           "kind": "input",
+           "id": "cas_gc_interval_s",
+           "dim": "s"
+          },
+          "b": {
+           "kind": "div",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_base",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "lookup",
+              "table_id": "gc_round_duration",
+              "keys": [
+               {
+                "kind": "const",
+                "value": "fold_per_part",
+                "dim": "enum:gc_round_term"
+               }
+              ],
+              "dim": "ms"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "add",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "div",
+                 "a": {
+                  "kind": "mul",
+                  "a": {
+                   "kind": "input",
+                   "id": "insert_rate",
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "input",
+                   "id": "parts_per_insert",
+                   "dim": "1"
+                  },
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "sub",
+                  "a": {
+                   "kind": "coef",
+                   "id": "merge_effective_fan_in",
+                   "dim": "1"
+                  },
+                  "b": {
+                   "kind": "const",
+                   "value": 1,
+                   "dim": "1"
+                  },
+                  "dim": "1"
+                 },
+                 "dim": "1/s",
+                 "on_zero": "unavailable"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "cas_mutations_per_s",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "cas_parts_per_mutation",
+                 "dim": "count"
+                },
+                "dim": "1/s"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_gc_interval_s",
+               "dim": "s"
+              },
+              "dim": "count"
+             },
+             "dim": "ms"
+            },
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1000,
+            "dim": "ms/s"
+           },
+           "dim": "s",
+           "on_zero": "unavailable"
+          },
+          "dim": "s"
+         },
+         "dim": "1/s",
+         "on_zero": "unavailable"
+        },
+        "b": {
+         "kind": "div",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_table_drops_per_s",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_parts_per_dropped_table",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1000,
+          "dim": "1"
+         },
+         "dim": "1/s",
+         "on_zero": "unavailable"
+        },
+        "dim": "1/s"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "1/s"
+       }
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [
+    {
+     "id": "backlog_grows",
+     "cond": {
+      "kind": "add",
+      "a": {
+       "kind": "branch",
+       "dim": "1",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "gc_round_graduation_budget",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "branch",
+        "dim": "1",
+        "cond": {
+         "op": ">",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "cas_table_drops_per_s",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_parts_per_dropped_table",
+               "dim": "count"
+              },
+              "dim": "1/s"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "lookup",
+             "table_id": "cas_objects_per_part",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              },
+              {
+               "kind": "input",
+               "id": "part_type",
+               "dim": "enum:part_type"
+              }
+             ],
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_hash_hit_fraction",
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "input",
+            "id": "cas_gc_interval_s",
+            "dim": "s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "lookup",
+              "table_id": "gc_round_duration",
+              "keys": [
+               {
+                "kind": "const",
+                "value": "fold_base",
+                "dim": "enum:gc_round_term"
+               }
+              ],
+              "dim": "ms"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "lookup",
+               "table_id": "gc_round_duration",
+               "keys": [
+                {
+                 "kind": "const",
+                 "value": "fold_per_part",
+                 "dim": "enum:gc_round_term"
+                }
+               ],
+               "dim": "ms"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "add",
+                "a": {
+                 "kind": "add",
+                 "a": {
+                  "kind": "mul",
+                  "a": {
+                   "kind": "input",
+                   "id": "insert_rate",
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "input",
+                   "id": "parts_per_insert",
+                   "dim": "1"
+                  },
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "div",
+                  "a": {
+                   "kind": "mul",
+                   "a": {
+                    "kind": "input",
+                    "id": "insert_rate",
+                    "dim": "1/s"
+                   },
+                   "b": {
+                    "kind": "input",
+                    "id": "parts_per_insert",
+                    "dim": "1"
+                   },
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "sub",
+                   "a": {
+                    "kind": "coef",
+                    "id": "merge_effective_fan_in",
+                    "dim": "1"
+                   },
+                   "b": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                   },
+                   "dim": "1"
+                  },
+                  "dim": "1/s",
+                  "on_zero": "unavailable"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "cas_mutations_per_s",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "cas_parts_per_mutation",
+                  "dim": "count"
+                 },
+                 "dim": "1/s"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_gc_interval_s",
+                "dim": "s"
+               },
+               "dim": "count"
+              },
+              "dim": "ms"
+             },
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1000,
+             "dim": "ms/s"
+            },
+            "dim": "s",
+            "on_zero": "unavailable"
+           },
+           "dim": "s"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "gc_round_graduation_budget",
+          "dim": "count"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "else": {
+         "kind": "const",
+         "value": 0,
+         "dim": "1"
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "1"
+       }
+      },
+      "b": {
+       "kind": "branch",
+       "dim": "1",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "gc_round_redelete_budget",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "branch",
+        "dim": "1",
+        "cond": {
+         "op": ">",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "cas_table_drops_per_s",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_parts_per_dropped_table",
+               "dim": "count"
+              },
+              "dim": "1/s"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "lookup",
+             "table_id": "cas_objects_per_part",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              },
+              {
+               "kind": "input",
+               "id": "part_type",
+               "dim": "enum:part_type"
+              }
+             ],
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_hash_hit_fraction",
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "input",
+            "id": "cas_gc_interval_s",
+            "dim": "s"
+           },
+           "b": {
+            "kind": "div",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "lookup",
+              "table_id": "gc_round_duration",
+              "keys": [
+               {
+                "kind": "const",
+                "value": "fold_base",
+                "dim": "enum:gc_round_term"
+               }
+              ],
+              "dim": "ms"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "lookup",
+               "table_id": "gc_round_duration",
+               "keys": [
+                {
+                 "kind": "const",
+                 "value": "fold_per_part",
+                 "dim": "enum:gc_round_term"
+                }
+               ],
+               "dim": "ms"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "add",
+                "a": {
+                 "kind": "add",
+                 "a": {
+                  "kind": "mul",
+                  "a": {
+                   "kind": "input",
+                   "id": "insert_rate",
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "input",
+                   "id": "parts_per_insert",
+                   "dim": "1"
+                  },
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "div",
+                  "a": {
+                   "kind": "mul",
+                   "a": {
+                    "kind": "input",
+                    "id": "insert_rate",
+                    "dim": "1/s"
+                   },
+                   "b": {
+                    "kind": "input",
+                    "id": "parts_per_insert",
+                    "dim": "1"
+                   },
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "sub",
+                   "a": {
+                    "kind": "coef",
+                    "id": "merge_effective_fan_in",
+                    "dim": "1"
+                   },
+                   "b": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                   },
+                   "dim": "1"
+                  },
+                  "dim": "1/s",
+                  "on_zero": "unavailable"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "cas_mutations_per_s",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "cas_parts_per_mutation",
+                  "dim": "count"
+                 },
+                 "dim": "1/s"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_gc_interval_s",
+                "dim": "s"
+               },
+               "dim": "count"
+              },
+              "dim": "ms"
+             },
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1000,
+             "dim": "ms/s"
+            },
+            "dim": "s",
+            "on_zero": "unavailable"
+           },
+           "dim": "s"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "gc_round_redelete_budget",
+          "dim": "count"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "else": {
+         "kind": "const",
+         "value": 0,
+         "dim": "1"
+        }
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "1"
+       }
+      },
+      "dim": "1"
+     },
+     "reason": "retired blobs per GC round exceed the per-round graduation or redelete budget; the garbage backlog grows and steady-state garbage is unavailable"
+    }
+   ],
+   "notes": [
+    {
+     "kind": "div",
+     "a": {
+      "kind": "const",
+      "value": 1,
+      "dim": "1"
+     },
+     "b": {
+      "kind": "add",
+      "a": {
+       "kind": "input",
+       "id": "cas_gc_interval_s",
+       "dim": "s"
+      },
+      "b": {
+       "kind": "div",
+       "a": {
+        "kind": "add",
+        "a": {
+         "kind": "lookup",
+         "table_id": "gc_round_duration",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_base",
+           "dim": "enum:gc_round_term"
+          }
+         ],
+         "dim": "ms"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "lookup",
+          "table_id": "gc_round_duration",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "fold_per_part",
+            "dim": "enum:gc_round_term"
+           }
+          ],
+          "dim": "ms"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_gc_interval_s",
+           "dim": "s"
+          },
+          "dim": "count"
+         },
+         "dim": "ms"
+        },
+        "dim": "ms"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1000,
+        "dim": "ms/s"
+       },
+       "dim": "s",
+       "on_zero": "unavailable"
+      },
+      "dim": "s"
+     },
+     "dim": "1/s",
+     "on_zero": "unavailable"
+    },
+    {
+     "kind": "mul",
+     "a": {
+      "kind": "mul",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "add",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "insert_rate",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "parts_per_insert",
+           "dim": "1"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "coef",
+            "id": "merge_effective_fan_in",
+            "dim": "1"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "1/s",
+          "on_zero": "unavailable"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_mutations_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_parts_per_mutation",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "cas_parts_per_dropped_table",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "lookup",
+       "table_id": "cas_objects_per_part",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "shape",
+         "dim": "enum:shape"
+        },
+        {
+         "kind": "input",
+         "id": "part_type",
+         "dim": "enum:part_type"
+        }
+       ],
+       "dim": "count"
+      },
+      "dim": "1/s"
+     },
+     "b": {
+      "kind": "sub",
+      "a": {
+       "kind": "const",
+       "value": 1,
+       "dim": "1"
+      },
+      "b": {
+       "kind": "input",
+       "id": "cas_hash_hit_fraction",
+       "dim": "1"
+      },
+      "dim": "1"
+     },
+     "dim": "1/s"
+    },
+    {
+     "kind": "mul",
+     "a": {
+      "kind": "input",
+      "id": "cas_tables",
+      "dim": "count"
+     },
+     "b": {
+      "kind": "input",
+      "id": "cas_ref_log_tail_records",
+      "dim": "count"
+     },
+     "dim": "count"
+    },
+    {
+     "kind": "mul",
+     "a": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "add",
+        "a": {
+         "kind": "add",
+         "a": {
+          "kind": "add",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "div",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "coef",
+             "id": "merge_effective_fan_in",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1/s",
+           "on_zero": "unavailable"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_mutations_per_s",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_parts_per_mutation",
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_parts_per_dropped_table",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "lookup",
+        "table_id": "cas_objects_per_part",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "shape",
+          "dim": "enum:shape"
+         },
+         {
+          "kind": "input",
+          "id": "part_type",
+          "dim": "enum:part_type"
+         }
+        ],
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "sub",
+       "a": {
+        "kind": "const",
+        "value": 1,
+        "dim": "1"
+       },
+       "b": {
+        "kind": "input",
+        "id": "cas_hash_hit_fraction",
+        "dim": "1"
+       },
+       "dim": "1"
+      },
+      "dim": "1/s"
+     },
+     "b": {
+      "kind": "add",
+      "a": {
+       "kind": "input",
+       "id": "cas_gc_interval_s",
+       "dim": "s"
+      },
+      "b": {
+       "kind": "div",
+       "a": {
+        "kind": "add",
+        "a": {
+         "kind": "lookup",
+         "table_id": "gc_round_duration",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_base",
+           "dim": "enum:gc_round_term"
+          }
+         ],
+         "dim": "ms"
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
+          "kind": "lookup",
+          "table_id": "gc_round_duration",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "fold_per_part",
+            "dim": "enum:gc_round_term"
+           }
+          ],
+          "dim": "ms"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_gc_interval_s",
+           "dim": "s"
+          },
+          "dim": "count"
+         },
+         "dim": "ms"
+        },
+        "dim": "ms"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1000,
+        "dim": "ms/s"
+       },
+       "dim": "s",
+       "on_zero": "unavailable"
+      },
+      "dim": "s"
+     },
+     "dim": "count"
+    }
+   ]
+  },
+  "lease": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "lease_requests_per_s",
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  },
+  "storage": {
+   "ledger_rows": [
+    {
+     "row_type": "storage",
+     "op_kind": "active",
+     "outcome_class": "all",
+     "category": "active",
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "input",
+       "id": "data_bytes",
+       "dim": "GiB"
+      },
+      "b": {
+       "kind": "const",
+       "value": 1,
+       "dim": "month"
+      },
+      "dim": "GiB*month"
+     }
+    },
+    {
+     "row_type": "storage",
+     "op_kind": "garbage",
+     "outcome_class": "all",
+     "category": "garbage",
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "div",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "parts_per_insert",
+                "dim": "1"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "div",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "sub",
+                "a": {
+                 "kind": "coef",
+                 "id": "merge_effective_fan_in",
+                 "dim": "1"
+                },
+                "b": {
+                 "kind": "const",
+                 "value": 1,
+                 "dim": "1"
+                },
+                "dim": "1"
+               },
+               "dim": "1/s",
+               "on_zero": "unavailable"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "cas_mutations_per_s",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_parts_per_mutation",
+               "dim": "count"
+              },
+              "dim": "1/s"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_table_drops_per_s",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_parts_per_dropped_table",
+              "dim": "count"
+             },
+             "dim": "1/s"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "lookup",
+            "table_id": "cas_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ],
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_blob_bytes",
+          "dim": "B"
+         },
+         "dim": "B/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1073741824,
+         "dim": "B/GiB"
+        },
+        "dim": "GiB/s",
+        "on_zero": "unavailable"
+       },
+       "b": {
+        "kind": "mul",
+        "a": {
+         "kind": "lookup",
+         "table_id": "reclaim_delay_periods",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "blob_delete",
+           "dim": "enum:gc_stage"
+          }
+         ],
+         "dim": "1"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "input",
+          "id": "cas_gc_interval_s",
+          "dim": "s"
+         },
+         "b": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "table_id": "gc_round_duration",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_base",
+              "dim": "enum:gc_round_term"
+             }
+            ],
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "lookup",
+             "table_id": "gc_round_duration",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_per_part",
+               "dim": "enum:gc_round_term"
+              }
+             ],
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "add",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "parts_per_insert",
+                 "dim": "1"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "div",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "sub",
+                 "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                 },
+                 "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                 },
+                 "dim": "1"
+                },
+                "dim": "1/s",
+                "on_zero": "unavailable"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_mutations_per_s",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_parts_per_mutation",
+                "dim": "count"
+               },
+               "dim": "1/s"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_gc_interval_s",
+              "dim": "s"
+             },
+             "dim": "count"
+            },
+            "dim": "ms"
+           },
+           "dim": "ms"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+         },
+         "dim": "s"
+        },
+        "dim": "s"
+       },
+       "dim": "GiB"
+      },
+      "b": {
+       "kind": "const",
+       "value": 1,
+       "dim": "month"
+      },
+      "dim": "GiB*month"
+     }
+    },
+    {
+     "row_type": "storage",
+     "op_kind": "metadata",
+     "outcome_class": "all",
+     "category": "metadata",
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "div",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "div",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "data_bytes",
+           "dim": "GiB"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1073741824,
+           "dim": "B/GiB"
+          },
+          "dim": "B"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_blob_bytes",
+           "dim": "B"
+          },
+          "dim": "B"
+         },
+         "dim": "count",
+         "on_zero": "unavailable"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "lookup",
+           "table_id": "cas_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ],
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 86,
+           "dim": "B"
+          },
+          "dim": "B"
+         },
+         "b": {
+          "kind": "input",
+          "id": "cas_manifest_bytes",
+          "dim": "B"
+         },
+         "dim": "B"
+        },
+        "dim": "B"
+       },
+       "b": {
+        "kind": "const",
+        "value": 1073741824,
+        "dim": "B/GiB"
+       },
+       "dim": "GiB",
+       "on_zero": "unavailable"
+      },
+      "b": {
+       "kind": "const",
+       "value": 1,
+       "dim": "month"
+      },
+      "dim": "GiB*month"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": [],
+   "excluded": [
+    {
+     "kind": "category",
+     "id": "temporary",
+     "reason": "local scratch staging is priced in local_disk"
+    }
+   ]
+  },
+  "local_disk": {
+   "ledger_rows": [
+    {
+     "row_type": "block_capacity",
+     "op_kind": "staging_peak",
+     "outcome_class": "all",
+     "category": "temporary",
+     "route": null,
+     "scope": "replica",
+     "basis": "predicted",
+     "expr": {
+      "kind": "div",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "lookup",
+         "table_id": "cas_objects_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "shape",
+           "dim": "enum:shape"
+          },
+          {
+           "kind": "input",
+           "id": "part_type",
+           "dim": "enum:part_type"
+          }
+         ],
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "cas_blob_bytes",
+         "dim": "B"
+        },
+        "dim": "B"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "input",
+         "id": "insert_clients",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "dim": "count"
+       },
+       "dim": "B"
+      },
+      "b": {
+       "kind": "const",
+       "value": 1073741824,
+       "dim": "B/GiB"
+      },
+      "dim": "GiB",
+      "on_zero": "unavailable"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  }
+ }
+}
