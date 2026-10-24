@@ -204,7 +204,7 @@ class TracerTest(unittest.TestCase):
         self.assertEqual(localio.Tracer('rel/pass', 1).path(), os.path.join(os.getcwd(), 'rel/pass/strace.r1.g0.txt'))
         # Each generation of a replica gets its own file: `strace -o` truncates, so a restart must not reuse one.
         prefix = localio.Tracer('/p/pass', 2, 3).prefix()
-        self.assertEqual(prefix, 'strace -f -ttt -T -yy -e trace=write,pwrite64,writev,read,pread64,readv,fsync,fdatasync '
+        self.assertEqual(prefix, 'strace -f -ttt -T -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2,fsync,fdatasync '
                                  '-o /p/pass/strace.r2.g3.txt')
         with self.assertRaises(ValueError):
             localio.Tracer('/has space', 1).prefix()

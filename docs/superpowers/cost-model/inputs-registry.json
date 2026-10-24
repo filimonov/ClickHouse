@@ -10484,7 +10484,7 @@
     {
       "id": "ebs_sequential_ios_per_mib",
       "block": "ebs",
-      "label": "EBS I/Os per MiB of a merged sequential stream: 1 MiB / 256 KiB",
+      "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); real request counts were 1.3-6.5x this on the rig; the gp3 3000-IOPS baseline usually dominates",
       "kind": "pinned",
       "scope": "volume",
       "unit": "req/MiB",
@@ -10497,10 +10497,15 @@
       "validity": null,
       "evidence": {
         "kind": "provider",
-        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured spread of syscall I/Os per MiB on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
         "version": "2026-10-24"
       },
-      "hint": null,
+      "hint": {
+        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+        "mapping": {
+          "ebs_sequential_ios_per_mib": "compare with CloudWatch VolumeWriteOps / (VolumeWriteBytes / 2^20) of the data volume"
+        }
+      },
       "status": "ok"
     },
     {
@@ -10526,6 +10531,386 @@
         "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
         "mapping": {
           "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_op",
+      "block": "schema",
+      "label": "S3 operation of an s3plain request row",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "PutObject",
+        "HeadObject",
+        "GetObject",
+        "CopyObject",
+        "DeleteObject",
+        "DeleteObjects",
+        "ListObjectsV2"
+      ],
+      "table": null,
+      "default": "PutObject",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "plain_startup_kind",
+      "block": "topology_recovery",
+      "label": "Part of the s3plain startup cost: fixed per start, or per loaded directory",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "fixed",
+        "per_dir"
+      ],
+      "table": null,
+      "default": "fixed",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:138",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "plain_meta_objects_per_part",
+      "block": "schema",
+      "label": "s3plain directory objects per part: one __meta/<dir>/prefix.path for the part and one per projection",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_meta_objects_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.projections WHERE database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "plain_meta_objects_per_part": "1 + projections of the table"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_dir_create_requests",
+      "block": "inserts",
+      "label": "Requests per directory an s3plain part creates: the prefix.path PutObject and a HeadObject of it",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "plain_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_dir_create_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_dir_create_requests": "S3HeadObject per new part (1 per directory)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_rename_requests",
+      "block": "inserts",
+      "label": "PutObject per directory an s3plain rename rewrites (prefix.path); every new part is renamed from its tmp_ name",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "plain_rename_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_rename_requests": "PutObject per new part beyond its files and the create"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_copy_on_hardlink",
+      "block": "mutations_deletes",
+      "label": "Requests per hard link on s3plain: a server-side copy (HeadObject for the size, CopyObject); reached by ATTACH/REPLACE PARTITION FROM, never by mutations (refused)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "plain_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_copy_on_hardlink",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_copy_on_hardlink": "S3CopyObject per file of a cloned part"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_unlink_requests",
+      "block": "mutations_deletes",
+      "label": "Requests per file an s3plain part removal unlinks: copy aside (HeadObject, CopyObject), delete the file, delete the copy",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "plain_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_unlink_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_unlink_requests": "S3CopyObject per removed file; DeleteObject twice that"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_dir_remove_requests",
+      "block": "mutations_deletes",
+      "label": "Requests per directory of an s3plain part removal: the rename to delete_tmp_ (PutObject), the prefix.path delete",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "plain_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_dir_remove_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_dir_remove_requests": "per removed part directory"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_objects_per_part",
+      "block": "schema",
+      "label": "s3plain objects per part: one per part file, empty files included (s3 stores no blob for them)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_objects_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT part_type, avg(c) FROM (SELECT p.part_type, p.name, count() AS c FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name) GROUP BY part_type",
+        "mapping": {
+          "plain_objects_per_part": "avg objects per active part by part_type"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_empty_part_objects",
+      "block": "mutations_deletes",
+      "label": "Objects of the empty part that covers a dropped or expired part on s3plain (a blob per empty file)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "plain_empty_part_objects",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "plain_expired_part_extra_files",
+      "block": "mutations_deletes",
+      "label": "Files of an expired part besides its shape's files: partition.dat and minmax_<key>.idx of one partition key column",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "plain_expired_part_extra_files",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "plain_startup_requests",
+      "block": "topology_recovery",
+      "label": "Requests an s3plain server start sends besides part loads: layout listing and prefix.path reads per directory, the disk access checks",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "plain_startup_kind",
+          "plain_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "plain_startup_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "plain_startup_requests": "right after a start, minus the part loads"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "plain_local_metadata_bytes_per_object",
+      "block": "local_disk",
+      "label": "Local metadata bytes per object on s3plain: none, the layout is held in memory",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "plain_local_metadata_bytes_per_object",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+        "mapping": {
+          "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
         }
       },
       "status": "ok"

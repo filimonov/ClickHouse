@@ -1,0 +1,473 @@
+[
+  {
+    "id": "io_bytes_per_op",
+    "kind": "table",
+    "dim": "1",
+    "value": {
+      "index": [
+        "io_op",
+        "io_direction"
+      ],
+      "values": {
+        "inserts|read": 0.000897,
+        "inserts|write": 1.038584,
+        "merges|read": 1.00566,
+        "merges|write": 1.013777,
+        "reads|read": 1.225166,
+        "reads|write": 0.001475
+      }
+    },
+    "validity": {
+      "insert_rows": [
+        80000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": {
+        "inserts|read": 0.005858,
+        "inserts|write": 0.072581,
+        "merges|read": 0.012508,
+        "merges|write": 0.023712,
+        "reads|read": 0.284854,
+        "reads|write": 0.009057
+      },
+      "rel": 0.1
+    },
+    "domain": {
+      "fit": {
+        "columns": [
+          5,
+          21
+        ],
+        "insert_rows": [
+          80000,
+          300000
+        ],
+        "scale": 0.05,
+        "arrival": "back-to-back",
+        "types": "UInt64; Array, JSON, Nullable, Map, LowCardinality, projection, skip index"
+      },
+      "holdout": {
+        "columns": [
+          8,
+          8
+        ],
+        "insert_rows": [
+          120000,
+          120000
+        ],
+        "types": "String, Array, Nullable, LowCardinality, DateTime, Float64, Map"
+      }
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "mean of the per-record values of io-sizes.narrow-compact, .narrow-wide and .types-holdout (ebs_fit.demand_fit)",
+      "records": [
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+      ],
+      "per_key": {
+        "inserts|read": {
+          "spread": 0.0004291582428951323,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00024234768206245845,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00032129613828448184,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0003301703677841037,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.00037040059760522594,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00036539503149271763,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0004291582428951323,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 9.580364468836768e-05,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 9.378748628624176e-05,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 8.154855288742223e-05
+          }
+        },
+        "inserts|write": {
+          "spread": 0.0337907051287516,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": -0.008205264376974997,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.010710834183230045,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.010710805227931663,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.02387871041816414,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.02388006313721802,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0238737026427589,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0337907051287516,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.033678619958686706,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.03379005489883835
+          }
+        },
+        "merges|read": {
+          "spread": 0.0037539213014912143,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0037539213014912143,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.003270567542966729,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0032763074267108117,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.002483451462595765,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.0023947788336518006,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0023193823991529694,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.000742389866281945,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.0012267037054090046,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.0011340900040774926
+          }
+        },
+        "merges|write": {
+          "spread": 0.009355927401353936,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00023257614270266735,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00022316705292912964,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.00021097780633438923,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.009353544717396467,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.009348548272166246,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.009355927401353936,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.009093976817353244,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.00921388989620664,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.009083432675391911
+          }
+        },
+        "reads|read": {
+          "spread": 0.1399267891387337,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.13379340133449413,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13264604891991394,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13264604891991394,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.006686784979795135,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.006650031667348788,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.00655550770706137,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.1399267891387337,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.1395200401910881,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.13953099419870374
+          }
+        },
+        "reads|write": {
+          "spread": 0.0020285524667166023,
+          "residuals": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0020285524667166023,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.001581374351536461,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.0015864362092484323,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.000327453524810131,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00032796903681137036,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.00033900235941907125,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0007151100309679824,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0007096106636793199,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0007089623204615612
+          }
+        }
+      },
+      "holdout": {
+        "records": [
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+        ],
+        "checks": {
+          "inserts|read": {
+            "fit": 0.0008971401700599561,
+            "ok": true,
+            "slack": 0.00594803050279626,
+            "value": 0.0007250759750158224
+          },
+          "inserts|write": {
+            "fit": 1.0385843036560058,
+            "ok": true,
+            "slack": 0.1764398406231038,
+            "value": 1.0349493210920213
+          },
+          "merges|read": {
+            "fit": 1.005660228669173,
+            "ok": true,
+            "slack": 0.11307386546989973,
+            "value": 1.0043955940168432
+          },
+          "merges|write": {
+            "fit": 1.013776918222415,
+            "ok": true,
+            "slack": 0.12508954662494937,
+            "value": 1.0180322848230006
+          },
+          "reads|read": {
+            "fit": 1.2251664059829421,
+            "ok": true,
+            "slack": 0.4073702188757616,
+            "value": 1.3051539383894986
+          },
+          "reads|write": {
+            "fit": 0.001475025048520963,
+            "ok": true,
+            "slack": 0.0092046074382853,
+            "value": 0.0024766232201547185
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "io_request_size_distribution",
+    "kind": "table",
+    "dim": "1",
+    "value": {
+      "index": [
+        "io_op",
+        "io_direction",
+        "io_size_bucket"
+      ],
+      "values": {
+        "inserts|read|128KiB": 0.0,
+        "inserts|read|16KiB": 0.0,
+        "inserts|read|1MiB": 0.0,
+        "inserts|read|256KiB": 0.0,
+        "inserts|read|32KiB": 0.0,
+        "inserts|read|512KiB": 0.0,
+        "inserts|read|64KiB": 0.0,
+        "inserts|read|8KiB": 0.0,
+        "inserts|read|<=4KiB": 1.0,
+        "inserts|read|>1MiB": 0.0,
+        "inserts|write|128KiB": 0.006879,
+        "inserts|write|16KiB": 0.008361,
+        "inserts|write|1MiB": 0.104316,
+        "inserts|write|256KiB": 0.019157,
+        "inserts|write|32KiB": 0.003439,
+        "inserts|write|512KiB": 0.019897,
+        "inserts|write|64KiB": 0.018263,
+        "inserts|write|8KiB": 0.015395,
+        "inserts|write|<=4KiB": 0.804293,
+        "inserts|write|>1MiB": 0.0,
+        "merges|read|128KiB": 0.629461,
+        "merges|read|16KiB": 0.01305,
+        "merges|read|1MiB": 0.0,
+        "merges|read|256KiB": 0.0,
+        "merges|read|32KiB": 0.012698,
+        "merges|read|512KiB": 0.0,
+        "merges|read|64KiB": 0.047661,
+        "merges|read|8KiB": 0.007894,
+        "merges|read|<=4KiB": 0.289236,
+        "merges|read|>1MiB": 0.0,
+        "merges|write|128KiB": 0.004739,
+        "merges|write|16KiB": 0.019003,
+        "merges|write|1MiB": 0.248639,
+        "merges|write|256KiB": 0.015267,
+        "merges|write|32KiB": 0.012891,
+        "merges|write|512KiB": 0.016616,
+        "merges|write|64KiB": 0.002375,
+        "merges|write|8KiB": 0.016259,
+        "merges|write|<=4KiB": 0.664211,
+        "merges|write|>1MiB": 0.0,
+        "reads|read|128KiB": 0.802774,
+        "reads|read|16KiB": 0.006447,
+        "reads|read|1MiB": 0.0,
+        "reads|read|256KiB": 0.0,
+        "reads|read|32KiB": 0.00053,
+        "reads|read|512KiB": 0.0,
+        "reads|read|64KiB": 0.001404,
+        "reads|read|8KiB": 0.013239,
+        "reads|read|<=4KiB": 0.175605,
+        "reads|read|>1MiB": 0.0
+      }
+    },
+    "validity": {
+      "insert_rows": [
+        80000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "max_tv": {
+        "inserts|read": 0.05,
+        "inserts|write": 0.280501,
+        "merges|read": 0.574494,
+        "merges|write": 0.436859,
+        "reads|read": 0.671762
+      }
+    },
+    "domain": {
+      "fit": {
+        "columns": [
+          5,
+          21
+        ],
+        "insert_rows": [
+          80000,
+          300000
+        ],
+        "scale": 0.05,
+        "arrival": "back-to-back",
+        "types": "UInt64; Array, JSON, Nullable, Map, LowCardinality, projection, skip index"
+      },
+      "holdout": {
+        "columns": [
+          8,
+          8
+        ],
+        "insert_rows": [
+          120000,
+          120000
+        ],
+        "types": "String, Array, Nullable, LowCardinality, DateTime, Float64, Map"
+      }
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "mean of the per-record request fractions (ebs_fit.pooled_distribution)",
+      "records": [
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+      ],
+      "per_key": {
+        "inserts|read": {
+          "tv": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0
+          }
+        },
+        "inserts|write": {
+          "tv": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.07873160004034215,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0733716482022282,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0733716482022282,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.11525066231523648,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.11525066231523648,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.11525066231523648,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.07988106256051809,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.07972122878764187,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.07988106256051809
+          }
+        },
+        "merges|read": {
+          "tv": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.10019424235178682,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13311194075807056,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13311194075807056,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16778464124197381,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.1636416210584302,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.15682483066058686,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.2622470658962326,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.25580506791536634,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.25758282996943327
+          }
+        },
+        "merges|write": {
+          "tv": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.08720719034802119,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.08483654512023311,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.08483654512023311,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.19342973811058917,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.19342973811058917,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.19342973811058917,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.15775512153425023,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.15851499995370313,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.15775512153425023
+          }
+        },
+        "reads|read": {
+          "tv": {
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.09943588586806616,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.16564901424363745,
+            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.16564901424363745,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16188571587162123,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.16494981070786796,
+            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.1711367370225898,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.3020152431094547,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.3108810808202954,
+            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.31000859467101305
+          }
+        }
+      },
+      "holdout": {
+        "records": [
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+        ],
+        "checks": {
+          "inserts|read": {
+            "max_tv": 0.05,
+            "ok": true,
+            "tv": 0.0
+          },
+          "inserts|write": {
+            "max_tv": 0.28050132463047295,
+            "ok": true,
+            "tv": 0.08711062179716181
+          },
+          "merges|read": {
+            "max_tv": 0.5744941317924652,
+            "ok": true,
+            "tv": 0.055718477884216605
+          },
+          "merges|write": {
+            "max_tv": 0.4368594762211783,
+            "ok": true,
+            "tv": 0.1400313446457229
+          },
+          "reads|read": {
+            "max_tv": 0.6717621616405909,
+            "ok": true,
+            "tv": 0.1432262529285004
+          }
+        }
+      }
+    }
+  }
+]

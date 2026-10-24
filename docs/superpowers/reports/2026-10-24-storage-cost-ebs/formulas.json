@@ -1,0 +1,504 @@
+{
+  "schema": "formulas/1",
+  "owner": "ebs",
+  "variant": "ebs",
+  "cells": {
+    "storage": {
+      "ledger_rows": [
+        {
+          "row_type": "block_capacity",
+          "op_kind": "capacity",
+          "outcome_class": "all",
+          "category": null,
+          "route": null,
+          "scope": "volume",
+          "basis": "predicted",
+          "expr": {
+            "kind": "mul",
+            "dim": "GiB",
+            "a": {
+              "kind": "input",
+              "id": "data_bytes",
+              "dim": "GiB"
+            },
+            "b": {
+              "kind": "add",
+              "dim": "1",
+              "a": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+              },
+              "b": {
+                "kind": "input",
+                "id": "ebs_headroom",
+                "dim": "1"
+              }
+            }
+          }
+        }
+      ],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "inserts": {
+      "ledger_rows": [
+        {
+          "row_type": "block_io",
+          "op_kind": "mibps",
+          "outcome_class": "all",
+          "category": null,
+          "route": null,
+          "scope": "volume",
+          "basis": "predicted",
+          "expr": {
+            "kind": "mul",
+            "dim": "MiB/s",
+            "a": {
+              "kind": "mul",
+              "dim": "MiB/s",
+              "a": {
+                "kind": "div",
+                "dim": "MiB/s",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "mul",
+                  "dim": "MiB/day",
+                  "a": {
+                    "kind": "input",
+                    "id": "ingest_rate",
+                    "dim": "GiB/day"
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 1024,
+                    "dim": "MiB/GiB"
+                  }
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 86400,
+                  "dim": "s/day"
+                }
+              },
+              "b": {
+                "kind": "input",
+                "id": "peak_factor",
+                "dim": "1"
+              }
+            },
+            "b": {
+              "kind": "add",
+              "dim": "1",
+              "a": {
+                "kind": "lookup",
+                "dim": "1",
+                "table_id": "io_bytes_per_op",
+                "keys": [
+                  {
+                    "kind": "const",
+                    "value": "inserts",
+                    "dim": "enum:io_op"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "write",
+                    "dim": "enum:io_direction"
+                  }
+                ]
+              },
+              "b": {
+                "kind": "lookup",
+                "dim": "1",
+                "table_id": "io_bytes_per_op",
+                "keys": [
+                  {
+                    "kind": "const",
+                    "value": "inserts",
+                    "dim": "enum:io_op"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "read",
+                    "dim": "enum:io_direction"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "row_type": "block_io",
+          "op_kind": "iops",
+          "outcome_class": "all",
+          "category": null,
+          "route": null,
+          "scope": "volume",
+          "basis": "predicted",
+          "expr": {
+            "kind": "mul",
+            "dim": "req/s",
+            "a": {
+              "kind": "mul",
+              "dim": "MiB/s",
+              "a": {
+                "kind": "mul",
+                "dim": "MiB/s",
+                "a": {
+                  "kind": "div",
+                  "dim": "MiB/s",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "mul",
+                    "dim": "MiB/day",
+                    "a": {
+                      "kind": "input",
+                      "id": "ingest_rate",
+                      "dim": "GiB/day"
+                    },
+                    "b": {
+                      "kind": "const",
+                      "value": 1024,
+                      "dim": "MiB/GiB"
+                    }
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 86400,
+                    "dim": "s/day"
+                  }
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "peak_factor",
+                  "dim": "1"
+                }
+              },
+              "b": {
+                "kind": "add",
+                "dim": "1",
+                "a": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "inserts",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "write",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                },
+                "b": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "inserts",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "read",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                }
+              }
+            },
+            "b": {
+              "kind": "input",
+              "id": "ebs_sequential_ios_per_mib",
+              "dim": "req/MiB"
+            }
+          }
+        }
+      ],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "merges": {
+      "ledger_rows": [
+        {
+          "row_type": "block_io",
+          "op_kind": "mibps",
+          "outcome_class": "all",
+          "category": null,
+          "route": null,
+          "scope": "volume",
+          "basis": "predicted",
+          "expr": {
+            "kind": "mul",
+            "dim": "MiB/s",
+            "a": {
+              "kind": "mul",
+              "dim": "MiB/s",
+              "a": {
+                "kind": "div",
+                "dim": "MiB/s",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "mul",
+                  "dim": "MiB/day",
+                  "a": {
+                    "kind": "mul",
+                    "dim": "GiB/day",
+                    "a": {
+                      "kind": "input",
+                      "id": "ingest_rate",
+                      "dim": "GiB/day"
+                    },
+                    "b": {
+                      "kind": "sub",
+                      "dim": "1",
+                      "a": {
+                        "kind": "input",
+                        "id": "write_amplification_rule",
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "const",
+                        "value": 1,
+                        "dim": "1"
+                      }
+                    }
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 1024,
+                    "dim": "MiB/GiB"
+                  }
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 86400,
+                  "dim": "s/day"
+                }
+              },
+              "b": {
+                "kind": "input",
+                "id": "peak_factor",
+                "dim": "1"
+              }
+            },
+            "b": {
+              "kind": "add",
+              "dim": "1",
+              "a": {
+                "kind": "lookup",
+                "dim": "1",
+                "table_id": "io_bytes_per_op",
+                "keys": [
+                  {
+                    "kind": "const",
+                    "value": "merges",
+                    "dim": "enum:io_op"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "write",
+                    "dim": "enum:io_direction"
+                  }
+                ]
+              },
+              "b": {
+                "kind": "lookup",
+                "dim": "1",
+                "table_id": "io_bytes_per_op",
+                "keys": [
+                  {
+                    "kind": "const",
+                    "value": "merges",
+                    "dim": "enum:io_op"
+                  },
+                  {
+                    "kind": "const",
+                    "value": "read",
+                    "dim": "enum:io_direction"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "row_type": "block_io",
+          "op_kind": "iops",
+          "outcome_class": "all",
+          "category": null,
+          "route": null,
+          "scope": "volume",
+          "basis": "predicted",
+          "expr": {
+            "kind": "mul",
+            "dim": "req/s",
+            "a": {
+              "kind": "mul",
+              "dim": "MiB/s",
+              "a": {
+                "kind": "mul",
+                "dim": "MiB/s",
+                "a": {
+                  "kind": "div",
+                  "dim": "MiB/s",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "mul",
+                    "dim": "MiB/day",
+                    "a": {
+                      "kind": "mul",
+                      "dim": "GiB/day",
+                      "a": {
+                        "kind": "input",
+                        "id": "ingest_rate",
+                        "dim": "GiB/day"
+                      },
+                      "b": {
+                        "kind": "sub",
+                        "dim": "1",
+                        "a": {
+                          "kind": "input",
+                          "id": "write_amplification_rule",
+                          "dim": "1"
+                        },
+                        "b": {
+                          "kind": "const",
+                          "value": 1,
+                          "dim": "1"
+                        }
+                      }
+                    },
+                    "b": {
+                      "kind": "const",
+                      "value": 1024,
+                      "dim": "MiB/GiB"
+                    }
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 86400,
+                    "dim": "s/day"
+                  }
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "peak_factor",
+                  "dim": "1"
+                }
+              },
+              "b": {
+                "kind": "add",
+                "dim": "1",
+                "a": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "merges",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "write",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                },
+                "b": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "merges",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "read",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                }
+              }
+            },
+            "b": {
+              "kind": "input",
+              "id": "ebs_sequential_ios_per_mib",
+              "dim": "req/MiB"
+            }
+          }
+        }
+      ],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "mutations": {
+      "ledger_rows": [],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "deletes": {
+      "ledger_rows": [],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "reads": {
+      "ledger_rows": [],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "recovery": {
+      "ledger_rows": [],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    },
+    "local_disk": {
+      "ledger_rows": [],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    }
+  },
+  "applicability": {
+    "storage": {
+      "local_volumes": "supported"
+    },
+    "inserts": {
+      "lifecycle": "supported"
+    },
+    "merges": {
+      "lifecycle": "supported"
+    },
+    "mutations": {
+      "mutation_deletes": "supported"
+    },
+    "deletes": {
+      "mutation_deletes": "supported"
+    },
+    "reads": {
+      "reads_cache": "supported"
+    },
+    "recovery": {
+      "startup_recovery": "supported",
+      "replication": "supported"
+    }
+  }
+}
