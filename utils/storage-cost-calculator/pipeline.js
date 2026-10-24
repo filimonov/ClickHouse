@@ -219,7 +219,15 @@
       coefs.set(c.id, { value: c.value, validity: model().basisOf(c) === 'derived' ? null : model().rangeOf(c), verified_range: model().rangeOf(c), basis: model().basisOf(c) });
     }
     const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
-    const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set() };
+    // A lookup miss on an enum key falls back to the nearest measured key: by `ui.nearest` (an order or a map) or the
+    // enum's declared order. The substitution is extrapolated and named in a cell note.
+    const nearest = new Map();
+    for (const q of contract.registry) {
+      if (q.value_type !== 'enum' || !Array.isArray(q.enum)) continue;
+      const n = q.ui && q.ui.nearest;
+      nearest.set(q.id, n && !Array.isArray(n) && typeof n === 'object' ? { map: n } : { order: Array.isArray(n) ? n : q.enum });
+    }
+    const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set(), nearest };
     // An input outside its own measured range makes every number that reads it extrapolated.
     for (const q of contract.registry) {
       const r = q.kind === 'input' ? (model().rangeOf(q) || {})[q.id] : null;
@@ -241,6 +249,18 @@
       }
     }
     return ctx;
+  }
+
+  // Lookups that used the nearest measured key, once per table and key pair.
+  function substitutions(traces) {
+    const out = new Map();
+    const visit = (t) => {
+      if (!t || typeof t !== 'object') return;
+      if (t.kind === 'lookup' && t.substituted_key) out.set(`${t.table_id}|${t.lookup_key}`, { table_id: t.table_id, requested: t.lookup_key, measured: t.substituted_key });
+      for (const k of t.children || []) visit(k);
+    };
+    (traces || []).forEach(visit);
+    return [...out.values()];
   }
 
   function walk(node, fn) {
@@ -491,6 +511,7 @@
       const ev = evaluateVariant(contract, v, ctx, cut);
       const out = { state: 'ok', reason: null, extrapolated: ev.extrapolated, cells: {}, total: null, lines: null, allocation: null, provisioning: null, notes: [] };
       for (const [op, c] of Object.entries(ev.cells)) {
+        for (const s of substitutions(c.trace)) c.notes.push({ text: `${s.table_id}: measured for ${s.measured}; applied to ${s.requested}`, value: null, state: 'ok', substitution: s });
         out.cells[op] = { money: null, quantities: c.quantities, lines: null, rows: c.rows, extrapolated: c.extrapolated, trace: c.trace, notes: c.notes, zeroed_cut_terms: c.zeroed, ev: c.ev };
         for (const n of c.notes) out.notes.push({ kind: 'cell', operation: op, text: n.text, value: n.value });
       }

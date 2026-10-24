@@ -114,6 +114,33 @@
     return ok(node, v, kids, ex);
   }
 
+  // The measured table key closest to `parts`. Each differing part must be an enum with an order (rank distance) or
+  // an explicit map (`nearest.get(enumId)` is {order} or {map}); a part without either must match exactly. Returns
+  // null when no key qualifies; ties go to the key listed first in the table.
+  function nearestKey(parts, dims, table, nearest) {
+    let best = null;
+    let bestCost = Infinity;
+    for (const k of Object.keys(table.values)) {
+      const cand = k.split('|');
+      if (cand.length !== parts.length) continue;
+      let cost = 0;
+      for (let i = 0; i < parts.length && cost < Infinity; i++) {
+        if (cand[i] === parts[i]) continue;
+        const id = typeof dims[i] === 'string' && dims[i].startsWith('enum:') ? dims[i].slice(5) : null;
+        const n = id ? nearest.get(id) : null;
+        if (!n) cost = Infinity;
+        else if (n.map) cost = n.map[parts[i]] === cand[i] ? cost + 1 : Infinity;
+        else {
+          const a = n.order.indexOf(parts[i]);
+          const b = n.order.indexOf(cand[i]);
+          cost = a < 0 || b < 0 ? Infinity : cost + Math.abs(a - b);
+        }
+      }
+      if (cost < bestCost) { bestCost = cost; best = k; }
+    }
+    return best;
+  }
+
   function evalLookup(node, ctx) {
     const keys = node.keys.map((k) => evaluate(k, ctx));
     const kids = keys.map((k) => k.trace);
@@ -126,7 +153,13 @@
       return unavailable(node, kids, ex, { reason: 'lookup arity' });
     }
     if (!table || !Object.prototype.hasOwnProperty.call(table.values, key)) {
-      return unavailable(node, kids, ex, extra);
+      const sub = table && ctx.nearest ? nearestKey(keys.map((k) => String(k.value)), node.keys.map((k) => k.dim), table, ctx.nearest) : null;
+      if (sub === null) return unavailable(node, kids, ex, extra);
+      // The nearest measured key stands in for the requested one: the number is extrapolated and says from where.
+      const v = table.values[sub];
+      const badSub = typeof v === 'number' ? badValue({ dim: 'count' }, v) : `invalid value ${JSON.stringify(v)}`;
+      if (badSub) return unavailable(node, kids, ex, Object.assign({ reason: `table ${node.table_id}[${sub}]: ${badSub}` }, extra));
+      return ok(node, v, kids, true, Object.assign({ substituted_key: sub, table_id: node.table_id }, extra));
     }
     const cell = table.values[key];
     const bad = typeof cell === 'number' ? badValue({ dim: 'count' }, cell) : `invalid value ${JSON.stringify(cell)}`;
@@ -474,7 +507,7 @@
     return b;
   }
 
-  const model = { evaluate, evaluateCell, checkDims, render, rangeOf, basisOf, BASES };
+  const model = { evaluate, evaluateCell, checkDims, render, rangeOf, basisOf, BASES, nearestKey };
   root.SCC = root.SCC || {};
   root.SCC.model = model;
   if (typeof module !== 'undefined' && module.exports) module.exports = model;
