@@ -269,37 +269,25 @@ class BranchesTest(unittest.TestCase):
                 crossing['window']['crossing'] = [7, 9]
                 self.assertEqual(failing(card.assertions(ctx, crossing)), ['window.foreground_crossing'])
 
-    def test_observer_requests_are_excluded_from_workload(self):
+    def test_placement_is_read_in_the_teardown_outside_the_window(self):
+        # Reading system.remote_data_paths makes the server GET manifests; inside the window those GETs would be
+        # workload. The card reads placement in its teardown, before the database is dropped.
         m = manifest('cas-branches.fresh')
         card = CARDS['cas-branches']
+        uuid = 'fa8589b7-1d4b-4398-8d0a-5755f6ed78e0'
+        rows = (json.dumps({'local_path': f'store/fa8/{uuid}/all_1_1_0/data.bin', 'remote_path': BLOB, 'size': 7}) + '\n'
+                + json.dumps({'local_path': f'store/fa8/{uuid}/all_1_1_0/count.txt', 'remote_path': '', 'size': 1}) + '\n')
+        cluster = FakeCluster(1, {'toString(uuid)': uuid + '\n', 'remote_data_paths': rows})
         with tempfile.TemporaryDirectory() as tmp:
-            led = Ledger(os.path.join(tmp, 'l'))
-            led.add('PutObject', BLOB)
-            ctx = ctx_for(m, tmp, led)
-            card.state(ctx)['gc_rounds'] = {'r1': []}
-            card.as_observer(ctx, lambda: led.add('GetObject', f'{P}/cas/ref_catalog'))
-            split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
-            self.assertEqual([r['op'] for r in split['foreground']], ['PutObject'])
-            self.assertEqual([r['op'] for r in card.state(ctx)['observer_rows']], ['GetObject'])
-
-    def test_observer_slice_keeps_writes_and_lease_renewals(self):
-        # The placement query only reads; a write or a lease request in its window is someone else's.
-        m = manifest('cas-branches.fresh')
-        card = CARDS['cas-branches']
-        with tempfile.TemporaryDirectory() as tmp:
-            led = Ledger(os.path.join(tmp, 'l'))
-            ctx = ctx_for(m, tmp, led)
-            card.state(ctx)['gc_rounds'] = {'r1': []}
-
-            def query():
-                led.add('GetObject', f'{P}/cas/ref_catalog')
-                led.add('PutObject', f'{P}/gc/server-roots/yardstick-r1/mount')
-                led.add('PutObject', BLOB)
-            card.as_observer(ctx, query)
-            split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
-            self.assertEqual([r['key'] for r in card.state(ctx)['observer_rows']], [f'{P}/cas/ref_catalog'])
-            self.assertEqual([r['key'] for r in split['maintenance']], [f'{P}/gc/server-roots/yardstick-r1/mount'])
-            self.assertEqual([r['key'] for r in split['foreground']], [BLOB])
+            ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')), cluster)
+            card.state(ctx)['parts'] = [{'name': 'all_1_1_0', 'active': 1}]
+            card.teardown(ctx)
+            log = cluster.clients[0].log
+            self.assertLess(next(i for i, q in enumerate(log) if 'remote_data_paths' in q),
+                            next(i for i, q in enumerate(log) if 'DROP DATABASE' in q))
+            self.assertEqual(card.state(ctx)['placement'],
+                             {'all_1_1_0': {'data.bin': 'ch128/7e/7e04f7775690055a4f834c628c1cd41d', 'count.txt': ''}})
+            self.assertEqual(card.state(ctx)['placement_sizes'], {'all_1_1_0': {'data.bin': 7, 'count.txt': 1}})
 
 
 class ScratchPollerTest(unittest.TestCase):

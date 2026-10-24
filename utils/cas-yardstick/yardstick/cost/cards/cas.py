@@ -44,7 +44,6 @@ GC_START_SQL = ("SELECT round_id, toUnixTimestamp64Micro(event_time_microseconds
                 "WHERE event_type = 'Start' AND event_time_microseconds >= fromUnixTimestamp64Micro({t0}) "
                 "ORDER BY t_us FORMAT JSONEachRow")
 BRANCHES = ('fresh', 'hash_hit', 'adoption', 'inline')
-OBSERVER_OPS = ('GetObject', 'HeadObject', 'ListObjectsV2')
 # A lease renewal is the renewer's own write (Pool/CasMountRuntime.cpp:690) even when it lands inside a GC round.
 RENEWAL = ('lease', 'PutObject')
 
@@ -167,30 +166,10 @@ class CasCard(LifecycleCard):
             rounds[f'r{n}'] = gc_rounds(client) if exists else []
         self.state(ctx)['gc_rounds'] = rounds
 
-    def as_observer(self, ctx, fn):
-        """Run the rig's own inventory query `fn`; the server requests it causes are rig-caused, not workload.
-
-        The seqs between two flushes around the call are recorded; nothing else runs on the server meanwhile
-        (the workload finished), so those requests are evidenced as the query's own.
-        """
-        ctx.proxy.flush()
-        before = max((r['seq'] for r in window_rows(ctx)), default=ctx.window()['start_seq'])
-        out = fn()
-        ctx.proxy.flush()
-        # The inventory query only reads table state; a write, or any request on a maintenance family (a lease
-        # renewal, a GC pulse), that lands in the same window has another cause and stays in the workload.
-        self.state(ctx).setdefault('observer_seqs', []).extend(
-            r['seq'] for r in window_rows(ctx) if r['seq'] > before and r['op'] in OBSERVER_OPS
-            and not L.is_maintenance(r, CAS_FAMILIES))
-        return out
-
     def classify(self, ctx, attempts, families):
         st = self.state(ctx)
         if 'gc_rounds' not in st:
             raise RuntimeError('GC rounds were not collected; request origin cannot be attributed')
-        observer = set(st.get('observer_seqs', []))
-        st['observer_rows'] = [a for a in attempts if a['seq'] in observer]
-        attempts = [a for a in attempts if a['seq'] not in observer]
         split = attribute(attempts, st['gc_rounds'], families)
         st['split'] = {part: [a['seq'] for a in rows] for part, rows in split.items()}
         st['split_families'] = {part: by_family(rows, families) for part, rows in split.items()}
@@ -221,8 +200,7 @@ class CasCard(LifecycleCard):
         return {'request_attribution': {'method': 'gc_round_windows+control_families',
                                         'rounds': {r: len(v) for r, v in st['gc_rounds'].items()}},
                 'foreground_by_family': st['split_families']['foreground'].get(self.p(ctx)['replica'], {}),
-                'maintenance_by_family': st['split_families']['maintenance'].get(self.p(ctx)['replica'], {}),
-                'observer_requests': len(st.get('observer_rows', []))}
+                'maintenance_by_family': st['split_families']['maintenance'].get(self.p(ctx)['replica'], {})}
 
     def assertions(self, ctx, draft):
         pred = self.predicted(ctx)
@@ -275,9 +253,14 @@ class CasBranches(CasCard):
         super().complete(ctx, timeout_s)
         st['parts'] = self.parts(ctx)
         st['events'] = json_rows(client, BRANCH_SQL.format(disk=DISK, t0=ctx.window()['t_start_us']))
-        # The placement read is the rig's own inventory query: counted in `observer_requests`, never foreground.
-        st['placement'] = self.as_observer(ctx, lambda: self.placement(ctx))
         self.collect_rounds(ctx)
+
+    def teardown(self, ctx):
+        # system.remote_data_paths makes the server read manifests: read it after the window, before the drop, so its
+        # requests are teardown traffic rather than workload.
+        if not self.p(ctx).get('dropped'):
+            self.state(ctx)['placement'] = self.placement(ctx)
+        super().teardown(ctx)
 
     def observe(self, ctx, draft):
         st = self.state(ctx)
@@ -321,8 +304,6 @@ class CasBranches(CasCard):
             parts = sorted(obs['placement'])
             keys = [sorted(v for v in obs['placement'][p].values() if v) for p in parts]
             out['hash_hit.same_blob_keys'] = (True, len(keys) == 2 and keys[0] == keys[1] and bool(keys[0]))
-        if 'observer_requests_max' in checks:
-            out['observer_requests<=max'] = (True, obs['observer_requests'] <= checks['observer_requests_max'])
         return out
 
 
@@ -365,13 +346,9 @@ class GcLifecycle(GcCard):
     def complete(self, ctx, timeout_s=300):
         st, client = self.state(ctx), self.replica_client(ctx)
         if self.p(ctx)['retire'] == 'merge':
+            # The merge writes its result's blobs fresh; a source blob the result shared would stay referenced and show
+            # as unreclaimed (assertion `cohort_reclaimed`), so the cohort needs no placement read in the window.
             super().complete(ctx, timeout_s)
-            # The merged part's own blobs never leave the cohort's in-degree: drop any coinciding key.
-            placement = self.as_observer(ctx, lambda: self.placement(ctx))
-            # Merged-away parts stay listed until their removal; only the active result's blobs stay referenced.
-            active = {p['name'] for p in self.parts(ctx) if p['active']}
-            kept = {key for name, part in placement.items() if name in active for key in part.values() if key}
-            st['cohort'] = {i for i in st['cohort'] if i[1].split('/blobs/', 1)[-1] not in kept}
         deadline = time.monotonic() + self.p(ctx)['reclaim_timeout_s']
         while True:
             st['deleted'] = deletions(window_rows(ctx), st['cohort'], st['t_retire_us'])
@@ -668,11 +645,15 @@ class GcUnderLoad(CasCard, NaturalMergeCard):
     def complete(self, ctx, timeout_s=300):
         NaturalMergeCard.complete(self, ctx, timeout_s)
         st = self.state(ctx)
-        st['placement'] = self.as_observer(ctx, lambda: self.placement(ctx))
         st['parts'] = self.parts(ctx)
         st['created'] = {(r['bucket'], r['key']): r['req_payload_bytes'] for r in window_rows(ctx)
                          if (r['bucket'], r['key']) in cohort([r])}
         self.collect_rounds(ctx)
+
+    def teardown(self, ctx):
+        # As CasBranches: the placement read is teardown traffic, outside the window.
+        self.state(ctx)['placement'] = self.placement(ctx)
+        super().teardown(ctx)
 
     def observe(self, ctx, draft):
         st = self.state(ctx)
