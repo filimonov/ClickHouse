@@ -224,16 +224,18 @@ def register(cls):
     return cls
 
 
-def active_by_creator(ctx, draft) -> dict:
+def active_by_creator(card, ctx, draft) -> dict:
     """Upper `active` byte-hours in the window per creating caller, in GiB-months; they sum to the record's bound
-    because each identity's bound is taken on its own."""
+    because each identity's bound is taken on its own. The card's reclassification applies, as in the record."""
     bounds, w = ctx.replay(), draft['window']
+    card.reclassify(ctx, bounds)
     out = {}
     for caller in sorted(set(bounds.creators.values())):
         sub = L.Bounds(bounds.lower, bounds.upper, {i: m for i, m in bounds.mutations.items()
                                                     if bounds.creators.get(i) == caller})
         sub.cats = bounds.cats
-        out[caller] = gib_months(L.byte_hours(sub, w['t_start_us'], w['t_end_us'])['active']['upper'])
+        active = L.byte_hours(sub, w['t_start_us'], w['t_end_us']).get('active', {'upper': 0.0})
+        out[caller] = gib_months(active['upper'])
     return out
 
 
@@ -264,7 +266,7 @@ class ReplicatedFetch(ManifestCard):
             probe_r2_get_requests=request_inputs({'r2': usage.get('r2', {})})['probe_get_requests'],
             probe_interserver_gib=sum(r['from_target'] for r in relays) / GIB,
             probe_interserver_to_gib=sum(r['to_target'] for r in relays) / GIB,
-            **{f'probe_{c}_active_gib_months': v for c, v in active_by_creator(ctx, draft).items()})
+            **{f'probe_{c}_active_gib_months': v for c, v in active_by_creator(self, ctx, draft).items()})
         return out
 
     def assertions(self, ctx, draft):

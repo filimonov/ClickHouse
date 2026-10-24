@@ -154,7 +154,7 @@ class FakeCard(CostCard):
         self.on_teardown(ctx)
 
 
-MANIFEST = {'case_id': 'small', 'card': 'fake', 'timeout_s': 5}
+MANIFEST = {'case_id': 'small', 'card': 'fake', 'timeout_s': 5, 'scale': 1.0}
 
 
 class RunnerFixture(unittest.TestCase):
@@ -193,13 +193,13 @@ class RunnerFixture(unittest.TestCase):
 
     def deps(self, **kw):
         fields = dict(binary='/bin/ch', run_id='run1', runs_dir=self.runs_dir, topology=self.topology,
-                      proxy=self.proxy, rig=self.rig, store_id='s', scale=1.0, keep_prefix=False,
+                      proxy=self.proxy, rig=self.rig, store_id='s', keep_prefix=False,
                       binary_sha256='0' * 64, commit='abc', binary_download_sha256=None, rig_commit='f' * 40)
         fields.update(kw)
         return Deps(**fields)
 
-    def go(self, policy='s3', **kw):
-        return run_case(self.card, MANIFEST, policy, 0, self.deps(), cluster_factory=self.factory,
+    def go(self, policy='s3', manifest=MANIFEST, **kw):
+        return run_case(self.card, manifest, policy, 0, self.deps(), cluster_factory=self.factory,
                         config_writer=self.writer, sampler_factory=FakeSampler, **kw)
 
     def writes(self, n, **kw):
@@ -273,6 +273,32 @@ class RunnerTest(RunnerFixture):
         self.assertIn('cas', record['reason'])
         self.assertEqual(measurements_problems(record), [])
         self.assertEqual(self.calls, [])
+
+    def test_starts_exactly_the_cards_replicas_and_records_them(self):
+        # `--replicas` is what the rig can offer; a one-replica card gets one server, and its record says so.
+        self.topology.replicas = 3
+        self.card.on_measured = self.writes(2)
+        record = self.go()
+        self.assertEqual(record['status'], 'ok')
+        self.assertEqual((self.calls.count('sh_start'), record['replicas']), (1, 1))
+        self.assertEqual(sorted(record['events']), ['r1'])
+        self.assertEqual(self.topology.replicas, 3)
+
+    def test_traffic_from_a_caller_beyond_the_cards_replicas_fails(self):
+        self.topology.replicas = 2
+        self.card.on_measured = lambda ctx: (self.writes(2)(ctx), ctx.proxy.emit(key='run1/s3/fake/small/k0/x', caller='r2'))
+        record = self.go()
+        self.assertEqual((record['status'], record['reason']), ('FAILED', 'unexpected_caller'))
+        self.assertIn('r2', record['diagnostics']['error_text'])
+
+    def test_record_scale_is_the_manifests_and_counts_follow_it(self):
+        self.card.COUNTS = {'inserts': 10, 'rows': 3}
+        seen = []
+        self.card.on_measured = lambda ctx: (seen.append(ctx.counts), self.writes(2)(ctx))
+        record = self.go(manifest={**MANIFEST, 'scale': 0.5})
+        self.assertEqual((record['status'], record['scale']), ('ok', 0.5))
+        self.assertEqual(seen, [{'inserts': 5, 'rows': 2}])
+        self.assertNotIn('scale', {f.name for f in __import__('dataclasses').fields(Deps)})
 
     def test_unsupported_when_replicas_missing(self):
         self.card.replicas = 2
@@ -417,13 +443,22 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(len(record['window']['crossing']), 1)
 
     def test_lease_traffic_in_window_does_not_change_foreground(self):
+        # A deterministic CAS card with `gc: off`: the server still renews its mount lease and probes GC state.
+        # Key shapes from the gate ledger of run cost-20261024T030843Z; the families are the CAS card's own.
+        from yardstick.cost.cards import cas_probe
+        base = 'run1/cas/fake/small/k0/shared'
+        self.card.policies = ('cas',)
+        self.card.inventory_families = lambda ctx: cas_probe.CAS_FAMILIES
+
         def measured(ctx):
-            for i in range(2):
-                ctx.proxy.emit(key='run1/s3/fake/small/k0/data/%d' % i)
-            for i in range(5):
-                ctx.proxy.emit(key='run1/s3/fake/small/k0/lease/%d' % i, size=10)
+            for h in ('7293cdc82844686a6a356fb83506d0f6', '2fea2ac54c20fdf00417b35b2944783b'):
+                ctx.proxy.emit(key=f'{base}/blobs/ch128/{h[:2]}/{h}')
+            for key in ('gc/server-roots/yardstick-r1/mount', 'gc/server-roots/yardstick-r1/epoch', 'gc/hb',
+                        'gc/state', '_pool_meta'):
+                ctx.proxy.emit(key=f'{base}/{key}', size=10)
         self.card.on_measured = measured
-        record = self.go()
+        record = self.go(policy='cas')
+        self.assertEqual(record['status'], 'ok')
         self.assertEqual(record['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
         self.assertEqual(record['ledger']['maintenance']['r1']['PutObject']['attempts'], 5)
         self.assertEqual(record['assertions']['puts']['ok'], True)

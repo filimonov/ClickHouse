@@ -683,6 +683,12 @@ class BrokenUpstreamTest(ProxyBase):
         with self.assertRaises(OSError):
             self.proxy.finish(a)
         self.assertEqual(self.proxy.open_attempts(), [])
+        # The row is lost: every later flush says so instead of returning a ledger with a silent gap.
+        with self.assertRaisesRegex(RuntimeError, 'ledger row .* was not written'):
+            self.proxy.flush()
+        with self.assertRaisesRegex(RuntimeError, 'ledger row .* was not written'):
+            self.proxy.stop()
+        self.assertIsNone(self.proxy._file)
 
     def test_connect_refused_answers_502_and_row_present_right_after_flush(self):
         with socket.socket() as probe:

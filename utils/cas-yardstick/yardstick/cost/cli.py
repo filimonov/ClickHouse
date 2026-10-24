@@ -111,13 +111,32 @@ def _read_json(path):
         return json.load(f)
 
 
+def report_dir_of(d: str) -> str:
+    """The report directory of a `--manifests` value: the directory itself, or the parent of an `experiments` one."""
+    d = os.path.abspath(d)
+    return d if os.path.isdir(os.path.join(d, 'experiments')) else os.path.dirname(d)
+
+
 def _load_manifests(dirs) -> list:
-    """Manifests of report directories (`<dir>/experiments/*.json`); an `experiments` directory itself also works."""
-    paths = []
+    """Manifests of report directories (`<dir>/experiments/*.json`); an `experiments` directory itself also works.
+
+    A card reads its predictions from the report directory its manifest came from (`params.report_dir`), unless
+    the manifest names another one.
+    """
+    out = []
     for d in dirs:
         sub = os.path.join(d, 'experiments')
-        paths += glob.glob(os.path.join(sub if os.path.isdir(sub) else d, '*.json'))
-    return [_read_json(p) for p in sorted(set(paths))]
+        for path in sorted(glob.glob(os.path.join(sub if os.path.isdir(sub) else d, '*.json'))):
+            manifest = _read_json(path)
+            if isinstance(manifest.get('params'), dict):
+                manifest['params'].setdefault('report_dir', report_dir_of(d))
+            out.append((path, manifest))
+    seen, manifests = set(), []
+    for path, manifest in sorted(out, key=lambda x: x[0]):
+        if path not in seen:
+            seen.add(path)
+            manifests.append(manifest)
+    return manifests
 
 
 def _services(args, proxy_factory, run_id):
@@ -147,8 +166,7 @@ def _session(args, body, *, proxy_factory, rig_factory, rustfs):
         if problems:
             sys.exit('; '.join(problems))
         deps = Deps(binary=args.binary, run_id=run_id, runs_dir=args.runs_dir, topology=topology, proxy=proxy, rig=rig,
-                    store_id=f'store@{args.endpoint or DEFAULT_ENDPOINT}', scale=args.scale,
-                    keep_prefix=args.keep_prefix, binary_sha256=_sha256(args.binary), commit=source_commit(args),
+                    store_id=f'store@{args.endpoint or DEFAULT_ENDPOINT}', keep_prefix=args.keep_prefix, binary_sha256=_sha256(args.binary), commit=source_commit(args),
                     binary_download_sha256=download_sha256(args.binary), rig_commit=_git_commit())
         return body(deps, run_id)
     finally:
@@ -297,7 +315,8 @@ def cmd_probe(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory
             reason = reason or (f'assertions failed: {", ".join(failed)}' if failed else None)
             # Several probes share a variant; each probe's formulas cell is named after the probe.
             reason = reason or _node(tools_dir, 'drill.mjs', os.path.join(run_dir, 'measurements.jsonl'), '--probe',
-                                     probe, '--cell', probe, '--out', drill_json)
+                                     probe, '--cell', probe, '--out', drill_json, '--report-dir',
+                                     report_dir_of(args.manifests))
             reason = reason or _node(tools_dir, 'render_check.mjs', drill_json, '--probe', probe)
             results[probe] = ('FAIL' if reason else 'PASS', reason, drill_json)
         for probe, (verdict, reason, path) in results.items():
@@ -314,7 +333,11 @@ def cmd_estimate(args) -> int:
     if os.path.exists(path):
         with open(path, encoding='utf-8') as f:
             records = [json.loads(line) for line in f if line.strip()]
-    registry = _read_json(args.registry) if os.path.exists(args.registry) else None
+    if not os.path.isfile(args.registry):
+        # The cut list names the quantities each cut removes; without the registry it would silently list none.
+        print(f'registry not found: {args.registry}', file=sys.stderr)
+        return 2
+    registry = _read_json(args.registry)
     presets = None
     if os.path.exists(args.presets):
         with open(args.presets, encoding='utf-8') as f:
@@ -348,24 +371,22 @@ def add_parsers(sub) -> None:
     r.add_argument('--manifests', action='append', required=True, help='report directory with experiments/*.json')
     r.add_argument('--cases', default='all', help='comma-separated experiment ids, or all')
     r.add_argument('--policies', default='s3,cas', help='comma-separated, intersected with each manifest')
-    r.add_argument('--replicas', type=int, default=1)
+    r.add_argument('--replicas', type=int, default=1, help='servers the rig may start; each pass runs its card\'s count')
     r.add_argument('--repeats', type=int, help='default: the manifest\'s')
-    r.add_argument('--scale', type=float, default=1.0)
     r.add_argument('--keep-prefix', action='store_true')
     r.set_defaults(func=cmd_run)
 
     p = csub.add_parser('probe', help='run the five probes, then drill and render checks; exit 2 on FAIL')
     common(p)
     p.add_argument('--manifests', default=PROBE_MANIFESTS)
-    p.add_argument('--replicas', type=int, default=2)
-    p.add_argument('--scale', type=float, default=1.0)
+    p.add_argument('--replicas', type=int, default=2, help='servers the rig may start; each pass runs its card\'s count')
     p.add_argument('--keep-prefix', action='store_true')
     p.set_defaults(func=cmd_probe)
 
     e = csub.add_parser('estimate', help='hours for the planned cases and the cuts to reach a budget')
     e.add_argument('run_dir')
     e.add_argument('--coverage', default=os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'coverage.json'))
-    e.add_argument('--registry', default=os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'registry.json'))
+    e.add_argument('--registry', default=os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'inputs-registry.json'))
     e.add_argument('--presets', default=os.path.join(REPO, 'utils', 'storage-cost-calculator', 'presets.js'))
     e.add_argument('--budget-hours', type=float, default=72)
     e.add_argument('--sample-of', action='append', default=[], metavar='FAMILY=CASE',

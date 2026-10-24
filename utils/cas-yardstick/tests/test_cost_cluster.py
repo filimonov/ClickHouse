@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 
 from unittest import mock
@@ -218,3 +219,66 @@ class ClusterTest(ClusterFixture):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ServerShTracedKillTest(unittest.TestCase):
+    """`server.sh` fallbacks under tracing: `server.pid` is the tracer, the server is its child in the same group."""
+
+    FAKE_SERVER = '''import http.server, os, signal, sys
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+port = int(next(a.split('=')[1] for a in sys.argv if a.startswith('--http_port=')))
+with open(os.environ['FAKE_CHILD_PID'], 'w') as f:
+    f.write(str(os.getpid()))
+class H(http.server.BaseHTTPRequestHandler):
+    def _ok(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b'1')
+    do_GET = do_POST = _ok
+    def log_message(self, *a):
+        pass
+http.server.HTTPServer(('127.0.0.1', port), H).serve_forever()
+'''
+    # Like `strace -f -o file`: runs the command as a child and waits, so killing it alone leaves the child running.
+    FAKE_TRACER = '#!/bin/bash\ntrap "" TERM\n"$@" &\nwait\n'
+
+    def test_stop_fallback_kills_the_traced_server_too(self):
+        import signal
+        import socket
+        import subprocess
+        server_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server.sh')
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'etc'))
+            open(os.path.join(tmp, 'etc', 'config.xml'), 'w').close()
+            binary, tracer = os.path.join(tmp, 'fake-clickhouse'), os.path.join(tmp, 'fake-strace')
+            with open(binary, 'w') as f:
+                f.write('#!/usr/bin/env python3\n' + self.FAKE_SERVER)
+            with open(tracer, 'w') as f:
+                f.write(self.FAKE_TRACER)
+            os.chmod(binary, 0o755)
+            os.chmod(tracer, 0o755)
+            s = socket.socket()
+            s.bind(('127.0.0.1', 0))
+            http_port = s.getsockname()[1]
+            s.close()
+            child_pid_file = os.path.join(tmp, 'child.pid')
+            env = {**os.environ, 'TRACE_PREFIX': tracer, 'FAKE_CHILD_PID': child_pid_file, 'SERVER_STOP_TIMEOUT': '1'}
+            subprocess.run(['bash', server_sh, 'start', binary, tmp, str(http_port - 1)], env=env, check=True,
+                           capture_output=True, timeout=60, start_new_session=True)
+            with open(child_pid_file) as f:
+                child = int(f.read())
+            try:
+                done = subprocess.run(['bash', server_sh, 'stop', tmp], env=env, capture_output=True, text=True,
+                                      timeout=60)
+                self.assertIn('SIGKILL', done.stderr)
+                for _ in range(50):
+                    try:
+                        os.kill(child, 0)
+                    except ProcessLookupError:
+                        break
+                    time.sleep(0.1)
+                else:
+                    self.fail(f'traced server {child} survived the stop fallback')
+            finally:
+                try:
+                    os.kill(child, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass

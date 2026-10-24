@@ -250,6 +250,22 @@ class ReplicatedFetchObserveTest(unittest.TestCase):
         self.assertAlmostEqual(r1 + r2, inputs['probe_active_gib_months'])
 
 
+class ActiveByCreatorTest(unittest.TestCase):
+    def test_split_follows_the_cards_reclassification(self):
+        # An object the card reclassifies (garbage after a drop) is no longer `active` in the per-creator split.
+        class Card:
+            def reclassify(self, ctx, bounds):
+                bounds.reclassify([('b', 'b')], 'garbage', 0, 'test')
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Ledger(os.path.join(tmp, 'l'))
+            led.add('PutObject', 'a', caller='r1', req_payload_bytes=3600, t=0)
+            led.add('PutObject', 'b', caller='r2', req_payload_bytes=7200, t=0)
+            ctx = ctx_for(CARDS['probe_replicated_fetch'], tmp, led, 's3', FakeCluster(2))
+            out = probes.active_by_creator(Card(), ctx, {'window': {'t_start_us': 0, 't_end_us': 3_600_000_000}})
+        self.assertGreater(out['r1'], 0)
+        self.assertEqual(out.get('r2', 0), 0)
+
+
 class MultipartFaultTest(unittest.TestCase):
     KEY = f'{PREFIX}/r1/abc/sbin'
 
@@ -405,9 +421,9 @@ class CasGcCohortTest(unittest.TestCase):
         return card, ctx, draft, cluster
 
     def test_request_origin_follows_the_callers_gc_rounds(self):
-        rows = [{'caller': 'r1', 't_start_us': 5}, {'caller': 'r1', 't_start_us': 15}, {'caller': 'r2', 't_start_us': 15},
-                {'caller': 'r1', 't_start_us': 40}, {'caller': 'rig', 't_start_us': 15}]
-        out = cas_probe.attribute(rows, {'r1': [[10, 20], [30, None]], 'r2': []})
+        rows = [{'caller': c, 't_start_us': t, 'op': 'HeadObject', 'key': BLOB}
+                for c, t in (('r1', 5), ('r1', 15), ('r2', 15), ('r1', 40), ('rig', 15))]
+        out = cas_probe.attribute(rows, {'r1': [[10, 20], [30, None]], 'r2': []}, [])
         self.assertEqual([r['t_start_us'] for r in out['maintenance']], [15, 40])  # r1 inside its own rounds only
         self.assertEqual([(r['caller'], r['t_start_us']) for r in out['foreground']], [('r1', 5), ('r2', 15)])
         self.assertEqual(len(out['rig']), 1)
@@ -416,6 +432,26 @@ class CasGcCohortTest(unittest.TestCase):
         # A round seen only by its Finish has no start to attribute from: a problem, not a start at 0.
         with self.assertRaisesRegex(ValueError, 'no Start row'):
             cas_probe.gc_rounds(FakeClient({'round_id': '0\t20\t1\t0\n'}))
+
+    def test_control_families_are_maintenance_outside_gc_rounds(self):
+        # Key shapes from the gate ledger of run cost-20261024T030843Z: lease renewal, GC heartbeat and state, pool meta.
+        base = 'cost-20261024T030843Z/cas/probe_cas_gc_cohort/gate/k1/shared'
+        control = [f'{base}/gc/server-roots/yardstick-r1/mount', f'{base}/gc/server-roots/yardstick-r2/epoch',
+                   f'{base}/gc/server-roots/yardstick-r1/store/9a7/mount', f'{base}/gc/hb', f'{base}/gc/state',
+                   f'{base}/gc/maintenance_state', f'{base}/gc/gen/1/attempt/1/blob_target/0/0',
+                   f'{base}/gc/gen/0/attempt/0/fold_seal', f'{base}/_pool_meta']
+        payload = [f'{base}/blobs/ch128/72/7293cdc82844686a6a356fb83506d0f6',
+                   f'{base}/blobs/ch128/72/7293cdc82844686a6a356fb83506d0f6.meta',
+                   f'{base}/cas/manifests/yardstick-r1/store/9a7/9a738b50-4881-4eed-8d2f-ab13dd48ea80@cas@/'
+                   '0000000000000001-0000000000000001/000001.zst', f'{base}/cas/ref_catalog',
+                   f'{base}/roots/yardstick-r1/clickhouse_access_check_b75a1931-bc70-4380-b7df-86fd56f821a4']
+        rows = [{'caller': 'r1', 't_start_us': 5, 'op': 'GetObject', 'key': k} for k in control + payload]
+        rows += [{'caller': 'r1', 't_start_us': 5, 'op': 'DeleteObjects', 'key': '', 'delete_keys': control[:2]},
+                 {'caller': 'r1', 't_start_us': 5, 'op': 'DeleteObjects', 'key': '', 'delete_keys': control[:1] + payload[:1]}]
+        out = cas_probe.attribute(rows, {'r1': []}, cas_probe.CAS_FAMILIES)
+        self.assertEqual([r['key'] for r in out['maintenance']], control + [''])
+        self.assertEqual([r['key'] for r in out['foreground']], payload + [''])
+        self.assertEqual([f['name'] for f in cas_probe.CAS_FAMILIES if f.get('maintenance')], ['lease', 'gc', 'pool_meta'])
 
     def test_classify_without_collected_rounds_fails(self):
         card = CARDS['probe_cas_gc_cohort']
@@ -426,11 +462,11 @@ class CasGcCohortTest(unittest.TestCase):
 
     def test_gc_round_traffic_is_maintenance_and_priced_with_the_rest(self):
         with tempfile.TemporaryDirectory() as tmp:
-            # The GC put of `gc/state` (third row, 1 ms after the window mark + 2 rows) falls inside a round.
-            start = 1_000_000 + 3000
+            # The manifest put (second row) falls inside a round; the `gc/state` put (third row) is a control family.
+            start = 1_000_000 + 2000
             card, ctx, draft, _ = self.run_probe(tmp, rounds=f'{start - 1}\t{start + 1}\t1\t1\n')
-            self.assertEqual(draft['ledger']['maintenance']['r1']['PutObject']['attempts'], 1)
-            self.assertEqual(draft['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
+            self.assertEqual(draft['ledger']['maintenance']['r1']['PutObject']['attempts'], 2)
+            self.assertEqual(draft['ledger']['foreground']['r1']['PutObject']['attempts'], 1)
             inputs = draft['observations']['inputs']
             self.assertEqual(inputs['probe_put_requests'], 3)  # cells price foreground and maintenance together
             self.assertGreater(inputs['probe_metadata_gib_months'], 0)
@@ -445,7 +481,8 @@ class CasGcCohortTest(unittest.TestCase):
             self.assertAlmostEqual(draft['observations']['reclaim_delay_s'],
                                    (4 * 10 ** 15 + 2_000_010 - card.state(ctx)['t_drop_us']) / 1e6)
             pred = copy.deepcopy(card.predicted(ctx))
-            pred['expected']['foreground'] = {'r1': {'PutObject': {'min': 3, 'max': 3}}}
+            # Blob and manifest puts; the `gc/state` put is maintenance (control family).
+            pred['expected']['foreground'] = {'r1': {'PutObject': {'min': 2, 'max': 2}}}
             with mock.patch.object(type(card), 'predicted', return_value=pred):
                 self.assertEqual(failing(card.assertions(ctx, draft)), [])
         with tempfile.TemporaryDirectory() as tmp:

@@ -45,6 +45,7 @@ class DirSampler:
         self._samples: list = []
         self._stop = threading.Event()
         self._thread = None
+        self._error: BaseException | None = None
 
     def _measure(self) -> int:
         seen, total, stack = set(), 0, list(self.paths)
@@ -74,8 +75,11 @@ class DirSampler:
             self._on_sample(t_us, nbytes)
 
     def _run(self) -> None:
-        while not self._stop.wait(self.interval_s):
-            self._sample()
+        try:
+            while not self._stop.wait(self.interval_s):
+                self._sample()
+        except BaseException as e:  # noqa: BLE001 (handed to stop(): a dead sampler must not pass for a quiet disk)
+            self._error = e
 
     def start(self) -> None:
         self._sample()  # the baseline exists before start returns, so later files are not folded into it
@@ -85,6 +89,8 @@ class DirSampler:
     def stop(self) -> dict:
         self._stop.set()
         self._thread.join()
+        if self._error is not None:
+            raise self._error
         self._sample()
         return {'paths': self.paths, 'peak_allocated_bytes': max(b for _, b in self._samples),
                 'samples': self._samples}

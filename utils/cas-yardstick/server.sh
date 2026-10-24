@@ -3,11 +3,23 @@
 # usage: server.sh start <binary> <run_dir> <port_base> | stop <run_dir>
 set -euo pipefail
 
-START_TIMEOUT=120
-STOP_TIMEOUT=60
+START_TIMEOUT=${SERVER_START_TIMEOUT:-120}
+STOP_TIMEOUT=${SERVER_STOP_TIMEOUT:-60}
 
 cmd=${1:-}
 shift || true
+
+# Signal the server's whole process group (setsid made it its own): under TRACE_PREFIX `server.pid` is the
+# tracer, and the server is its child, so a signal to the pid alone would leave the server running.
+kill_group() {
+    local sig=$1 pid=$2 pgid
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
+    if [ -n "$pgid" ] && [ "$pgid" != "$(ps -o pgid= -p $$ | tr -d ' ')" ]; then
+        kill "-$sig" -- "-$pgid" 2>/dev/null || true
+    else
+        kill "-$sig" "$pid" 2>/dev/null || true
+    fi
+}
 
 case "$cmd" in
     start)
@@ -47,12 +59,12 @@ case "$cmd" in
         done
         echo "server not answering SELECT 1 after $START_TIMEOUT s; killing it; see $dir/server.err.log" >&2
         pid=$(cat "$dir/server.pid")
-        kill "$pid" 2>/dev/null || true
+        kill_group TERM "$pid"
         for _ in $(seq 1 30); do
             kill -0 "$pid" 2>/dev/null || exit 1
             sleep 1
         done
-        kill -9 "$pid" 2>/dev/null || true
+        kill_group KILL "$pid"
         exit 1
         ;;
     stop)
@@ -68,8 +80,8 @@ case "$cmd" in
                 kill -0 "$pid" 2>/dev/null || { echo "stopped"; exit 0; }
                 sleep 1
             done
-            echo "server $pid still alive after $STOP_TIMEOUT s; sending SIGKILL" >&2
-            kill -9 "$pid"
+            echo "server $pid still alive after $STOP_TIMEOUT s; sending SIGKILL to its process group" >&2
+            kill_group KILL "$pid"
             for _ in $(seq 1 5); do
                 kill -0 "$pid" 2>/dev/null || exit 1
                 sleep 1

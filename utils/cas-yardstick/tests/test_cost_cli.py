@@ -1,3 +1,4 @@
+import contextlib
 import io
 import json
 import os
@@ -82,10 +83,23 @@ def run_args(tmp, manifests, **kw):
     with open(os.path.join(tmp, 'SHA256SUMS'), 'w') as f:
         f.write('d' * 64 + '  ' + os.path.join(tmp, 'clickhouse') + '\n')
     base = dict(binary=os.path.join(tmp, 'clickhouse'), source_dir=None, manifests=manifests, cases='all', policies='s3,cas',
-                replicas=1, repeats=None, scale=1.0, runs_dir=os.path.join(tmp, 'runs'), port_base=19700,
+                replicas=1, repeats=None, runs_dir=os.path.join(tmp, 'runs'), port_base=19700,
                 endpoint=None, keep_prefix=False, commit='abc123')
     base.update(kw)
     return SimpleNamespace(**base)
+
+
+class ManifestsTest(unittest.TestCase):
+    def test_manifests_point_their_cards_at_their_own_report_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'experiments'))
+            for name, params in (('a', {'rows': 1}), ('b', {'rows': 1, 'report_dir': '/elsewhere'})):
+                with open(os.path.join(tmp, 'experiments', f'{name}.json'), 'w') as f:
+                    json.dump({'experiment_id': name, 'params': params}, f)
+            got = {m['experiment_id']: m['params']['report_dir'] for m in cli._load_manifests([tmp])}
+            self.assertEqual(got, {'a': tmp, 'b': '/elsewhere'})
+            self.assertEqual(cli.report_dir_of(os.path.join(tmp, 'experiments')), tmp)
+            self.assertEqual(cli.report_dir_of(tmp), tmp)
 
 
 class RunTest(unittest.TestCase):
@@ -342,6 +356,8 @@ class ProbeTest(unittest.TestCase):
             self.assertEqual(len(node), 10)
             drill = node[0]
             self.assertEqual(drill[drill.index('--cell') + 1], drill[drill.index('--probe') + 1])
+            # The drill reads predictions and formulas from the report directory the manifests came from.
+            self.assertEqual(drill[drill.index('--report-dir') + 1], m)
             self.assertEqual([c[1].rsplit('/', 1)[1] for c in node[:2]], ['drill.mjs', 'render_check.mjs'])
             self.assertEqual(code, 2)
             self.assertEqual(out.count('PASS'), 4)
@@ -395,21 +411,21 @@ COVERAGE = {
     'cards': [
         {'name': 'a', 'family': 'insert', 'model_variants': [], 'cases': [
             {'case_id': 'p1', 'policies': ['s3', 'cas'], 'replicas': 1, 'scale': 1, 'repeats': 2, 'timeout_s': 100,
-             'priority': 'P1', 'status': 'planned'},
+             'duration_s': 120, 'priority': 'P1', 'status': 'planned'},
             {'case_id': 'done', 'policies': ['s3'], 'replicas': 1, 'scale': 1, 'repeats': 9, 'timeout_s': 100,
-             'priority': 'P1', 'status': 'run'}]},
+             'duration_s': 120, 'priority': 'P1', 'status': 'run'}]},
         {'name': 'b', 'family': 'insert', 'model_variants': [], 'cases': [
-            {'case_id': 'p2', 'policies': ['s3'], 'replicas': 1, 'scale': 1, 'repeats': 1, 'timeout_s': 0,
-             'priority': 'P2', 'status': 'planned'}]},
+            {'case_id': 'p2', 'policies': ['s3'], 'replicas': 1, 'scale': 1, 'repeats': 1, 'timeout_s': 900,
+             'duration_s': 600, 'priority': 'P2', 'status': 'planned'}]},
         {'name': 'replication-zero-copy', 'family': 'repl', 'model_variants': [], 'cases': [
             {'case_id': 'z', 'policies': ['s3'], 'replicas': 2, 'scale': 1, 'repeats': 1, 'timeout_s': 0,
-             'priority': 'P1', 'status': 'planned'}]},
+             'duration_s': 0, 'priority': 'P1', 'status': 'planned'}]},
         {'name': 'types-int', 'family': 'types', 'model_variants': [], 'cases': [
             {'case_id': 't', 'policies': ['s3'], 'replicas': 1, 'scale': 1, 'repeats': 1, 'timeout_s': 0,
-             'priority': 'P1', 'status': 'planned'}]},
+             'duration_s': 0, 'priority': 'P1', 'status': 'planned'}]},
         {'name': 'lonely', 'family': 'solo', 'model_variants': [], 'cases': [
             {'case_id': 'q', 'policies': ['s3'], 'replicas': 1, 'scale': 1, 'repeats': 1, 'timeout_s': 0,
-             'priority': 'P2', 'status': 'planned'}]}],
+             'duration_s': 0, 'priority': 'P2', 'status': 'planned'}]}],
     'evidence': [
         {'coefficient': 'k_put', 'experiment_id': 'b.p2', 'policy': 's3', 'role': 'fit', 'status': 'planned'},
         {'coefficient': 'k_zc', 'experiment_id': 'replication-zero-copy.z', 'policy': 's3', 'role': 'fit',
@@ -438,12 +454,13 @@ class EstimateTest(unittest.TestCase):
         by_id = {c['experiment_id']: c for c in est.cases}
         self.assertEqual(sorted(by_id), ['a.p1', 'b.p2', 'lonely.q', 'replication-zero-copy.z', 'types-int.t'])
         a = by_id['a.p1']
-        # card median wall 200 + timeout share 10 + cleanup median 20 = 230 per pass; 2 policies x 2 repeats
-        self.assertEqual((a['passes'], a['pass_seconds'], a['basis']), (4, 200, 'card'))
-        self.assertAlmostEqual(a['seconds'], 4 * 230)
+        # card median wall 200 is above the declared 120 s floor; + cleanup median 20 = 220 per pass; 2 x 2 passes
+        self.assertEqual((a['passes'], a['pass_seconds'], a['basis'], a['floor_applied']), (4, 200, 'card', False))
+        self.assertAlmostEqual(a['seconds'], 4 * 220)
         b = by_id['b.p2']
-        self.assertEqual((b['pass_seconds'], b['basis']), (200, 'family'))
-        self.assertAlmostEqual(b['seconds'], 1 * (200 + 0 + 20))
+        # the family median 200 s is below the case's declared 600 s duration: the floor decides
+        self.assertEqual((b['pass_seconds'], b['basis'], b['floor_applied']), (600, 'family', True))
+        self.assertAlmostEqual(b['seconds'], 1 * (600 + 20))
         self.assertEqual(by_id['replication-zero-copy.z']['basis'], 'sample')
         self.assertEqual(by_id['lonely.q']['basis'], 'global')
         self.assertTrue(by_id['lonely.q']['estimated_from_global'])
@@ -455,7 +472,7 @@ class EstimateTest(unittest.TestCase):
         self.assertEqual([c['label'] for c in est.cuts], ['P2 family insert', 'P2 family solo',
                                                           'replication-zero-copy*', 'types-*'])
         self.assertFalse(est.reached)
-        self.assertAlmostEqual(est.cuts[-1]['remaining_hours'], 920 * 1.25 / 3600)
+        self.assertAlmostEqual(est.cuts[-1]['remaining_hours'], 880 * 1.25 / 3600)
         first = est.cuts[0]
         self.assertEqual(first['experiments'], ['b.p2'])
         self.assertEqual(first['coefficients'], ['k_put'])
@@ -482,8 +499,11 @@ class EstimateCommandTest(unittest.TestCase):
             cov = os.path.join(tmp, 'coverage.json')
             with open(cov, 'w') as f:
                 json.dump(COVERAGE, f)
+            reg = os.path.join(tmp, 'registry.json')
+            with open(reg, 'w') as f:
+                json.dump(REGISTRY, f)
             parser = argparse_parser()
-            args = parser.parse_args(['cost', 'estimate', run_dir, '--coverage', cov, '--registry', '/nope',
+            args = parser.parse_args(['cost', 'estimate', run_dir, '--coverage', cov, '--registry', reg,
                                       '--presets', '/nope', '--sample-of', 'repl=x', '--sample-of', 'solo=x', '--json'])
             self.assertEqual(args.sample_of, ['repl=x', 'solo=x'])
             out = io.StringIO()
@@ -493,6 +513,36 @@ class EstimateCommandTest(unittest.TestCase):
             self.assertEqual((cases['replication-zero-copy.z']['basis'], cases['replication-zero-copy.z']['pass_seconds']),
                              ('sample', 50))
             self.assertEqual(cases['lonely.q']['basis'], 'sample')
+
+
+class EstimateRegistryTest(unittest.TestCase):
+    def test_default_registry_exists_and_a_missing_one_fails(self):
+        args = argparse_parser().parse_args(['cost', 'estimate', 'rd'])
+        self.assertEqual(os.path.basename(args.registry), 'inputs-registry.json')
+        self.assertTrue(os.path.isfile(args.registry), args.registry)
+        with tempfile.TemporaryDirectory() as tmp:
+            cov = os.path.join(tmp, 'coverage.json')
+            with open(cov, 'w') as f:
+                json.dump(COVERAGE, f)
+            args = argparse_parser().parse_args(['cost', 'estimate', tmp, '--coverage', cov, '--registry',
+                                                 os.path.join(tmp, 'absent.json')])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err), redirect_stdout(io.StringIO()):
+                self.assertEqual(args.func(args), 2)
+            self.assertIn('absent.json', err.getvalue())
+
+    def test_phase0_coverage_declares_duration_floors(self):
+        with open(os.path.join(cli.REPO, 'docs', 'superpowers', 'cost-model', 'coverage.json')) as f:
+            cov = json.load(f)
+        cases = {(c['name'], k['case_id']): k for c in cov['cards'] for k in c['cases']}
+        amp = cases[('amplification-run', 'amplification-run')]
+        self.assertEqual((amp['duration_s'], amp['timeout_s']), (7200, 14400))
+        for (card, case), k in cases.items():
+            if card == 'amplification-run':
+                continue
+            want = 600 if card.startswith('gc-') or case.startswith('replication-') else 120
+            self.assertEqual(k['duration_s'], want, (card, case))
+            self.assertGreaterEqual(k['timeout_s'], k['duration_s'], (card, case))
 
 
 def argparse_parser():
@@ -515,6 +565,10 @@ class RegisteredTest(unittest.TestCase):
         self.assertEqual((args.manifests, args.cases, args.repeats), (['d1', 'd2'], 'a.b,c.d', 2))
         self.assertIs(parser.parse_args(['cost', 'probe', '--binary', 'b']).func, cli.cmd_probe)
         self.assertIs(parser.parse_args(['cost', 'estimate', 'rd']).func, cli.cmd_estimate)
+        # Scale is the manifest's: a CLI value would be recorded without being applied.
+        for cmd in (['cost', 'run', '--binary', 'b', '--manifests', 'd'], ['cost', 'probe', '--binary', 'b']):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                parser.parse_args(cmd + ['--scale', '2'])
         self.assertIsNotNone(parser.parse_args(['report', 'x']).func)
 
 

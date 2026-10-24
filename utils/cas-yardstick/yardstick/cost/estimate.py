@@ -7,7 +7,6 @@ import statistics
 from dataclasses import dataclass, field
 
 RERUN_RESERVE = 1.25
-TIMEOUT_SHARE = 0.1  # completion waits rarely run to the timeout; a tenth of it is budgeted per pass
 
 
 @dataclass
@@ -56,13 +55,16 @@ def estimate(measurements: list, coverage: dict, registry: dict | None, preset_i
         for case in card['cases']:
             if case['status'] != 'planned':
                 continue
-            per_pass, basis = _pass_seconds(card, case, measurements, family_cards, sample_of)
+            measured, basis = _pass_seconds(card, case, measurements, family_cards, sample_of)
+            # Probe-sized medians say little about a case that runs for hours: the case's declared duration is
+            # the floor of every pass.
+            per_pass = max(measured, case['duration_s'])
             passes = len(case['policies']) * case['repeats']
             est.cases.append({
                 'experiment_id': f'{card["name"]}.{case["case_id"]}', 'card': card['name'], 'case_id': case['case_id'],
                 'family': card['family'], 'priority': case['priority'], 'passes': passes, 'pass_seconds': per_pass,
-                'basis': basis, 'estimated_from_global': basis == 'global',
-                'seconds': passes * (per_pass + case['timeout_s'] * TIMEOUT_SHARE + cleanup)})
+                'basis': basis, 'estimated_from_global': basis == 'global', 'measured_seconds': measured,
+                'floor_applied': case['duration_s'] > measured, 'seconds': passes * (per_pass + cleanup)})
     est.p1_hours = sum(c['seconds'] for c in est.cases if c['priority'] == 'P1') * RERUN_RESERVE / 3600
     est.total_hours = sum(c['seconds'] for c in est.cases) * RERUN_RESERVE / 3600
     _plan_cuts(est, coverage, registry, preset_ids_by_coefficient)
@@ -141,8 +143,9 @@ def render(est: Estimate) -> str:
              f'(includes the {RERUN_RESERVE}x rerun reserve)']
     for c in est.cases:
         flag = '  (estimated from global median)' if c['estimated_from_global'] else ''
+        floor = ' duration floor' if c['floor_applied'] else ''
         lines.append(f'  {c["experiment_id"]:<40} {c["priority"]} {c["passes"]:>3} passes x {c["pass_seconds"]:.0f} s '
-                     f'[{c["basis"]}]{flag}')
+                     f'[{c["basis"]}{floor}]{flag}')
     if not est.cuts:
         lines.append('within budget: no cuts')
     for c in est.cuts:

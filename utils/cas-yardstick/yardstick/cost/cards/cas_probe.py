@@ -1,10 +1,12 @@
-"""Phase-0 CAS probe: a dropped table's cohort reclaimed by GC, with request origin attributed to GC rounds.
+"""Phase-0 CAS probes: a dropped table's cohort reclaimed by GC, and the `Expect: 100-continue` path.
 
-Key families say what an object is (its inventory category), not who caused a request: GC HEADs and DELETEs the
-same blob keys foreground publication writes (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/
+Payload key families say what an object is (its inventory category), not who caused a request: GC HEADs and DELETEs
+the same blob keys foreground publication writes (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/
 ContentAddressed/Gc/CasGc.cpp:580). Request origin is therefore causal: a request by replica `rN` that starts
-inside one of `rN`'s GC rounds (`system.cas_gc_log` Start..Finish of one `round_id`) is maintenance, every other
-one is foreground. The cells price the integrated usage (foreground plus maintenance).
+inside one of `rN`'s GC rounds (`system.cas_gc_log` Start..Finish of one `round_id`) is maintenance. So is any
+request on a control family only the lease keeper, GC and pool bootstrap touch (`maintenance` flag below), even
+with GC off: the server renews its mount lease on its own schedule. Every other request is foreground. The GC
+probe's cells price the integrated usage (foreground plus maintenance).
 """
 from __future__ import annotations
 
@@ -19,6 +21,13 @@ from .probes import CREATE_OPS, ManifestCard, _count, category, window_rows
 # CAS key families (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h).
 # Anchored on the layout's own suffix shapes so the pass prefix (which contains `/cas/` as the policy name) never
 # matches. `payload` marks the families a dropped table turns into garbage; the rest are control state.
+# `maintenance` marks control state that no foreground write touches (CasLayout.h, same directory):
+# `gc/server-roots/<srid>/{owner,epoch,mount}` is the per-server lease subtree (CasLayout.h:419-449), renewed by the
+# mount runtime every `mount_renew_period` (Pool/CasMountRuntime.h:70); `gc/state`, `gc/maintenance_state`, `gc/hb`
+# and `gc/gen/...` are GC authority, cursor, heartbeat and per-round artifacts (CasLayout.h:332-390); `_pool_meta` is
+# the pool-level
+# metadata object probed at pool bootstrap and read-modify-written by the reader floor (CasLayout.h:466,
+# Pool/CasPool.cpp:123, Pool/CasPoolMeta.cpp:116).
 CAS_FAMILIES = [
     {'name': 'blob_meta', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+\.meta$', 'category': 'metadata',
      'payload': False},
@@ -26,9 +35,10 @@ CAS_FAMILIES = [
     {'name': 'manifest', 'regex': r'/cas/manifests/.+/[0-9a-f]+-[0-9a-f]+/\d{6}(\.[a-z0-9]+)?$', 'category': 'active',
      'payload': True},
     {'name': 'refs', 'regex': r'/cas/(ns/(stream|state)/|ref_catalog$)', 'category': 'metadata', 'payload': False},
-    {'name': 'lease', 'regex': r'/gc/server-roots/', 'category': 'metadata', 'payload': False},
-    {'name': 'gc', 'regex': r'/gc/(state|maintenance_state|hb)$|/gc/gen/', 'category': 'metadata', 'payload': False},
-    {'name': 'pool_meta', 'regex': r'/_pool_meta$', 'category': 'metadata', 'payload': False},
+    {'name': 'lease', 'regex': r'/gc/server-roots/', 'category': 'metadata', 'payload': False, 'maintenance': True},
+    {'name': 'gc', 'regex': r'/gc/(state|maintenance_state|hb)$|/gc/gen/', 'category': 'metadata', 'payload': False,
+     'maintenance': True},
+    {'name': 'pool_meta', 'regex': r'/_pool_meta$', 'category': 'metadata', 'payload': False, 'maintenance': True},
     {'name': 'roots', 'regex': r'/roots/', 'category': 'metadata', 'payload': False},
 ]
 GC_ROUNDS_SQL = ("SELECT toUnixTimestamp64Micro(minIf(event_time_microseconds, event_type = 'Start')), "
@@ -52,15 +62,16 @@ def gc_rounds(client) -> list:
     return out
 
 
-def attribute(attempts: list, rounds: dict) -> dict:
-    """Foreground / maintenance / rig split by the caller's own GC round windows."""
+def attribute(attempts: list, rounds: dict, families: list) -> dict:
+    """Foreground / maintenance / rig split: maintenance when inside one of the caller's own GC round windows or on
+    a control family flagged `maintenance`."""
     out = {'foreground': [], 'maintenance': [], 'rig': []}
     for a in attempts:
         if a['caller'] == 'rig':
             out['rig'].append(a)
             continue
         inside = any(s <= a['t_start_us'] <= (math.inf if f is None else f) for s, f in rounds.get(a['caller'], []))
-        out['maintenance' if inside else 'foreground'].append(a)
+        out['maintenance' if inside or L.is_maintenance(a, families) else 'foreground'].append(a)
     return out
 
 
@@ -141,7 +152,7 @@ class CasGcCohort(ManifestCard):
         if 'gc_rounds' not in st:
             # Without the round windows every request would look foreground; fail the pass instead.
             raise RuntimeError('GC rounds were not collected; request origin cannot be attributed')
-        return attribute(attempts, st['gc_rounds'])
+        return attribute(attempts, st['gc_rounds'], families)
 
     def reclassify(self, ctx, bounds):
         st = self.state(ctx)

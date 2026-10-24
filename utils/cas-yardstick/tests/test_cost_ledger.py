@@ -1,4 +1,5 @@
 import unittest
+from collections import defaultdict
 
 from yardstick.cost import ledger
 from yardstick.cost.ledger import Inventory
@@ -415,6 +416,102 @@ class ByteHourBounds(unittest.TestCase):
                 prev, size = t, (s if s is not None else size)
             self.assertLessEqual(out['lower'] - 1e-9, total, times)
             self.assertGreaterEqual(out['upper'] + 1e-9, total, times)
+
+
+    def test_every_schedule_with_unknown_transitions_lies_inside_bounds_and_end_states(self):
+        # Brute force with `unknown` transitions (they may never land) and the end states: lower holds the smallest
+        # final size and is absent when any schedule ends absent; upper the largest, present when any ends present.
+        a = [put('x', 7, (0, H)), put('x', 0, (H // 2, 2 * H)), att('DeleteObject', 'x', (H, 3 * H), up='unknown'),
+             put('x', 9, (2 * H, 4 * H), up='unknown'), put('x', 4, (5 * H // 2, 3 * H))]
+        r = rep(a)
+        out = ledger.byte_hours(r, 0, 5 * H)['active']
+        grid = [i * H // 4 for i in range(21)]
+        sizes = [7, 0, None, 9, 4]
+        import itertools
+        choices = [[t for t in grid if x['t_start_us'] <= t <= x['t_end_us']]
+                   + ([None] if x['upstream']['outcome'] == 'unknown' else []) for x in a]
+        finals = set()
+        for times in itertools.product(*choices):
+            landed = [(t, i) for i, t in enumerate(times) if t is not None]
+            for order in (sorted(landed), sorted(landed, key=lambda x: (x[0], -x[1]))):
+                total, prev, state = 0, 0, None
+                for t, i in order + [(5 * H, -1)]:
+                    total += (state or 0) * (t - prev) / H
+                    prev = t
+                    if i >= 0:
+                        state = sizes[i]
+                self.assertLessEqual(out['lower'] - 1e-9, total, times)
+                self.assertGreaterEqual(out['upper'] + 1e-9, total, times)
+                finals.add(state)
+        lo, hi = r.lower.objects.get(('b', 'x')), r.upper.objects.get(('b', 'x'))
+        self.assertIn(None, finals)
+        self.assertIsNone(lo)                               # some schedule ends absent
+        self.assertEqual(hi['size'], max(f for f in finals if f is not None))
+
+    def test_zero_byte_tie_breaks_toward_absent_in_lower_and_present_in_upper(self):
+        # A zero-byte PUT and a DELETE overlap: either may land last. Both end states hold 0 bytes; lower must take
+        # the absent one and upper the present one, never the other way round.
+        r = rep([put('x', 0, (0, 2 * H)), att('DeleteObject', 'x', (H, 3 * H))])
+        self.assertNotIn(('b', 'x'), r.lower.objects)
+        self.assertEqual(r.upper.objects[('b', 'x')]['size'], 0)
+        r = rep([att('DeleteObject', 'x', (0, 2 * H)), put('x', 0, (H, 3 * H))])
+        self.assertNotIn(('b', 'x'), r.lower.objects)
+        self.assertEqual(r.upper.objects[('b', 'x')]['size'], 0)
+
+    def test_sweep_matches_the_pointwise_definition(self):
+        # The sweep must give exactly the bounds of testing every state with `_possible` at every interval.
+        import random
+        rng = random.Random(7)
+
+        def reference(transitions, cats, t0, t1, sign):
+            totals = defaultdict(float)
+            states = [None] + [tr[3] for tr in transitions]
+            earliest = [float('-inf')] + [tr[0] for tr in transitions]
+            points = sorted({t0, t1} | {t for tr in transitions for t in tr[:2] if t0 < t < t1}
+                            | {tc for tc, _ in cats if t0 < tc < t1})
+            for lo, hi in zip(points, points[1:]):
+                mid = (lo + hi) / 2
+                values = defaultdict(list)
+                possible = [k for k in range(len(transitions) + 1) if ledger._possible(transitions, k - 1, mid)]
+                for k in possible:
+                    if states[k] is None:
+                        continue
+                    size, category, uncertain = states[k]
+                    for tc, c in cats:
+                        if earliest[k] <= tc <= mid:
+                            category = c
+                    values['uncertain' if uncertain else category].append(size)
+                for category, sz in values.items():
+                    pick = max(sz) if sign > 0 else (min(sz) if len(sz) == len(possible) else 0)
+                    totals[category] += pick * (hi - lo) / ledger.US_PER_HOUR
+            return totals
+
+        for case in range(300):
+            n = rng.randint(1, 7)
+            trs = []
+            for _ in range(n):
+                ts = rng.randint(0, 20) * H // 4
+                te = ts + rng.randint(0, 8) * H // 4
+                state = None if rng.random() < 0.25 else (rng.choice([0, 1, 5, 9]), 'active', rng.random() < 0.1)
+                trs.append((ts, te, rng.random() < 0.8, state))
+            trs.sort(key=lambda tr: tr[0])
+            cats = sorted([(rng.randint(0, 20) * H // 4, 'garbage')] if rng.random() < 0.3 else [])
+            for sign in (-1, 1):
+                got = defaultdict(float)
+                ledger._envelope(trs, cats, 0, 6 * H, got, sign)
+                want = reference(trs, cats, 0, 6 * H, sign)
+                for cat in set(got) | set(want):
+                    self.assertAlmostEqual(got[cat], want[cat], places=6, msg=(case, sign, trs, cats))
+
+    def test_many_overwrites_of_one_key_are_fast(self):
+        # A 4 h run with 10 s lease renewals: 1440 overwrites of one key.
+        import time as _time
+        a = [put('x', 100 + i % 7, (i * 10_000_000, i * 10_000_000 + 50_000)) for i in range(1440)]
+        start = _time.monotonic()
+        r = rep(a)
+        out = ledger.byte_hours(r, 0, 1440 * 10_000_000)
+        self.assertLess(_time.monotonic() - start, 2.0)
+        self.assertLessEqual(out['active']['lower'], out['active']['upper'])
 
 
 class BatchDeleteKeys(unittest.TestCase):

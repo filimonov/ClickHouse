@@ -309,6 +309,7 @@ class LedgerProxy:
         self.ports: dict = {}
         self._lock = threading.Lock()
         self._finishing = 0
+        self._lost: list = []  # seqs whose row failed to write; flush() refuses to report a gapped ledger
         self._open: dict = {}
         self._finished = threading.Condition(self._lock)
         self._seq = 0
@@ -341,10 +342,12 @@ class LedgerProxy:
             except OSError:
                 pass
         if self._file is not None:
-            self.flush()
-            with self._lock:
-                self._file.close()
-                self._file = None
+            try:
+                self.flush()
+            finally:
+                with self._lock:
+                    self._file.close()
+                    self._file = None
 
     # Seq and timestamp are taken under one lock for attempts and marks, so seq order is time order and an
     # attempt that starts after a mark belongs to the next window.
@@ -380,6 +383,9 @@ class LedgerProxy:
             attempt.row['t_end_us'] = self._last_us
             try:
                 self._write(attempt.row)
+            except BaseException:
+                self._lost.append(attempt.row['seq'])
+                raise
             finally:
                 self._open.pop(attempt.row['seq'], None)
                 if attempt.finishing:
@@ -404,6 +410,8 @@ class LedgerProxy:
         with self._lock:
             if not self._finished.wait_for(lambda: self._finishing == 0, timeout=10):
                 raise TimeoutError('attempts with a delivered response did not finish')
+            if self._lost:
+                raise RuntimeError(f'ledger row of attempt(s) {self._lost} was not written; the ledger has a gap')
             if self._file is not None:
                 self._file.flush()
                 os.fsync(self._file.fileno())

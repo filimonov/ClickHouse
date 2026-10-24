@@ -22,6 +22,7 @@ class CardContext:
     manifest: dict
     replay: Callable
     window: Callable
+    counts: dict | None = None  # the card's COUNTS at the manifest's scale
 
 
 def replicated_engine(policy: str, zk_path: str, extra_settings: str = '') -> str:
@@ -59,6 +60,10 @@ class CostCard:
     params_schema: dict = {}
     expected_exceptions: tuple = ()
     trace: bool = False
+    COUNTS: dict = {}  # count parameters that scale; `counts(manifest scale)` reaches the card as `ctx.counts`
+
+    def counts(self, scale: float) -> dict:
+        return {k: max(1, round(scale * n)) for k, n in self.COUNTS.items()}
 
     def tables(self, ctx) -> list:
         raise NotImplementedError

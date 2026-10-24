@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import time
 import threading
 import unittest
 
@@ -90,6 +91,22 @@ class DirSamplerTest(unittest.TestCase):
         self.assertEqual(max(b for _, b in result['samples']), size)
         times = [t for t, _ in result['samples']]
         self.assertEqual(times, sorted(times))
+
+    def test_dir_sampler_thread_failure_reraised_at_stop(self):
+        calls = []
+
+        def on_sample(t_us, nbytes):
+            calls.append(t_us)
+            if len(calls) == 2:  # the first sample is the baseline in start(); fail inside the thread
+                raise PermissionError('scandir denied')
+        sampler = localio.DirSampler([self.a], interval_s=0.01, on_sample=on_sample)
+        sampler.start()
+        for _ in range(500):
+            if len(calls) >= 2:
+                break
+            time.sleep(0.01)
+        with self.assertRaisesRegex(PermissionError, 'scandir denied'):
+            sampler.stop()
 
     def test_dir_sampler_misses_subinterval_peak_documented(self):
         sampler = localio.DirSampler([self.a], interval_s=60)

@@ -102,28 +102,33 @@ def batch_keys(a) -> list:
     return list(a.get('delete_keys') or [])
 
 
-def classify(attempts: list, families: list) -> dict:
-    """Split attempts into `foreground`, `maintenance` (workload callers) and `rig`.
+def is_maintenance(a, families: list) -> bool:
+    """True when the attempt's key matches a family flagged `maintenance`.
 
-    A family's `maintenance` flag marks its keys as maintenance traffic. A `DeleteObjects` attempt has no key
-    (the proxy records `""`): it is maintenance iff it names at least one key and every key matches a maintenance
-    family. Other keyless attempts (bucket-level LIST) are foreground. Key families say what an object is, not
-    who caused a request: cards that need request origin attribute it causally (see measurement-contract.md).
+    A `DeleteObjects` attempt has no key (the proxy records `""`): it is maintenance iff it names at least one key
+    and every key matches a maintenance family. Other keyless attempts (bucket-level LIST) are not.
     """
-    def maintenance(f):
+    def flagged(f):
         return f is not None and bool(f.get('maintenance'))
 
+    if not a.get('key') and a['op'] == 'DeleteObjects':
+        keys = batch_keys(a)
+        return bool(keys) and all(flagged(family_of(families, k)) for k in keys)
+    return flagged(family_of(families, a.get('key')))
+
+
+def classify(attempts: list, families: list) -> dict:
+    """Split attempts into `foreground`, `maintenance` (workload callers, `is_maintenance`) and `rig`.
+
+    Key families say what an object is, not who caused a request: cards that need request origin attribute it
+    causally (see measurement-contract.md).
+    """
     out = {'foreground': [], 'maintenance': [], 'rig': []}
     for a in attempts:
         if a['caller'] == 'rig':
             out['rig'].append(a)
             continue
-        if not a.get('key') and a['op'] == 'DeleteObjects':
-            keys = batch_keys(a)
-            is_m = bool(keys) and all(maintenance(family_of(families, k)) for k in keys)
-        else:
-            is_m = maintenance(family_of(families, a.get('key')))
-        out['maintenance' if is_m else 'foreground'].append(a)
+        out['maintenance' if is_maintenance(a, families) else 'foreground'].append(a)
     return out
 
 
@@ -433,44 +438,68 @@ def _possible(transitions: list, k: int, t: float) -> bool:
     return True
 
 
+def _landed_floor(transitions: list) -> float:
+    """Latest start among the certain transitions, or -inf: `_possible` at the end of time in closed form."""
+    return max((ts for ts, _, certain, _ in transitions if certain), default=float('-inf'))
+
+
 def _envelope(transitions: list, cats: list, t0: int, t1: int, totals: dict, sign: int) -> None:
     """Add the pointwise minimum (`sign` -1) or maximum (+1) over the possible states, per category, to `totals`.
 
     Every feasible schedule passes through possible states only (`_possible`), so integrating their minimum and
     maximum bounds its byte-hours, whatever order overlapping transitions land in.
+
+    Sweep form of `_possible`, linear in the transitions plus the overlap at each point: let `M(t)` be the latest
+    start among certain transitions that must have landed by `t` (`t_end <= t`). The absent initial state is
+    possible iff there is none; transition `k` iff `t_start_k <= t` and `t_end_k >= M(t)`. `M` never decreases, so
+    a transition that falls below it is dropped for good.
     """
-    n = len(transitions)
-    states = [None] + [tr[3] for tr in transitions]
-    earliest = [float('-inf')] + [tr[0] for tr in transitions]
+    order = sorted(range(len(transitions)), key=lambda k: transitions[k][0])
+    by_end = sorted((tr[1], tr[0]) for tr in transitions if tr[2])
     points = sorted({t0, t1} | {t for tr in transitions for t in tr[:2] if t0 < t < t1}
                     | {tc for tc, _ in cats if t0 < tc < t1})
+    live: list = []
+    started = ended = 0
+    floor = float('-inf')
     for lo, hi in zip(points, points[1:]):
         if hi <= lo:
             continue
         mid = (lo + hi) / 2
+        while started < len(order) and transitions[order[started]][0] <= mid:
+            live.append(order[started])
+            started += 1
+        while ended < len(by_end) and by_end[ended][0] <= mid:
+            floor = max(floor, by_end[ended][1])
+            ended += 1
+        live = [k for k in live if transitions[k][1] >= floor]
+        possible = len(live) + (1 if floor == float('-inf') else 0)
         values: dict = defaultdict(list)
-        possible = [k for k in range(n + 1) if _possible(transitions, k - 1, mid)]
-        for k in possible:
-            state = states[k]
+        for k in live:
+            state = transitions[k][3]
             if state is None:
                 continue
             size, category, uncertain = state
             for tc, c in cats:
-                if earliest[k] <= tc <= mid:
+                if transitions[k][0] <= tc <= mid:
                     category = c
             values['uncertain' if uncertain else category].append(size)
         for category, sizes in values.items():
             # A category the possible states do not all fill can hold zero bytes at this instant.
-            pick = max(sizes) if sign > 0 else (min(sizes) if len(sizes) == len(possible) else 0)
+            pick = max(sizes) if sign > 0 else (min(sizes) if len(sizes) == possible else 0)
             totals[category] += pick * (hi - lo) / US_PER_HOUR
 
 
 def _final_states(bounds, families) -> None:
-    """Set each identity's end state to the smallest possible one in `lower` and the largest in `upper`."""
+    """Set each identity's end state to the smallest possible one in `lower` and the largest in `upper`.
+
+    Size ties break toward absent in `lower` and toward present in `upper`: a zero-byte object and its deletion
+    both hold 0 bytes, but only `upper` may claim the object still exists.
+    """
     for ident, transitions in bounds.mutations.items():
-        finals = [k for k in range(-1, len(transitions)) if _possible(transitions, k, float('inf'))]
-        options = [(0 if k < 0 or transitions[k][3] is None else transitions[k][3][0], k) for k in finals]
-        for inv, (_, k) in ((bounds.lower, min(options)), (bounds.upper, max(options))):
+        floor = _landed_floor(transitions)
+        finals = ([-1] if floor == float('-inf') else []) + [k for k, tr in enumerate(transitions) if tr[1] >= floor]
+        options = [(0, 0, k) if k < 0 or transitions[k][3] is None else (transitions[k][3][0], 1, k) for k in finals]
+        for inv, (_, _, k) in ((bounds.lower, min(options)), (bounds.upper, max(options))):
             table = inv.objects if len(ident) == 2 else inv.incomplete
             if k < 0 or transitions[k][3] is None:
                 table.pop(ident, None)

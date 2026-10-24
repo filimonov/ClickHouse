@@ -1,6 +1,7 @@
 """Runs one (policy, card, case, repeat) pass of the cost rig and returns its `measurement/1` record."""
 from __future__ import annotations
 
+import dataclasses
 import os
 import time
 import traceback
@@ -30,7 +31,6 @@ class Deps:
     proxy: object
     rig: object
     store_id: str
-    scale: float
     keep_prefix: bool
     binary_sha256: str
     commit: str
@@ -98,13 +98,16 @@ class _Pass:
         self.pass_dir = os.path.abspath(os.path.join(deps.runs_dir, deps.run_id, self.rel))
         self.key_prefix = f'{deps.run_id}/{self.rel}'
         self.bucket = deps.topology.bucket
+        # `deps.topology.replicas` is what the rig can offer; the pass runs exactly the card's replicas, so an idle
+        # server never adds lease, GC or startup traffic to the record.
+        self.topology = dataclasses.replace(deps.topology, replicas=min(card.replicas, deps.topology.replicas))
         self.labels = {role: f'{role}@{self.key_prefix}' for role in ledger_mod.MARK_ROLES}
         variant, cached = variant_of(policy)
         self.common = {
             'schema': 'measurement/1', 'measurement_id': f'{deps.run_id}/{self.rel}',
             'experiment_id': f'{card.name}.{case}', 'run_id': deps.run_id, 'card': card.name, 'case_id': case,
-            'policy': policy, 'variant': variant, 'cache_enabled': cached, 'replicas': deps.topology.replicas,
-            'k': k, 'scale': deps.scale, 'mode': card.mode, 'binary_sha256': deps.binary_sha256,
+            'policy': policy, 'variant': variant, 'cache_enabled': cached, 'replicas': card.replicas,
+            'k': k, 'scale': manifest['scale'], 'mode': card.mode, 'binary_sha256': deps.binary_sha256,
             'binary_download_sha256': deps.binary_download_sha256, 'commit': deps.commit,
             'rig_commit': deps.rig_commit, 'pass_dir': self.pass_dir}
         self.sections: dict = {}
@@ -124,7 +127,7 @@ class _Pass:
         return {**self.common, 'status': 'UNSUPPORTED', 'reason': reason}
 
     def failed(self, reason: str, error_text: str) -> dict:
-        logs = [p for i in range(1, self.deps.topology.replicas + 1)
+        logs = [p for i in range(1, self.topology.replicas + 1)
                 if os.path.exists(p := os.path.join(self.pass_dir, f'r{i}', 'server.err.log'))]
         record = {**self.common, 'status': 'FAILED', 'reason': reason,
                   'diagnostics': {'server_logs': logs, 'error_text': error_text}}
@@ -188,7 +191,7 @@ class _Pass:
         return self.deps.proxy.mark(self.labels[role])
 
     def measure(self) -> dict:
-        deps, card, topology = self.deps, self.card, self.deps.topology
+        deps, card, topology = self.deps, self.card, self.topology
         n = topology.replicas
         local_dirs = [os.path.join(self.pass_dir, 'local', f'r{i}') for i in range(1, n + 1)] \
             if self.policy == 'local' else None
@@ -197,7 +200,8 @@ class _Pass:
         self.ctx = CardContext(cluster=None, proxy=deps.proxy, rig=deps.rig, pass_dir=self.pass_dir,
                                local_dirs=local_dirs or [], policy=self.policy, variant=self.common['variant'],
                                cache_enabled=self.common['cache_enabled'], manifest=self.manifest,
-                               replay=self.replay_so_far, window=self.window_so_far)
+                               replay=self.replay_so_far, window=self.window_so_far,
+                               counts=card.counts(self.manifest['scale']))
         controls, settings = card.controls(self.ctx), card.settings(self.ctx)
         self.families = card.inventory_families(self.ctx)
         self.sections['effective_settings'] = settings
@@ -291,6 +295,12 @@ class _Pass:
         marks, by_phase = found['marks'], found['sliced'].attempts_by_phase
         pass_rows = by_phase['setup'] + by_phase['window'] + by_phase['teardown']
         workload = {p: [a for a in by_phase[p] if a['caller'] != 'rig'] for p in ('setup', 'window', 'teardown')}
+        # Only the card's replicas run; a request from another workload port is a stray server or a misrouted client.
+        mine = {f'r{i}' for i in range(1, self.card.replicas + 1)}
+        stray = sorted({a['caller'] for p in workload.values() for a in p if a['caller'] not in mine})
+        if stray:
+            raise CaseFailure('unexpected_caller', f'requests from {", ".join(stray)}: the card runs {self.card.replicas} '
+                                                   'replica(s)')
         by_seq = {a['seq']: a for a in pass_rows}
         crossing = [s for s in found['sliced'].crossing if s in by_seq and by_seq[s]['caller'] != 'rig']
         # An attempt still running has no row. One that began before the window ended spans its boundary.
