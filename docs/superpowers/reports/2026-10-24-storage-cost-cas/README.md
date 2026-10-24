@@ -395,6 +395,7 @@ re-ran after them in the report run.
 | M2: idle-table cleanup listing unmodelled | priced in the `lease` cell per table (`cas_table_cleanup_period_s`), and in the fresh lease prediction |
 | M3: cells read tables through derivations | `closure_check.derived_refs` follows `input` nodes into registry derivations, cycle-safe, with a test |
 | M4: applicability missing families | `multipart_graph` (inserts, unsupported_cut), `lifecycle` (merges, gc, storage), `thresholds` (merges) |
+| M3 ruling (round 2) | support backs each family by its own coefficients; `mutations` and `deletes` note the pinned rules their cases validate (`cas_branch_requests` ← `cas-branches.adoption`, `cas_foreground_ref_removal_requests` ← `cas-drop.table-sync`). Still pending in final mode: `inserts`/`storage` × `objects_per_part_by_shape` (no objects-per-part card ran on `cas`) and `merges` × `thresholds` (no thresholds case ran on `cas`) |
 | m1–m5 | equality kept next to the Expect bound; always-true conjunct dropped; `roots` cites the write probe; fold split cited to source; cohort test adds a PUT after the retire |
 
 ## How to re-run {#rerun}

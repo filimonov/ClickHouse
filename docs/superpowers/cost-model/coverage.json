@@ -7159,6 +7159,25 @@
       "status": "done"
     },
     {
+      "coefficient": "cas_branch_requests",
+      "experiment_id": "cas-branches.adoption",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T104750Z/cas/cas-branches/adoption/k1",
+        "cost-20261024T104750Z/cas/cas-branches/adoption/k2",
+        "cost-20261024T104750Z/cas/cas-branches/adoption/k3"
+      ],
+      "status": "done"
+    },
+    {
       "coefficient": "cas_publish_requests",
       "experiment_id": "cas-branches.fresh",
       "policy": "cas",

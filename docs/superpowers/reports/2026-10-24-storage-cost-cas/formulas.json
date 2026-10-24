@@ -829,7 +829,13 @@
    ],
    "allocation": null,
    "states": [],
-   "notes": []
+   "notes": [
+    {
+     "kind": "input",
+     "id": "cas_branch_requests",
+     "dim": "enum:cas_branch_requests"
+    }
+   ]
   },
   "deletes": {
    "ledger_rows": [
@@ -1032,7 +1038,13 @@
    ],
    "allocation": null,
    "states": [],
-   "notes": []
+   "notes": [
+    {
+     "kind": "input",
+     "id": "cas_foreground_ref_removal_requests",
+     "dim": "count"
+    }
+   ]
   },
   "gc": {
    "ledger_rows": [
