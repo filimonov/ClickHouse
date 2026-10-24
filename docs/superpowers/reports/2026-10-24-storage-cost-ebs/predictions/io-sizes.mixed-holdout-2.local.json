@@ -1,0 +1,228 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "io-sizes.mixed-holdout-2",
+  "policy": "local",
+  "inputs": {
+    "ebs_max_io_bytes": 262144,
+    "phases": [
+      "insert",
+      "merge",
+      "select"
+    ],
+    "inserts": 4,
+    "fit_measurement_ids": [
+      "cost-20261024T145139Z/local/io-sizes/narrow-compact/k1",
+      "cost-20261024T145139Z/local/io-sizes/narrow-compact/k2",
+      "cost-20261024T145139Z/local/io-sizes/narrow-compact/k3",
+      "cost-20261024T145139Z/local/io-sizes/narrow-wide/k1",
+      "cost-20261024T145139Z/local/io-sizes/narrow-wide/k2",
+      "cost-20261024T145139Z/local/io-sizes/narrow-wide/k3",
+      "cost-20261024T145139Z/local/io-sizes/types-holdout/k1",
+      "cost-20261024T145139Z/local/io-sizes/types-holdout/k2",
+      "cost-20261024T145139Z/local/io-sizes/types-holdout/k3"
+    ],
+    "tolerance_rules": {
+      "scalars": "fit mean +- (2 x largest |fit record - fit mean| + 10 % of the fit + 0.005)",
+      "distributions": "TV <= 2 x largest fit TV + 0.05"
+    },
+    "consumed": "io-sizes.mixed-holdout failed on cost-20261024T140702Z; ebs_ios_per_mib is now the pinned rate, so syscall I/O counts are not predicted"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "baseline.write_bps.r1": {
+        "min": 0,
+        "basis": "derived",
+        "reason": "a counter delta is never negative"
+      },
+      "inserts.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.io_bytes.write": {
+        "min": 0.8605381868643895,
+        "max": 1.2155587863527242,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "inserts.io_bytes.read": {
+        "min": -0.005106791174088587,
+        "max": 0.006798958364026013,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "merges.io_bytes.write": {
+        "min": 0.8885619014585207,
+        "max": 1.1392466336961762,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "merges.io_bytes.read": {
+        "min": 0.8914198078850795,
+        "max": 1.119576325050154,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "reads.io_bytes.write": {
+        "min": -0.009236134932562708,
+        "max": 0.011143849598533314,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "reads.io_bytes.read": {
+        "min": 0.817855420855365,
+        "max": 1.6323696933865475,
+        "basis": "fit",
+        "reason": "fit mean +- (2 x fit spread + 10 % of the fit + 0.005)"
+      },
+      "inserts.request_size_distribution.write": {
+        "reference": {
+          "<=4KiB": 0.80151,
+          "8KiB": 0.01509,
+          "16KiB": 0.008637,
+          "32KiB": 0.003481,
+          "64KiB": 0.01827,
+          "128KiB": 0.006962,
+          "256KiB": 0.019694,
+          "512KiB": 0.02029,
+          "1MiB": 0.106066,
+          ">1MiB": 0.0
+        },
+        "max_tv": 0.3186477021510971
+      },
+      "inserts.request_size_distribution.read": {
+        "reference": {
+          "<=4KiB": 1.0,
+          "8KiB": 0.0,
+          "16KiB": 0.0,
+          "32KiB": 0.0,
+          "64KiB": 0.0,
+          "128KiB": 0.0,
+          "256KiB": 0.0,
+          "512KiB": 0.0,
+          "1MiB": 0.0,
+          ">1MiB": 0.0
+        },
+        "max_tv": 0.05
+      },
+      "merges.request_size_distribution.write": {
+        "reference": {
+          "<=4KiB": 0.668111,
+          "8KiB": 0.016109,
+          "16KiB": 0.019755,
+          "32KiB": 0.012902,
+          "64KiB": 0.002381,
+          "128KiB": 0.004676,
+          "256KiB": 0.015283,
+          "512KiB": 0.016581,
+          "1MiB": 0.244201,
+          ">1MiB": 0.0
+        },
+        "max_tv": 0.4587212124478877
+      },
+      "merges.request_size_distribution.read": {
+        "reference": {
+          "<=4KiB": 0.286736,
+          "8KiB": 0.008079,
+          "16KiB": 0.01315,
+          "32KiB": 0.012678,
+          "64KiB": 0.048303,
+          "128KiB": 0.631054,
+          "256KiB": 0.0,
+          "512KiB": 0.0,
+          "1MiB": 0.0,
+          ">1MiB": 0.0
+        },
+        "max_tv": 0.5673316413125223
+      },
+      "reads.request_size_distribution.read": {
+        "reference": {
+          "<=4KiB": 0.171705,
+          "8KiB": 0.013173,
+          "16KiB": 0.006421,
+          "32KiB": 0.000537,
+          "64KiB": 0.001406,
+          "128KiB": 0.806759,
+          "256KiB": 0.0,
+          "512KiB": 0.0,
+          "1MiB": 0.0,
+          ">1MiB": 0.0
+        },
+        "max_tv": 0.6951817678917728
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part files are written through a buffer of DBMS_DEFAULT_BUFFER_SIZE",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromFile.h",
+      "line": 34
+    },
+    {
+      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: a buffer flush writes at most that much",
+      "path": "tmp/src-26.8/src/Core/Defines.h",
+      "line": 22
+    },
+    {
+      "claim": "local reads use max_read_buffer_size_local_fs = 128 KiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 407
+    },
+    {
+      "claim": "it takes precedence over max_read_buffer_size for the local filesystem",
+      "path": "tmp/src-26.8/src/Interpreters/Context.cpp",
+      "line": 8979
+    },
+    {
+      "claim": "local_filesystem_read_method is pread_threadpool: reads are pread syscalls",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7168
+    },
+    {
+      "claim": "min_bytes_to_use_direct_io is 0: reads go through the page cache",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 1820
+    },
+    {
+      "claim": "fsync_after_insert is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 615
+    },
+    {
+      "claim": "fsync_part_directory is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 619
+    }
+  ],
+  "prediction_commit": "pending"
+}
