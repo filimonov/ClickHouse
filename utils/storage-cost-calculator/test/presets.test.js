@@ -124,3 +124,26 @@ test('test_custom_preset_is_the_standard_deployment', () => {
   // Every value names a registry input of the live contract.
   for (const id of Object.keys(v)) assert.equal(LIVE.registry.find((q) => q.id === id).kind, 'input', id);
 });
+
+test('test_coverage_fails_on_a_lookup_miss_unless_declared', () => {
+  const pl = globalThis.SCC.pipeline;
+  const real = pl.run;
+  const miss = { kind: 'lookup', state: 'unavailable', lookup_key: 'narrow|1MiB', children: [{ kind: 'input', state: 'ok' }, { kind: 'const', state: 'ok' }] };
+  const arity = { kind: 'lookup', state: 'unavailable', lookup_key: 'x', reason: 'lookup arity', children: [] };
+  pl.run = () => ({ variants: {
+    s3: { state: 'unavailable', cells: { reads: { trace: [{ kind: 'mul', state: 'unavailable', children: [miss, arity] }] } } },
+    ebs: { state: 'ok', cells: { reads: { trace: [miss] } } },
+  } });
+  try {
+    const sc = { values: {}, locks: [] };
+    assert.deepEqual(presets.lookupMisses(LIVE, sc), ['s3.reads: narrow|1MiB']);
+    assert.ok(presets.coverageReport(LIVE, sc).problems.includes('lookup miss s3.reads: narrow|1MiB: the table has no entry for this key'));
+    const declared = presets.coverageReport(LIVE, Object.assign({ expected_lookup_misses: ['s3.reads: narrow|1MiB'] }, sc));
+    assert.equal(declared.problems.some((p) => /lookup miss/.test(p)), false);
+    assert.ok(declared.declared.includes('lookup miss s3.reads: narrow|1MiB (declared)'));
+    const stale = presets.coverageReport(LIVE, Object.assign({ expected_lookup_misses: ['cas.gc: x'] }, sc));
+    assert.ok(stale.problems.includes('declared lookup miss cas.gc: x does not occur'));
+  } finally {
+    pl.run = real;
+  }
+});

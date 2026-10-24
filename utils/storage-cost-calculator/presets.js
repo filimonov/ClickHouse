@@ -286,11 +286,41 @@
     for (const [x, ids] of Object.entries(expected)) {
       for (const id of ids) if (!seenOut.has(`${x}:${id}`)) problems.push(`declared extrapolation ${x}:${id} is not out of range for a coefficient that variant reaches`);
     }
+    // A column the scenario cannot price because a table lacks its key is outside coverage, unless declared in
+    // `scenario.expected_lookup_misses` (["<variant>.<operation>: <key>"]); a declaration must stay true.
+    const misses = lookupMisses(contract, scenario);
+    const allowed = scenario.expected_lookup_misses || [];
+    for (const m of misses) {
+      if (allowed.includes(m)) declared.push(`lookup miss ${m} (declared)`);
+      else problems.push(`lookup miss ${m}: the table has no entry for this key`);
+    }
+    for (const m of allowed) if (!misses.includes(m)) problems.push(`declared lookup miss ${m} does not occur`);
     return { problems, declared };
+  }
+
+  // Lookup keys the scenario reaches that a table does not hold: "<variant>.<operation>: <key>" per miss.
+  function lookupMisses(contract, scenario) {
+    const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
+    const preset = ((contract.billing && contract.billing.presets) || [])[0];
+    if (!preset) return [];
+    const out = new Set();
+    const walk = (t, where) => {
+      if (!t || typeof t !== 'object') return;
+      // A miss is an unavailable lookup with its key and no other reason (arity and bad values carry a reason).
+      if (t.kind === 'lookup' && t.state === 'unavailable' && typeof t.lookup_key === 'string' && !t.reason
+        && (t.children || []).every((k) => k && k.state === 'ok')) out.add(`${where}: ${t.lookup_key}`);
+      for (const k of t.children || []) walk(k, where);
+    };
+    const run = pipeline().run(contract, res.inputs, preset, {});
+    for (const [v, vr] of Object.entries(run.variants || {})) {
+      if (vr.state === 'ok') continue;
+      for (const [op, cell] of Object.entries(vr.cells || {})) for (const t of cell.trace || []) walk(t, `${v}.${op}`);
+    }
+    return [...out].sort();
   }
 
   function coverageProblems(contract, scenario) { return coverageReport(contract, scenario).problems; }
 
-  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
+  SCC.presets = { lookupMisses, SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);
