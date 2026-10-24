@@ -7747,7 +7747,12 @@
       "default": null,
       "rule": null,
       "coef": "acquire_requests",
-      "validity": null,
+      "validity": {
+        "insert_rows": [
+          1000,
+          200000
+        ]
+      },
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",

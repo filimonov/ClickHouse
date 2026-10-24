@@ -13,8 +13,8 @@ Every hold-out that Plan 2 consumed now has a done replacement on its variant, e
 
 | Item | Value |
 |---|---|
-| Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Binary | ClickHouse 26.8 build: download sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46`, executed sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
+| Source commit | ClickHouse `09d0772a842c5d73cf3ef35b4c8b017d838215a0` (the binary's source; every `path:line` cite is at this commit) |
 | Report runs | `cost-20261024T154049Z`, `cost-20261024T162519Z` (the CAS point hold-outs) and `cost-20261024T164439Z` (the 1 000-row fetch); `measurements.jsonl` holds their 129 records, 117 ok |
 | Rig | all runs execute the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
 | Earlier runs | `cost-20261024T145603Z` (calibration) and `cost-20261024T151251Z` (first report run); §[Cases](#cases) says what each found. Neither is in `measurements.jsonl` |
@@ -328,7 +328,7 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement (`
 | lifecycle R4-2 | closed by the replay in §[Amplification](#amplification) |
 | phase-0 README wording | `amplification-run` is 30 h of P2 |
 | D14 cuts | `gc-under-load.default`: case and edges `cut`; `amplification-run.2h` was already cut |
-| leftovers | removed: worktrees `tmp/s3b_wt`, `tmp/s3r/wt`; the untracked `raw/*/cost-20261024T07*` and `raw/merge-forced/` slices of the s3 report. `tmp/rig-repl` did not exist; `tmp/s3p` holds no worktree |
+| leftovers | removed: the two detached worktrees left by the s3 report's earlier runs, and the untracked `raw/*/cost-20261024T07*` and `raw/merge-forced/` slices of the s3 report |
 | s3 `inserts` follower reads (reviewer question) | priced (§[Wiring](#wiring)) |
 
 ## Open items {#open-items}
@@ -344,8 +344,8 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement (`
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_validation_prompt.txt`, log
-`tmp/codex_validation_r1.log`): 3 MAJOR, 4 MINOR, verdict REVISE. All closed:
+One Codex round (`gpt-6-astra`, reasoning high, read-only; the review log is retained outside the repository): 3 MAJOR,
+4 MINOR, verdict REVISE. All closed:
 
 | # | Severity | Finding | Disposition |
 |---|---|---|---|
@@ -359,13 +359,16 @@ One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_val
 
 ## Reproduce {#reproduce}
 
+Run from a sparse worktree at the rig commit `9ed2efcd450`. `$BINARY` is the 26.8 binary with the sha256 above;
+`$SOURCE` is a ClickHouse checkout at `09d0772a842`.
+
 ```bash
-git worktree add --detach ../rig-9ed2efcd450 9ed2efcd450   # any path outside this tree
+git worktree add --detach ../rig-9ed2efcd450 9ed2efcd450
 utils/cas-yardstick/rustfs-bin.sh ensure
 cd ../rig-9ed2efcd450 && YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
-  --binary ../../bin/26.8/clickhouse --source-dir ../../src-26.8 \
+  --binary "$BINARY" --source-dir "$SOURCE" \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-validation \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-replication \
   --cases "$(ls docs/superpowers/reports/2026-10-24-storage-cost-validation/experiments | sed 's/\.json$//' | paste -sd,),faults.multipart-abort,faults.multipart-abort-part3c" \
-  --policies s3,s3plain,cas,cas_cached --replicas 2 --repeats 3 --runs-dir ../../cas-yardstick/cost-runs
+  --policies s3,s3plain,cas,cas_cached --replicas 2 --repeats 3 --runs-dir "$RUNS_DIR"
 ```
