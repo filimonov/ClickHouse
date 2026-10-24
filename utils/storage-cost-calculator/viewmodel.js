@@ -327,7 +327,12 @@
       const cells = contract.variants.map((v) => {
         const vr = result.variants[v];
         const c = vr.cells[op];
-        if (!c) return { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
+        // No cell: "not applicable", unless the column's own reason names this operation; then the row says what the card says.
+        if (!c) {
+          const named = vr.state !== 'ok' && reasonSegments(vr.reason).some((s) => s.operation === op);
+          return named ? { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: false, clickable: false }
+            : { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
+        }
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
         const hint = pageState === 'ok' && c.money === 0 ? zeroHint(op, fields) : null;

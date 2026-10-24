@@ -47,3 +47,23 @@ function cardHtml(html, v) {
   const start = html.lastIndexOf('<article', at);
   return html.slice(start, html.indexOf('</article>', start));
 }
+
+test('test_card_state_and_row_states_agree', () => {
+  for (const sc of ['logs', 'metrics', 'analytics_batch', 'single_replica_archive', 'custom']) {
+    const out = ui.compute(LIVE, ui.defaultState(LIVE, sc), {});
+    for (const card of out.vm.cards) {
+      if (card.state === 'ok') continue;
+      for (const row of out.vm.table.rows) {
+        const cell = row.cells.find((c) => c.variant === card.variant);
+        // A column that is not priced never shows a row as priced; a row it shows a state for is the card's state.
+        assert.equal(cell.clickable, false, `${sc} ${card.variant}.${row.operation}`);
+        if (cell.state !== 'not_applicable') assert.equal(cell.state, card.state, `${sc} ${card.variant}.${row.operation}`);
+      }
+    }
+  }
+  const out = ui.compute(LIVE, ui.defaultState(LIVE, 'logs'), {});
+  const cas = out.vm.cards.find((c) => c.variant === 'cas');
+  if (cas.state === 'unavailable' && /reads/.test(cas.reason)) {
+    assert.equal(out.vm.table.rows.find((r) => r.operation === 'reads').cells.find((c) => c.variant === 'cas').state, 'unavailable');
+  }
+});
