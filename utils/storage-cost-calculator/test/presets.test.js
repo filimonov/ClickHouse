@@ -171,3 +171,20 @@ test('test_coverage_checks_derived_quantities_and_reports_derived_formulas_as_in
     assert.equal(hit(r.info), basis === 'derived', `${basis}: information`);
   }
 });
+
+test('test_only_analytics_batch_mutates_and_s3plain_refuses_it', () => {
+  const vm = require('../viewmodel.js');
+  const aws = presets.resolvePrice(LIVE, 'aws-us-east-1');
+  for (const [id, s] of Object.entries(presets.SCENARIOS)) {
+    const r0 = pipeline.resolveInputs(LIVE, s.values, s.locks, {});
+    const res = pipeline.run(LIVE, r0.inputs, aws, {});
+    const card = vm.build(res, LIVE, r0.fields, r0.lockOrder, { pricePreset: aws }).cards.find((c) => c.variant === 's3plain');
+    if (id === 'analytics_batch') {
+      assert.equal(s.values.mutations_per_month, 30);
+      assert.equal(card.state, 'not_supported');
+      assert.equal(card.reason, 'S3 plain rewritable cannot run ALTER UPDATE/DELETE; this workload runs 30 ALTER UPDATE/DELETE per month');
+    } else {
+      assert.notEqual(card.state, 'not_supported', id);
+    }
+  }
+});

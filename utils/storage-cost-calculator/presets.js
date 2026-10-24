@@ -53,12 +53,16 @@
     // a day is ~6.6 MiB compressed per insert, ~70 B per row; 100 MiB uncompressed is ~15x compression.
     analytics_batch: {
       label: 'Analytics batch',
-      description: '10 TiB kept one year on 2 replicas, batch loads of 100,000 rows every 20 seconds',
+      description: '10 TiB kept one year on 2 replicas, batch loads of 100,000 rows every 20 seconds, 30 ALTER UPDATE corrections a month',
       values: {
         data_bytes: 10240, retention_days: 365, replicas: 2,
         insert_rows: 100000, insert_rate: 0.05, insert_bytes_uncompressed: 104857600, insert_clients: 1,
         // Ratio 400 merges ~6.6 MiB inserts into ~2.6 GiB parts.
         async_insert: '0', shape: 'wide', merge_size_ratio: 400,
+        // Periodic corrections and backfills: 30 ALTER UPDATE statements a month, each rewriting ~10 wide parts of the
+        // affected partitions (300 parts a month). The CAS rate is the same 30 a month per second (30 / 2,628,000 s).
+        mutations_per_month: 30, mutation_kind: 'update_column', mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 300,
+        cas_mutations_per_s: 30 / 2628000, cas_parts_per_mutation: 10,
       },
       locks: ['data_bytes', 'retention_days'],
     },
