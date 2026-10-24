@@ -347,8 +347,9 @@ def replay(attempts: list, initial: Inventory, families: list) -> Bounds:
 
     Every mutation has a creation side (put, copy, part upload, the object a Complete makes) and a
     retirement side (delete, abort, the parts a Complete retires). A Complete has both.
-    End states: `lower` applies creations only when the outcome is ok and retirements also when it is
-    `unknown`; `upper` the reverse. `error`, `not_sent` and `rejected` outcomes change nothing. Objects made by
+    End states: each identity ends in its smallest possible state in `lower` and its largest in `upper`, over
+    every order overlapping attempts could have landed in (`_final_states`); a creation counts in `lower` only
+    when ok, a retirement in `upper` only when ok. `error`, `not_sent` and `rejected` outcomes change nothing. Objects made by
     an `unknown` attempt carry `outcome_unknown`. `completed_parts` is parsed by the proxy from the Complete
     request body, and `delete_keys` from the DeleteObjects request body, so both exist without a response.
     """
@@ -377,7 +378,9 @@ def replay(attempts: list, initial: Inventory, families: list) -> Bounds:
                 _retire(inv, a, t, cache)
         bounds.append(inv)
     mutations, creators = _mutations(attempts, initial, families)
-    return Bounds(*bounds, mutations=mutations, creators=creators)
+    out = Bounds(*bounds, mutations=mutations, creators=creators)
+    _final_states(out, families)
+    return out
 
 
 def _mutations(attempts: list, initial: Inventory, families: list) -> tuple:
@@ -410,23 +413,35 @@ def _mutations(attempts: list, initial: Inventory, families: list) -> tuple:
     return out, creators
 
 
+def _possible(transitions: list, k: int, t: float) -> bool:
+    """Can the state after transition `k` (-1: absent) hold at `t` in some feasible schedule?
+
+    Each transition takes effect at one instant inside its `[t_start_us, t_end_us]`, in any order those instants
+    allow (seq order is start order, not effect order); an `unknown` one may not take effect at all. The state of
+    the last effect at or before `t` holds. So `k` can hold when it may have taken effect by `t`, and every other
+    certain transition may have taken effect before it or may still be pending.
+    """
+    if k >= 0 and transitions[k][0] > t:
+        return False
+    end_k = transitions[k][1] if k >= 0 else None
+    for j, (ts, te, certain, _) in enumerate(transitions):
+        if j == k or not certain:
+            continue
+        before = end_k is not None and ts <= min(t, end_k)
+        if not (before or te > t):
+            return False
+    return True
+
+
 def _envelope(transitions: list, cats: list, t0: int, t1: int, totals: dict, sign: int) -> None:
     """Add the pointwise minimum (`sign` -1) or maximum (+1) over the possible states, per category, to `totals`.
 
-    State 0 is "absent"; state k follows transition k. State k is possible at t when transition k may have
-    started (`t_start_us <= t`) and no later certain transition must already have ended (`t <= t_end_us`).
-    An unknown-outcome transition never forces the state before it out. Every real schedule passes through
-    possible states only, so integrating their minimum and maximum bounds its byte-hours.
+    Every feasible schedule passes through possible states only (`_possible`), so integrating their minimum and
+    maximum bounds its byte-hours, whatever order overlapping transitions land in.
     """
     n = len(transitions)
-    earliest = [float('-inf')] + [tr[0] for tr in transitions]
-    latest = [float('inf')] * (n + 1)
-    bound = float('inf')
-    for k in range(n, -1, -1):
-        latest[k] = bound
-        if k and transitions[k - 1][2]:
-            bound = min(bound, transitions[k - 1][1])
     states = [None] + [tr[3] for tr in transitions]
+    earliest = [float('-inf')] + [tr[0] for tr in transitions]
     points = sorted({t0, t1} | {t for tr in transitions for t in tr[:2] if t0 < t < t1}
                     | {tc for tc, _ in cats if t0 < tc < t1})
     for lo, hi in zip(points, points[1:]):
@@ -434,7 +449,7 @@ def _envelope(transitions: list, cats: list, t0: int, t1: int, totals: dict, sig
             continue
         mid = (lo + hi) / 2
         values: dict = defaultdict(list)
-        possible = [k for k in range(n + 1) if earliest[k] <= mid <= latest[k]]
+        possible = [k for k in range(n + 1) if _possible(transitions, k - 1, mid)]
         for k in possible:
             state = states[k]
             if state is None:
@@ -450,13 +465,39 @@ def _envelope(transitions: list, cats: list, t0: int, t1: int, totals: dict, sig
             totals[category] += pick * (hi - lo) / US_PER_HOUR
 
 
+def _final_states(bounds, families) -> None:
+    """Set each identity's end state to the smallest possible one in `lower` and the largest in `upper`."""
+    for ident, transitions in bounds.mutations.items():
+        finals = [k for k in range(-1, len(transitions)) if _possible(transitions, k, float('inf'))]
+        options = [(0 if k < 0 or transitions[k][3] is None else transitions[k][3][0], k) for k in finals]
+        for inv, (_, k) in ((bounds.lower, min(options)), (bounds.upper, max(options))):
+            table = inv.objects if len(ident) == 2 else inv.incomplete
+            if k < 0 or transitions[k][3] is None:
+                table.pop(ident, None)
+                continue
+            size, category, uncertain = transitions[k][3]
+            entry = table.get(ident)
+            if entry is None:
+                ts = transitions[k][0]
+                family = family_of(families, ident[1])
+                entry = ({'created_us': ts, 'family': family['name'] if family else None, 'category': category}
+                         if len(ident) == 2 else {'t_us': ts})
+                table[ident] = entry
+            entry.update(size=size, uncertain=uncertain)
+            if len(ident) == 2:
+                entry['category'] = category  # replay runs before any reclassification
+            if len(ident) == 2 and not transitions[k][2]:
+                entry['outcome_unknown'] = True
+
+
 def byte_hours(bounds: Bounds, t0_us: int, t1_us: int) -> dict:
     """Byte-hours per category inside [t0_us, t1_us], as `{lower, upper}`.
 
-    Each transition counts by its effect on bytes: a shrink takes effect at `t_start_us` in `lower` and at
-    `t_end_us` in `upper`, a growth the reverse, and overlapping transitions on one identity are bounded by
-    every order they could have taken effect in (`_envelope`). Objects of unknown size land in `uncertain`
-    with size 0.
+    Each transition takes effect at one instant inside `[t_start_us, t_end_us]`, in any order those instants
+    allow, so a shrink counts from `t_start_us` in `lower` and a growth from `t_end_us`, and overlapping
+    transitions on one identity are bounded over every feasible order, with no cap on how many overlap
+    (`_possible`). The bound is pointwise, so it can be looser than the best schedule. Objects of unknown size
+    land in `uncertain` with size 0.
     """
     lower: dict = defaultdict(float)
     upper: dict = defaultdict(float)

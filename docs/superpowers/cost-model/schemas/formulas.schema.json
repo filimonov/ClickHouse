@@ -93,6 +93,7 @@
                   "client_error",
                   "server_error",
                   "dropped",
+                  "not_sent",
                   "all"
                 ]
               },

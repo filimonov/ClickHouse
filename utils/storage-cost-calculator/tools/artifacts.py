@@ -308,7 +308,16 @@ def _check_identity(d):
 
 # --- prediction --------------------------------------------------------------------------------
 
-_COUNT_OR_RANGE = either(integer, obj({"min": integer, "max": integer}))
+def _range(v, path):
+    """`{min, max}`, optionally with `basis` (`derived` or `assumption`) and the `reason` that basis requires."""
+    out = obj_optional({"min": integer, "max": integer, "basis": enum("derived", "assumption"),
+                        "reason": nonempty_string}, ("basis", "reason"))(v, path)
+    if isinstance(v, dict) and ("basis" in v) != ("reason" in v):
+        out.append(f"{path}: basis and reason go together")
+    return out
+
+
+_COUNT_OR_RANGE = either(integer, _range)
 
 
 def validate_prediction(d):
@@ -522,7 +531,7 @@ def validate_formulas(d, tables=None):
 _ROW = {
     "row_type": enum("request", "storage", "transfer", "block_io", "block_capacity"),
     "op_kind": nonempty_string,
-    "outcome_class": enum("ok", "accepted_dropped", "client_error", "server_error", "dropped", "all"),
+    "outcome_class": enum("ok", "accepted_dropped", "client_error", "server_error", "dropped", "not_sent", "all"),
     "category": nullable(enum(*CATEGORIES)),
     "route": nullable(enum("ec2_s3_same_region", "ec2_ec2_cross_az", "internet")),
     "scope": enum("variant", "replica", "volume"),

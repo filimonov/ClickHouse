@@ -173,6 +173,15 @@ class PredictionTests(ArtifactTestCase):
             ("source_refs", 0, "claim"), ("source_refs", 0, "path"), ("source_refs", 0, "line"),
         ])
 
+    def test_prediction_range_may_state_its_basis(self):
+        p = load("prediction.json")
+        rng = {"min": 1, "max": 9, "basis": "assumption", "reason": "no source bound"}
+        self.assert_valid(artifacts.validate_prediction, with_value(p, ("expected", "foreground", "r1", "PutObject"), rng))
+        self.assert_rejects(artifacts.validate_prediction, with_value(
+            p, ("expected", "foreground", "r1", "PutObject"), dict(rng, basis="guess")), "basis")
+        self.assert_rejects(artifacts.validate_prediction, with_value(
+            p, ("expected", "foreground", "r1", "PutObject"), {"min": 1, "max": 9, "basis": "assumption"}), "reason")
+
     def test_prediction_accepts_int_or_min_max_and_rejects_others(self):
         p = load("prediction.json")
         self.assert_rejects(artifacts.validate_prediction,
@@ -310,6 +319,7 @@ class FormulasTests(ArtifactTestCase):
         facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "caller"), "r1")
         facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "outcome_class"), "accepted_dropped")
         self.assert_valid(artifacts.validate_formulas, facts)
+        self.assert_valid(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "outcome_class"), "not_sent"))
         self.assert_valid(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "status"), "4XX"))
         self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "caller"), "r9"), "caller")
         self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "status"), True), "status")

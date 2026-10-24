@@ -43,7 +43,7 @@ every value, money line, allocation and evidence block in the page markup. Drill
 What the drill checks:
 
 - **Requests** per caller (or all callers), op and outcome class (`ok`, `accepted_dropped`, `client_error` = 4XX,
-  `server_error`, `dropped`). An exact prediction is a `const` row; a range is an `input` row filled from the
+  `server_error`, `not_sent`, `dropped`). An exact prediction is a `const` row; a range is an `input` row filled from the
   record's `observations.inputs`, which must be registered measured quantities. Measured foreground counts must lie
   in the prediction's range, widened by its tolerance for stochastic cards.
 - **Residuals.** Every op, outcome class, storage category with byte-hours and interserver direction in the record
@@ -100,8 +100,8 @@ without forwarding it. The disk sets `s3_retry_attempts = 1`.
 |---|---|---|---|
 | r1 | `CreateMultipartUpload` | 1 | 1 |
 | r1 | `UploadPart` | 3 | 3 (2 `ok`, 1 `accepted_dropped`: the store took part 2, the reply was dropped) |
-| r1 | `CompleteMultipartUpload` | 4 | 4 (`server_error`: injected, never sent) |
-| r1 | `AbortMultipartUpload` | 4 | 4 (`server_error`: injected, never sent) |
+| r1 | `CompleteMultipartUpload` | 4 | 4 (`not_sent`: injected, never forwarded) |
+| r1 | `AbortMultipartUpload` | 4 | 4 (`not_sent`: injected, never forwarded) |
 | r1 | `PutObject` | 1..14 | 14 |
 | r1 | `DeleteObjects`, `DeleteObject` | 0..1, 0..14 | 0, 0 |
 

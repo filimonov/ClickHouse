@@ -52,6 +52,7 @@ test('test_accepted_dropped_is_billed_and_dropped_is_not', () => {
   const r = billing.bill([row('request', 'UploadPart', 'ok', 2000), row('request', 'UploadPart', 'accepted_dropped', 1000),
     row('request', 'UploadPart', 'dropped', 7000)], P());
   assert.equal(line(r, 'put_copy_post_list').quantity, 3000);
+  assert.equal(line(billing.bill([row('request', 'UploadPart', 'not_sent', 5)], P()), 'put_copy_post_list').quantity, 0);
   assert.match(line(r, 'put_copy_post_list').note, /7000 dropped/);
   const mixed = billing.bill([row('request', 'GetObject', 'all', 1000)], P(), 'variant',
     { GetObject: { ok: 0.5, accepted_dropped: 0.25, dropped: 0.25 } });

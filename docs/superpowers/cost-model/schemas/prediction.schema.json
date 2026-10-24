@@ -36,7 +36,25 @@
                     },
                     "max": {
                       "type": "integer"
+                    },
+                    "basis": {
+                      "enum": [
+                        "derived",
+                        "assumption"
+                      ],
+                      "description": "Optional, with reason: whether the source refs derive the range or it is assumed."
+                    },
+                    "reason": {
+                      "type": "string"
                     }
+                  },
+                  "dependentRequired": {
+                    "basis": [
+                      "reason"
+                    ],
+                    "reason": [
+                      "basis"
+                    ]
                   },
                   "required": [
                     "min",

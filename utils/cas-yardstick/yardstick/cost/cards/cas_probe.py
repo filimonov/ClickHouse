@@ -33,15 +33,21 @@ CAS_FAMILIES = [
 ]
 GC_ROUNDS_SQL = ("SELECT toUnixTimestamp64Micro(minIf(event_time_microseconds, event_type = 'Start')), "
                  "toUnixTimestamp64Micro(maxIf(event_time_microseconds, event_type = 'Finish')), "
-                 "countIf(event_type = 'Finish') FROM system.cas_gc_log GROUP BY round_id ORDER BY 1 FORMAT TSV")
+                 "countIf(event_type = 'Finish'), countIf(event_type = 'Start') FROM system.cas_gc_log "
+                 "GROUP BY round_id ORDER BY 1 FORMAT TSV")
 
 
 def gc_rounds(client) -> list:
-    """`[start_us, finish_us or None]` of every GC round on one server; a round still running has no finish."""
+    """`[start_us, finish_us or None]` of every GC round on one server; a round still running has no finish.
+
+    Raises ValueError for a round with no Start row: its window cannot be known, so attribution would guess.
+    """
     out = []
     for line in client.query(GC_ROUNDS_SQL).splitlines():
         if line.strip():
-            start, finish, done = (int(x) for x in line.split('\t'))
+            start, finish, done, started = (int(x) for x in line.split('\t'))
+            if not started:
+                raise ValueError(f'GC round finishing at {finish} us has no Start row in system.cas_gc_log')
             out.append([start, finish if done else None])
     return out
 
@@ -131,7 +137,11 @@ class CasGcCohort(ManifestCard):
         st['expect_rows'] = sum(1 for r in window_rows(ctx) if r.get('expect_negotiated'))
 
     def classify(self, ctx, attempts, families):
-        return attribute(attempts, self.state(ctx).get('gc_rounds', {}))
+        st = self.state(ctx)
+        if 'gc_rounds' not in st:
+            # Without the round windows every request would look foreground; fail the pass instead.
+            raise RuntimeError('GC rounds were not collected; request origin cannot be attributed')
+        return attribute(attempts, st['gc_rounds'])
 
     def reclassify(self, ctx, bounds):
         st = self.state(ctx)
@@ -143,7 +153,7 @@ class CasGcCohort(ManifestCard):
         expect = self.predicted(ctx)['inputs']['expect_negotiated_rows']
         return {**super().observe(ctx, draft),
                 'request_attribution': {'method': 'gc_round_windows',
-                                        'rounds': {r: len(v) for r, v in st.get('gc_rounds', {}).items()}},
+                                        'rounds': {r: len(v) for r, v in st['gc_rounds'].items()}},
                 'cohort_size': len(st['cohort']), 'cohort_reclaimed': len(st['deleted']),
                 'reclaim_delay_s': st['reclaim_delay_s'], 'gc_rounds_reclaiming': st['gc_rounds_reclaiming'],
                 'deleting_callers': sorted({d['caller'] for d in st['deleted'].values()}),

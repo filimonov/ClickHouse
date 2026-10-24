@@ -271,8 +271,9 @@ class Replay(unittest.TestCase):
     def test_overlapping_put_and_delete_may_invert_replays(self):
         a = [put('x', 1, (0, 10)), att('DeleteObject', 'x', (50, 60)), put('x', 2, (55, 70))]
         r = rep(a)
-        self.assertEqual(r.lower.objects[('b', 'x')]['size'], 2)   # delete at 50, put at 70
-        self.assertNotIn(('b', 'x'), r.upper.objects)              # put at 55, delete at 60
+        # The delete or the second put can land last: lower ends absent, upper with the 2 B object.
+        self.assertNotIn(('b', 'x'), r.lower.objects)
+        self.assertEqual(r.upper.objects[('b', 'x')]['size'], 2)
         out = ledger.byte_hours(r, 0, 10 * H)
         self.assertLessEqual(out['active']['lower'], out['active']['upper'])
 
@@ -373,12 +374,20 @@ class ByteHourBounds(unittest.TestCase):
         self.assertAlmostEqual(out['active']['lower'], 100 + 2 * 1)    # shrinks at H
         self.assertAlmostEqual(out['active']['upper'], 2 * 100 + 1)    # shrinks at 2H
 
-    def test_overlapping_overwrites(self):
-        # 10 B, then 1 B during [1, 3] and 50 B during [2, 4]: in [2, 3] any of the three sizes is possible.
+    def test_overlapping_overwrites_land_in_either_order(self):
+        # Reviewer's case: 10 B, then 1 B during [1, 3] and 50 B during [2, 4]. The 50 B PUT can land at 2.5 h and
+        # the 1 B PUT at 2.8 h: 42.2 byte-hours and a final size of 1 B, although the 50 B PUT started later.
         a = [put('x', 10, (0, 0)), put('x', 1, (H, 3 * H)), put('x', 50, (2 * H, 4 * H))]
-        out = ledger.byte_hours(rep(a), 0, 5 * H)
-        self.assertAlmostEqual(out['active']['lower'], 10 + 1 + 1 + 1 + 50)
-        self.assertAlmostEqual(out['active']['upper'], 10 + 10 + 50 + 50 + 50)
+        r = rep(a)
+        out = ledger.byte_hours(r, 0, 5 * H)['active']
+        real = 10 * 2.5 + 50 * 0.3 + 1 * 2.2
+        self.assertAlmostEqual(real, 42.2)
+        self.assertLessEqual(out['lower'], real)
+        self.assertGreaterEqual(out['upper'], real)
+        self.assertAlmostEqual(out['lower'], 10 + 1 + 1 + 1 + 1)
+        self.assertAlmostEqual(out['upper'], 10 + 10 + 50 + 50 + 50)
+        self.assertEqual(r.lower.objects[('b', 'x')]['size'], 1)   # either PUT can be the last to land
+        self.assertEqual(r.upper.objects[('b', 'x')]['size'], 50)
 
     def test_unknown_overwrite(self):
         # An unknown shrink counts in lower only; an unknown growth in upper only.
@@ -398,13 +407,12 @@ class ByteHourBounds(unittest.TestCase):
         sizes = [7, 3, 0, 9]
         import itertools
         choices = [[t for t in grid if x['t_start_us'] <= t <= x['t_end_us']] for x in a]
+        # Every schedule, in any order the effect times allow: the last effect at or before t decides the size.
         for times in itertools.product(*choices):
-            if list(times) != sorted(times):
-                continue
-            total, prev = 0, 0
-            for t, s in zip(list(times) + [5 * H], [0] + sizes):
-                total += s * (t - prev) / H
-                prev = t
+            total, prev, size = 0, 0, 0
+            for t, s in sorted(zip(times, sizes)) + [(5 * H, None)]:
+                total += size * (t - prev) / H
+                prev, size = t, (s if s is not None else size)
             self.assertLessEqual(out['lower'] - 1e-9, total, times)
             self.assertGreaterEqual(out['upper'] + 1e-9, total, times)
 

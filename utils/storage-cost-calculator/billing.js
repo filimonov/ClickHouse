@@ -6,8 +6,8 @@
   const UNITS = ['decimal', 'binary_gb'];
   const GIB_IN_DECIMAL_GB = 1.073741824; // 2^30 / 10^9
   // accepted_dropped: the store answered ok and the reply to the caller was lost, so the provider bills it.
-  // dropped: the store's outcome is unknown, so there is no billable fact.
-  const OUTCOMES = ['ok', 'accepted_dropped', 'client_error', 'server_error', 'dropped'];
+  // dropped: the store's outcome is unknown, so there is no billable fact. not_sent: the store never saw it.
+  const OUTCOMES = ['ok', 'accepted_dropped', 'client_error', 'server_error', 'dropped', 'not_sent'];
   const BILLED = new Set(['ok', 'accepted_dropped']);
   const EPS = 1e-9;
 

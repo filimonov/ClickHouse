@@ -28,7 +28,9 @@
         "PutObject": 11,
         "GetObject": {
           "min": 8,
-          "max": 11
+          "max": 11,
+          "basis": "assumption",
+          "reason": "the receiver reads back 9 of the 11 files when it loads the part (DataPartsExchange.cpp, IMergeTreeDataPart.cpp); the 8..11 margin around 9 is assumed, not derived from a branch"
         }
       }
     },

@@ -304,3 +304,23 @@ test('test_storage_must_match_the_record_and_evidence_is_required', () => {
   assert.equal(rc.status, 1);
   assert.match(rc.stderr, /evidence missing or empty/);
 });
+
+test('test_not_sent_attempts_are_their_own_class', () => {
+  // Attempts the store never saw (injected without forwarding) are neither 5XX answers nor billable.
+  const rec = recordFx();
+  rec.ledger.foreground.r1.PutObject = Object.assign({}, rec.ledger.foreground.r1.PutObject,
+    { attempts: 5, upstream_ok: 3, upstream_error: 0, upstream_unknown: 0, upstream_4xx: 0, injected: 2 });
+  const f = readFx('formulas.json');
+  const notSent = Object.assign({}, f.cells.insert.ledger_rows[0], { outcome_class: 'not_sent', expr: { kind: 'const', value: 2, dim: 'count' } });
+  f.cells.insert.ledger_rows.push(notSent);
+  const pred = readFx('prediction.json');
+  pred.expected.foreground.r1.PutObject = 5;
+  const ok = drillWith('notsent', { record: rec, formulas: f, prediction: pred });
+  assert.equal(ok.r.status, 0, ok.r.stderr);
+  const asServer = JSON.parse(JSON.stringify(f));
+  asServer.cells.insert.ledger_rows[asServer.cells.insert.ledger_rows.length - 1].outcome_class = 'server_error';
+  const bad = drillWith('notsent-as-5xx', { record: rec, formulas: asServer, prediction: pred });
+  assert.equal(bad.r.status, 1);
+  assert.match(bad.r.stderr, /request PutObject server_error" predicted 2 measured 0/);
+  assert.match(bad.r.stderr, /unmodelled residual: r1 PutObject not_sent x2/);
+});

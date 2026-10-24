@@ -2,7 +2,7 @@
   "probe": "probe_local_volume",
   "measurement_id": "cost-20261024T024945Z/local/probe_local_volume/gate/k1",
   "contract": {
-    "code_sha256": "214448f6810204752417b0c05abf2edb4f9211a5e609a6027406d75536896e5b",
+    "code_sha256": "b17d431b96d7b1c37b782270b0cd45d5ad28b20362c8b51deac42355179491e2",
     "contract_version": "1",
     "registry_version": "0.1.0",
     "coverage_version": "0.1.0",
@@ -11,7 +11,7 @@
       {
         "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
         "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
-        "raw_sha256sums": "0f93acd007bd7a10c3366fbab6ff8bb90d69427d6fa933e41f625885eb125a7a"
+        "raw_sha256sums": "7e593cdbf318179dd3e64e8d7b0b60fef0cd6044fe2d92004dce147a7cdce121"
       }
     ]
   },

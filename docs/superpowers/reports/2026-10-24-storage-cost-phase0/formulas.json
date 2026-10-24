@@ -204,7 +204,7 @@
           {
             "row_type": "request",
             "op_kind": "CompleteMultipartUpload",
-            "outcome_class": "server_error",
+            "outcome_class": "not_sent",
             "category": null,
             "route": null,
             "scope": "variant",
@@ -217,7 +217,7 @@
           {
             "row_type": "request",
             "op_kind": "AbortMultipartUpload",
-            "outcome_class": "server_error",
+            "outcome_class": "not_sent",
             "category": null,
             "route": null,
             "scope": "variant",

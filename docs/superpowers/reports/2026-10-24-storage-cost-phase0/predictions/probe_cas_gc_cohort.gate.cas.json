@@ -14,11 +14,15 @@
       "r1": {
         "PutObject": {
           "min": 40,
-          "max": 2000
+          "max": 2000,
+          "basis": "assumption",
+          "reason": "the lower bound follows from the cohort (one blob and one manifest per insert); no source path bounds the CAS control traffic, so 2000 is a generous assumed ceiling"
         },
         "HeadObject": {
           "min": 20,
-          "max": 2000
+          "max": 2000,
+          "basis": "assumption",
+          "reason": "the lower bound follows from the cohort (one blob and one manifest per insert); no source path bounds the CAS control traffic, so 2000 is a generous assumed ceiling"
         }
       }
     },

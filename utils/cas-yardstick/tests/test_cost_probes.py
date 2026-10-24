@@ -411,14 +411,24 @@ class CasGcCohortTest(unittest.TestCase):
         self.assertEqual([r['t_start_us'] for r in out['maintenance']], [15, 40])  # r1 inside its own rounds only
         self.assertEqual([(r['caller'], r['t_start_us']) for r in out['foreground']], [('r1', 5), ('r2', 15)])
         self.assertEqual(len(out['rig']), 1)
-        client = FakeClient({'round_id': '10\t20\t1\n30\t0\t0\n'})
+        client = FakeClient({'round_id': '10\t20\t1\t1\n30\t0\t0\t1\n'})
         self.assertEqual(cas_probe.gc_rounds(client), [[10, 20], [30, None]])
+        # A round seen only by its Finish has no start to attribute from: a problem, not a start at 0.
+        with self.assertRaisesRegex(ValueError, 'no Start row'):
+            cas_probe.gc_rounds(FakeClient({'round_id': '0\t20\t1\t0\n'}))
+
+    def test_classify_without_collected_rounds_fails(self):
+        card = CARDS['probe_cas_gc_cohort']
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = ctx_for(card, tmp, Ledger(os.path.join(tmp, 'l')), 'cas')
+            with self.assertRaisesRegex(RuntimeError, 'GC rounds were not collected'):
+                card.classify(ctx, [], cas_probe.CAS_FAMILIES)
 
     def test_gc_round_traffic_is_maintenance_and_priced_with_the_rest(self):
         with tempfile.TemporaryDirectory() as tmp:
             # The GC put of `gc/state` (third row, 1 ms after the window mark + 2 rows) falls inside a round.
             start = 1_000_000 + 3000
-            card, ctx, draft, _ = self.run_probe(tmp, rounds=f'{start - 1}\t{start + 1}\t1\n')
+            card, ctx, draft, _ = self.run_probe(tmp, rounds=f'{start - 1}\t{start + 1}\t1\t1\n')
             self.assertEqual(draft['ledger']['maintenance']['r1']['PutObject']['attempts'], 1)
             self.assertEqual(draft['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
             inputs = draft['observations']['inputs']

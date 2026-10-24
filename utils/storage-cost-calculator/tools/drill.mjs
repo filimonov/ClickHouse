@@ -21,10 +21,10 @@ const HOURS_PER_MONTH = 730; // the AWS price-list month; probes turn byte-hours
 const WORKLOAD = ['r1', 'r2', 'r3'];
 const EVIDENCE_STATEMENT = 'Measured on one workstation: a local RustFS store behind the ledger proxy and loopback '
   + 'interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.';
-// Row outcome classes reconcile with ledger outcomes: client_error is an upstream 4XX; server_error is every
-// other unsuccessful attempt the store answered or never saw (5XX, injected, rejected).
-const GROUP = { ok: 'ok', accepted_dropped: 'accepted_dropped', dropped: 'dropped', client_error: 'client_error', server_error: 'server_error', all: 'all' };
-const CLASSES = ['ok', 'accepted_dropped', 'dropped', 'client_error', 'server_error'];
+// Row outcome classes reconcile with ledger outcomes: client_error is an upstream 4XX, server_error any other
+// upstream error, not_sent an attempt the store never saw (injected without forwarding, rejected, no connection).
+const GROUP = { ok: 'ok', accepted_dropped: 'accepted_dropped', dropped: 'dropped', client_error: 'client_error', server_error: 'server_error', not_sent: 'not_sent', all: 'all' };
+const CLASSES = ['ok', 'accepted_dropped', 'dropped', 'client_error', 'server_error', 'not_sent'];
 const TRANSFER = { interserver_from_target: 'from_target', interserver_to_target: 'to_target' };
 
 function repoRoot() {
@@ -233,7 +233,7 @@ function integrated(record) {
     for (const [caller, ops] of Object.entries((record.ledger || {})[part] || {})) {
       if (!WORKLOAD.includes(caller)) continue;
       for (const [op, c] of Object.entries(ops)) {
-        const t = ((out[caller] = out[caller] || {})[op] = out[caller][op] || { attempts: 0, upstream_ok: 0, upstream_unknown: 0, accepted_dropped: 0, upstream_4xx: 0 });
+        const t = ((out[caller] = out[caller] || {})[op] = out[caller][op] || { attempts: 0, upstream_ok: 0, upstream_error: 0, upstream_unknown: 0, accepted_dropped: 0, upstream_4xx: 0 });
         for (const f of Object.keys(t)) t[f] += c[f] || 0;
       }
     }
@@ -248,7 +248,8 @@ function classCount(c, group) {
     case 'accepted_dropped': return c.accepted_dropped || 0;
     case 'dropped': return c.upstream_unknown;
     case 'client_error': return c.upstream_4xx || 0;
-    case 'server_error': return c.attempts - c.upstream_ok - c.upstream_unknown - (c.upstream_4xx || 0);
+    case 'server_error': return c.upstream_error - (c.upstream_4xx || 0);
+    case 'not_sent': return c.attempts - c.upstream_ok - c.upstream_error - c.upstream_unknown;
     default: return c.attempts;
   }
 }
