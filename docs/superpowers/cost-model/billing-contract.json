@@ -6,8 +6,12 @@
       "id": "aws-us-east-1",
       "as_of": "2026-10-24",
       "currency": "USD",
-      "units": "gib_labelled_gb",
-      "units_note": "AWS bills S3 and EBS 'GB' in 2^30 bytes; the S3 price list expresses the 50 TB tier as 51200 GB. Prices below are per that GB.",
+      "units": "binary_gb",
+      "units_evidence": {
+        "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+        "checked": "2026-10-24",
+        "note": "tier boundaries 51200 GB and 512000 GB are exact multiples of 1024; no explicit AWS statement found"
+      },
       "assumptions": [
         "Tier 1 assumes: S3 Standard, unversioned general-purpose buckets, bucket-owner pays, no unrelated usage, no credits, no KMS, no VPC-endpoint or NAT charges; EBS gp3 only; in-region EC2↔S3 transfer free; cross-AZ EC2↔EC2 per GB per direction; internet egress 0 by default.",
         "Other configurations are unsupported, not approximated."

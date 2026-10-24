@@ -159,7 +159,33 @@ def _cut_coefficients(coverage):
             if all(r["status"] == "cut" or r["experiment_id"] in cut_cases for r in rows)}
 
 
-def support(registry, coverage, formulas_list, require_formulas=False):
+def _pending_cells(coverage, formulas_list):
+    """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
+
+    A cell has evidence when a coefficient its formulas use has a non-cut evidence row from a card of that
+    family whose `model_variants` include the variant.
+    """
+    domain = coverage["domain"]
+    card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
+    backed = {(row["coefficient"], card_of[row["experiment_id"]]["family"], v)
+              for row in coverage["evidence"] if row["status"] != "cut" and row["experiment_id"] in card_of
+              for v in card_of[row["experiment_id"]]["model_variants"]}
+    cells = {}
+    for f in formulas_list:
+        for op, cell in f.get("cells", {}).items():
+            entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set()})
+            entry["unsupported"] |= any(s.get("cond") is True and s.get("id") == "not_supported" for s in cell.get("states", []))
+            entry["coefs"] |= {ref for kind, ref in _walk(cell, []) if kind in ("coef", "table")}
+    pending = []
+    for v in domain["variants"]:
+        for op in domain["operations"]:
+            entry = cells.get((v, op), {"unsupported": False, "coefs": set()})
+            pending += [(v, op, fam) for fam in domain["families"]
+                        if not entry["unsupported"] and not any((c, fam, v) in backed for c in entry["coefs"])]
+    return pending
+
+
+def support(registry, coverage, formulas_list, require_formulas=False, pending=None):
     problems = [f"coverage {p}" for p in artifacts.validate_coverage(coverage)]
     if problems:
         return problems
@@ -175,10 +201,11 @@ def support(registry, coverage, formulas_list, require_formulas=False):
                 if variant not in card["model_variants"]:
                     problems.append(f"card {card['name']}.{case['case_id']}: policy {policy} measures {variant}, not in model_variants")
     problems += [f"family {f} has no card" for f in sorted(families - {c["family"] for c in coverage["cards"]})]
+    pending_cells = _pending_cells(coverage, formulas_list)
     if require_formulas:
-        have = {(f["variant"], op) for f in formulas_list for op in f.get("cells", {})}
-        problems += [f"missing cell {v}/{op}: no formulas entry" for v in domain["variants"] for op in domain["operations"]
-                     if (v, op) not in have]
+        problems += [f"cell {v}/{op}/{fam}: no evidence and no unconditional not_supported state" for v, op, fam in pending_cells]
+    elif pending is not None:
+        pending.extend(pending_cells)
     by_name = {}
     for q in registry.get("quantities", []):
         by_name[q["id"]] = q
@@ -345,6 +372,10 @@ def billing(contract):
             problems += missing
             continue
         _dated(p, path, problems)
+        if p["units"] not in ("decimal", "binary_gb"):
+            problems.append(f"{path}.units: expected decimal or binary_gb, got {p['units']!r}")
+        elif p["units"] == "binary_gb" and not (p.get("units_evidence") or {}).get("source_url"):
+            problems.append(f"{path}.units_evidence: binary_gb needs units_evidence with source_url and checked")
         if not p["assumptions"] or not all(isinstance(a, str) and a for a in p["assumptions"]):
             problems.append(f"{path}.assumptions: expected non-empty strings")
         for section, keys in ENTRY_KEYS.items():
@@ -419,7 +450,10 @@ def main(argv=None):
     if reg is not None:
         problems += dependency(reg, formulas)
     if cov is not None:
-        problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final")
+        pending = []
+        problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending)
+        if pending:
+            print(f"note: {len(pending)} support cells pending (no evidence, no not_supported state)", file=sys.stderr)
         problems += evidence(cov, coefficients)
     if bil is not None:
         problems += billing(bil)

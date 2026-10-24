@@ -39,6 +39,10 @@ def inp(qid):
     return {'kind': 'input', 'id': qid, 'dim': 'count'}
 
 
+def coef(qid):
+    return {'kind': 'coef', 'id': qid, 'dim': 'count'}
+
+
 def formulas(row_scope, expr, variant='s3', op='insert'):
     row = {'row_type': 'request', 'op_kind': 'PutObject', 'outcome_class': 'ok', 'category': None, 'route': None,
            'scope': row_scope, 'expr': expr}
@@ -88,9 +92,9 @@ class SupportTest(unittest.TestCase):
     def test_support_enumerates_domain_and_cut_rule(self):
         reg = registry(quantity('k', kind='measured', default=None))
         cov = self.coverage()
-        problems = cc.support(reg, cov, [formulas('variant', inp('k'), op='insert')], require_formulas=True)
+        problems = cc.support(reg, cov, [formulas('variant', coef('k'), op='insert')], require_formulas=True)
         self.assertTrue(any('s3/merge' in p for p in problems), problems)
-        both = formulas('variant', inp('k'), op='insert')
+        both = formulas('variant', coef('k'), op='insert')
         both['cells']['merge'] = both['cells']['insert']
         self.assertEqual(cc.support(reg, cov, [both], require_formulas=True), [])
         self.assertEqual(cc.support(reg, cov, [], require_formulas=False), [])
@@ -104,6 +108,34 @@ class SupportTest(unittest.TestCase):
         stray = self.coverage()
         stray['cards'][0]['family'] = 'other'
         self.assertTrue(cc.support(reg, stray, [], require_formulas=False))
+
+
+    def test_support_cells_evidence_or_not_supported(self):
+        def case(cid, policies=('s3', 'cas')):
+            return {'case_id': cid, 'policies': list(policies), 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900,
+                    'priority': 'P1', 'status': 'planned'}
+        cov = {'schema': 'coverage/1', 'version': '1', 'domain': {'variants': ['s3', 'cas'], 'operations': ['x', 'y'], 'families': ['f', 'g']},
+               'cards': [{'name': 'cf', 'family': 'f', 'model_variants': ['s3', 'cas'], 'cases': [case('c')]},
+                         {'name': 'cg', 'family': 'g', 'model_variants': ['s3'], 'cases': [case('c', ('s3',))]}],
+               'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': 's3', 'span': {}, 'role': 'fit', 'prediction_commit': None,
+                             'measurement_ids': [], 'status': 'planned'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))],
+               'excluded': []}
+        # s3: x uses kf and kg (evidence for f and g); y uses kf only (evidence for f, none for g).
+        # cas: x is unconditionally not_supported; y uses kf (evidence for f, none for g; card cg does not cover cas).
+        s3 = formulas('variant', {'kind': 'add', 'dim': 'count', 'a': coef('kf'), 'b': coef('kg')}, variant='s3', op='x')
+        s3['cells']['y'] = formulas('variant', coef('kf'), variant='s3', op='y')['cells']['y']
+        cas = formulas('variant', coef('kf'), variant='cas', op='y')
+        cas['cells']['x'] = {'ledger_rows': [], 'allocation': None, 'notes': [],
+                             'states': [{'id': 'not_supported', 'cond': True, 'reason': 'no such operation'}]}
+        pending = []
+        self.assertEqual(cc.support(registry(), cov, [s3, cas], pending=pending), [])
+        self.assertEqual(sorted(pending), [('cas', 'y', 'g'), ('s3', 'y', 'g')])
+        final = cc.support(registry(), cov, [s3, cas], require_formulas=True)
+        self.assertEqual(len(final), 2)
+        self.assertTrue(any('s3/y/g' in p for p in final) and any('cas/y/g' in p for p in final), final)
+        conditional = copy.deepcopy(cas)
+        conditional['cells']['x']['states'][0]['cond'] = {'kind': 'const', 'value': 1, 'dim': 'bool'}
+        self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 4)
 
 
 class EvidenceTest(unittest.TestCase):
@@ -161,6 +193,38 @@ class AccountingTest(unittest.TestCase):
         loose = copy.deepcopy(p)
         loose['tolerance'] = {'abs': {'PutObject': 1}, 'rel': {}}
         self.assertEqual(cc.accounting([stochastic], [loose], node_test_cmd=['true']), [])
+
+
+class BillingTest(unittest.TestCase):
+    def seed(self):
+        with open(os.path.join(HERE, '..', '..', '..', 'docs', 'superpowers', 'cost-model', 'billing-contract.json')) as f:
+            return json.load(f)
+
+    def test_billing_seed_passes(self):
+        self.assertEqual(cc.billing(self.seed()), [])
+
+    def test_billing_detects_missing_url_bad_date_and_unexplained_null(self):
+        missing = self.seed()
+        del missing['presets'][0]['request_classes'][0]['source_url']
+        self.assertTrue(any('source_url' in p for p in cc.billing(missing)))
+        bad_date = self.seed()
+        bad_date['presets'][0]['storage']['checked'] = '24/10/2026'
+        self.assertTrue(any('storage' in p and 'checked' in p for p in cc.billing(bad_date)))
+        null = self.seed()
+        internet = next(t for t in null['presets'][0]['transfer'] if t['id'] == 'internet')
+        del internet['note']
+        self.assertTrue(any('note' in p for p in cc.billing(null)))
+
+    def test_billing_units_enum_and_evidence(self):
+        bad = self.seed()
+        bad['presets'][0]['units'] = 'gib'
+        self.assertTrue(any('units' in p for p in cc.billing(bad)))
+        decimal = self.seed()
+        decimal['presets'][0]['units'] = 'decimal'
+        self.assertEqual(cc.billing(decimal), [])
+        bare = self.seed()
+        del bare['presets'][0]['units_evidence']
+        self.assertTrue(any('units_evidence' in p for p in cc.billing(bare)))
 
 
 class ReproductionTest(unittest.TestCase):

@@ -60,6 +60,17 @@ Worked examples, each a standalone node validated with `validate_node(node, "$",
 
 `coefficients.json` entries (`{id, kind: scalar|table, dim, value, validity, tolerance, evidence, status}`) are produced per report and have no validator here. A table value is `{"index": [...], "values": {"<k1>|<k2>": number}}`.
 
+## Billing contract `units` {#billing-units}
+
+Each full price preset in `billing-contract.json` (`billing/1`) declares `units`, the meaning of "GB" in its prices.
+
+| Value | Meaning | Requirement |
+|---|---|---|
+| `decimal` | 1 GB = 10^9 bytes | none |
+| `binary_gb` | the price list's GB is 2^30 bytes | `units_evidence: {source_url, checked, note}` |
+
+The billing module converts GiB to the preset's unit and must implement both. `aws-us-east-1` uses `binary_gb`: the S3 price list's tier boundaries 51200 GB and 512000 GB are exact multiples of 1024, and no explicit AWS statement was found. `closure_check.py` rejects any other value and a `binary_gb` preset without `units_evidence`.
+
 ## Layout of a report {#report-layout}
 
 See [report-directory.md](report-directory.md).
