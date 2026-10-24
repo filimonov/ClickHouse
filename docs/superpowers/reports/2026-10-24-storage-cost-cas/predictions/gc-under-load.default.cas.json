@@ -5,7 +5,8 @@
   "inputs": {
     "role": "validation",
     "run_in": "Task 7",
-    "compare": "reclaimed_bytes vs retired_bytes over the window"
+    "exact": false,
+    "compare": "Task 7 compares reclaimed_bytes with retired_bytes and the gc cell with the integrated maintenance usage; foreground is not compared (natural merges and GC rounds run together)"
   },
   "expected": {
     "foreground": {

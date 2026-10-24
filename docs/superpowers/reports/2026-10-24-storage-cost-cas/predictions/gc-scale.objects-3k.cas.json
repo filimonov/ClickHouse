@@ -1,0 +1,66 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-scale.objects-3k",
+  "policy": "cas",
+  "inputs": {
+    "parts": 15,
+    "role": "holdout",
+    "basis": "fitted: gc_round_duration fold_base + fold_per_part x parts, tolerance the largest fit residual; requests by the fold rule",
+    "replaces": "gc-scale.objects-5k as the gc_round_duration hold-out (its prediction named no duration)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "objects": 3047,
+      "fold_round_requests": 88,
+      "deferred_round_requests": 18,
+      "round_outcomes": [
+        "Success",
+        "Deferred"
+      ],
+      "fold_round_duration_ms": {
+        "min": 219,
+        "max": 452
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "SYSTEM CAS GC RUN runs one synchronous round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 336
+    },
+    {
+      "claim": "a round with no changed shard and no due graduation is Deferred: no fold",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 303
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "a round that acquires the lease pulses once more",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 182
+    },
+    {
+      "claim": "one pulse is a GET of gc/hb and one conditional PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp",
+      "line": 5076
+    }
+  ],
+  "prediction_commit": "pending"
+}

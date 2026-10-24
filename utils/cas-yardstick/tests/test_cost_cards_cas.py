@@ -21,7 +21,7 @@ EXPERIMENTS = os.path.join(R, 'experiments')
 CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout', 'mix-holdout-2'},
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'drop-60s', 'drop-60s-12', 'merge'}, 'gc-idle': {'populated'},
-         'gc-scale': {'objects-1k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
+         'gc-scale': {'objects-1k', 'objects-3k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
          'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
 P = 'cost-20261024T000000Z/cas/gc-idle/populated/k1/shared'
@@ -65,6 +65,8 @@ class Ledger:
     def __init__(self, path, t0=1_000_000):
         self.path, self.seq, self.t = path, 1, t0
         self.rows = [{'kind': 'mark', 'seq': 1, 'label': 'w', 't_us': t0}]
+        with open(self.path, 'w') as f:
+            f.write(json.dumps(self.rows[0]) + '\n')
 
     def add(self, op, key, caller='r1', up='ok', t=None, **kw):
         self.seq += 1
@@ -280,6 +282,25 @@ class BranchesTest(unittest.TestCase):
             self.assertEqual([r['op'] for r in split['foreground']], ['PutObject'])
             self.assertEqual([r['op'] for r in card.state(ctx)['observer_rows']], ['GetObject'])
 
+    def test_observer_slice_keeps_writes_and_lease_renewals(self):
+        # The placement query only reads; a write or a lease request in its window is someone else's.
+        m = manifest('cas-branches.fresh')
+        card = CARDS['cas-branches']
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Ledger(os.path.join(tmp, 'l'))
+            ctx = ctx_for(m, tmp, led)
+            card.state(ctx)['gc_rounds'] = {'r1': []}
+
+            def query():
+                led.add('GetObject', f'{P}/cas/ref_catalog')
+                led.add('PutObject', f'{P}/gc/server-roots/yardstick-r1/mount')
+                led.add('PutObject', BLOB)
+            card.as_observer(ctx, query)
+            split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
+            self.assertEqual([r['key'] for r in card.state(ctx)['observer_rows']], [f'{P}/cas/ref_catalog'])
+            self.assertEqual([r['key'] for r in split['maintenance']], [f'{P}/gc/server-roots/yardstick-r1/mount'])
+            self.assertEqual([r['key'] for r in split['foreground']], [BLOB])
+
 
 class ScratchPollerTest(unittest.TestCase):
     def test_peak_counts_only_scratch_files_and_survives_removal(self):
@@ -348,7 +369,7 @@ class GcLifecycleTest(unittest.TestCase):
 
 
 class GcIdleTest(unittest.TestCase):
-    def run_idle(self, tmp, round_rows=True, hb_in_round=False):
+    def run_idle(self, tmp, round_rows=True, hb_in_round=False, gc_outside=False, lease_in_round=False):
         m = manifest('gc-idle.populated')
         card = CARDS['gc-idle']
         led = Ledger(os.path.join(tmp, 'l'))
@@ -360,6 +381,10 @@ class GcIdleTest(unittest.TestCase):
             led.add('GetObject', f'{P}/cas/ref_catalog', t=5_000_200)
         if hb_in_round:
             led.add('PutObject', f'{P}/gc/hb', t=5_000_300)
+        if lease_in_round:
+            led.add('PutObject', f'{P}/gc/server-roots/yardstick-r1/mount', t=5_000_400)
+        if gc_outside:
+            led.add('GetObject', f'{P}/gc/state', t=8_000_000)
         led.add('PutObject', f'{P}/gc/server-roots/yardstick-r1/mount', t=6_000_000)
         ctx = ctx_for(m, tmp, led, pass_dir=PASS_DIR)
         st = card.state(ctx)
@@ -389,6 +414,18 @@ class GcIdleTest(unittest.TestCase):
             card, ctx, draft = self.run_idle(tmp, round_rows=False)
             with mock.patch.object(type(card), 'predicted', return_value=pred):
                 self.assertEqual(failing(card.assertions(ctx, draft)), ['round_requests>0'])
+        # A GC request outside every round window breaks the disjointness: only the heartbeat worker runs there.
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft = self.run_idle(tmp, gc_outside=True)
+            with mock.patch.object(type(card), 'predicted', return_value=pred):
+                self.assertEqual(failing(card.assertions(ctx, draft)), ['families_disjoint'])
+            self.assertEqual(draft['observations']['outside_round_families'], ['gc', 'gc_hb'])
+
+    def test_lease_renewal_inside_a_round_is_not_a_round_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft = self.run_idle(tmp, lease_in_round=True)
+            self.assertEqual(draft['observations']['round_requests'], 3)
+            self.assertNotIn('lease', draft['observations']['round_families'])
 
     def test_lease_and_heartbeat_are_maintenance_outside_rounds(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -404,16 +441,29 @@ class GcScaleTest(unittest.TestCase):
     def test_pool_sizes_are_built_deterministically(self):
         card = CARDS['gc-scale']
         sizes = {}
-        for case in ('objects-1k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'):
+        for case in ('objects-1k', 'objects-3k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'):
             m = manifest(f'gc-scale.{case}')
             with tempfile.TemporaryDirectory() as tmp:
                 ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
                 sql = [card.insert_sql(ctx, i) for i in range(card.parts_n(ctx))]
                 self.assertEqual(len(set(sql)), len(sql), case)  # every part has its own values
                 sizes[case] = cas.pool_objects(card.parts_n(ctx), m['params']['columns_n'])
-        for case, target in (('objects-1k', 1000), ('objects-5k', 5000), ('objects-10k', 10000), ('objects-30k', 30000),
+        for case, target in (('objects-1k', 1000), ('objects-3k', 3000), ('objects-5k', 5000), ('objects-10k', 10000), ('objects-30k', 30000),
                              ('objects-100k', 100000)):
             self.assertLess(abs(sizes[case] - target) / target, 0.06, (case, sizes[case]))
+
+    def test_fold_duration_is_an_observation(self):
+        m = manifest('gc-scale.objects-1k')
+        card = CARDS['gc-scale']
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Ledger(os.path.join(tmp, 'l'))
+            ctx = ctx_for(m, tmp, led)
+            st = card.state(ctx)
+            st.update(gc_rounds={'r1': [[1, 2], [3, 4]]}, pool_objects={'blob': 1}, rows=[5000],
+                      finishes=[{'duration_ms': 300, 'outcome': 'Success'}, {'duration_ms': 14, 'outcome': 'Deferred'}],
+                      split_families={'foreground': {}, 'maintenance': {}})
+            obs = card.observe(ctx, {'window': {}})
+            self.assertEqual((obs['fold_round_duration_ms'], obs['deferred_round_duration_ms']), (300, 14))
 
     def test_round_rows_are_split_per_round_window(self):
         m = manifest('gc-scale.objects-1k')
@@ -427,6 +477,31 @@ class GcScaleTest(unittest.TestCase):
             card.state(ctx)['gc_rounds'] = {'r1': [[1_900_000, 2_100_000], [3_900_000, 4_100_000]]}
             rounds = card.round_rows(ctx, {})
             self.assertEqual([r['requests'] for r in rounds], [2, 1])
+
+
+class GcUnderLoadTest(unittest.TestCase):
+    def test_retired_blobs_are_those_no_active_part_references(self):
+        m = manifest('gc-under-load.default')
+        card = CARDS['gc-under-load']
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Ledger(os.path.join(tmp, 'l'))
+            b1, b2 = f'{P}/blobs/ch128/aa/aa1', f'{P}/blobs/ch128/bb/bb2'
+            led.add('PutObject', b1, req_payload_bytes=100)
+            led.add('PutObject', b2, req_payload_bytes=200)
+            led.add('PutObject', MANIFEST, req_payload_bytes=50)
+            led.add('DeleteObject', b1)
+            ctx = ctx_for(m, tmp, led)
+            st = card.state(ctx)
+            # The outdated part all_1_1_0 is still listed; only the active all_1_2_1 keeps references.
+            st.update(placement={'all_1_1_0': {'data.bin': 'ch128/aa/aa1'}, 'all_1_2_1': {'data.bin': 'ch128/bb/bb2'}},
+                      parts=[{'name': 'all_1_1_0', 'active': 0}, {'name': 'all_1_2_1', 'active': 1}],
+                      created={('b', b1): 100, ('b', b2): 200, ('b', MANIFEST): 50},
+                      split_families={'foreground': {}, 'maintenance': {}}, gc_rounds={'r1': []}, finishes=[])
+            obs = card.observe(ctx, {'window': {'t_start_us': 0, 't_end_us': 10_000_000}})
+            self.assertEqual((obs['retired_objects'], obs['retired_bytes'], obs['reclaimed_bytes']), (1, 100, 100))
+            self.assertEqual(obs['retired_manifests'], 0)
+        pred = probes.prediction('gc-under-load.default', 'cas', R)
+        self.assertFalse(pred['inputs']['exact'])
 
 
 class LeaseTest(unittest.TestCase):

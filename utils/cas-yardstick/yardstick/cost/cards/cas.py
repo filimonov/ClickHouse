@@ -44,6 +44,14 @@ GC_START_SQL = ("SELECT round_id, toUnixTimestamp64Micro(event_time_microseconds
                 "WHERE event_type = 'Start' AND event_time_microseconds >= fromUnixTimestamp64Micro({t0}) "
                 "ORDER BY t_us FORMAT JSONEachRow")
 BRANCHES = ('fresh', 'hash_hit', 'adoption', 'inline')
+OBSERVER_OPS = ('GetObject', 'HeadObject', 'ListObjectsV2')
+# A lease renewal is the renewer's own write (Pool/CasMountRuntime.cpp:690) even when it lands inside a GC round.
+RENEWAL = ('lease', 'PutObject')
+
+
+def is_renewal(a) -> bool:
+    family = L.family_of(CAS_FAMILIES, a.get('key'))
+    return bool(family) and (family['name'], a['op']) == RENEWAL
 
 
 def json_rows(client, sql: str) -> list:
@@ -169,7 +177,11 @@ class CasCard(LifecycleCard):
         before = max((r['seq'] for r in window_rows(ctx)), default=ctx.window()['start_seq'])
         out = fn()
         ctx.proxy.flush()
-        self.state(ctx).setdefault('observer_seqs', []).extend(r['seq'] for r in window_rows(ctx) if r['seq'] > before)
+        # The inventory query only reads table state; a write, or any request on a maintenance family (a lease
+        # renewal, a GC pulse), that lands in the same window has another cause and stays in the workload.
+        self.state(ctx).setdefault('observer_seqs', []).extend(
+            r['seq'] for r in window_rows(ctx) if r['seq'] > before and r['op'] in OBSERVER_OPS
+            and not L.is_maintenance(r, CAS_FAMILIES))
         return out
 
     def classify(self, ctx, attempts, families):
@@ -476,7 +488,7 @@ class PopulatedPool(GcCard):
         rows = {a['seq']: a for a in window_rows(ctx)}
         out = []
         for start, finish in st['gc_rounds'].get(self.p(ctx)['replica'], []):
-            inside = [a for a in rows.values() if a['caller'] == self.p(ctx)['replica']
+            inside = [a for a in rows.values() if a['caller'] == self.p(ctx)['replica'] and not is_renewal(a)
                       and start <= a['t_start_us'] <= (math.inf if finish is None else finish)]
             out.append({'start_us': start, 'finish_us': finish, 'requests': len(inside),
                         'by_family': by_family(inside, CAS_FAMILIES).get(self.p(ctx)['replica'], {})})
@@ -516,6 +528,8 @@ class GcScale(PopulatedPool):
                 'fold_round_requests': rounds[0]['requests'] if rounds else None,
                 'deferred_round_requests': rounds[-1]['requests'] if len(rounds) > 1 else None,
                 'round_duration_ms': [int(f['duration_ms']) for f in st['finishes']],
+                'fold_round_duration_ms': int(st['finishes'][0]['duration_ms']) if st['finishes'] else None,
+                'deferred_round_duration_ms': int(st['finishes'][-1]['duration_ms']) if len(st['finishes']) > 1 else None,
                 'round_outcomes': [f['outcome'] for f in st['finishes']]}
 
     def assertions(self, ctx, draft):
@@ -559,10 +573,15 @@ class GcIdle(PopulatedPool):
         rounds = self.round_rows(ctx, draft)
         replica = self.p(ctx)['replica']
         rows = [a for a in window_rows(ctx) if a['caller'] == replica and a['seq'] < draft['window']['end_seq']]
-        hb = [a for a in rows if (L.family_of(CAS_FAMILIES, a.get('key')) or {}).get('name') == 'gc_hb']
+        fam = lambda a: (L.family_of(CAS_FAMILIES, a.get('key')) or {'name': 'batch'})['name']  # noqa: E731
+        hb = [a for a in rows if fam(a) == 'gc_hb']
         in_round = {a['seq'] for a in rows if any(r['start_us'] <= a['t_start_us'] <= (r['finish_us'] or math.inf)
                                                   for r in rounds)}
-        round_rows = [a for a in rows if a['seq'] in in_round and a not in hb]
+        round_rows = [a for a in rows if a['seq'] in in_round and fam(a) != 'gc_hb' and not is_renewal(a)]
+        # Outside every round only the heartbeat worker and the lease renewer run: any other maintenance family
+        # there would mean round traffic leaked out of its window.
+        outside = sorted({fam(a) for a in rows if a['seq'] not in in_round and fam(a) != 'lease'
+                          and (L.is_maintenance(a, CAS_FAMILIES) or not a.get('key'))})
         window_s = (draft['window']['t_end_us'] - draft['window']['t_start_us']) / 1e6
         starts = [int(s['t_us']) for s in st['starts']]
         finishes = {f['round_id']: f for f in st['finishes']}
@@ -579,9 +598,8 @@ class GcIdle(PopulatedPool):
                 'round_requests': len(round_rows),
                 'requests_per_idle_round': (len(round_rows) / len(in_window)) if (in_window := [
                     r for r in rounds if r['start_us'] >= draft['window']['t_start_us']]) else None,
-                'round_families': sorted({(L.family_of(CAS_FAMILIES, a.get('key')) or {'name': 'batch'})['name']
-                                          for a in round_rows}),
-                'heartbeat_families': sorted({'gc_hb' for _ in hb}),
+                'round_families': sorted({fam(a) for a in round_rows}),
+                'outside_round_families': outside,
                 'round_outcomes': [f['outcome'] for f in st['finishes']],
                 'round_duration_ms': [int(f['duration_ms']) for f in st['finishes']],
                 'scheduler_gaps': gaps, 'gc_interval_s': self.p(ctx)['gc_interval_s']}
@@ -591,7 +609,7 @@ class GcIdle(PopulatedPool):
         obs = draft['observations']
         out['heartbeat_requests>0'] = (True, obs['heartbeat_requests'] > 0)
         out['round_requests>0'] = (True, obs['round_requests'] > 0)
-        out['families_disjoint'] = (True, 'gc_hb' not in obs['round_families'] and obs['heartbeat_families'] == ['gc_hb'])
+        out['families_disjoint'] = (True, 'gc_hb' not in obs['round_families'] and obs['outside_round_families'] == ['gc_hb'])
         out['rounds_succeeded'] = (True, bool(obs['round_outcomes']) and all(o in ('Success', 'Deferred')
                                                                                for o in obs['round_outcomes']))
         return out
@@ -651,6 +669,7 @@ class GcUnderLoad(CasCard, NaturalMergeCard):
         NaturalMergeCard.complete(self, ctx, timeout_s)
         st = self.state(ctx)
         st['placement'] = self.as_observer(ctx, lambda: self.placement(ctx))
+        st['parts'] = self.parts(ctx)
         st['created'] = {(r['bucket'], r['key']): r['req_payload_bytes'] for r in window_rows(ctx)
                          if (r['bucket'], r['key']) in cohort([r])}
         self.collect_rounds(ctx)
@@ -659,7 +678,9 @@ class GcUnderLoad(CasCard, NaturalMergeCard):
         st = self.state(ctx)
         # Blobs by placement; a manifest's key does not show in placement, so retired manifests are counted
         # (created less active parts) and their deletions taken from the ledger.
-        referenced = {key for part in st['placement'].values() for key in part.values() if key}
+        # Outdated parts stay listed until their removal; only active parts keep their blobs referenced.
+        active = {p['name'] for p in st['parts'] if p['active']}
+        referenced = {key for name, part in st['placement'].items() if name in active for key in part.values() if key}
         retired = {i: b for i, b in st['created'].items()
                    if '/blobs/' in i[1] and i[1].split('/blobs/', 1)[-1] not in referenced}
         manifests = {i: b for i, b in st['created'].items() if '/cas/manifests/' in i[1]}
@@ -669,7 +690,7 @@ class GcUnderLoad(CasCard, NaturalMergeCard):
         return {**CasCard.observe(self, ctx, draft), 'window_s': window_s,
                 'retired_objects': len(retired), 'retired_bytes': sum(retired.values()),
                 'reclaimed_objects': len(gone), 'reclaimed_bytes': sum(retired[i] for i in gone),
-                'retired_manifests': len(manifests) - len(st['placement']),
+                'retired_manifests': len(manifests) - len(active),
                 'reclaimed_manifests': len(gone_manifests),
                 'gc_finishes': len(self.gc_finishes(ctx))}
 
