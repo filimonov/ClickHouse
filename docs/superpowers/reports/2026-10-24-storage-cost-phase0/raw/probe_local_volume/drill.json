@@ -1,8 +1,8 @@
 {
   "probe": "probe_local_volume",
-  "measurement_id": "cost-20261024T024945Z/local/probe_local_volume/gate/k1",
+  "measurement_id": "cost-20261024T035215Z/local/probe_local_volume/gate/k1",
   "contract": {
-    "code_sha256": "b17d431b96d7b1c37b782270b0cd45d5ad28b20362c8b51deac42355179491e2",
+    "code_sha256": "6236ed37a7f00325bf0f53fbf71d98d376f63d0451bf3bce996130d3dd1b7cec",
     "contract_version": "1",
     "registry_version": "0.1.0",
     "coverage_version": "0.1.0",
@@ -10,15 +10,15 @@
     "evidence": [
       {
         "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
-        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
-        "raw_sha256sums": "7e593cdbf318179dd3e64e8d7b0b60fef0cd6044fe2d92004dce147a7cdce121"
+        "commit": "8a9806dd0b75ba3a5daca197a00a8c7b0955e70a",
+        "raw_sha256sums": "096b95547514d7c949f406293376185be5c5f4ff0849c7ff0057cc5298ff6dfa"
       }
     ]
   },
   "cells": {
     "probe_local_volume": {
       "group": "ebs",
-      "measurement_id": "cost-20261024T024945Z/local/probe_local_volume/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/local/probe_local_volume/gate/k1",
       "state": "ok",
       "unavailable_reasons": [],
       "stage1_inputs": {
@@ -33,9 +33,9 @@
           "part_type": "wide",
           "type_mix": "plain",
           "probe_batch_delete_requests": 0,
-          "probe_block_capacity_gib": 0.23952865600585938,
-          "probe_block_iops": 1944.221313781971,
-          "probe_block_mibps": 121.35504822382852,
+          "probe_block_capacity_gib": 0.23946380615234375,
+          "probe_block_iops": 1931.8278294033346,
+          "probe_block_mibps": 120.58146762178018,
           "probe_delete_requests": 0,
           "probe_get_error_requests": 0,
           "probe_get_requests": 0,
@@ -78,9 +78,9 @@
           ],
           "inputs": {
             "probe_batch_delete_requests": 0,
-            "probe_block_capacity_gib": 0.23952865600585938,
-            "probe_block_iops": 1944.221313781971,
-            "probe_block_mibps": 121.35504822382852,
+            "probe_block_capacity_gib": 0.23946380615234375,
+            "probe_block_iops": 1931.8278294033346,
+            "probe_block_mibps": 120.58146762178018,
             "probe_delete_requests": 0,
             "probe_get_error_requests": 0,
             "probe_get_requests": 0,
@@ -89,7 +89,7 @@
             "probe_list_requests": 0,
             "probe_put_requests": 0
           },
-          "window_s": 1.95451
+          "window_s": 1.967049
         },
         "prediction_parameters": {
           "write_syscall": "write"
@@ -100,12 +100,13 @@
           "row": "block_capacity capacity all",
           "row_type": "block_capacity",
           "op_kind": "capacity",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": null,
           "route": null,
           "branch_taken": [],
-          "predicted": 0.23952865600585938,
+          "predicted": 0.23946380615234375,
           "measured": null,
           "expected": null,
           "exact": null,
@@ -115,12 +116,13 @@
           "row": "block_io iops all",
           "row_type": "block_io",
           "op_kind": "iops",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": null,
           "route": null,
           "branch_taken": [],
-          "predicted": 1944.221313781971,
+          "predicted": 1931.8278294033346,
           "measured": null,
           "expected": null,
           "exact": null,
@@ -130,12 +132,13 @@
           "row": "block_io mibps all",
           "row_type": "block_io",
           "op_kind": "mibps",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": null,
           "route": null,
           "branch_taken": [],
-          "predicted": 121.35504822382852,
+          "predicted": 120.58146762178018,
           "measured": null,
           "expected": null,
           "exact": null,
@@ -146,15 +149,15 @@
         "by_row": {
           "block_capacity capacity": {
             "rows": 1,
-            "quantity": 0.23952865600585938
+            "quantity": 0.23946380615234375
           },
           "block_io iops": {
             "rows": 1,
-            "quantity": 1944.221313781971
+            "quantity": 1931.8278294033346
           },
           "block_io mibps": {
             "rows": 1,
-            "quantity": 121.35504822382852
+            "quantity": 120.58146762178018
           }
         },
         "states": [],
@@ -206,9 +209,9 @@
         "provisioning": {
           "scope": "volume",
           "demand": {
-            "capacity_gib": 0.23952865600585938,
-            "peak_iops": 1944.221313781971,
-            "peak_mibps": 121.35504822382852
+            "capacity_gib": 0.23946380615234375,
+            "peak_iops": 1931.8278294033346,
+            "peak_mibps": 120.58146762178018
           },
           "layout": "single",
           "volumes": 1,
@@ -260,6 +263,7 @@
         "mode": "deterministic",
         "inventory_initial": "declared",
         "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
         "ledger_complete": true,
         "open_attempts": 0,
         "bounds": {
@@ -270,7 +274,7 @@
   },
   "groups": {
     "ebs": {
-      "measurement_id": "cost-20261024T024945Z/local/probe_local_volume/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/local/probe_local_volume/gate/k1",
       "cells": [
         "probe_local_volume"
       ],
@@ -310,9 +314,9 @@
       "provisioning": {
         "scope": "volume",
         "demand": {
-          "capacity_gib": 0.23952865600585938,
-          "peak_iops": 1944.221313781971,
-          "peak_mibps": 121.35504822382852
+          "capacity_gib": 0.23946380615234375,
+          "peak_iops": 1931.8278294033346,
+          "peak_mibps": 120.58146762178018
         },
         "layout": "single",
         "volumes": 1,
@@ -359,7 +363,7 @@
           "basis": "quantity",
           "shares": {
             "probe_local_volume": {
-              "weight": 0.23952865600585938,
+              "weight": 0.23946380615234375,
               "fraction": 1,
               "money": 0.48
             }
@@ -372,7 +376,7 @@
           "basis": "quantity",
           "shares": {
             "probe_local_volume": {
-              "weight": 1944.221313781971,
+              "weight": 1931.8278294033346,
               "fraction": 1,
               "money": 0
             }
@@ -385,7 +389,7 @@
           "basis": "quantity",
           "shares": {
             "probe_local_volume": {
-              "weight": 121.35504822382852,
+              "weight": 120.58146762178018,
               "fraction": 1,
               "money": 0
             }

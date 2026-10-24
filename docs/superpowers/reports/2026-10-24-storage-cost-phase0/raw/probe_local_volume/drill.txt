@@ -10,9 +10,9 @@
    part_type = wide
    type_mix = plain
    probe_batch_delete_requests = 0
-   probe_block_capacity_gib = 0.23952865600585938
-   probe_block_iops = 1944.221313781971
-   probe_block_mibps = 121.35504822382852
+   probe_block_capacity_gib = 0.23946380615234375
+   probe_block_iops = 1931.8278294033346
+   probe_block_mibps = 120.58146762178018
    probe_delete_requests = 0
    probe_get_error_requests = 0
    probe_get_requests = 0
@@ -20,20 +20,20 @@
    probe_head_requests = 0
    probe_list_requests = 0
    probe_put_requests = 0
-2. rows (branch | predicted | measured | expected | exact)
-   block_capacity capacity all | - | 0.23952865600585938 | null | null | null
-   block_io iops all | - | 1944.221313781971 | null | null | null
-   block_io mibps all | - | 121.35504822382852 | null | null | null
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
+   block_capacity capacity all | - | 0.23946380615234375 | null | null | measured
+   block_io iops all | - | 1931.8278294033346 | null | null | measured
+   block_io mibps all | - | 120.58146762178018 | null | null | measured
 3. ledger summary
-   block_capacity capacity: 1 rows, quantity 0.23952865600585938
-   block_io iops: 1 rows, quantity 1944.221313781971
-   block_io mibps: 1 rows, quantity 121.35504822382852
+   block_capacity capacity: 1 rows, quantity 0.23946380615234375
+   block_io iops: 1 rows, quantity 1931.8278294033346
+   block_io mibps: 1 rows, quantity 120.58146762178018
 4. billing (this cell's allocated share)
    block_capacity: 6 GiB-month = $0.48
    block_iops: 0 IOPS-month above baseline = $0
    block_mibps: 0 MiB/s-month above baseline = $0
    total = $0.48
-   evidence: deterministic, inventory declared, ledger complete
+   evidence: deterministic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely

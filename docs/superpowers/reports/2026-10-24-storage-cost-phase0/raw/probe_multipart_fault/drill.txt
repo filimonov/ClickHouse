@@ -9,27 +9,27 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   probe_active_gib_months = 8.141718458425384e-11
+   probe_active_gib_months = 7.816944752013261e-11
    probe_batch_delete_requests = 0
    probe_delete_requests = 0
    probe_get_error_requests = 0
    probe_get_requests = 0
    probe_head_error_requests = 0
    probe_head_requests = 0
-   probe_incomplete_gib_months = 6.185648063342321e-9
+   probe_incomplete_gib_months = 5.897175628286496e-9
    probe_list_requests = 0
    probe_put_requests = 14
-2. rows (branch | predicted | measured | expected | exact)
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
    request CreateMultipartUpload ok | - | 1 | 1 | 1 | true
    request UploadPart ok | - | 2 | 2 | 3 | true
    request UploadPart accepted_dropped | - | 1 | 1 | 3 | true
    request CompleteMultipartUpload not_sent | - | 4 | 4 | 4 | true
    request AbortMultipartUpload not_sent | - | 4 | 4 | 4 | true
-   request PutObject ok | - | 14 | 14 | {"min":1,"max":14} | true
-   request DeleteObject ok | - | 0 | 0 | {"min":0,"max":14} | true
-   request DeleteObjects ok | - | 0 | 0 | {"min":0,"max":1} | true
-   storage incomplete all | - | 6.185648063342321e-9 | 6.185648063342321e-9 | null | true
-   storage active all | - | 8.141718458425384e-11 | 8.141718458425384e-11 | null | true
+   request PutObject ok | - | 14 | 14 | {"min":1,"max":14} | measured
+   request DeleteObject ok | - | 0 | 0 | {"min":0,"max":14} | measured
+   request DeleteObjects ok | - | 0 | 0 | {"min":0,"max":1} | measured
+   storage incomplete all | - | 5.897175628286496e-9 | 5.897175628286496e-9 | null | measured
+   storage active all | - | 7.816944752013261e-11 | 7.816944752013261e-11 | null | measured
 3. ledger summary
    request CreateMultipartUpload: 1 rows, quantity 1
    request UploadPart: 2 rows, quantity 3
@@ -38,13 +38,13 @@
    request PutObject: 1 rows, quantity 14
    request DeleteObject: 1 rows, quantity 0
    request DeleteObjects: 1 rows, quantity 0
-   storage incomplete: 1 rows, quantity 6.185648063342321e-9
-   storage active: 1 rows, quantity 8.141718458425384e-11
+   storage incomplete: 1 rows, quantity 5.897175628286496e-9
+   storage active: 1 rows, quantity 7.816944752013261e-11
 4. billing (this cell's allocated share)
    put_copy_post_list: 18 requests = $0.00008999999999999999
-   storage: 6.267065247926575e-9 GB-month = $1.441425007023112e-10
-   total = $0.00009000014414250069
-   evidence: deterministic, inventory declared, ledger complete
+   storage: 5.975345075806629e-9 GB-month = $1.3743293674355244e-10
+   total = $0.00009000013743293674
+   evidence: deterministic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
@@ -53,10 +53,10 @@
 4. billing lines (billed once for the group)
    put_copy_post_list: 18 requests = $0.00008999999999999999
    delete_cancel: 0 requests = $0
-   storage: 6.267065247926575e-9 GB-month = $1.441425007023112e-10
-   total = $0.00009000014414250069
+   storage: 5.975345075806629e-9 GB-month = $1.3743293674355244e-10
+   total = $0.00009000013743293674
 5. allocation
    put_copy_post_list $0.00008999999999999999 by quantity: probe_multipart_fault $0.00008999999999999999
    delete_cancel $0 by quantity: probe_multipart_fault $0
-   storage $1.441425007023112e-10 by quantity: probe_multipart_fault $1.441425007023112e-10
+   storage $1.3743293674355244e-10 by quantity: probe_multipart_fault $1.3743293674355244e-10
 OK probe_multipart_fault: 1 cell(s)

@@ -1,8 +1,8 @@
 {
   "probe": "probe_s3_insert",
-  "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+  "measurement_id": "cost-20261024T035215Z/s3/probe_s3_insert/gate/k1",
   "contract": {
-    "code_sha256": "b17d431b96d7b1c37b782270b0cd45d5ad28b20362c8b51deac42355179491e2",
+    "code_sha256": "6236ed37a7f00325bf0f53fbf71d98d376f63d0451bf3bce996130d3dd1b7cec",
     "contract_version": "1",
     "registry_version": "0.1.0",
     "coverage_version": "0.1.0",
@@ -10,15 +10,15 @@
     "evidence": [
       {
         "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
-        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
-        "raw_sha256sums": "7e593cdbf318179dd3e64e8d7b0b60fef0cd6044fe2d92004dce147a7cdce121"
+        "commit": "8a9806dd0b75ba3a5daca197a00a8c7b0955e70a",
+        "raw_sha256sums": "096b95547514d7c949f406293376185be5c5f4ff0849c7ff0057cc5298ff6dfa"
       }
     ]
   },
   "cells": {
     "probe_s3_insert": {
       "group": "s3",
-      "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_s3_insert/gate/k1",
       "state": "ok",
       "unavailable_reasons": [],
       "stage1_inputs": {
@@ -32,7 +32,7 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
-          "probe_active_gib_months": 1.0394807199733486e-12,
+          "probe_active_gib_months": 7.743081868210836e-13,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
           "probe_get_error_requests": 0,
@@ -51,7 +51,7 @@
         },
         "observations": {
           "inputs": {
-            "probe_active_gib_months": 1.0394807199733486e-12,
+            "probe_active_gib_months": 7.743081868210836e-13,
             "probe_batch_delete_requests": 0,
             "probe_delete_requests": 0,
             "probe_get_error_requests": 0,
@@ -83,6 +83,7 @@
           "row": "request PutObject ok r1",
           "row_type": "request",
           "op_kind": "PutObject",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": "r1",
           "category": null,
@@ -99,15 +100,16 @@
           "row": "storage active all",
           "row_type": "storage",
           "op_kind": "active",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": "active",
           "route": null,
           "branch_taken": [],
-          "predicted": 1.0394807199733486e-12,
-          "measured": 1.0394807199733486e-12,
+          "predicted": 7.743081868210836e-13,
+          "measured": 7.743081868210836e-13,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         }
       ],
@@ -119,7 +121,7 @@
           },
           "storage active": {
             "rows": 1,
-            "quantity": 1.0394807199733486e-12
+            "quantity": 7.743081868210836e-13
           }
         },
         "states": [],
@@ -144,16 +146,16 @@
           "rule_id": "storage",
           "scope": "variant",
           "unit": "GB-month",
-          "quantity": 1.0394807199733486e-12,
-          "money": 2.3908056559387016e-14,
+          "quantity": 7.743081868210836e-13,
+          "money": 1.7809088296884923e-14,
           "share": 1,
-          "aggregate_quantity": 1.0394807199733486e-12,
-          "aggregate_money": 2.3908056559387016e-14,
+          "aggregate_quantity": 7.743081868210836e-13,
+          "aggregate_money": 1.7809088296884923e-14,
           "basis": "quantity",
-          "note": "active 1.0394807199733486e-12 GiB-months"
+          "note": "active 7.743081868210836e-13 GiB-months"
         }
       ],
-      "billing_total": 0.00005500000002390805,
+      "billing_total": 0.000055000000017809087,
       "stage5_allocation": {
         "group": "s3",
         "provisioning": null
@@ -169,13 +171,14 @@
         "mode": "deterministic",
         "inventory_initial": "declared",
         "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
         "ledger_complete": true,
         "open_attempts": 0,
         "bounds": {
           "byte_hours": {
             "active": {
-              "lower": 0.799586915,
-              "upper": 0.8147777647222221
+              "lower": 0.5869908519444444,
+              "upper": 0.6069271719444442
             }
           }
         }
@@ -184,7 +187,7 @@
   },
   "groups": {
     "s3": {
-      "measurement_id": "cost-20261024T024945Z/s3/probe_s3_insert/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_s3_insert/gate/k1",
       "cells": [
         "probe_s3_insert"
       ],
@@ -202,26 +205,26 @@
         {
           "rule_id": "storage",
           "unit": "GB-month",
-          "quantity": 1.0394807199733486e-12,
-          "money": 2.3908056559387016e-14,
+          "quantity": 7.743081868210836e-13,
+          "money": 1.7809088296884923e-14,
           "tiers": [
             {
               "from_gb": 0,
               "up_to_gb": 51200,
-              "gb": 1.0394807199733486e-12,
+              "gb": 7.743081868210836e-13,
               "price_per_gb_month": 0.023,
-              "money": 2.3908056559387016e-14
+              "money": 1.7809088296884923e-14
             }
           ],
-          "note": "active 1.0394807199733486e-12 GiB-months",
+          "note": "active 7.743081868210836e-13 GiB-months",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "by_category": {
-            "active": 1.0394807199733486e-12
+            "active": 7.743081868210836e-13
           },
           "scope": "variant"
         }
       ],
-      "total": 0.00005500000002390805,
+      "total": 0.000055000000017809087,
       "provisioning": null,
       "allocation": [
         {
@@ -240,13 +243,13 @@
         {
           "rule_id": "storage",
           "scope": "variant",
-          "money": 2.3908056559387016e-14,
+          "money": 1.7809088296884923e-14,
           "basis": "quantity",
           "shares": {
             "probe_s3_insert": {
-              "weight": 1.0394807199733486e-12,
+              "weight": 7.743081868210836e-13,
               "fraction": 1,
-              "money": 2.3908056559387016e-14
+              "money": 1.7809088296884923e-14
             }
           }
         }

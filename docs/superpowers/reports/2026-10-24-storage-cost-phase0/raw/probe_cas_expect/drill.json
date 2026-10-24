@@ -1,0 +1,504 @@
+{
+  "probe": "probe_cas_expect",
+  "measurement_id": "cost-20261024T035215Z/cas/probe_cas_expect/gate/k1",
+  "contract": {
+    "code_sha256": "6236ed37a7f00325bf0f53fbf71d98d376f63d0451bf3bce996130d3dd1b7cec",
+    "contract_version": "1",
+    "registry_version": "0.1.0",
+    "coverage_version": "0.1.0",
+    "billing_version": "0.1.0",
+    "evidence": [
+      {
+        "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "commit": "8a9806dd0b75ba3a5daca197a00a8c7b0955e70a",
+        "raw_sha256sums": "096b95547514d7c949f406293376185be5c5f4ff0849c7ff0057cc5298ff6dfa"
+      }
+    ]
+  },
+  "cells": {
+    "probe_cas_expect": {
+      "group": "cas",
+      "measurement_id": "cost-20261024T035215Z/cas/probe_cas_expect/gate/k1",
+      "state": "ok",
+      "unavailable_reasons": [],
+      "stage1_inputs": {
+        "inputs": {
+          "data_bytes": 20480,
+          "ingest_rate": 500,
+          "retention_days": 40,
+          "replicas": 3,
+          "shards": 1,
+          "cache_enabled": "1",
+          "shape": "narrow",
+          "part_type": "wide",
+          "type_mix": "plain",
+          "probe_active_gib_months": 1.8890960800462887e-12,
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_error_requests": 0,
+          "probe_get_requests": 22,
+          "probe_head_error_requests": 3,
+          "probe_head_requests": 0,
+          "probe_list_requests": 0,
+          "probe_metadata_gib_months": 7.946434100491632e-14,
+          "probe_put_requests": 27
+        },
+        "coefs": {
+          "s3_max_single_part_upload_size": 33554432,
+          "s3_min_upload_part_size": 16777216,
+          "compressed_block_frame_bytes": 25,
+          "cas_expect_continue_min_bytes": 1048576,
+          "cas_inline_cap_bytes": 1048576
+        },
+        "observations": {
+          "expect_negotiated_rows": 24,
+          "expect_negotiated_seqs_distinct": 24,
+          "inputs": {
+            "probe_active_gib_months": 1.8890960800462887e-12,
+            "probe_batch_delete_requests": 0,
+            "probe_delete_requests": 0,
+            "probe_get_error_requests": 0,
+            "probe_get_requests": 22,
+            "probe_head_error_requests": 3,
+            "probe_head_requests": 0,
+            "probe_list_requests": 0,
+            "probe_metadata_gib_months": 7.946434100491632e-14,
+            "probe_put_requests": 27
+          },
+          "request_attribution": {
+            "method": "control_families",
+            "rounds": {
+              "r1": 0
+            }
+          },
+          "window_attempts_by_op": {
+            "GetObject": 22,
+            "HeadObject": 3,
+            "PutObject": 27
+          },
+          "window_rows_by_op": {
+            "GetObject": 22,
+            "HeadObject": 3,
+            "PutObject": 27
+          },
+          "wire_bytes_upper_rows": 0
+        },
+        "prediction_parameters": {
+          "expect_negotiated_rows_min": 1,
+          "blob_files_per_part": [
+            "data.bin"
+          ],
+          "parts": 3
+        }
+      },
+      "stage2_rows": [
+        {
+          "row": "request PutObject ok",
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 27,
+          "measured": 27,
+          "expected": {
+            "min": 6,
+            "max": 2000
+          },
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 27
+        },
+        {
+          "row": "request HeadObject ok",
+          "row_type": "request",
+          "op_kind": "HeadObject",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": {
+            "min": 3,
+            "max": 2000
+          },
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 0
+        },
+        {
+          "row": "request HeadObject client_error",
+          "row_type": "request",
+          "op_kind": "HeadObject",
+          "basis": "measured",
+          "outcome_class": "client_error",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 3,
+          "measured": 3,
+          "expected": {
+            "min": 3,
+            "max": 2000
+          },
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 3
+        },
+        {
+          "row": "request GetObject ok",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 22,
+          "measured": 22,
+          "expected": null,
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 22
+        },
+        {
+          "row": "request GetObject client_error",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "basis": "measured",
+          "outcome_class": "client_error",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": null,
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 0
+        },
+        {
+          "row": "request ListObjectsV2 ok",
+          "row_type": "request",
+          "op_kind": "ListObjectsV2",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": null,
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 0
+        },
+        {
+          "row": "request DeleteObject ok",
+          "row_type": "request",
+          "op_kind": "DeleteObject",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": null,
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 0
+        },
+        {
+          "row": "request DeleteObjects ok",
+          "row_type": "request",
+          "op_kind": "DeleteObjects",
+          "basis": "measured",
+          "outcome_class": "ok",
+          "caller": null,
+          "category": null,
+          "route": null,
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": null,
+          "exact": null,
+          "state": "ok",
+          "group_predicted": 0
+        },
+        {
+          "row": "storage active all",
+          "row_type": "storage",
+          "op_kind": "active",
+          "basis": "measured",
+          "outcome_class": "all",
+          "caller": null,
+          "category": "active",
+          "route": null,
+          "branch_taken": [],
+          "predicted": 1.8890960800462887e-12,
+          "measured": 1.8890960800462887e-12,
+          "expected": null,
+          "exact": null,
+          "state": "ok"
+        },
+        {
+          "row": "storage metadata all",
+          "row_type": "storage",
+          "op_kind": "metadata",
+          "basis": "measured",
+          "outcome_class": "all",
+          "caller": null,
+          "category": "metadata",
+          "route": null,
+          "branch_taken": [],
+          "predicted": 7.946434100491632e-14,
+          "measured": 7.946434100491632e-14,
+          "expected": null,
+          "exact": null,
+          "state": "ok"
+        }
+      ],
+      "stage3_ledger_summary": {
+        "by_row": {
+          "request PutObject": {
+            "rows": 1,
+            "quantity": 27
+          },
+          "request HeadObject": {
+            "rows": 2,
+            "quantity": 3
+          },
+          "request GetObject": {
+            "rows": 2,
+            "quantity": 22
+          },
+          "request ListObjectsV2": {
+            "rows": 1,
+            "quantity": 0
+          },
+          "request DeleteObject": {
+            "rows": 1,
+            "quantity": 0
+          },
+          "request DeleteObjects": {
+            "rows": 1,
+            "quantity": 0
+          },
+          "storage active": {
+            "rows": 1,
+            "quantity": 1.8890960800462887e-12
+          },
+          "storage metadata": {
+            "rows": 1,
+            "quantity": 7.946434100491632e-14
+          }
+        },
+        "states": [],
+        "extrapolated": false,
+        "allocation": null,
+        "notes": []
+      },
+      "stage4_billing_lines": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 27,
+          "money": 0.000135,
+          "share": 1,
+          "aggregate_quantity": 27,
+          "aggregate_money": 0.000135,
+          "basis": "quantity",
+          "note": "0.005 per 1000"
+        },
+        {
+          "rule_id": "get_and_other",
+          "scope": "variant",
+          "unit": "requests",
+          "quantity": 25,
+          "money": 0.00001,
+          "share": 1,
+          "aggregate_quantity": 25,
+          "aggregate_money": 0.00001,
+          "basis": "quantity",
+          "note": "0.0004 per 1000"
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "unit": "GB-month",
+          "quantity": 1.968560421051205e-12,
+          "money": 4.5276889684177715e-14,
+          "share": 1,
+          "aggregate_quantity": 1.968560421051205e-12,
+          "aggregate_money": 4.5276889684177715e-14,
+          "basis": "quantity",
+          "note": "active 1.8890960800462887e-12 GiB-months, metadata 7.946434100491632e-14 GiB-months"
+        }
+      ],
+      "billing_total": 0.00014500000004527688,
+      "stage5_allocation": {
+        "group": "cas",
+        "provisioning": null
+      },
+      "evidence": {
+        "statement": "Measured on one workstation: a local RustFS store behind the ledger proxy and loopback interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.",
+        "limitations": [
+          "process_io includes embedded Keeper on replica 1",
+          "host diskstats include RustFS, proxy and unrelated activity",
+          "directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely",
+          "page cache not dropped (no root)"
+        ],
+        "mode": "stochastic",
+        "inventory_initial": "declared",
+        "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
+        "ledger_complete": true,
+        "open_attempts": 0,
+        "bounds": {
+          "byte_hours": {
+            "active": {
+              "lower": 1.4658358741666666,
+              "upper": 1.480733073611111
+            },
+            "metadata": {
+              "lower": 0.061966430833333336,
+              "upper": 0.0622866561111111
+            }
+          }
+        }
+      }
+    }
+  },
+  "groups": {
+    "cas": {
+      "measurement_id": "cost-20261024T035215Z/cas/probe_cas_expect/gate/k1",
+      "cells": [
+        "probe_cas_expect"
+      ],
+      "lines": [
+        {
+          "rule_id": "put_copy_post_list",
+          "unit": "requests",
+          "quantity": 27,
+          "money": 0.000135,
+          "tiers": null,
+          "note": "0.005 per 1000",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "get_and_other",
+          "unit": "requests",
+          "quantity": 25,
+          "money": 0.00001,
+          "tiers": null,
+          "note": "0.0004 per 1000",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "delete_cancel",
+          "unit": "requests",
+          "quantity": 0,
+          "money": 0,
+          "tiers": null,
+          "note": "0 per 1000",
+          "source_url": "https://aws.amazon.com/s3/pricing/",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "storage",
+          "unit": "GB-month",
+          "quantity": 1.968560421051205e-12,
+          "money": 4.5276889684177715e-14,
+          "tiers": [
+            {
+              "from_gb": 0,
+              "up_to_gb": 51200,
+              "gb": 1.968560421051205e-12,
+              "price_per_gb_month": 0.023,
+              "money": 4.5276889684177715e-14
+            }
+          ],
+          "note": "active 1.8890960800462887e-12 GiB-months, metadata 7.946434100491632e-14 GiB-months",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "by_category": {
+            "active": 1.8890960800462887e-12,
+            "metadata": 7.946434100491632e-14
+          },
+          "scope": "variant"
+        }
+      ],
+      "total": 0.00014500000004527688,
+      "provisioning": null,
+      "allocation": [
+        {
+          "rule_id": "put_copy_post_list",
+          "scope": "variant",
+          "money": 0.000135,
+          "basis": "quantity",
+          "shares": {
+            "probe_cas_expect": {
+              "weight": 27,
+              "fraction": 1,
+              "money": 0.000135
+            }
+          }
+        },
+        {
+          "rule_id": "get_and_other",
+          "scope": "variant",
+          "money": 0.00001,
+          "basis": "quantity",
+          "shares": {
+            "probe_cas_expect": {
+              "weight": 25,
+              "fraction": 1,
+              "money": 0.00001
+            }
+          }
+        },
+        {
+          "rule_id": "delete_cancel",
+          "scope": "variant",
+          "money": 0,
+          "basis": "quantity",
+          "shares": {
+            "probe_cas_expect": {
+              "weight": 0,
+              "fraction": 0,
+              "money": 0
+            }
+          }
+        },
+        {
+          "rule_id": "storage",
+          "scope": "variant",
+          "money": 4.5276889684177715e-14,
+          "basis": "quantity",
+          "shares": {
+            "probe_cas_expect": {
+              "weight": 1.968560421051205e-12,
+              "fraction": 1,
+              "money": 4.5276889684177715e-14
+            }
+          }
+        }
+      ]
+    }
+  },
+  "mismatches": []
+}

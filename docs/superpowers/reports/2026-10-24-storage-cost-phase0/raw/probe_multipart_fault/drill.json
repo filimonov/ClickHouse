@@ -1,8 +1,8 @@
 {
   "probe": "probe_multipart_fault",
-  "measurement_id": "cost-20261024T024945Z/s3/probe_multipart_fault/gate/k1",
+  "measurement_id": "cost-20261024T035215Z/s3/probe_multipart_fault/gate/k1",
   "contract": {
-    "code_sha256": "b17d431b96d7b1c37b782270b0cd45d5ad28b20362c8b51deac42355179491e2",
+    "code_sha256": "6236ed37a7f00325bf0f53fbf71d98d376f63d0451bf3bce996130d3dd1b7cec",
     "contract_version": "1",
     "registry_version": "0.1.0",
     "coverage_version": "0.1.0",
@@ -10,15 +10,15 @@
     "evidence": [
       {
         "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
-        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
-        "raw_sha256sums": "7e593cdbf318179dd3e64e8d7b0b60fef0cd6044fe2d92004dce147a7cdce121"
+        "commit": "8a9806dd0b75ba3a5daca197a00a8c7b0955e70a",
+        "raw_sha256sums": "096b95547514d7c949f406293376185be5c5f4ff0849c7ff0057cc5298ff6dfa"
       }
     ]
   },
   "cells": {
     "probe_multipart_fault": {
       "group": "s3",
-      "measurement_id": "cost-20261024T024945Z/s3/probe_multipart_fault/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_multipart_fault/gate/k1",
       "state": "ok",
       "unavailable_reasons": [],
       "stage1_inputs": {
@@ -32,14 +32,14 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
-          "probe_active_gib_months": 8.141718458425384e-11,
+          "probe_active_gib_months": 7.816944752013261e-11,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
           "probe_get_error_requests": 0,
           "probe_get_requests": 0,
           "probe_head_error_requests": 0,
           "probe_head_requests": 0,
-          "probe_incomplete_gib_months": 6.185648063342321e-9,
+          "probe_incomplete_gib_months": 5.897175628286496e-9,
           "probe_list_requests": 0,
           "probe_put_requests": 14
         },
@@ -53,19 +53,19 @@
         "observations": {
           "expected_exceptions": [
             {
-              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T024945Z/s3/probe_multipart_fault/gate/k1/r1/zul/qmyumqyuvmzdymmxrdyjdndtstffr, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
+              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T035215Z/s3/probe_multipart_fault/gate/k1/r1/lea/zkecugcgulmjxfoabszzmlhwdniju, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
               "type": "RuntimeError"
             }
           ],
           "inputs": {
-            "probe_active_gib_months": 8.141718458425384e-11,
+            "probe_active_gib_months": 7.816944752013261e-11,
             "probe_batch_delete_requests": 0,
             "probe_delete_requests": 0,
             "probe_get_error_requests": 0,
             "probe_get_requests": 0,
             "probe_head_error_requests": 0,
             "probe_head_requests": 0,
-            "probe_incomplete_gib_months": 6.185648063342321e-9,
+            "probe_incomplete_gib_months": 5.897175628286496e-9,
             "probe_list_requests": 0,
             "probe_put_requests": 14
           },
@@ -87,8 +87,8 @@
             "uploads": [
               [
                 "yardstick-cost",
-                "cost-20261024T024945Z/s3/probe_multipart_fault/gate/k1/r1/zul/qmyumqyuvmzdymmxrdyjdndtstffr",
-                "ODBlOGFhZTctY2VlOC00NzdkLWE5MmQtNmJlNjdhOTFlOGYyLjZlMzkwYmIxLTY2ZjUtNDBjOC1iZDk1LTE1NTM2N2NmODcyZngxNzkyODEwMjAzNzQ4MDg4MTg2"
+                "cost-20261024T035215Z/s3/probe_multipart_fault/gate/k1/r1/lea/zkecugcgulmjxfoabszzmlhwdniju",
+                "Zjg2ZGI5ODgtNzY5Ni00YTExLWFiZTAtZDIwNzE1N2UzMDQxLmJjY2Y3YzQyLWM2OGItNDdlNS1iMjA2LTYxMjk3NjBhZjg5MHgxNzkyODEzOTUyMTk1MjA4ODYz"
               ]
             ]
           }
@@ -120,6 +120,7 @@
           "row": "request CreateMultipartUpload ok",
           "row_type": "request",
           "op_kind": "CreateMultipartUpload",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": null,
           "category": null,
@@ -136,6 +137,7 @@
           "row": "request UploadPart ok",
           "row_type": "request",
           "op_kind": "UploadPart",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": null,
           "category": null,
@@ -152,6 +154,7 @@
           "row": "request UploadPart accepted_dropped",
           "row_type": "request",
           "op_kind": "UploadPart",
+          "basis": "predicted",
           "outcome_class": "accepted_dropped",
           "caller": null,
           "category": null,
@@ -168,6 +171,7 @@
           "row": "request CompleteMultipartUpload not_sent",
           "row_type": "request",
           "op_kind": "CompleteMultipartUpload",
+          "basis": "predicted",
           "outcome_class": "not_sent",
           "caller": null,
           "category": null,
@@ -184,6 +188,7 @@
           "row": "request AbortMultipartUpload not_sent",
           "row_type": "request",
           "op_kind": "AbortMultipartUpload",
+          "basis": "predicted",
           "outcome_class": "not_sent",
           "caller": null,
           "category": null,
@@ -200,6 +205,7 @@
           "row": "request PutObject ok",
           "row_type": "request",
           "op_kind": "PutObject",
+          "basis": "measured",
           "outcome_class": "ok",
           "caller": null,
           "category": null,
@@ -211,7 +217,7 @@
             "min": 1,
             "max": 14
           },
-          "exact": true,
+          "exact": null,
           "state": "ok",
           "group_predicted": 14
         },
@@ -219,6 +225,7 @@
           "row": "request DeleteObject ok",
           "row_type": "request",
           "op_kind": "DeleteObject",
+          "basis": "measured",
           "outcome_class": "ok",
           "caller": null,
           "category": null,
@@ -230,7 +237,7 @@
             "min": 0,
             "max": 14
           },
-          "exact": true,
+          "exact": null,
           "state": "ok",
           "group_predicted": 0
         },
@@ -238,6 +245,7 @@
           "row": "request DeleteObjects ok",
           "row_type": "request",
           "op_kind": "DeleteObjects",
+          "basis": "measured",
           "outcome_class": "ok",
           "caller": null,
           "category": null,
@@ -249,7 +257,7 @@
             "min": 0,
             "max": 1
           },
-          "exact": true,
+          "exact": null,
           "state": "ok",
           "group_predicted": 0
         },
@@ -257,30 +265,32 @@
           "row": "storage incomplete all",
           "row_type": "storage",
           "op_kind": "incomplete",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": "incomplete",
           "route": null,
           "branch_taken": [],
-          "predicted": 6.185648063342321e-9,
-          "measured": 6.185648063342321e-9,
+          "predicted": 5.897175628286496e-9,
+          "measured": 5.897175628286496e-9,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         },
         {
           "row": "storage active all",
           "row_type": "storage",
           "op_kind": "active",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": "active",
           "route": null,
           "branch_taken": [],
-          "predicted": 8.141718458425384e-11,
-          "measured": 8.141718458425384e-11,
+          "predicted": 7.816944752013261e-11,
+          "measured": 7.816944752013261e-11,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         }
       ],
@@ -316,11 +326,11 @@
           },
           "storage incomplete": {
             "rows": 1,
-            "quantity": 6.185648063342321e-9
+            "quantity": 5.897175628286496e-9
           },
           "storage active": {
             "rows": 1,
-            "quantity": 8.141718458425384e-11
+            "quantity": 7.816944752013261e-11
           }
         },
         "states": [],
@@ -345,16 +355,16 @@
           "rule_id": "storage",
           "scope": "variant",
           "unit": "GB-month",
-          "quantity": 6.267065247926575e-9,
-          "money": 1.441425007023112e-10,
+          "quantity": 5.975345075806629e-9,
+          "money": 1.3743293674355244e-10,
           "share": 1,
-          "aggregate_quantity": 6.267065247926575e-9,
-          "aggregate_money": 1.441425007023112e-10,
+          "aggregate_quantity": 5.975345075806629e-9,
+          "aggregate_money": 1.3743293674355244e-10,
           "basis": "quantity",
-          "note": "incomplete 6.185648063342321e-9 GiB-months, active 8.141718458425384e-11 GiB-months; incomplete billed as storage"
+          "note": "incomplete 5.897175628286496e-9 GiB-months, active 7.816944752013261e-11 GiB-months; incomplete billed as storage"
         }
       ],
-      "billing_total": 0.00009000014414250069,
+      "billing_total": 0.00009000013743293674,
       "stage5_allocation": {
         "group": "s3",
         "provisioning": null
@@ -370,17 +380,18 @@
         "mode": "deterministic",
         "inventory_initial": "declared",
         "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
         "ledger_complete": true,
         "open_attempts": 0,
         "bounds": {
           "byte_hours": {
             "active": {
-              "lower": 62.61719723666667,
-              "upper": 63.81735648472222
+              "lower": 58.94518801416668,
+              "upper": 61.27167776777781
             },
             "incomplete": {
-              "lower": 3794.0750865044442,
-              "upper": 4848.505994933334
+              "lower": 3567.00888158,
+              "upper": 4622.392204362222
             }
           }
         }
@@ -389,7 +400,7 @@
   },
   "groups": {
     "s3": {
-      "measurement_id": "cost-20261024T024945Z/s3/probe_multipart_fault/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_multipart_fault/gate/k1",
       "cells": [
         "probe_multipart_fault"
       ],
@@ -417,27 +428,27 @@
         {
           "rule_id": "storage",
           "unit": "GB-month",
-          "quantity": 6.267065247926575e-9,
-          "money": 1.441425007023112e-10,
+          "quantity": 5.975345075806629e-9,
+          "money": 1.3743293674355244e-10,
           "tiers": [
             {
               "from_gb": 0,
               "up_to_gb": 51200,
-              "gb": 6.267065247926575e-9,
+              "gb": 5.975345075806629e-9,
               "price_per_gb_month": 0.023,
-              "money": 1.441425007023112e-10
+              "money": 1.3743293674355244e-10
             }
           ],
-          "note": "incomplete 6.185648063342321e-9 GiB-months, active 8.141718458425384e-11 GiB-months; incomplete billed as storage",
+          "note": "incomplete 5.897175628286496e-9 GiB-months, active 7.816944752013261e-11 GiB-months; incomplete billed as storage",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "by_category": {
-            "incomplete": 6.185648063342321e-9,
-            "active": 8.141718458425384e-11
+            "incomplete": 5.897175628286496e-9,
+            "active": 7.816944752013261e-11
           },
           "scope": "variant"
         }
       ],
-      "total": 0.00009000014414250069,
+      "total": 0.00009000013743293674,
       "provisioning": null,
       "allocation": [
         {
@@ -469,13 +480,13 @@
         {
           "rule_id": "storage",
           "scope": "variant",
-          "money": 1.441425007023112e-10,
+          "money": 1.3743293674355244e-10,
           "basis": "quantity",
           "shares": {
             "probe_multipart_fault": {
-              "weight": 6.267065247926575e-9,
+              "weight": 5.975345075806629e-9,
               "fraction": 1,
-              "money": 1.441425007023112e-10
+              "money": 1.3743293674355244e-10
             }
           }
         }

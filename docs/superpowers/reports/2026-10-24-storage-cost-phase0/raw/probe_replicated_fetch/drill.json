@@ -1,8 +1,8 @@
 {
   "probe": "probe_replicated_fetch",
-  "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+  "measurement_id": "cost-20261024T035215Z/s3/probe_replicated_fetch/gate/k1",
   "contract": {
-    "code_sha256": "b17d431b96d7b1c37b782270b0cd45d5ad28b20362c8b51deac42355179491e2",
+    "code_sha256": "6236ed37a7f00325bf0f53fbf71d98d376f63d0451bf3bce996130d3dd1b7cec",
     "contract_version": "1",
     "registry_version": "0.1.0",
     "coverage_version": "0.1.0",
@@ -10,15 +10,15 @@
     "evidence": [
       {
         "report": "docs/superpowers/reports/2026-10-24-storage-cost-phase0",
-        "commit": "8c1674054543686c66e23bf5377e14ff54d66274",
-        "raw_sha256sums": "7e593cdbf318179dd3e64e8d7b0b60fef0cd6044fe2d92004dce147a7cdce121"
+        "commit": "8a9806dd0b75ba3a5daca197a00a8c7b0955e70a",
+        "raw_sha256sums": "096b95547514d7c949f406293376185be5c5f4ff0849c7ff0057cc5298ff6dfa"
       }
     ]
   },
   "cells": {
     "probe_replicated_fetch.inserts": {
       "group": "s3",
-      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_replicated_fetch/gate/k1",
       "state": "ok",
       "unavailable_reasons": [],
       "stage1_inputs": {
@@ -32,7 +32,7 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
-          "probe_active_gib_months": 2.018266155836675e-12,
+          "probe_active_gib_months": 2.2084059397855852e-12,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
           "probe_get_error_requests": 0,
@@ -43,8 +43,8 @@
           "probe_interserver_to_gib": 2.7194619178771973e-7,
           "probe_list_requests": 0,
           "probe_put_requests": 22,
-          "probe_r1_active_gib_months": 1.2077060265854975e-12,
-          "probe_r2_active_gib_months": 8.10560129251178e-13,
+          "probe_r1_active_gib_months": 1.3653173549398444e-12,
+          "probe_r2_active_gib_months": 8.430885848457414e-13,
           "probe_r2_get_requests": 9
         },
         "coefs": {
@@ -56,7 +56,7 @@
         },
         "observations": {
           "inputs": {
-            "probe_active_gib_months": 2.018266155836675e-12,
+            "probe_active_gib_months": 2.2084059397855852e-12,
             "probe_batch_delete_requests": 0,
             "probe_delete_requests": 0,
             "probe_get_error_requests": 0,
@@ -67,8 +67,8 @@
             "probe_interserver_to_gib": 2.7194619178771973e-7,
             "probe_list_requests": 0,
             "probe_put_requests": 22,
-            "probe_r1_active_gib_months": 1.2077060265854975e-12,
-            "probe_r2_active_gib_months": 8.10560129251178e-13,
+            "probe_r1_active_gib_months": 1.3653173549398444e-12,
+            "probe_r2_active_gib_months": 8.430885848457414e-13,
             "probe_r2_get_requests": 9
           }
         },
@@ -94,6 +94,7 @@
           "row": "request PutObject ok r1",
           "row_type": "request",
           "op_kind": "PutObject",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": "r1",
           "category": null,
@@ -110,15 +111,16 @@
           "row": "storage active all",
           "row_type": "storage",
           "op_kind": "active",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": "active",
           "route": null,
           "branch_taken": [],
-          "predicted": 1.2077060265854975e-12,
-          "measured": 2.018266155836675e-12,
+          "predicted": 1.3653173549398444e-12,
+          "measured": 2.2084059397855852e-12,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         }
       ],
@@ -130,7 +132,7 @@
           },
           "storage active": {
             "rows": 1,
-            "quantity": 1.2077060265854975e-12
+            "quantity": 1.3653173549398444e-12
           }
         },
         "states": [],
@@ -155,16 +157,16 @@
           "rule_id": "storage",
           "scope": "variant",
           "unit": "GB-month",
-          "quantity": 1.2077060265854975e-12,
-          "money": 2.7777238611466438e-14,
-          "share": 0.5983878900673737,
-          "aggregate_quantity": 2.0182661558366755e-12,
-          "aggregate_money": 4.6420121584243535e-14,
+          "quantity": 1.3653173549398444e-12,
+          "money": 3.140229916361642e-14,
+          "share": 0.6182365888186314,
+          "aggregate_quantity": 2.2084059397855856e-12,
+          "aggregate_money": 5.079333661506847e-14,
           "basis": "quantity",
-          "note": "active 2.0182661558366755e-12 GiB-months"
+          "note": "active 2.2084059397855856e-12 GiB-months"
         }
       ],
-      "billing_total": 0.000055000000027777235,
+      "billing_total": 0.00005500000003140229,
       "stage5_allocation": {
         "group": "s3",
         "provisioning": null
@@ -180,13 +182,14 @@
         "mode": "deterministic",
         "inventory_initial": "declared",
         "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
         "ledger_complete": true,
         "open_attempts": 0,
         "bounds": {
           "byte_hours": {
             "active": {
-              "lower": 1.5671867566666666,
-              "upper": 1.5819806519444441
+              "lower": 1.7106409391666666,
+              "upper": 1.73101821
             }
           }
         }
@@ -194,7 +197,7 @@
     },
     "probe_replicated_fetch.recovery": {
       "group": "s3",
-      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_replicated_fetch/gate/k1",
       "state": "ok",
       "unavailable_reasons": [],
       "stage1_inputs": {
@@ -208,7 +211,7 @@
           "shape": "narrow",
           "part_type": "wide",
           "type_mix": "plain",
-          "probe_active_gib_months": 2.018266155836675e-12,
+          "probe_active_gib_months": 2.2084059397855852e-12,
           "probe_batch_delete_requests": 0,
           "probe_delete_requests": 0,
           "probe_get_error_requests": 0,
@@ -219,8 +222,8 @@
           "probe_interserver_to_gib": 2.7194619178771973e-7,
           "probe_list_requests": 0,
           "probe_put_requests": 22,
-          "probe_r1_active_gib_months": 1.2077060265854975e-12,
-          "probe_r2_active_gib_months": 8.10560129251178e-13,
+          "probe_r1_active_gib_months": 1.3653173549398444e-12,
+          "probe_r2_active_gib_months": 8.430885848457414e-13,
           "probe_r2_get_requests": 9
         },
         "coefs": {
@@ -232,7 +235,7 @@
         },
         "observations": {
           "inputs": {
-            "probe_active_gib_months": 2.018266155836675e-12,
+            "probe_active_gib_months": 2.2084059397855852e-12,
             "probe_batch_delete_requests": 0,
             "probe_delete_requests": 0,
             "probe_get_error_requests": 0,
@@ -243,8 +246,8 @@
             "probe_interserver_to_gib": 2.7194619178771973e-7,
             "probe_list_requests": 0,
             "probe_put_requests": 22,
-            "probe_r1_active_gib_months": 1.2077060265854975e-12,
-            "probe_r2_active_gib_months": 8.10560129251178e-13,
+            "probe_r1_active_gib_months": 1.3653173549398444e-12,
+            "probe_r2_active_gib_months": 8.430885848457414e-13,
             "probe_r2_get_requests": 9
           }
         },
@@ -270,6 +273,7 @@
           "row": "request GetObject ok r1",
           "row_type": "request",
           "op_kind": "GetObject",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": "r1",
           "category": null,
@@ -286,6 +290,7 @@
           "row": "request PutObject ok r2",
           "row_type": "request",
           "op_kind": "PutObject",
+          "basis": "predicted",
           "outcome_class": "ok",
           "caller": "r2",
           "category": null,
@@ -302,6 +307,7 @@
           "row": "request GetObject ok r2",
           "row_type": "request",
           "op_kind": "GetObject",
+          "basis": "measured",
           "outcome_class": "ok",
           "caller": "r2",
           "category": null,
@@ -313,7 +319,7 @@
             "min": 8,
             "max": 11
           },
-          "exact": true,
+          "exact": null,
           "state": "ok",
           "group_predicted": 9
         },
@@ -321,21 +327,23 @@
           "row": "storage active all",
           "row_type": "storage",
           "op_kind": "active",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": "active",
           "route": null,
           "branch_taken": [],
-          "predicted": 8.10560129251178e-13,
-          "measured": 2.018266155836675e-12,
+          "predicted": 8.430885848457414e-13,
+          "measured": 2.2084059397855852e-12,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         },
         {
           "row": "transfer interserver_from_target all",
           "row_type": "transfer",
           "op_kind": "interserver_from_target",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": null,
@@ -344,13 +352,14 @@
           "predicted": 0.000029861927032470703,
           "measured": 0.000029861927032470703,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         },
         {
           "row": "transfer interserver_to_target all",
           "row_type": "transfer",
           "op_kind": "interserver_to_target",
+          "basis": "measured",
           "outcome_class": "all",
           "caller": null,
           "category": null,
@@ -359,7 +368,7 @@
           "predicted": 2.7194619178771973e-7,
           "measured": 2.7194619178771973e-7,
           "expected": null,
-          "exact": true,
+          "exact": null,
           "state": "ok"
         }
       ],
@@ -375,7 +384,7 @@
           },
           "storage active": {
             "rows": 1,
-            "quantity": 8.10560129251178e-13
+            "quantity": 8.430885848457414e-13
           },
           "transfer interserver_from_target": {
             "rows": 1,
@@ -420,13 +429,13 @@
           "rule_id": "storage",
           "scope": "variant",
           "unit": "GB-month",
-          "quantity": 8.10560129251178e-13,
-          "money": 1.8642882972777093e-14,
-          "share": 0.4016121099326263,
-          "aggregate_quantity": 2.0182661558366755e-12,
-          "aggregate_money": 4.6420121584243535e-14,
+          "quantity": 8.430885848457414e-13,
+          "money": 1.939103745145205e-14,
+          "share": 0.38176341118136864,
+          "aggregate_quantity": 2.2084059397855856e-12,
+          "aggregate_money": 5.079333661506847e-14,
           "basis": "quantity",
-          "note": "active 2.0182661558366755e-12 GiB-months"
+          "note": "active 2.2084059397855856e-12 GiB-months"
         },
         {
           "rule_id": "ec2_ec2_cross_az",
@@ -441,7 +450,7 @@
           "note": "0.01 per GB, each_direction"
         }
       ],
-      "billing_total": 0.00006330133875088547,
+      "billing_total": 0.00006330133875163362,
       "stage5_allocation": {
         "group": "s3",
         "provisioning": null
@@ -457,13 +466,14 @@
         "mode": "deterministic",
         "inventory_initial": "declared",
         "inventory_note": "objects listed empty; incomplete uploads not enumerable on RustFS rc.3; prior passes abort their uploads from the ledger",
+        "uncertain_identities": 0,
         "ledger_complete": true,
         "open_attempts": 0,
         "bounds": {
           "byte_hours": {
             "active": {
-              "lower": 1.5671867566666666,
-              "upper": 1.5819806519444441
+              "lower": 1.7106409391666666,
+              "upper": 1.73101821
             }
           }
         }
@@ -472,7 +482,7 @@
   },
   "groups": {
     "s3": {
-      "measurement_id": "cost-20261024T024945Z/s3/probe_replicated_fetch/gate/k1",
+      "measurement_id": "cost-20261024T035215Z/s3/probe_replicated_fetch/gate/k1",
       "cells": [
         "probe_replicated_fetch.inserts",
         "probe_replicated_fetch.recovery"
@@ -501,21 +511,21 @@
         {
           "rule_id": "storage",
           "unit": "GB-month",
-          "quantity": 2.0182661558366755e-12,
-          "money": 4.6420121584243535e-14,
+          "quantity": 2.2084059397855856e-12,
+          "money": 5.079333661506847e-14,
           "tiers": [
             {
               "from_gb": 0,
               "up_to_gb": 51200,
-              "gb": 2.0182661558366755e-12,
+              "gb": 2.2084059397855856e-12,
               "price_per_gb_month": 0.023,
-              "money": 4.6420121584243535e-14
+              "money": 5.079333661506847e-14
             }
           ],
-          "note": "active 2.0182661558366755e-12 GiB-months",
+          "note": "active 2.2084059397855856e-12 GiB-months",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "by_category": {
-            "active": 2.0182661558366755e-12
+            "active": 2.2084059397855856e-12
           },
           "scope": "variant"
         },
@@ -530,7 +540,7 @@
           "scope": "variant"
         }
       ],
-      "total": 0.00011830133877866269,
+      "total": 0.00011830133878303592,
       "provisioning": null,
       "allocation": [
         {
@@ -572,18 +582,18 @@
         {
           "rule_id": "storage",
           "scope": "variant",
-          "money": 4.6420121584243535e-14,
+          "money": 5.079333661506847e-14,
           "basis": "quantity",
           "shares": {
             "probe_replicated_fetch.inserts": {
-              "weight": 1.2077060265854975e-12,
-              "fraction": 0.5983878900673737,
-              "money": 2.7777238611466438e-14
+              "weight": 1.3653173549398444e-12,
+              "fraction": 0.6182365888186314,
+              "money": 3.140229916361642e-14
             },
             "probe_replicated_fetch.recovery": {
-              "weight": 8.10560129251178e-13,
-              "fraction": 0.4016121099326263,
-              "money": 1.8642882972777093e-14
+              "weight": 8.430885848457414e-13,
+              "fraction": 0.38176341118136864,
+              "money": 1.939103745145205e-14
             }
           }
         },

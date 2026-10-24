@@ -19,7 +19,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | 1. Ledger | done | this file |
 | 2. Spec review rounds (Codex) until no MAJOR | done | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (applied, rev 4.1); r5: 0 MAJOR, 2 MINOR, READY (applied, rev 4.2). Findings per round 25 → 18 → 15 → 6 → 2 |
 | 3. Implementation plan (`writing-plans`) | done | three plans: `docs/superpowers/plans/2026-10-24-storage-cost-{phase0-rig,research,calculator}.md`; Codex plan review r1: 3 CRITICAL, ~30 MAJOR, 2 MINOR (`tmp/codex_plan_r1_findings.md`) → plans rewritten (frozen schemas in Plan 1 Task 0, experiment manifests, coverage evidence edges, evaluator+billing+drill pulled into phase 0, classic-script distribution, proxy framing, Keeper config, window semantics); r2: 4 CRITICAL, ~24 MAJOR (`tmp/codex_plan_r2_findings.md`) → plans revision 3 (Expect negotiation, traced writes, process generations, bounded replay, table coefficients + lookup, EBS formulas owner, CardContext, cleanup order, manual provisioning path, lock rules, closure in the Node suite). Stop rule: two rounds done; remaining issues are for per-task reviewers |
-| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Tasks 0–14 complete (yardstick 330, tools 38, Node 57 tests); phase-0 gate passed twice (runs 013942Z and 015941Z); Task 15 (Codex phase-0 review + dispositions) in progress 04:05 |
+| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Tasks 0–14 complete; Plan 1 (phase 0): all 16 tasks complete; whole-branch final review (opus): no Critical, 8 Important (CAS control traffic reaching foreground, idle replicas priced, estimate not duration-aware, drill 'exact' on measured rows, unknown sizes priced at zero, --scale unapplied, Expect path unproven live, cubic envelope) + 4 must-fix deferred → single fix wave (opus) running 05:35 with a live gate re-run; then Plan 2 |
 | 5. Umbrella review of the branch | pending | |
 | 6. Look & feel in a browser at several resolutions | pending | |
 | 7. Fix and repeat 5–7 | pending | |
@@ -126,3 +126,33 @@ raw ledger slice (`closure_check.py --mode dev` ok).
   for `presets.js`.
 - **Defects found while fixing:** `contract.load` rejected unconditional (`cond: true`) states; the drill's old
   per-op totals hid outcome swaps; the trace counted 3 pre-window writes as window demand.
+| 2026-10-24 04:56 | Step 4: Task 15 committed (3 commits), task review (opus) running; a RustFS process left by the last gate run was still up on 19121 (started via ensure, marker present) | stopped it with rustfs-bin.sh stop |
+| 2026-10-24 05:16 | Controller verification: live gate on 3c290a1c129 (run 030843Z) exit 0, five PASS; the changed GC-round SQL exercised live; RustFS stopped afterwards | none |
+| 2026-10-24 05:26 | Step 4: Plan 1 final fix wave dispatched ~05:22 (opus); implementer still reading (no file changes yet, normal); no codex/RustFS/own server processes | none |
+| A9 | 2026-10-24 | Task 15 commits (`5be403b1793`, `8c167405454`, `2cc9fd47d12`, `3c290a1c129`) end with `Co-Authored-By: Claude Opus 5.5` instead of the plan's `Claude Fable 5.1` line. History is not rewritten (no amend or rebase on this branch). | recorded; later commits use the plan's line |
+
+### Plan 1 final fix wave {#phase0-final-fix}
+
+The whole-branch review of Plan 1 (8 Important, 4 deferred items to fix before Plan 2, cheap minors) is closed:
+`fae8a736118` (coverage duration floors), `24d9ca2adf3` (rig), `31e5df2070c` (calculator), `64dd8717f92` and
+`8a9806dd0b7` (sixth probe `probe_cas_expect` and its prediction commit). Dispositions per item in
+`docs/superpowers/cost-model/measurement-contract.md` §Review. Gate re-run on the committed code: `cost probe` exit
+0, six PASS, run `cost-20261024T035215Z`, `rig_commit` `8a9806dd0b7`; records refreshed in the phase-0 report.
+
+| Probe | Verdict | Change visible in the record |
+|---|---|---|
+| `probe_s3_insert` | PASS | `replicas: 1` (one server); r1 `PutObject` 11 = 11 |
+| `probe_replicated_fetch` | PASS | unchanged counts; relay r1 32 064 B out, 292 B in |
+| `probe_multipart_fault` | PASS | `replicas: 1`; Create 1, UploadPart 3, Complete 4, Abort 4, exact |
+| `probe_cas_gc_cohort` | PASS | `replicas: 1`; control families now maintenance: r1 foreground Put 187 (maintenance 49), Head 21 (40); 40/40 reclaimed in 14.3 s |
+| `probe_local_volume` | PASS | `replicas: 1`; `write` only, 3 800 calls |
+| `probe_cas_expect` | PASS | 24 `expect_negotiated` rows of 27 PUTs, each one attempt; no GC round; no `wire_bytes_bound: upper` row |
+
+- **Runtime estimate:** P1 25.6 h, P1+P2 59.2 h (about 60.0 h with per-pass overhead), budget 72 h. Every pass is now
+  budgeted at `max(measured median, duration_s)`: 7200 s for `amplification-run`, 600 s for `gc-*` and
+  `replication-*`, 120 s elsewhere. The earlier 14.5 h / 17.8 h put `amplification-run` at minutes.
+- **Cut decision:** no cuts; no quantity or preset disabled. The margin is 12.8 h.
+- **Not changed:** predictions of the five original probes; their values hold on the new code. `probe_cas_expect` is
+  stochastic like the other CAS card: lease renewals may straddle a window mark, which a deterministic card would
+  fail as `window_crossing`.
+| 2026-10-24 05:56 | Step 4: final fix wave active — commits landed up to 8a9806dd0b7 (probe_cas_expect prediction recorded), schemas/billing/contract/ui being edited; no live run yet; no codex/RustFS/own server processes | none |

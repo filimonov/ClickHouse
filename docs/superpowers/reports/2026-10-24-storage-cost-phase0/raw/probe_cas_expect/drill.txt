@@ -1,0 +1,64 @@
+== probe_cas_expect
+1. inputs
+   data_bytes = 20480
+   ingest_rate = 500
+   retention_days = 40
+   replicas = 3
+   shards = 1
+   cache_enabled = 1
+   shape = narrow
+   part_type = wide
+   type_mix = plain
+   probe_active_gib_months = 1.8890960800462887e-12
+   probe_batch_delete_requests = 0
+   probe_delete_requests = 0
+   probe_get_error_requests = 0
+   probe_get_requests = 22
+   probe_head_error_requests = 3
+   probe_head_requests = 0
+   probe_list_requests = 0
+   probe_metadata_gib_months = 7.946434100491632e-14
+   probe_put_requests = 27
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
+   request PutObject ok | - | 27 | 27 | {"min":6,"max":2000} | measured
+   request HeadObject ok | - | 0 | 0 | {"min":3,"max":2000} | measured
+   request HeadObject client_error | - | 3 | 3 | {"min":3,"max":2000} | measured
+   request GetObject ok | - | 22 | 22 | null | measured
+   request GetObject client_error | - | 0 | 0 | null | measured
+   request ListObjectsV2 ok | - | 0 | 0 | null | measured
+   request DeleteObject ok | - | 0 | 0 | null | measured
+   request DeleteObjects ok | - | 0 | 0 | null | measured
+   storage active all | - | 1.8890960800462887e-12 | 1.8890960800462887e-12 | null | measured
+   storage metadata all | - | 7.946434100491632e-14 | 7.946434100491632e-14 | null | measured
+3. ledger summary
+   request PutObject: 1 rows, quantity 27
+   request HeadObject: 2 rows, quantity 3
+   request GetObject: 2 rows, quantity 22
+   request ListObjectsV2: 1 rows, quantity 0
+   request DeleteObject: 1 rows, quantity 0
+   request DeleteObjects: 1 rows, quantity 0
+   storage active: 1 rows, quantity 1.8890960800462887e-12
+   storage metadata: 1 rows, quantity 7.946434100491632e-14
+4. billing (this cell's allocated share)
+   put_copy_post_list: 27 requests = $0.000135
+   get_and_other: 25 requests = $0.00001
+   storage: 1.968560421051205e-12 GB-month = $4.5276889684177715e-14
+   total = $0.00014500000004527688
+   evidence: stochastic, inventory declared, ledger complete, 0 object(s) of unknown size
+   - process_io includes embedded Keeper on replica 1
+   - host diskstats include RustFS, proxy and unrelated activity
+   - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
+   - page cache not dropped (no root)
+== group cas: probe_cas_expect
+4. billing lines (billed once for the group)
+   put_copy_post_list: 27 requests = $0.000135
+   get_and_other: 25 requests = $0.00001
+   delete_cancel: 0 requests = $0
+   storage: 1.968560421051205e-12 GB-month = $4.5276889684177715e-14
+   total = $0.00014500000004527688
+5. allocation
+   put_copy_post_list $0.000135 by quantity: probe_cas_expect $0.000135
+   get_and_other $0.00001 by quantity: probe_cas_expect $0.00001
+   delete_cancel $0 by quantity: probe_cas_expect $0
+   storage $4.5276889684177715e-14 by quantity: probe_cas_expect $4.5276889684177715e-14
+OK probe_cas_expect: 1 cell(s)

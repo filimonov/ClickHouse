@@ -9,60 +9,60 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   probe_active_gib_months = 4.143142398224247e-11
+   probe_active_gib_months = 3.960566530096283e-11
    probe_batch_delete_requests = 2
    probe_delete_requests = 42
-   probe_garbage_gib_months = 2.453139146784238e-9
+   probe_garbage_gib_months = 2.5865062274293236e-9
    probe_get_error_requests = 11
-   probe_get_requests = 381
+   probe_get_requests = 372
    probe_head_error_requests = 20
    probe_head_requests = 41
    probe_list_requests = 14
-   probe_metadata_gib_months = 9.878270635615236e-11
-   probe_put_requests = 237
-2. rows (branch | predicted | measured | expected | exact)
-   request PutObject ok | - | 237 | 237 | {"min":40,"max":2000} | true
-   request HeadObject ok | - | 41 | 41 | {"min":20,"max":2000} | true
-   request HeadObject client_error | - | 20 | 20 | {"min":20,"max":2000} | true
-   request GetObject ok | - | 381 | 381 | null | true
-   request GetObject client_error | - | 11 | 11 | null | true
-   request ListObjectsV2 ok | - | 14 | 14 | null | true
-   request DeleteObject ok | - | 42 | 42 | null | true
-   request DeleteObjects ok | - | 2 | 2 | null | true
-   storage active all | - | 4.143142398224247e-11 | 4.143142398224247e-11 | null | true
-   storage garbage all | - | 2.453139146784238e-9 | 2.453139146784238e-9 | null | true
-   storage metadata all | - | 9.878270635615236e-11 | 9.878270635615236e-11 | null | true
+   probe_metadata_gib_months = 9.739345013159724e-11
+   probe_put_requests = 236
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
+   request PutObject ok | - | 236 | 236 | {"min":40,"max":2000} | measured
+   request HeadObject ok | - | 41 | 41 | {"min":20,"max":2000} | measured
+   request HeadObject client_error | - | 20 | 20 | {"min":20,"max":2000} | measured
+   request GetObject ok | - | 372 | 372 | null | measured
+   request GetObject client_error | - | 11 | 11 | null | measured
+   request ListObjectsV2 ok | - | 14 | 14 | null | measured
+   request DeleteObject ok | - | 42 | 42 | null | measured
+   request DeleteObjects ok | - | 2 | 2 | null | measured
+   storage active all | - | 3.960566530096283e-11 | 3.960566530096283e-11 | null | measured
+   storage garbage all | - | 2.5865062274293236e-9 | 2.5865062274293236e-9 | null | measured
+   storage metadata all | - | 9.739345013159724e-11 | 9.739345013159724e-11 | null | measured
 3. ledger summary
-   request PutObject: 1 rows, quantity 237
+   request PutObject: 1 rows, quantity 236
    request HeadObject: 2 rows, quantity 61
-   request GetObject: 2 rows, quantity 392
+   request GetObject: 2 rows, quantity 383
    request ListObjectsV2: 1 rows, quantity 14
    request DeleteObject: 1 rows, quantity 42
    request DeleteObjects: 1 rows, quantity 2
-   storage active: 1 rows, quantity 4.143142398224247e-11
-   storage garbage: 1 rows, quantity 2.453139146784238e-9
-   storage metadata: 1 rows, quantity 9.878270635615236e-11
+   storage active: 1 rows, quantity 3.960566530096283e-11
+   storage garbage: 1 rows, quantity 2.5865062274293236e-9
+   storage metadata: 1 rows, quantity 9.739345013159724e-11
 4. billing (this cell's allocated share)
-   put_copy_post_list: 251 requests = $0.001255
-   get_and_other: 453 requests = $0.0001812
+   put_copy_post_list: 250 requests = $0.00125
+   get_and_other: 444 requests = $0.0001776
    delete_cancel: 44 requests = $0
-   storage: 2.5933532771226325e-9 GB-month = $5.964712537382054e-11
-   total = $0.0014362000596471255
-   evidence: stochastic, inventory declared, ledger complete
+   storage: 2.7235053428618834e-9 GB-month = $6.264062288582331e-11
+   total = $0.001427600062640623
+   evidence: stochastic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
    - page cache not dropped (no root)
 == group cas: probe_cas_gc_cohort
 4. billing lines (billed once for the group)
-   put_copy_post_list: 251 requests = $0.001255
-   get_and_other: 453 requests = $0.0001812
+   put_copy_post_list: 250 requests = $0.00125
+   get_and_other: 444 requests = $0.0001776
    delete_cancel: 44 requests = $0
-   storage: 2.5933532771226325e-9 GB-month = $5.964712537382054e-11
-   total = $0.0014362000596471255
+   storage: 2.7235053428618834e-9 GB-month = $6.264062288582331e-11
+   total = $0.001427600062640623
 5. allocation
-   put_copy_post_list $0.001255 by quantity: probe_cas_gc_cohort $0.001255
-   get_and_other $0.0001812 by quantity: probe_cas_gc_cohort $0.0001812
+   put_copy_post_list $0.00125 by quantity: probe_cas_gc_cohort $0.00125
+   get_and_other $0.0001776 by quantity: probe_cas_gc_cohort $0.0001776
    delete_cancel $0 by quantity: probe_cas_gc_cohort $0
-   storage $5.964712537382054e-11 by quantity: probe_cas_gc_cohort $5.964712537382054e-11
+   storage $6.264062288582331e-11 by quantity: probe_cas_gc_cohort $6.264062288582331e-11
 OK probe_cas_gc_cohort: 1 cell(s)

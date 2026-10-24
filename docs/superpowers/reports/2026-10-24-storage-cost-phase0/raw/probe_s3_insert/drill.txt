@@ -9,7 +9,7 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   probe_active_gib_months = 1.0394807199733486e-12
+   probe_active_gib_months = 7.743081868210836e-13
    probe_batch_delete_requests = 0
    probe_delete_requests = 0
    probe_get_error_requests = 0
@@ -18,17 +18,17 @@
    probe_head_requests = 0
    probe_list_requests = 0
    probe_put_requests = 11
-2. rows (branch | predicted | measured | expected | exact)
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
    request PutObject ok r1 | - | 11 | 11 | 11 | true
-   storage active all | - | 1.0394807199733486e-12 | 1.0394807199733486e-12 | null | true
+   storage active all | - | 7.743081868210836e-13 | 7.743081868210836e-13 | null | measured
 3. ledger summary
    request PutObject: 1 rows, quantity 11
-   storage active: 1 rows, quantity 1.0394807199733486e-12
+   storage active: 1 rows, quantity 7.743081868210836e-13
 4. billing (this cell's allocated share)
    put_copy_post_list: 11 requests = $0.000054999999999999995
-   storage: 1.0394807199733486e-12 GB-month = $2.3908056559387016e-14
-   total = $0.00005500000002390805
-   evidence: deterministic, inventory declared, ledger complete
+   storage: 7.743081868210836e-13 GB-month = $1.7809088296884923e-14
+   total = $0.000055000000017809087
+   evidence: deterministic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
@@ -36,9 +36,9 @@
 == group s3: probe_s3_insert
 4. billing lines (billed once for the group)
    put_copy_post_list: 11 requests = $0.000054999999999999995
-   storage: 1.0394807199733486e-12 GB-month = $2.3908056559387016e-14
-   total = $0.00005500000002390805
+   storage: 7.743081868210836e-13 GB-month = $1.7809088296884923e-14
+   total = $0.000055000000017809087
 5. allocation
    put_copy_post_list $0.000054999999999999995 by quantity: probe_s3_insert $0.000054999999999999995
-   storage $2.3908056559387016e-14 by quantity: probe_s3_insert $2.3908056559387016e-14
+   storage $1.7809088296884923e-14 by quantity: probe_s3_insert $1.7809088296884923e-14
 OK probe_s3_insert: 1 cell(s)

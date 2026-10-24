@@ -9,7 +9,7 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   probe_active_gib_months = 2.018266155836675e-12
+   probe_active_gib_months = 2.2084059397855852e-12
    probe_batch_delete_requests = 0
    probe_delete_requests = 0
    probe_get_error_requests = 0
@@ -20,20 +20,20 @@
    probe_interserver_to_gib = 2.7194619178771973e-7
    probe_list_requests = 0
    probe_put_requests = 22
-   probe_r1_active_gib_months = 1.2077060265854975e-12
-   probe_r2_active_gib_months = 8.10560129251178e-13
+   probe_r1_active_gib_months = 1.3653173549398444e-12
+   probe_r2_active_gib_months = 8.430885848457414e-13
    probe_r2_get_requests = 9
-2. rows (branch | predicted | measured | expected | exact)
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
    request PutObject ok r1 | - | 11 | 11 | 11 | true
-   storage active all | - | 1.2077060265854975e-12 | 2.018266155836675e-12 | null | true
+   storage active all | - | 1.3653173549398444e-12 | 2.2084059397855852e-12 | null | measured
 3. ledger summary
    request PutObject: 1 rows, quantity 11
-   storage active: 1 rows, quantity 1.2077060265854975e-12
+   storage active: 1 rows, quantity 1.3653173549398444e-12
 4. billing (this cell's allocated share)
    put_copy_post_list: 11 requests = $0.000054999999999999995
-   storage: 1.2077060265854975e-12 GB-month = $2.7777238611466438e-14
-   total = $0.000055000000027777235
-   evidence: deterministic, inventory declared, ledger complete
+   storage: 1.3653173549398444e-12 GB-month = $3.140229916361642e-14
+   total = $0.00005500000003140229
+   evidence: deterministic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
@@ -49,7 +49,7 @@
    shape = narrow
    part_type = wide
    type_mix = plain
-   probe_active_gib_months = 2.018266155836675e-12
+   probe_active_gib_months = 2.2084059397855852e-12
    probe_batch_delete_requests = 0
    probe_delete_requests = 0
    probe_get_error_requests = 0
@@ -60,29 +60,29 @@
    probe_interserver_to_gib = 2.7194619178771973e-7
    probe_list_requests = 0
    probe_put_requests = 22
-   probe_r1_active_gib_months = 1.2077060265854975e-12
-   probe_r2_active_gib_months = 8.10560129251178e-13
+   probe_r1_active_gib_months = 1.3653173549398444e-12
+   probe_r2_active_gib_months = 8.430885848457414e-13
    probe_r2_get_requests = 9
-2. rows (branch | predicted | measured | expected | exact)
+2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)
    request GetObject ok r1 | - | 11 | 11 | 11 | true
    request PutObject ok r2 | - | 11 | 11 | 11 | true
-   request GetObject ok r2 | - | 9 | 9 | {"min":8,"max":11} | true
-   storage active all | - | 8.10560129251178e-13 | 2.018266155836675e-12 | null | true
-   transfer interserver_from_target all | - | 0.000029861927032470703 | 0.000029861927032470703 | null | true
-   transfer interserver_to_target all | - | 2.7194619178771973e-7 | 2.7194619178771973e-7 | null | true
+   request GetObject ok r2 | - | 9 | 9 | {"min":8,"max":11} | measured
+   storage active all | - | 8.430885848457414e-13 | 2.2084059397855852e-12 | null | measured
+   transfer interserver_from_target all | - | 0.000029861927032470703 | 0.000029861927032470703 | null | measured
+   transfer interserver_to_target all | - | 2.7194619178771973e-7 | 2.7194619178771973e-7 | null | measured
 3. ledger summary
    request GetObject: 2 rows, quantity 20
    request PutObject: 1 rows, quantity 11
-   storage active: 1 rows, quantity 8.10560129251178e-13
+   storage active: 1 rows, quantity 8.430885848457414e-13
    transfer interserver_from_target: 1 rows, quantity 0.000029861927032470703
    transfer interserver_to_target: 1 rows, quantity 2.7194619178771973e-7
 4. billing (this cell's allocated share)
    put_copy_post_list: 11 requests = $0.000054999999999999995
    get_and_other: 20 requests = $0.000008000000000000001
-   storage: 8.10560129251178e-13 GB-month = $1.8642882972777093e-14
+   storage: 8.430885848457414e-13 GB-month = $1.939103745145205e-14
    ec2_ec2_cross_az: 0.000030133873224258423 GB = $3.0133873224258423e-7
-   total = $0.00006330133875088547
-   evidence: deterministic, inventory declared, ledger complete
+   total = $0.00006330133875163362
+   evidence: deterministic, inventory declared, ledger complete, 0 object(s) of unknown size
    - process_io includes embedded Keeper on replica 1
    - host diskstats include RustFS, proxy and unrelated activity
    - directory peak is sampled: a file that lives shorter than the sampling interval can be missed entirely
@@ -91,12 +91,12 @@
 4. billing lines (billed once for the group)
    put_copy_post_list: 22 requests = $0.00010999999999999999
    get_and_other: 20 requests = $0.000008000000000000001
-   storage: 2.0182661558366755e-12 GB-month = $4.6420121584243535e-14
+   storage: 2.2084059397855856e-12 GB-month = $5.079333661506847e-14
    ec2_ec2_cross_az: 0.000030133873224258423 GB = $3.0133873224258423e-7
-   total = $0.00011830133877866269
+   total = $0.00011830133878303592
 5. allocation
    put_copy_post_list $0.00010999999999999999 by quantity: probe_replicated_fetch.inserts $0.000054999999999999995, probe_replicated_fetch.recovery $0.000054999999999999995
    get_and_other $0.000008000000000000001 by quantity: probe_replicated_fetch.inserts $0, probe_replicated_fetch.recovery $0.000008000000000000001
-   storage $4.6420121584243535e-14 by quantity: probe_replicated_fetch.inserts $2.7777238611466438e-14, probe_replicated_fetch.recovery $1.8642882972777093e-14
+   storage $5.079333661506847e-14 by quantity: probe_replicated_fetch.inserts $3.140229916361642e-14, probe_replicated_fetch.recovery $1.939103745145205e-14
    ec2_ec2_cross_az $3.0133873224258423e-7 by quantity: probe_replicated_fetch.inserts $0, probe_replicated_fetch.recovery $3.0133873224258423e-7
 OK probe_replicated_fetch: 2 cell(s)
