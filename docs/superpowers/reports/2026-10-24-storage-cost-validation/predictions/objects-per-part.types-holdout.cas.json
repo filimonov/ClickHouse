@@ -1,0 +1,203 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "objects-per-part.types-holdout",
+  "policy": "cas",
+  "inputs": {
+    "parts": 2,
+    "blob_candidates_per_part": 139,
+    "fit_upload_ratios": {
+      "narrow-compact": 1.0,
+      "narrow-wide": 0.8,
+      "wide-compact": 1.0,
+      "wide-wide": 0.5166666666666667,
+      "types-fit-compact": 1.0,
+      "types-fit-wide": 0.5555555555555556
+    },
+    "uploads_per_part_bounds": [
+      71,
+      139
+    ],
+    "basis": "graph rule with the fitted constants; distinct uploads per part bounded by the smallest fitted Wide ratio of uploads to blob candidates (equal-byte mark files collapse) and by the candidates"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 298,
+          "max": 570,
+          "basis": "derived",
+          "reason": "7 per part + 2 per distinct blob upload, 71..139 uploads per part"
+        },
+        "HeadObject": {
+          "min": 148,
+          "max": 284,
+          "basis": "derived",
+          "reason": "6 per table (snapshot) + one per blob file checked, at least one per upload"
+        },
+        "GetObject": {
+          "min": 30,
+          "max": 308,
+          "basis": "derived",
+          "reason": "10 per table + 10 per part, + 1 per hash hit"
+        },
+        "ListObjectsV2": 6
+      }
+    },
+    "observations": {
+      "part_types": [
+        [
+          "t",
+          80000,
+          "Wide"
+        ],
+        [
+          "t",
+          80000,
+          "Wide"
+        ]
+      ]
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "only .bin, .mrk*, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed are blobs; other files up to 1 MiB are inline",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 67
+    },
+    {
+      "claim": "a fresh blob is HEAD, then PUT of the body and PUT of its .meta; a hash hit is HEAD and GET of the .meta",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "a Wide part writes one .bin per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 224
+    },
+    {
+      "claim": "and one marks file per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 140
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "primary.cidx",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "a part is Compact when its bytes are below min_bytes_for_wide_part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "a Nullable column adds a null map stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationNullable.cpp",
+      "line": 53
+    },
+    {
+      "claim": "an Array column adds a size0 stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationArray.cpp",
+      "line": 268
+    },
+    {
+      "claim": "a LowCardinality column adds a dictionary stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationLowCardinality.cpp",
+      "line": 86
+    },
+    {
+      "claim": "a Map is Array(Tuple(keys, values))",
+      "path": "tmp/src-26.8/src/DataTypes/DataTypeMap.cpp",
+      "line": 77
+    },
+    {
+      "claim": "a String column writes its sizes as a separate stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationString.cpp",
+      "line": 692
+    },
+    {
+      "claim": "a JSON column writes its object structure stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationObject.cpp",
+      "line": 198
+    },
+    {
+      "claim": "and its shared data stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationObject.cpp",
+      "line": 261
+    },
+    {
+      "claim": "every skip index of a part is packed into skp_idx.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndicesSerialization.h",
+      "line": 16
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

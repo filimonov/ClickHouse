@@ -1,0 +1,50 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "replication-fetch.insert-3",
+  "card": "replication-fetch",
+  "case_id": "insert-3",
+  "policies": [
+    "s3plain",
+    "cas"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "follower": "r2",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 150000,
+    "setup_inserts": 0,
+    "inserts": 3,
+    "window": "inserts",
+    "statements": [],
+    "replica_settings": {
+      "r1": {},
+      "r2": {}
+    },
+    "expected_path": {
+      "insert": "fetch"
+    },
+    "expected_rows": 450000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Fresh hold-out of acquire_requests and acquire_bytes on s3plain and cas: three inserts of 150 000 rows (6 MB uncompressed each, Compact parts) on r1; r2 fetches them."
+}

@@ -1,0 +1,213 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "merge-natural.validation",
+  "policy": "s3",
+  "inputs": {
+    "merge_effective_fan_in": 6.1437,
+    "merge_effective_fan_in_abs": 0.2502,
+    "merge_fan_in_distribution": "lifecycle coefficient",
+    "merge_result_size_distribution": "lifecycle coefficient",
+    "fit_report": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+    "seed": 20261025
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 704,
+          "max": 1901,
+          "basis": "derived",
+          "reason": "64 inserted Compact parts of 11 objects, then at most 63 merges of at most 19 objects"
+        }
+      }
+    },
+    "observations": {
+      "quiesced": true,
+      "inserted_parts": 64,
+      "inserted_rows": 6400000,
+      "merges": {
+        "basis": "derived",
+        "reason": "every merge takes at least two parts, and the selector merges a pile of equal parts",
+        "min": 1,
+        "max": 63
+      },
+      "fan_in_min": {
+        "basis": "derived",
+        "reason": "at least two parts per merge",
+        "min": 2
+      },
+      "fan_in_max": {
+        "basis": "derived",
+        "reason": "max_parts_to_merge_at_once",
+        "max": 100
+      },
+      "fan_in_distribution": {
+        "reference": {
+          "13-20": 0.0,
+          "2": 0.0,
+          "21+": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0,
+          "6": 0.8801,
+          "7-8": 0.1148,
+          "9-12": 0.0051
+        },
+        "max_tv": 0.3426
+      },
+      "result_size_distribution": {
+        "reference": {
+          "129-256": 0.0162,
+          "17-32": 0.0952,
+          "2-4": 0.0,
+          "257-512": 0.0051,
+          "33-64": 0.0213,
+          "5-8": 0.8282,
+          "513+": 0.0008,
+          "65-128": 0.0315,
+          "9-16": 0.0017
+        },
+        "max_tv": 0.3852
+      },
+      "fan_in_mean": {
+        "min": 5.2727,
+        "max": 7.3636,
+        "basis": "fit",
+        "reason": "per-record means of the merge-natural.default fit (6.27..6.36) widened by one part"
+      },
+      "amplification_bytes": {
+        "model": "rewrite_levels",
+        "fan_in": 6.1437,
+        "abs": 0.2502,
+        "rel": 0
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a natural merge takes at least two parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.cpp",
+      "line": 283
+    },
+    {
+      "claim": "and at most max_parts_to_merge_at_once = 100",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 636
+    },
+    {
+      "claim": "an insert below min_insert_block_size_rows is one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "the type starts Wide; the predicate turns it Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6402
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compact marks with substreams are .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

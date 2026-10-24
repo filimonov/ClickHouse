@@ -1,0 +1,96 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-fetch.insert-3",
+  "policy": "cas",
+  "inputs": {
+    "parts": 3,
+    "part_rows": 150000,
+    "part_type": "Compact",
+    "coefficient": "acquire_requests (replication report)",
+    "scope": "receiver rows; the sender rows of cas keep their fit only"
+  },
+  "expected": {
+    "foreground": {
+      "r2": {
+        "GetObject": {
+          "min": 19,
+          "max": 34,
+          "basis": "derived",
+          "reason": "acquire_requests[cas][insert][receiver][GetObject] x 3 parts"
+        },
+        "PutObject": {
+          "min": 14,
+          "max": 28,
+          "basis": "derived",
+          "reason": "acquire_requests[cas][insert][receiver][PutObject] x 3 parts"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 9,
+          "basis": "derived",
+          "reason": "acquire_requests[cas][insert][receiver][ListObjectsV2] x 3 parts"
+        }
+      }
+    },
+    "observations": {
+      "fetched_parts": 3
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "the sender sends every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "each sent file is read through the disk: one GetObject per object on the sender",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file: one PutObject per file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, checksums, index granularity, primary index and row count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a fetch writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "on a content-addressed disk the sender offers a relink: the manifest, not the blobs",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 425
+    },
+    {
+      "claim": "the receiver builds the part from shared-pool blob references, stages its own manifest and precommits it",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h",
+      "line": 199
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

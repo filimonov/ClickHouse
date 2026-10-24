@@ -1,0 +1,63 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.multipart-abort-75k",
+  "policy": "s3plain",
+  "inputs": {
+    "rows": 75000,
+    "upload_parts": 4,
+    "failing_part": 3,
+    "failed_upload_residue": "s3plain = 0 (replication report)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "CreateMultipartUpload": 1,
+        "AbortMultipartUpload": 1,
+        "PutObject": 14,
+        "UploadPart": {
+          "min": 6,
+          "max": 7,
+          "basis": "derived",
+          "reason": "parts 1 and 2 once, part 3 four times (s3_retry_attempts = 1); part 4 is sent when its buffer fills before the part 3 failure is seen"
+        }
+      }
+    },
+    "observations": {
+      "insert_failed": true,
+      "incomplete_after_window": 0,
+      "uploads_created": 1
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    },
+    {
+      "claim": "a failed write buffer is cancelled and tries to abort its multipart upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 244
+    },
+    {
+      "claim": "the abort sends AbortMultipartUpload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 469
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

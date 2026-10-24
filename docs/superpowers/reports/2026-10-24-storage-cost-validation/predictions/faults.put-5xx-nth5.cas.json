@@ -1,0 +1,51 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.put-5xx-nth5",
+  "policy": "cas",
+  "inputs": {
+    "retry_outcome_mix": "cas|rejected_before_store|PutObject|attempts = 1 extra attempt per fault",
+    "baseline": "faults.none on cas: PutObject 9, GetObject 9, HeadObject 1"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 9,
+          "max": 11,
+          "basis": "derived",
+          "reason": "9 of the insert plus 1 retried attempt; +-1 for the background ref publisher"
+        },
+        "GetObject": {
+          "min": 8,
+          "max": 10,
+          "basis": "derived",
+          "reason": "as faults.none; +-1 for the background ref publisher"
+        },
+        "HeadObject": 1
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

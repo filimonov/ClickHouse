@@ -1,0 +1,57 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "faults.put-5xx-nth5",
+  "card": "faults",
+  "case_id": "put-5xx-nth5",
+  "policies": [
+    "s3plain",
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 100000,
+    "inserts": 1,
+    "expect_insert_failure": false,
+    "expect_retry_chain": {
+      "s3": true,
+      "s3plain": true,
+      "cas": false
+    },
+    "expected_failed_attempts": 1,
+    "faults": [
+      {
+        "caller": "r1",
+        "op": "PutObject",
+        "nth": 5,
+        "action": {
+          "type": "status",
+          "status": 500,
+          "send_upstream": false
+        }
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Fresh hold-out of retry_outcome_mix on s3plain and cas: the insert of faults.put-5xx; the fifth PutObject of r1 is answered 500 without reaching the store."
+}

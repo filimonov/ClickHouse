@@ -1,0 +1,185 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "boundaries.compact-below-bytes",
+  "policy": "cas",
+  "inputs": {
+    "part_bytes_uncompressed": 9437160,
+    "min_level_for_wide_part": 0,
+    "blob_files": 1,
+    "basis": "fit: counts of the calibration run"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "HeadObject": 1,
+        "PutObject": 9,
+        "GetObject": 8
+      }
+    },
+    "observations": {
+      "parts": [
+        {
+          "name": "all_1_1_0",
+          "part_type": "Compact",
+          "rows": 235929,
+          "level": 0,
+          "data_uncompressed_bytes": 9437160,
+          "active": 1
+        }
+      ],
+      "upload_part_sizes": []
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "only .bin, .mrk*, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed are blobs; other files up to 1 MiB are inline",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 67
+    },
+    {
+      "claim": "a fresh blob is HEAD, then PUT of the body and PUT of its .meta; a hash hit is HEAD and GET of the .meta",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "the type starts Wide; the predicate turns it Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6402
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "min_rows_for_wide_part defaults to 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 85
+    },
+    {
+      "claim": "min_level_for_wide_part defaults to 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 82
+    },
+    {
+      "claim": "an insert measures the block in memory: 8 bytes per UInt64 value",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 848
+    },
+    {
+      "claim": "an insert chooses the part format from that size, its rows and its level",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 915
+    },
+    {
+      "claim": "an inserted part of a plain MergeTree is level 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 735
+    },
+    {
+      "claim": "a Compact part reports data.bin uncompressed bytes as its column data",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartCompact.cpp",
+      "line": 155
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compact marks with substreams are .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "PENDING"
+}
