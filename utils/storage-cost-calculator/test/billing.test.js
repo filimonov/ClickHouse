@@ -197,3 +197,10 @@ test('test_pricing_fixtures_exact', () => {
     }
   }
 });
+
+test('test_outcome_mix_validation_and_unknown_outcome', () => {
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1)], P(), 'variant', { GetObject: { ok: 1.5, client_error: -0.5 } }), /GetObject/);
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1)], P(), 'variant', { GetObject: { ok: 'x' } }), /number/);
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1)], P(), 'variant', { GetObject: { okay: 1 } }), /one of/);
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'weird', 1)], P()), /unknown outcome_class/);
+});

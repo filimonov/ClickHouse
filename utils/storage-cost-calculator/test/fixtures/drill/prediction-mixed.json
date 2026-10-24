@@ -1,0 +1,20 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_fixture.case",
+  "policy": "s3_default",
+  "inputs": {
+    "parts_inserted": 1
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 5,
+        "GetObject": {
+          "min": 9,
+          "max": 11
+        }
+      }
+    }
+  },
+  "source_refs": []
+}

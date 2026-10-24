@@ -42,11 +42,16 @@
 
   function billedFractions(r, outcomeMix, free) {
     if (r.outcome_class !== 'all') {
-      const billed = r.outcome_class === 'ok' || (r.outcome_class === 'client_error' && !isFreeOutcome(r, free));
       if (!OUTCOMES.includes(r.outcome_class)) throw new Error(`row ${rowName(r)}: unknown outcome_class`);
+      const billed = r.outcome_class === 'ok' || (r.outcome_class === 'client_error' && !isFreeOutcome(r, free));
       return { billed: billed ? 1 : 0, excluded: { [r.outcome_class]: billed ? 0 : 1 } };
     }
     const mix = (outcomeMix && outcomeMix[r.op_kind]) || { ok: 1 };
+    for (const [k, v] of Object.entries(mix)) {
+      if (!OUTCOMES.includes(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+        throw new Error(`outcome mix for ${r.op_kind}: ${k} must be one of ${OUTCOMES.join(', ')} with a number >= 0, got ${JSON.stringify(v)}`);
+      }
+    }
     const sum = OUTCOMES.reduce((s, k) => s + (mix[k] || 0), 0);
     if (Math.abs(sum - 1) > 1e-6) throw new Error(`outcome mix for ${r.op_kind} must sum to 1, got ${sum}`);
     const billed = (mix.ok || 0) + (isFreeOutcome(r, free) ? 0 : (mix.client_error || 0));

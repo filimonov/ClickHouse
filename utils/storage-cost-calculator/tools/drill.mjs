@@ -141,13 +141,18 @@ function drillCell(op, cell, ctx, record, prediction, preset, problems) {
       return out;
     }
     if (r.row_type !== 'request') return out;
-    const others = rows.some((x) => x.row_type === 'request' && x.op_kind === r.op_kind && x.outcome_class !== r.outcome_class);
-    if (r.outcome_class === 'all' || r.outcome_class === 'ok') out.measured = sumCounts(fg, r.op_kind, others && r.outcome_class === 'ok' ? 'upstream_ok' : 'attempts');
-    else if (r.outcome_class === 'dropped') out.measured = sumCounts(fg, r.op_kind, 'dropped');
-    if (r.outcome_class === 'all' || r.outcome_class === 'ok') out.expected = expectedFor(prediction, r.op_kind);
+    // The prediction counts attempts per op, so ok and all rows compare the op's total predicted requests
+    // (every request row of the op) with the measured attempts. upstream_ok is informational.
+    if (r.outcome_class === 'all' || r.outcome_class === 'ok') {
+      out.measured = sumCounts(fg, r.op_kind, 'attempts');
+      out.upstream_ok = sumCounts(fg, r.op_kind, 'upstream_ok');
+      out.op_predicted = rows.filter((x) => x.row_type === 'request' && x.op_kind === r.op_kind && x.state === 'ok').reduce((t, x) => t + x.quantity, 0);
+      out.expected = expectedFor(prediction, r.op_kind);
+    } else if (r.outcome_class === 'dropped') out.measured = sumCounts(fg, r.op_kind, 'dropped');
     if (out.measured !== null && deterministic) {
-      out.exact = Math.abs(out.predicted - out.measured) <= EPS;
-      if (!out.exact) problems.push(`${op}: row "${out.row}" predicted ${out.predicted} measured ${out.measured}`);
+      const basis = out.op_predicted === undefined ? out.predicted : out.op_predicted;
+      out.exact = Math.abs(basis - out.measured) <= EPS;
+      if (!out.exact) problems.push(`${op}: row "${out.row}" predicted ${basis} measured ${out.measured}`);
       const e = out.expected;
       const inside = e === null || (typeof e === 'number' ? Math.abs(out.measured - e) <= EPS : out.measured >= e.min && out.measured <= e.max);
       if (!inside) problems.push(`${op}: row "${out.row}" measured ${out.measured} is outside the prediction ${JSON.stringify(e)}`);
@@ -217,8 +222,9 @@ function main(argv) {
   // Resolved only when a default path under the report directory is needed.
   const reportDir = () => findReportDir(root, args['report-dir']);
   const model_dir = path.join(root, 'docs', 'superpowers', 'cost-model');
-  const records = fs.readFileSync(jsonl, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l))
-    .filter((r) => r.card === args.probe && r.status === 'ok');
+  const all = fs.readFileSync(jsonl, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l)).filter((r) => r.card === args.probe);
+  const records = all.filter((r) => r.status === 'ok');
+  if (records.length < all.length) console.log(`skipped ${all.length - records.length} non-ok record(s): ${all.filter((r) => r.status !== 'ok').map((r) => `${r.measurement_id} (${r.status})`).join(', ')}`);
   if (!records.length) throw new Error(`no ok record for probe ${args.probe} in ${jsonl}`);
 
   const billingDoc = readJson(args.billing || path.join(model_dir, 'billing-contract.json'));
@@ -242,15 +248,16 @@ function main(argv) {
     const want = args.cell ? args.cell.split('/') : null;
     if (want && want.length === 2 && want[0] !== rec.variant) continue;
     const ops = Object.keys(variantCells).filter((o) => !want || o === want[want.length - 1]);
-    if (!ops.length) { problems.push(`${rec.measurement_id}: no cell ${args.cell} for variant ${rec.variant}`); continue; }
     for (const op of ops) {
-      const key = records.length === 1 ? op : `${rec.policy}/${op}`;
+      const samePolicy = records.filter((x) => x.policy === rec.policy).length > 1;
+      const key = records.length === 1 ? op : samePolicy ? `${rec.policy}/${rec.case_id}/${op}` : `${rec.policy}/${op}`;
       const { ctx } = buildCtx(registry, coefFile, prediction, rec);
       cells[key] = drillCell(key, variantCells[op], ctx, rec, prediction, preset, problems);
       cells[key].measurement_id = rec.measurement_id;
       console.log(printCell(key, cells[key]));
     }
   }
+  if (args.cell && !Object.keys(cells).length && !problems.length) problems.push(`--cell ${args.cell} selected no cell across ${records.length} record(s)`);
   const result = { probe: args.probe, measurement_id: records.map((r) => r.measurement_id).join(','), cells, mismatches: problems };
   if (args.out) fs.writeFileSync(args.out, JSON.stringify(result, null, 2) + '\n');
   if (problems.length) console.error(`MISMATCH (${problems.length}):\n  ${problems.join('\n  ')}`);

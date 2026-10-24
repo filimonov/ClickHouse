@@ -126,3 +126,46 @@ test('test_index_page_template', () => {
   for (const t of ['--bg', '--card', '--ink', '--mute', '--line', '--accent', '--ok', '--warn', '--cls-bytes', '--cls-transfer', '--cls-put', '--cls-get', '--cls-block']) assert.ok(css.includes(`${t}:`), t);
   assert.ok(css.includes(':root:not([data-theme="light"])') && css.includes(':root[data-theme="dark"]'));
 });
+
+test('test_render_escapes_injected_strings', () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const html = ui.renderDrillHtml({
+    probe: evil, measurement_id: evil, mismatches: [evil],
+    cells: { [evil]: {
+      stage1_inputs: { inputs: { [evil]: evil }, coefs: {}, observations: { k: evil } },
+      stage2_rows: [{ row: evil, branch_taken: [evil], predicted: evil, measured: 1, expected: null, exact: evil }],
+      stage3_ledger_summary: { by_row_type: { [evil]: { rows: 1, quantity: 1 } }, states: [{ id: evil, active: true, reason: evil }] },
+      stage4_billing_lines: [{ rule_id: evil, unit: evil, quantity: 1, money: 1, note: evil }], billing_total: 1,
+      stage5_allocation: { layout: evil, volumes: 1, size_gib: 1, iops: 1, mibps: 1, monthly_cost: 1, alternatives: [{ layout: evil, volumes: 1, size_gib: 1, iops: 1, mibps: 1, monthly_cost: 1 }] },
+    } },
+  });
+  assert.equal(html.includes('<img'), false);
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+  assert.equal(ui.renderDrillHtml({ probe: "a'b", cells: {} }).includes("a'b"), false);
+});
+
+test('test_mixed_outcomes_compare_attempts_without_false_mismatch', () => {
+  const args = drillArgs('measurements-mixed.jsonl').map((a) => (a.endsWith('formulas.json') ? path.join(FX, 'formulas-mixed.json')
+    : a.endsWith('prediction.json') ? path.join(FX, 'prediction-mixed.json') : a));
+  const out = path.join(tmp, 'mixed.json');
+  const r = node('drill.mjs', [...args, '--out', out]);
+  assert.equal(r.status, 0, r.stderr);
+  const rows = JSON.parse(fs.readFileSync(out, 'utf8')).cells.insert.stage2_rows;
+  const ok = rows.find((x) => x.op_kind === 'PutObject' && x.outcome_class === 'ok');
+  assert.deepEqual([ok.predicted, ok.op_predicted, ok.measured, ok.upstream_ok, ok.exact], [3, 5, 5, 3, true]);
+  assert.equal(rows.find((x) => x.outcome_class === 'client_error').exact, null);
+});
+
+test('test_cell_selecting_nothing_fails_and_non_ok_records_are_reported', () => {
+  for (const cell of ['ebs/insert', 's3/nope', 'nope']) {
+    const r = node('drill.mjs', drillArgs('measurements.jsonl', ['--cell', cell]));
+    assert.equal(r.status, 1, cell);
+    assert.match(r.stderr, /selected no cell across 1 record/);
+  }
+  const f = path.join(tmp, 'with-failed.jsonl');
+  const lines = fs.readFileSync(path.join(FX, 'measurements.jsonl'), 'utf8').trim().split('\n');
+  fs.writeFileSync(f, `${JSON.stringify({ card: 'probe_fixture', measurement_id: 'bad1', status: 'failed' })}\n${lines[1]}\n`);
+  const r = node('drill.mjs', [f, ...drillArgs('measurements.jsonl').slice(1)]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /skipped 1 non-ok record\(s\): bad1 \(failed\)/);
+});

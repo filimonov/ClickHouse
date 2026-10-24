@@ -1,0 +1,127 @@
+{
+  "schema": "formulas/1",
+  "owner": "fixture",
+  "variant": "s3",
+  "cells": {
+    "insert": {
+      "ledger_rows": [
+        {
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "outcome_class": "ok",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 3,
+            "dim": "count"
+          }
+        },
+        {
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "outcome_class": "client_error",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 2,
+            "dim": "count"
+          }
+        },
+        {
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "outcome_class": "ok",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+              "kind": "input",
+              "id": "parts_inserted",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "const",
+              "value": 10,
+              "dim": "count"
+            }
+          }
+        },
+        {
+          "row_type": "storage",
+          "op_kind": "stored",
+          "outcome_class": "ok",
+          "category": "active",
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 1000,
+            "dim": "GiB_h"
+          }
+        },
+        {
+          "row_type": "transfer",
+          "op_kind": "xfer",
+          "outcome_class": "ok",
+          "category": null,
+          "route": "ec2_ec2_cross_az",
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 100,
+            "dim": "GiB_xfer"
+          }
+        },
+        {
+          "row_type": "block_capacity",
+          "op_kind": "capacity",
+          "outcome_class": "ok",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 50,
+            "dim": "GiB"
+          }
+        },
+        {
+          "row_type": "block_io",
+          "op_kind": "iops",
+          "outcome_class": "ok",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 6000,
+            "dim": "iops"
+          }
+        },
+        {
+          "row_type": "block_io",
+          "op_kind": "mibps",
+          "outcome_class": "ok",
+          "category": null,
+          "route": null,
+          "scope": "variant",
+          "expr": {
+            "kind": "const",
+            "value": 200,
+            "dim": "mibps"
+          }
+        }
+      ],
+      "allocation": null,
+      "states": [],
+      "notes": []
+    }
+  }
+}

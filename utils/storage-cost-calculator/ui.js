@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
 
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   const fmt = (v) => {
     if (typeof v !== 'number') return esc(v);
@@ -29,7 +29,7 @@
 
   function stage2(key, c) {
     const rows = (c.stage2_rows || []).map((r, i) => {
-      const exact = r.exact === null || r.exact === undefined ? 'n/a' : String(r.exact);
+      const exact = r.exact === true ? 'true' : r.exact === false ? 'false' : 'n/a';
       return `<tr data-row="${esc(key)}#${i}" data-exact="${exact}"><td>${esc(r.row)}</td><td>${esc((r.branch_taken || []).join(', ') || '-')}</td>`
         + `<td>${num(r.predicted)}</td><td>${num(r.measured)}</td><td>${expectedText(r.expected)}</td><td>${exact === 'false' ? 'MISMATCH' : exact === 'true' ? 'exact' : '-'}</td></tr>`;
     }).join('');
