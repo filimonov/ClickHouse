@@ -115,10 +115,61 @@
     for (const k of STATE_KEYS) if (!(k in state) || !SHAPE[k](state[k])) return { state: null, problem: formatProblem(`hash payload: missing or ill-typed "${k}"`) };
     const missing = compareManifests(state.manifest, contract.manifest);
     if (missing.length) return { state: null, problem: { kind: 'cannot_reproduce', missing } };
+    const bad = valueProblem(state, contract);
+    if (bad) return { state: null, problem: formatProblem(`hash payload: ${bad}`) };
     return { state, problem: null };
   }
 
-  const urlstate = { encode, decode, STATE_KEYS };
+  const presets = () => (root.SCC && root.SCC.presets) || require('./presets.js');
+  const UNITS = ['second', 'minute', 'hour', 'day', 'month'];
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+  // Values of a decoded state, checked against the loaded contract. Returns the first problem as text, or null.
+  // Inputs outside a measured range are not problems: the page computes them and marks them extrapolated.
+  function valueProblem(state, contract) {
+    const P = presets();
+    if (!own(P.SCENARIOS, state.scenario)) return `unknown scenario ${JSON.stringify(state.scenario)}`;
+    if (!own(P.PRICES, state.price_preset)) return `unknown price preset ${JSON.stringify(state.price_preset)}`;
+    if (!UNITS.includes(state.units)) return `unknown rate unit ${JSON.stringify(state.units)}`;
+    if (state.sweepInput !== null && !own(P.SWEEP_INPUTS, state.sweepInput)) return `unknown sweep input ${JSON.stringify(state.sweepInput)}`;
+    if (state.openCell !== null) {
+      const i = state.openCell.indexOf('.');
+      if (i <= 0 || !contract.variants.includes(state.openCell.slice(0, i)) || !contract.operations.includes(state.openCell.slice(i + 1))) {
+        return `open cell ${JSON.stringify(state.openCell)} is not a variant.operation of this contract`;
+      }
+    }
+    const byId = new Map(contract.registry.map((q) => [q.id, q]));
+    const preset = P.SCENARIOS[state.scenario].values;
+    for (const [where, map] of [['inputs', state.inputs], ['overrides', state.overrides]]) {
+      for (const [id, v] of Object.entries(map)) {
+        const q = byId.get(id);
+        if (!q || q.kind !== 'input') return `${where}: ${JSON.stringify(id)} is not a registry input`;
+        // Hidden rows are model constants: only a preset may set them, and only to its own value.
+        if (q.ui && q.ui.tier === 'hidden' && !(where === 'inputs' && own(preset, id) && preset[id] === v)) return `${where}: ${id} is not a user input`;
+        const x = isObj(v) && own(v, 'value') ? v.value : v;
+        if (isObj(v) && !(Object.keys(v).length === 2 && UNITS.includes(v.per))) return `${where}.${id}: expected a number, a word or {value, per}`;
+        if (typeof x === 'number' ? !Number.isFinite(x) : typeof x !== 'string') return `${where}.${id}: ${JSON.stringify(x)} is not a finite number or a word`;
+        if (typeof x === 'string' && q.value_type === 'enum' && !q.enum.includes(x)) return `${where}.${id}: ${JSON.stringify(x)} is not one of ${q.enum.join(', ')}`;
+        if (typeof x === 'string' && q.value_type === 'number') return `${where}.${id}: ${JSON.stringify(x)} is not a number`;
+      }
+    }
+    const grouped = new Set((contract.precedence || []).flatMap((g) => g.group));
+    for (const id of state.locks) if (typeof id !== 'string' || !grouped.has(id)) return `locks: ${JSON.stringify(id)} is not a member of a precedence group`;
+    for (const [k, v] of Object.entries(state.custom_prices)) {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return `custom price ${k}: ${JSON.stringify(v)} is not a finite number of 0 or more`;
+    }
+    // Edits stay in the state when another price preset is picked, so they are checked whatever the preset is.
+    if (Object.keys(state.custom_prices).length) {
+      try {
+        P.resolvePrice(contract, 'custom', state.custom_prices);
+      } catch (e) {
+        return e.message;
+      }
+    }
+    return null;
+  }
+
+  const urlstate = { encode, decode, STATE_KEYS, UNITS };
   root.SCC = root.SCC || {};
   root.SCC.urlstate = urlstate;
   if (typeof module !== 'undefined' && module.exports) module.exports = urlstate;

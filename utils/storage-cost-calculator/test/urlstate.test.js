@@ -10,15 +10,15 @@ const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 const fullState = () => ({
-  inputs: { data_bytes: 1.5e12, ingest_rate: 50, retention_days: 30, label: 'Ünïcode ✓ данные' },
+  inputs: { data_bytes: 1.5e12, ingest_rate: { value: 50, per: 'hour' }, retention_days: 30, shape: 'wide' },
   locks: ['ingest_rate', 'retention_days'],
-  overrides: { 'cell.x': 0 },
-  scenario: 'aws-us-east-1',
+  overrides: { replicas: 4 },
+  scenario: 'logs',
   price_preset: 'custom',
-  custom_prices: { 'ebs.gp3_gb_month': 0.0825, 's3.put_per_1000': 0.005 },
-  units: 'binary_gb',
-  openCell: null,
-  sweepInput: 'retention_days',
+  custom_prices: { 'block.gp3.price_per_gib_month': 0.0825, 'request_classes.put_copy_post_list.price_per_1000': 0.005 },
+  units: 'hour',
+  openCell: 'ebs.storage',
+  sweepInput: 'data_bytes',
   manifest: clone(contract.manifest),
 });
 
@@ -27,7 +27,7 @@ test('test_roundtrip_full_state_including_custom_prices_and_units', () => {
   const r = urlstate.decode(urlstate.encode(s), contract);
   assert.equal(r.problem, null);
   assert.deepEqual(r.state, s);
-  assert.equal(r.state.units, 'binary_gb');
+  assert.equal(r.state.units, 'hour');
   assert.deepEqual(r.state.custom_prices, s.custom_prices);
 });
 
@@ -89,7 +89,9 @@ test('test_hash_has_no_standard_base64_characters', () => {
   s.inputs.bytes = '\u00fb\u00ff\u00bf\u00ff~~?>>>';
   const h = urlstate.encode(s);
   assert.doesNotMatch(h, /[+/=]/);
-  assert.deepEqual(urlstate.decode(h, contract).state, s);
+  // The bytes survive the encoding; the decoder then refuses the unknown input by name.
+  assert.deepEqual(JSON.parse(Buffer.from(h.slice(4), 'base64url').toString('utf8')).inputs.bytes, s.inputs.bytes);
+  assert.match(urlstate.decode(h, contract).problem.reason, /inputs: "bytes" is not a registry input/);
   assert.match(Buffer.from('\xfb\xff\xbf', 'latin1').toString('base64'), /[+/]/);
 });
 
@@ -118,4 +120,64 @@ test('test_malformed_hash_is_a_problem_not_partial_state', () => {
     assert.equal(r.problem.kind, 'url_format', h);
     assert.equal(r.problem.missing[0].artifact, 'url_format', h);
   }
+});
+
+test('test_out_of_domain_values_are_a_url_format_problem', () => {
+  const cases = [
+    ['sweepInput', (s) => { s.sweepInput = 'foo'; }, /unknown sweep input "foo"/],
+    ['units', (s) => { s.units = 'week'; }, /unknown rate unit "week"/],
+    ['openCell', (s) => { s.openCell = 'foo'; }, /open cell "foo" is not a variant\.operation/],
+    ['openCell operation', (s) => { s.openCell = 'ebs.foo'; }, /open cell "ebs\.foo"/],
+    ['scenario', (s) => { s.scenario = 'aws-us-east-1'; }, /unknown scenario/],
+    ['price preset', (s) => { s.price_preset = 'cheap'; }, /unknown price preset/],
+    ['price path', (s) => { s.custom_prices = { 'x.y': 1 }; }, /price x\.y: no such price field/],
+    ['price NaN', (s) => { s.custom_prices = { 'block.gp3.iops_price': 'NaN' }; }, /custom price block\.gp3\.iops_price: "NaN" is not a finite number/],
+    ['price negative', (s) => { s.custom_prices = { 'block.gp3.iops_price': -1 }; }, /is not a finite number of 0 or more/],
+    ['unknown input', (s) => { s.inputs.label = 'x'; }, /inputs: "label" is not a registry input/],
+    ['enum value', (s) => { s.inputs.shape = 'round'; }, /inputs\.shape: "round" is not one of/],
+    ['number as word', (s) => { s.overrides.replicas = 'many'; }, /overrides\.replicas: "many" is not a number/],
+    ['null input', (s) => { s.inputs.replicas = null; }, /inputs\.replicas: null is not a finite number or a word/],
+    ['rate shape', (s) => { s.inputs.ingest_rate = { value: 1, per: 'fortnight' }; }, /inputs\.ingest_rate: expected a number, a word or \{value, per\}/],
+    ['lock', (s) => { s.locks = ['replicas']; }, /locks: "replicas" is not a member of a precedence group/],
+  ];
+  for (const [name, mutate, re] of cases) {
+    const s = fullState();
+    mutate(s);
+    const r = urlstate.decode(urlstate.encode(s), contract);
+    assert.equal(r.state, null, name);
+    assert.equal(r.problem.kind, 'url_format', name);
+    assert.match(r.problem.reason, re, name);
+  }
+});
+
+test('test_proto_keys_are_rejected_without_pollution', () => {
+  for (const field of ['inputs', 'overrides', 'custom_prices']) {
+    const s = fullState();
+    const text = JSON.stringify(s).replace(`"${field}":{`, `"${field}":{"__proto__":{"polluted":1},`);
+    const enc = new TextEncoder().encode(text);
+    let b = '';
+    for (let i = 0; i < enc.length; i += 3) {
+      const n = (enc[i] << 16) | ((enc[i + 1] || 0) << 8) | (enc[i + 2] || 0);
+      b += ALPHA[(n >> 18) & 63] + ALPHA[(n >> 12) & 63] + (i + 1 < enc.length ? ALPHA[(n >> 6) & 63] : '') + (i + 2 < enc.length ? ALPHA[n & 63] : '');
+    }
+    const r = urlstate.decode(`#v1.${b}`, contract);
+    assert.equal(r.state, null, field);
+    assert.equal(r.problem.kind, 'url_format', field);
+    assert.equal({}.polluted, undefined);
+  }
+});
+
+test('test_hidden_inputs_only_from_the_preset', () => {
+  const c = clone(contract);
+  const q = c.registry.find((x) => x.id === 'merge_size_ratio');
+  q.ui = { tier: 'hidden', name: null, short: 'Final part size in inserts' };
+  const s = fullState();
+  // The logs preset sets merge_size_ratio = 256; the same value is the preset's, another is a user input.
+  s.inputs.merge_size_ratio = 256;
+  assert.equal(urlstate.decode(urlstate.encode(s), c).problem, null);
+  s.inputs.merge_size_ratio = 64;
+  assert.match(urlstate.decode(urlstate.encode(s), c).problem.reason, /inputs: merge_size_ratio is not a user input/);
+  const o = fullState();
+  o.overrides.merge_size_ratio = 256;
+  assert.match(urlstate.decode(urlstate.encode(o), c).problem.reason, /overrides: merge_size_ratio is not a user input/);
 });

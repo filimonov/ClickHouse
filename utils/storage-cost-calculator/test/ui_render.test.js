@@ -355,3 +355,25 @@ test('test_pinned_rule_badge_names_the_source_of_the_rule', () => {
   assert.match(modal('ebs_pinned_by_provider').modal, /<th scope="row">Kind<\/th><td>provider rule<\/td>/);
   assert.match(modal('pinned_by_clickhouse').modal, /<th scope="row">Kind<\/th><td>fixed by ClickHouse<\/td>/);
 });
+
+test('test_a_state_that_throws_never_blanks_the_page', () => {
+  // A link whose values pass decode but fail in compute shows the cannot-reproduce view.
+  const real = globalThis.SCC.urlstate.decode;
+  globalThis.SCC.urlstate.decode = () => ({ state: Object.assign(base(), { openCell: 'nodot' }), problem: null });
+  try {
+    const f = fakeDocument('#v1.x');
+    ui.mount(f.doc, C);
+    assert.equal(f.attrs['body:data-page-state'], 'cannot_reproduce');
+    assert.match(f.boxes.cards.innerHTML, /Cannot reproduce this link/);
+    assert.match(f.boxes.cards.innerHTML, /the state in this link cannot be computed: ui: open cell &quot;nodot&quot;/);
+  } finally {
+    globalThis.SCC.urlstate.decode = real;
+  }
+  // An action that fails in compute returns to the last state that rendered, with the error as a note.
+  const g = fakeDocument('');
+  ui.mount(g.doc, C);
+  g.fire('change', { tagName: 'SELECT', dataset: { action: 'sweep' }, value: 'foo' });
+  assert.equal(g.attrs['body:data-page-state'], 'ok');
+  assert.match(g.boxes.notes.innerHTML, /note-error[^>]*>foo is not a sweep input/);
+  assert.ok(g.boxes.cards.innerHTML.includes('card-total'));
+});
