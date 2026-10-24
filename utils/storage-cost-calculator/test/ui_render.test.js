@@ -163,7 +163,7 @@ test('test_render_prices_missing_shows_quantities_without_money', () => {
   assert.ok(qty.length > 0);
   for (const c of qty) assert.ok(parts.table.includes(`>${esc(c.text)}</button>`), c.text);
   assert.ok(qty.some((c) => /\d/.test(c.text)), 'quantities are numbers');
-  assert.match(parts.chart, /this price preset has no prices/);
+  assert.match(parts.chart, /<select data-action="sweep" disabled>.*this price list has no prices/s);
   assert.equal(/<svg/.test(parts.chart), false);
 });
 
@@ -313,7 +313,11 @@ test('test_page_and_breakeven_document_sweep_the_same_ladder', async () => {
   // A zero value cannot be scaled: no chart, and the page says why.
   const zero = page(base({ sweepInput: 'data_bytes', overrides: { data_bytes: 0 } }));
   assert.equal(zero.vm.chart, null);
-  assert.match(zero.parts.chart, /needs a value above zero/);
+  assert.match(zero.parts.chart, /<select data-action="sweep" disabled>.*<\/select><span class="field-note chart-empty">The chart scales the current value, so it needs a value above zero\.<\/span>/s);
+  // A drawable chart keeps the selector enabled.
+  assert.match(parts.chart, /<select data-action="sweep">/);
+  // The Lock button explains itself.
+  assert.match(page(base()).parts.inputs, /data-action="lock" data-id="data_bytes" aria-pressed="false" title="Lock this value and derive another member">Lock</);
 });
 
 test('test_billing_rows_show_labels_and_given_percentages', () => {

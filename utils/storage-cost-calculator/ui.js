@@ -189,7 +189,8 @@
 
   function renderField(f, page, simple) {
     const lock = f.locked === null || f.locked === undefined || page.cannot_reproduce ? ''
-      : `<button type="button" class="btn btn-small" data-action="lock" data-id="${esc(f.id)}" aria-pressed="${f.locked}">${f.locked ? 'Locked' : 'Lock'}</button>`;
+      : `<button type="button" class="btn btn-small" data-action="lock" data-id="${esc(f.id)}" aria-pressed="${f.locked}"`
+        + ` title="${f.locked ? 'Locked: this value is kept and another member is derived' : 'Lock this value and derive another member'}">${f.locked ? 'Locked' : 'Lock'}</button>`;
     const reset = f.overridden ? `<button type="button" class="btn btn-small" data-action="reset" data-id="${esc(f.id)}">Reset</button>` : '';
     const derived = f.derived && f.derived_text && f.kind === 'input' ? `<p class="field-note">${esc(f.derived_text)}</p>` : '';
     const range = f.range_text || '';
@@ -357,13 +358,16 @@
   function renderChart(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
     const opts = page.sweep_inputs.map((s) => `<option value="${esc(s.id)}"${s.id === page.sweep_input ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
-    const pick = `<label class="field-row"><span class="field-label">Vary</span><select data-action="sweep">${opts}</select></label>`;
     const ch = vm.chart;
-    let body;
-    if (vm.page_state === 'prices_missing') body = '<p class="mute">The chart compares money; this price preset has no prices.</p>';
-    else if (!ch) body = `<p class="mute">${esc(page.sweep_note || 'Choose an input to vary.')}</p>`;
-    else if (!ch.points.some((p) => p.y !== null)) body = '<p class="mute">No column has a monthly total over this range, so there is nothing to draw.</p>';
-    else {
+    let empty = null;
+    if (vm.page_state === 'prices_missing') empty = 'The chart compares money; this price list has no prices.';
+    else if (!ch) empty = page.sweep_note || 'Choose an input to vary.';
+    else if (!ch.points.some((p) => p.y !== null)) empty = 'No column has a monthly total over this range, so there is nothing to draw.';
+    // With nothing to draw, the selector is disabled and says why beside it, so it does not read as a dead control.
+    const pick = `<label class="field-row"><span class="field-label">Vary</span><select data-action="sweep"${empty ? ' disabled' : ''}>${opts}</select>`
+      + `${empty ? `<span class="field-note chart-empty">${esc(empty)}</span>` : ''}</label>`;
+    let body = '';
+    if (!empty) {
       const legend = ch.labels.series.map((s) => `<li><span class="dot v-${esc(s.variant)}"></span>${esc(s.label)}</li>`).join('');
       const ex = ch.extrapolated_points.length ? `<p class="field-note">${badge('extrapolated', 'warn')} Hollow points lie outside a measured range.</p>` : '';
       // Point and crossing texts end in "(extrapolated)" when flagged: they double as SVG tooltips.

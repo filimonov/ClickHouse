@@ -83,6 +83,8 @@ button, input, select { font: inherit; color: inherit; }
 .control .unit { flex: 0 0 auto; width: auto; color: var(--mute); }
 .control select.unit { color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px 4px; }
 .field.is-derived .control input { color: var(--mute); background: var(--soft); }
+.field.is-derived input[type="range"] { accent-color: var(--mute); opacity: 0.6; }
+select:disabled { opacity: 0.6; cursor: not-allowed; }
 .field-note { color: var(--mute); font-size: 13px; margin: 4px 0 0; overflow-wrap: anywhere; }
 .group-note { font-size: 13px; color: var(--mute); background: var(--soft); border-radius: 8px; padding: 6px 10px; }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
