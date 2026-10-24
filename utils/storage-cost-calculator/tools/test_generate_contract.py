@@ -323,6 +323,8 @@ class GenerateTest(unittest.TestCase):
     def test_final_mode_fails_on_what_dev_reports_pending(self):
         self.edit_json(self.cm / "coverage.json", lambda cov: cov["domain"]["variants"].append("cas"))
         (self.rep / "raw/SHA256SUMS").unlink()
+        # setUp copies every calculator script; remove one so a missing code file is exercised.
+        (self.tmp / "code" / "presets.js").unlink()
         pending = (f"{REPORT}: raw/SHA256SUMS missing", "code file presets.js missing",
                    "variant cas: no formulas file lists a supported family")
         code, log = self.run_gc("generate")

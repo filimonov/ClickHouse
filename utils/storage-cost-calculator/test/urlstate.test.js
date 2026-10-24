@@ -70,7 +70,8 @@ test('test_every_manifest_entry_is_compared', () => {
   assert.ok(field(mutate((m) => { m.evidence[0].binary_sha256 = '00'; }), 'binary_sha256'));
   assert.ok(field(mutate((m) => { m.evidence[1].rig_commit = '00'; }), 'rig_commit'));
   assert.ok(field(mutate((m) => { m.code_files['model.js'] = '00'; }), 'code_files.model.js'));
-  assert.ok(field(mutate((m) => { m.code_missing = []; }), 'code_missing'));
+  // Adds an entry: once every code file exists the loaded list is empty, and `[]` would not differ from it.
+  assert.ok(field(mutate((m) => { m.code_missing = [...m.code_missing, 'not-a-file.js']; }), 'code_missing'));
   assert.ok(field(mutate((m) => { delete m.code_files['billing.js']; }), 'code_files.billing.js'));
   // Loaded side lacking an entry.
   const loaded = clone(contract);
