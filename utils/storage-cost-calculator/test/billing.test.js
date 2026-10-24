@@ -33,8 +33,9 @@ test('test_outcome_mix_split_and_free_list', () => {
   const r = billing.bill([row('request', 'GetObject', 'all', 8000000)], P(), 'variant', mix);
   assert.equal(line(r, 'get_and_other').quantity, 6000000);
   close(line(r, 'get_and_other').money, 2.4);
-  // Default mix: everything is ok.
-  assert.equal(line(billing.bill([row('request', 'GetObject', 'all', 1000)], P()), 'get_and_other').quantity, 1000);
+  // No mix: the billed share is unknown, so billing fails instead of assuming everything is ok.
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1000)], P()), /an all-outcomes row needs an outcome mix for GetObject, and none is given/);
+  assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1000)], P(), 'variant', { PutObject: { ok: 1 } }), /outcome mix for GetObject/);
   // A free-listed client error is not billed; an unlisted one is; 5XX never.
   const rows = [row('request', 'GetObject', 'client_error', 100, { status: 403, s3_code: 'SignatureDoesNotMatch' }),
     row('request', 'GetObject', 'client_error', 40, { status: 404, s3_code: 'NoSuchKey' }),
@@ -282,7 +283,7 @@ test('test_block_lines_scale_with_replicas', () => {
   assert.match(a1.note, /^[a-z0-9_]+: 1 replica × \(\d+ x \d+ GiB, \d+ IOPS, \d+ MiB\/s\)$/);
   assert.match(a2.note, /: 2 replicas × \(/);
   // Non-block rows are not scaled.
-  const req = row('request', 'GetObject', 'all', 1000);
+  const req = row('request', 'GetObject', 'ok', 1000);
   close(billing.billVariant([req, ...rows], P(), null, null, { replicas: 2 }).lines.find((l) => l.rule_id === 'get_and_other').money,
     billing.billVariant([req], P(), null, null, { replicas: 1 }).lines.find((l) => l.rule_id === 'get_and_other').money);
 });
@@ -293,7 +294,7 @@ test('test_block_rows_need_explicit_replicas', () => {
     assert.throws(() => billing.billVariant(rows, P(), null, null, o), /replicas/, JSON.stringify(o));
   }
   // Without block rows replicas is not needed.
-  assert.doesNotThrow(() => billing.billVariant([row('request', 'GetObject', 'all', 1)], P(), null, null));
+  assert.doesNotThrow(() => billing.billVariant([row('request', 'GetObject', 'ok', 1)], P(), null, null));
 });
 
 test('test_allocation_keeps_the_outcome_mix', () => {
@@ -326,4 +327,14 @@ test('test_minimum_volume_goes_to_the_cells_that_declared_block_rows_even_at_zer
   // With no block row anywhere the money still has no cell.
   const none = billing.allocate(b.lines, [{ key: 'reads', name: 'reads', rows: [other] }], P(), null);
   assert.match(none.problems.join(';'), /block_capacity money .* has no cell to allocate to/);
+});
+
+test('test_zero_block_demand_bills_the_volume_floor_only', () => {
+  const rows = [row('block_capacity', 'capacity', 'ok', 0), row('block_io', 'iops', 'ok', 0), row('block_io', 'mibps', 'ok', 0)];
+  const b = billing.billVariant(rows, P(), null, null, { replicas: 2 });
+  assert.equal(line(b, 'block_iops').money, 0);
+  assert.equal(line(b, 'block_mibps').money, 0);
+  const cap = line(b, 'block_capacity');
+  assert.ok(cap.money > 0, 'a volume has a minimum size');
+  close(cap.money, 2 * b.provisioning.per_replica.volumes * b.provisioning.per_replica.size_gib * P().block.gp3.price_per_gib_month);
 });

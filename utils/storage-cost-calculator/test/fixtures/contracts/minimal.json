@@ -1657,7 +1657,7 @@
      {
       "row_type": "request",
       "op_kind": "PutObject",
-      "outcome_class": "all",
+      "outcome_class": "ok",
       "category": null,
       "route": null,
       "scope": "variant",

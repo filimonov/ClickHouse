@@ -59,8 +59,8 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.deepEqual(stages, [['1', 'Inputs used'], ['2', 'Branch taken per row'], ['3', 'Ledger rows'], ['4', 'Billing lines'], ['5', 'Allocation']]);
   const stage = (n) => parts.drill.slice(parts.drill.indexOf(`data-stage="${n}"`), parts.drill.indexOf(`data-stage="${n + 1}"`) > 0 ? parts.drill.indexOf(`data-stage="${n + 1}"`) : undefined);
   assert.ok(stage(1).includes('<li>inserts_per_month = 1,000'), stage(1));
-  assert.ok(stage(2).includes(esc('request PutObject all: inserts_per_month > 500: true, then taken')), stage(2));
-  assert.ok(stage(3).includes('<li>request PutObject all: 2,000 (predicted)'), stage(3));
+  assert.ok(stage(2).includes(esc('request PutObject ok: inserts_per_month > 500: true, then taken')), stage(2));
+  assert.ok(stage(3).includes('<li>request PutObject ok: 2,000 (predicted)'), stage(3));
   assert.ok(stage(4).includes('<li>PUT, COPY, POST and LIST requests: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)'), stage(4));
   const alloc = vm.drill.stages[4].lines;
   assert.ok(alloc.length > 0);

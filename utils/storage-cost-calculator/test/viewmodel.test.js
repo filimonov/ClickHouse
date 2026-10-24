@@ -144,9 +144,9 @@ test('test_drill_has_five_stages_with_branch_and_allocation', () => {
   assert.ok(inputs.lines.some((l) => l.id === 'puts_per_insert_cas' && l.kind === 'coef' && l.value === 2));
   assert.deepEqual(branch.lines[0].branch_taken, ['then']);
   assert.equal(branch.lines[0].conditions[0].text, 'inserts_per_month > 500: true, then taken');
-  assert.equal(branch.lines[0].row, 'request PutObject all');
+  assert.equal(branch.lines[0].row, 'request PutObject ok');
   assert.equal(ledger.lines[0].basis, 'predicted');
-  assert.equal(ledger.lines[0].text, 'request PutObject all: 2,000 (predicted)');
+  assert.equal(ledger.lines[0].text, 'request PutObject ok: 2,000 (predicted)');
   assert.equal(billingStage.lines[0].rule_id, 'put_copy_post_list');
   assert.equal(billingStage.lines[0].text, 'PUT, COPY, POST and LIST requests: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)');
   assert.equal(allocation.lines[0].basis, 'quantity');

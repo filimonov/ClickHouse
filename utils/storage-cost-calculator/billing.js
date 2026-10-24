@@ -58,7 +58,9 @@
       const billed = isBilled(r.outcome_class, r, free);
       return { billed: billed ? 1 : 0, excluded: { [r.outcome_class]: billed ? 0 : 1 } };
     }
-    const mix = (outcomeMix && outcomeMix[r.op_kind]) || { ok: 1 };
+    // Without a measured mix the billed share is unknown; assuming "all ok" would price errors that may be free.
+    const mix = outcomeMix && outcomeMix[r.op_kind];
+    if (!mix) throw new Error(`row ${rowName(r)}: an all-outcomes row needs an outcome mix for ${r.op_kind}, and none is given`);
     for (const [k, v] of Object.entries(mix)) {
       if (!OUTCOMES.includes(k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
         throw new Error(`outcome mix for ${r.op_kind}: ${k} must be one of ${OUTCOMES.join(', ')} with a number >= 0, got ${JSON.stringify(v)}`);

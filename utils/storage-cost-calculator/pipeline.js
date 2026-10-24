@@ -26,6 +26,7 @@
     return perDay / normaliseRate(1, unit);
   }
 
+  const COUNT_INPUTS = ['replicas', 'shards'];
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
   const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -34,14 +35,19 @@
   function parseValue(q, v) {
     if (isRate(q) && v !== null && typeof v === 'object') {
       try {
-        return { value: normaliseRate(v.value, v.per) };
+        const x = normaliseRate(v.value, v.per);
+        return x < 0 ? { problem: `${q.id}: expected a rate of 0 or more, got ${v.value} per ${v.per}` } : { value: x };
       } catch (e) {
         return { problem: `${q.id}: ${e.message}` };
       }
     }
     if (v !== null && typeof v === 'object') return { problem: `${q.id}: ${q.unit || 'value'} is not a rate; expected a plain value, got an object` };
     if (q.value_type === 'number') {
-      return isFiniteNumber(v) ? { value: v } : { problem: `${q.id}: expected a finite number, got ${JSON.stringify(v)}` };
+      if (!isFiniteNumber(v)) return { problem: `${q.id}: expected a finite number, got ${JSON.stringify(v)}` };
+      // Counts of servers are whole and at least one; no workload quantity is negative.
+      if (COUNT_INPUTS.includes(q.id) && !(Number.isInteger(v) && v >= 1)) return { problem: `${q.id}: expected a whole number of 1 or more, got ${v}` };
+      if (v < 0) return { problem: `${q.id}: expected a number of 0 or more, got ${v}` };
+      return { value: v };
     }
     if (q.value_type === 'enum') {
       if (typeof v === 'string' && q.enum.includes(v)) return { value: v };
@@ -214,6 +220,12 @@
     }
     const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
     const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set() };
+    // An input outside its own measured range makes every number that reads it extrapolated.
+    for (const q of contract.registry) {
+      const r = q.kind === 'input' ? (model().rangeOf(q) || {})[q.id] : null;
+      const x = values.get(q.id);
+      if (r && typeof x === 'number' && (x < r[0] || x > r[1])) ctx.extrapolatedInputs.add(q.id);
+    }
     // Registry derivations may read each other; evaluate until no new value appears (they are acyclic, §4.2).
     const pending = contract.registry.filter((x) => x.kind === 'derivation' && x.rule && !values.has(x.id));
     for (let changed = true; changed;) {
@@ -489,6 +501,8 @@
       } else if (!pricesMissing) {
         const billed = billVariantResult(out, ev, preset, opts, ctx.inputs);
         if (billed.problem) { out.state = 'unavailable'; out.reason = `${v}: ${billed.problem}`; }
+        // Block lines are multiplied by the replica count, so a count outside its measured range extrapolates them.
+        else if (out.provisioning && ctx.extrapolatedInputs.has('replicas')) out.extrapolated = true;
       }
       for (const c of Object.values(out.cells)) delete c.ev;
       variants[v] = out;

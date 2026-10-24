@@ -242,13 +242,37 @@ test('test_missing_input_is_unavailable_not_zero', () => {
 });
 
 test('test_sweep_forwards_outcome_mix', () => {
-  // Half of the PUTs are 5XX, which the preset does not bill.
+  // An all-outcomes PUT row; half of the PUTs are 5XX, which the preset does not bill.
+  const A = load((x) => { x.formulas.cas.inserts.ledger_rows[0].outcome_class = 'all'; });
   const opts = { outcome_mix: { PutObject: { ok: 0.5, server_error: 0.5 } } };
   const ins = inputs({ inserts_per_month: 100000 });
-  const s = pipeline.sweep(C, ins, AWS, 'inserts_per_month', [100000], opts);
-  const direct = pipeline.run(C, ins, AWS, opts).variants.cas.total;
+  const s = pipeline.sweep(A, ins, AWS, 'inserts_per_month', [100000], opts);
+  const direct = pipeline.run(A, ins, AWS, opts).variants.cas.total;
   close(s.points[0].totals.cas.value, direct);
-  assert.ok(direct < pipeline.run(C, ins, AWS, {}).variants.cas.total);
+  assert.ok(direct < pipeline.run(A, ins, AWS, { outcome_mix: { PutObject: { ok: 1 } } }).variants.cas.total);
+  // Without a mix the column cannot say what is billed: unavailable, never "all ok".
+  const none = pipeline.run(A, ins, AWS, {}).variants.cas;
+  assert.equal(none.state, 'unavailable');
+  assert.match(none.reason, /an all-outcomes row needs an outcome mix for PutObject/);
+});
+
+test('test_inputs_reject_negative_and_fractional_counts', () => {
+  for (const [id, v, re] of [['replicas', 0, /replicas: expected a whole number of 1 or more, got 0/], ['replicas', -1, /got -1/], ['replicas', 1.5, /got 1\.5/],
+    ['inserts_per_month', -5, /inserts_per_month: expected a number of 0 or more, got -5/], ['replicas', NaN, /expected a finite number/]]) {
+    const r = pipeline.resolveInputs(C, { [id]: v }, [], {});
+    assert.match(r.problems.join('\n'), re, `${id}=${v}`);
+    assert.equal(r.inputs.has(id), false, `${id}=${v} leaves no value`);
+  }
+  assert.match(pipeline.resolveInputs(C, { ingest_rate: { value: -1, per: 'hour' } }, ['ingest_rate', 'retention_days'], {}).problems.join('\n'), /ingest_rate: expected a rate of 0 or more/);
+});
+
+test('test_registry_range_marks_dependent_totals_extrapolated', () => {
+  const R = load((x) => { x.registry.find((q) => q.id === 'replicas').validity = { replicas: [1, 6] }; });
+  const at = (n) => pipeline.run(R, inputs({ replicas: n }), AWS, {});
+  const out = at(7);
+  const flagged = Object.values(out.variants).filter((v) => v.state === 'ok' && v.extrapolated);
+  assert.ok(flagged.length > 0, 'a column that reads replicas is extrapolated at 7');
+  assert.ok(Object.values(at(3).variants).every((v) => !v.extrapolated));
 });
 
 test('test_sweep_reresolves_precedence_groups', () => {
@@ -355,9 +379,24 @@ function predictedAttempts(fx) {
   const reg = JSON.parse(fs.readFileSync(REGISTRY, 'utf8')).quantities;
   const ins = new Map(reg.filter((q) => q.kind !== 'derivation' && q.default !== null && q.default !== undefined).map((q) => [q.id, q.default]));
   for (const [k, v] of Object.entries(fx.inputs)) ins.set(k, v);
-  const coefs = new Map(fx.coefficients.filter((c) => c.kind !== 'table' && c.value !== null).map((c) => [c.id, { value: c.value, validity: c.validity || null }]));
+  // A record names its table by a preset (shape = narrow); the preset's quantities fill what the prediction omits.
+  for (const q of reg) {
+    const preset = q.presets && q.presets[fx.inputs[q.id]];
+    for (const [k, v] of Object.entries(preset || {})) if (!(k in fx.inputs)) ins.set(k, v);
+  }
+  const coefs = new Map(fx.coefficients.filter((c) => c.kind !== 'table' && c.value !== null).map((c) => [c.id, { value: c.value, validity: c.verified_range || c.validity || null }]));
   const tables = new Map(fx.coefficients.filter((c) => c.kind === 'table').map((c) => [c.id, c.value]));
   const ctx = { inputs: ins, coefs, tables, sets: new Map(), vars: new Map(), prices: null };
+  // Registry derivations the prediction does not state come from their rules, as in pipeline.buildCtx.
+  const pending = reg.filter((q) => q.kind === 'derivation' && q.rule && !ins.has(q.id));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const q of pending) {
+      if (ins.has(q.id)) continue;
+      const r = model.evaluate(q.rule, ctx);
+      if (r.state === 'ok') { ins.set(q.id, r.value); changed = true; }
+    }
+  }
   const problems = [];
   const groups = new Map();
   for (const [name, cell] of Object.entries(fx.cells)) {
