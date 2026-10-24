@@ -1,6 +1,6 @@
 {
   "schema": "registry/1",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "quantities": [
     {
       "id": "data_bytes",
@@ -150,14 +150,15 @@
     {
       "id": "shape",
       "block": "schema",
-      "label": "Table shape",
+      "label": "Table shape: narrow = 5 UInt64 columns, wide = 40 UInt64 columns, types = the 21-column complex-type mix of objects-per-part.types-fit",
       "kind": "input",
       "scope": "cluster",
       "unit": "",
       "value_type": "enum",
       "enum": [
         "narrow",
-        "wide"
+        "wide",
+        "types"
       ],
       "table": null,
       "default": "narrow",
@@ -6525,6 +6526,1321 @@
           "peak_factor": "max over mean of the per-second sums; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
         }
       },
+      "status": "ok"
+    },
+    {
+      "id": "large_objects_per_part",
+      "block": "inserts",
+      "label": "Part files larger than the 32 MiB first upload buffer, per inserted part (each one multipart upload)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(c) FROM (SELECT name, countIf(column_data_compressed_bytes > 33554432) AS c FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' GROUP BY name)",
+        "mapping": {
+          "large_objects_per_part": "avg(c); a Compact part has one data file (data.bin)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mutations_per_month",
+      "block": "mutations_deletes",
+      "label": "ALTER UPDATE/DELETE and lightweight DELETE statements per month",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 730 / 24 / 7 FROM system.mutations WHERE database = '<db>' AND table = '<table>' AND create_time >= now() - INTERVAL 7 DAY",
+        "mapping": {
+          "mutations_per_month": "count() over 7 days, scaled to a 730-hour month"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mutated_parts_per_month",
+      "block": "mutations_deletes",
+      "label": "Parts rewritten by mutations per month",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart'",
+        "mapping": {
+          "mutated_parts_per_month": "MutatePart rows over 7 days, scaled to a month"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "mutation_kind",
+      "block": "mutations_deletes",
+      "label": "Kind of the mutations",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "update_column",
+        "delete",
+        "lightweight_delete"
+      ],
+      "table": null,
+      "default": "update_column",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT command FROM system.mutations WHERE database = '<db>' AND table = '<table>' ORDER BY create_time DESC LIMIT 20",
+        "mapping": {
+          "mutation_kind": "UPDATE of one column: update_column; DELETE WHERE: delete; DELETE FROM: lightweight_delete"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "select_part_reads_per_day",
+      "block": "reads_cache",
+      "label": "Parts read by SELECT queries per day (sum of SelectedParts)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count/day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND has(tables, '<db>.<table>') AND event_date = yesterday()",
+        "mapping": {
+          "select_part_reads_per_day": "sum of SelectedParts over a day"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "read_streams_per_part",
+      "block": "reads_cache",
+      "label": "Column streams a query reads per part (a Nullable column is 2, length(arr) is 1)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT column, substreams FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' LIMIT 1 BY column",
+        "mapping": {
+          "read_streams_per_part": "the substreams of the columns a query reads (length(arr) reads only arr.size0)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cache_miss_fraction",
+      "block": "reads_cache",
+      "label": "Share of part reads the filesystem cache misses (1: every read is cold)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cache_miss_fraction": [
+          0,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / (sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) + sum(ProfileEvents['CachedReadBufferReadFromCacheBytes'])) FROM system.query_log WHERE type = 'QueryFinish' AND event_date = yesterday()",
+        "mapping": {
+          "cache_miss_fraction": "bytes read from S3 through the cache / all bytes the cache served"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cache_size_gib",
+      "block": "local_disk",
+      "label": "Filesystem cache size of each replica",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT cache_name, max_size FROM system.filesystem_cache_settings",
+        "mapping": {
+          "cache_size_gib": "max_size in GiB"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "restarts_per_month",
+      "block": "topology_recovery",
+      "label": "Server restarts per replica per month (intact state)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.text_log WHERE event_date >= today() - 30 AND message LIKE 'Starting ClickHouse%'",
+        "mapping": {
+          "restarts_per_month": "server starts over 30 days"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "missed_parts_per_restart",
+      "block": "topology_recovery",
+      "label": "Parts a restarted replica fetches to catch up",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'DownloadPart'",
+        "mapping": {
+          "missed_parts_per_restart": "DownloadPart rows after a restart"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "variant_id",
+      "block": "topology_recovery",
+      "label": "Model variant a per-variant coefficient table is indexed by",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "table": null,
+      "default": "s3",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "startup_op",
+      "block": "topology_recovery",
+      "label": "S3 operation of a startup request row",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "PutObject",
+        "GetObject",
+        "DeleteObject"
+      ],
+      "table": null,
+      "default": "GetObject",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/IDisk.cpp:254",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "object_size_bucket",
+      "block": "inserts",
+      "label": "Object size bucket: small files, up to 1 MiB, up to the 32 MiB first upload buffer, beyond",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "le_4KiB",
+        "4KiB_1MiB",
+        "1MiB_32MiB",
+        "gt_32MiB"
+      ],
+      "table": null,
+      "default": "le_4KiB",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:188",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "parts_inserted_per_month",
+      "block": "inserts",
+      "label": "Parts inserted per month: insert_rate x 2 628 000 s x parts_per_insert",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+          },
+          "b": {
+            "kind": "const",
+            "value": 2628000,
+            "dim": "s"
+          }
+        },
+        "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "merge_results_per_month",
+      "block": "merges",
+      "label": "Merge results per month: parts_inserted_per_month x (1 - 1 / merge_size_ratio) / (merge_effective_fan_in - 1)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "count",
+        "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "parts_inserted_per_month",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "sub",
+            "dim": "1",
+            "a": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+            },
+            "b": {
+              "kind": "div",
+              "dim": "1",
+              "a": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+              },
+              "b": {
+                "kind": "input",
+                "id": "merge_size_ratio",
+                "dim": "1"
+              },
+              "on_zero": "unavailable"
+            }
+          }
+        },
+        "b": {
+          "kind": "sub",
+          "dim": "1",
+          "a": {
+            "kind": "coef",
+            "id": "merge_effective_fan_in",
+            "dim": "1"
+          },
+          "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+          }
+        },
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "validity": {
+        "merge_size_ratio": [
+          18.21,
+          472.95
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_results_per_month": "MergeParts rows per month"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_sources_per_month",
+      "block": "merges",
+      "label": "Merge source parts per month: merge_results_per_month x merge_effective_fan_in",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+          "kind": "input",
+          "id": "merge_results_per_month",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "coef",
+          "id": "merge_effective_fan_in",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(length(merged_from)) * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_sources_per_month": "merged_from entries per month"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "expired_parts_per_month",
+      "block": "mutations_deletes",
+      "label": "Parts leaving retention per month at their final size: parts_inserted_per_month / merge_size_ratio",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "count",
+        "a": {
+          "kind": "input",
+          "id": "parts_inserted_per_month",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "merge_size_ratio",
+          "dim": "1"
+        },
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'RemovePart'",
+        "mapping": {
+          "expired_parts_per_month": "RemovePart rows of expired data per month"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "active_parts",
+      "block": "topology_recovery",
+      "label": "Active parts per replica: data_bytes x insert_rate x 86 400 s/day x parts_per_insert / (ingest_rate x merge_size_ratio)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "count",
+        "a": {
+          "kind": "mul",
+          "dim": "GiB/day",
+          "a": {
+            "kind": "mul",
+            "dim": "GiB/day",
+            "a": {
+              "kind": "mul",
+              "dim": "GiB/s",
+              "a": {
+                "kind": "input",
+                "id": "data_bytes",
+                "dim": "GiB"
+              },
+              "b": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+              }
+            },
+            "b": {
+              "kind": "const",
+              "value": 86400,
+              "dim": "s/day"
+            }
+          },
+          "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+          }
+        },
+        "b": {
+          "kind": "mul",
+          "dim": "GiB/day",
+          "a": {
+            "kind": "input",
+            "id": "ingest_rate",
+            "dim": "GiB/day"
+          },
+          "b": {
+            "kind": "input",
+            "id": "merge_size_ratio",
+            "dim": "1"
+          }
+        },
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "active_parts": "count() of active parts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "objects_per_part",
+      "block": "schema",
+      "label": "S3 objects per part: one per part file (9 metadata files, data files per column stream, skp_idx.packed, projection parts)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "objects_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT part_type, avg(c) FROM (SELECT part_type, name, length(arrayFilter(x -> 1, files)) AS c FROM (SELECT p.part_type, p.name, groupArray(r.local_path) AS files FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name)) GROUP BY part_type",
+        "mapping": {
+          "objects_per_part": "avg objects per active part by part_type"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "object_size_distribution",
+      "block": "schema",
+      "label": "Fraction of a part's objects per size bucket",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type",
+          "object_size_bucket"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "object_size_distribution",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT multiIf(size <= 4096, 'le_4KiB', size <= 1048576, '4KiB_1MiB', size <= 33554432, '1MiB_32MiB', 'gt_32MiB') AS bucket, count() / sum(count()) OVER () FROM system.remote_data_paths WHERE disk_name = '<disk>' GROUP BY bucket",
+        "mapping": {
+          "object_size_distribution": "fraction per bucket"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_tx_checks",
+      "block": "inserts",
+      "label": "Requests an insert transaction sends per part besides its object writes",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "insert_tx_checks",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['S3HeadObject']) / sum(ProfileEvents['InsertedRows'] > 0) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND event_date = yesterday()",
+        "mapping": {
+          "insert_tx_checks": "HEAD requests per insert (0 expected)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "bytes_per_get",
+      "block": "reads_cache",
+      "label": "Bytes per GetObject of a cold read (statistics reads and column ranges together)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape"
+        ],
+        "dim": "B"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "bytes_per_get",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['ReadBufferFromS3Bytes']) / sum(ProfileEvents['S3GetObject']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+        "mapping": {
+          "bytes_per_get": "ReadBufferFromS3Bytes / S3GetObject"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "stats_gets_per_column",
+      "block": "reads_cache",
+      "label": "GetObject per column per part read: statistics.packed is read once per column statistics file",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "stats_gets_per_column",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
+        "mapping": {
+          "stats_gets_per_column": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gets_per_stream_read",
+      "block": "reads_cache",
+      "label": "GetObject per stream read per part: the .bin range and its marks file",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "gets_per_stream_read",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
+        "mapping": {
+          "gets_per_stream_read": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "shape_columns",
+      "block": "schema",
+      "label": "Columns of a table shape (the statistics files a part read loads)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "shape_columns",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/Statistics/Statistics.cpp:933",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.columns WHERE database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "shape_columns": "count()"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cached_miss_gets_per_part_read",
+      "block": "reads_cache",
+      "label": "GetObject per part read that misses the filesystem cache (segments)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cached_miss_gets_per_part_read",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+        "mapping": {
+          "cached_miss_gets_per_part_read": "with cold caches"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cached_miss_bytes_per_part_read",
+      "block": "reads_cache",
+      "label": "Bytes downloaded per part read that misses the filesystem cache",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape"
+        ],
+        "dim": "B"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cached_miss_bytes_per_part_read",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+        "mapping": {
+          "cached_miss_bytes_per_part_read": "bytes from source per part read"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cache_fill_io_per_byte",
+      "block": "local_disk",
+      "label": "Cache-volume bytes allocated per byte the cache downloads",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cache_fill_io_per_byte",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['CachedReadBufferCacheWriteBytes']) / sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) FROM system.query_log WHERE event_date = yesterday()",
+        "mapping": {
+          "cache_fill_io_per_byte": "cache write bytes / bytes read from source"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "metadata_bytes_per_object",
+      "block": "local_disk",
+      "label": "Local metadata bytes allocated per S3 object (one small file each)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "metadata_bytes_per_object",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+        "mapping": {
+          "metadata_bytes_per_object": "du -s --block-size=1 of the disk metadata path / objects listed by system.remote_data_paths"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "metadata_iops_per_object_write",
+      "block": "local_disk",
+      "label": "Local write calls per object written (the part's metadata files)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "req",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "metadata_iops_per_object_write",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.events WHERE event IN ('S3PutObject', 'WriteBufferFromFileDescriptorWrite')",
+        "mapping": {
+          "metadata_iops_per_object_write": "local write calls per S3 object write, over the same interval"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "metadata_iops_per_part_write",
+      "block": "local_disk",
+      "label": "Local write calls per part written besides its objects",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "req",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "metadata_iops_per_part_write",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
+        "mapping": {
+          "metadata_iops_per_part_write": "local write calls per new part besides the per-object ones"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "startup_gets_per_part",
+      "block": "topology_recovery",
+      "label": "GetObject per active part when a server loads its tables",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "shape"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "startup_gets_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.events WHERE event = 'S3GetObject'",
+        "mapping": {
+          "startup_gets_per_part": "S3GetObject after a restart / active parts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "startup_requests",
+      "block": "topology_recovery",
+      "label": "Requests a server start sends besides part loading (disk access checks, table files)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "startup_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "startup_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3GetObject', 'S3DeleteObjects')",
+        "mapping": {
+          "startup_requests": "right after a start, minus the part loads"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_gets_per_source_part",
+      "block": "merges",
+      "label": "GetObject per merged source part without the cache: Compact columns + 3, Wide 2 x columns + 1",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "merge_gets_per_source_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_gets_per_source_part": "GETs per merged source part"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_gets_per_source_part_cached",
+      "block": "merges",
+      "label": "GetObject per merged source part through the filesystem cache",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "merge_gets_per_source_part_cached",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_gets_per_source_part_cached": "GETs per merged source part with the cache"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "delete_calls_per_removed_part",
+      "block": "mutations_deletes",
+      "label": "DeleteObjects calls per removed part (one batch of up to 1000 keys)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "delete_calls_per_removed_part",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:609",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.events WHERE event = 'S3DeleteObjects'",
+        "mapping": {
+          "delete_calls_per_removed_part": "per RemovePart row"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "empty_part_objects",
+      "block": "mutations_deletes",
+      "label": "Objects of the empty part that covers a dropped or expired part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "empty_part_objects",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2742",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "mutation_entry_objects",
+      "block": "mutations_deletes",
+      "label": "Objects written per mutation statement besides parts (mutation_<n>.txt)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "mutation_entry_objects",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMutationEntry.cpp:73",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "mutation_objects_written",
+      "block": "mutations_deletes",
+      "label": "Objects written per mutated part (narrow shape): Compact rewrites all, Wide the changed streams and 7 metadata files",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "mutation_kind",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "mutation_objects_written",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:908",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "mutation_gets_per_part",
+      "block": "mutations_deletes",
+      "label": "GetObject per mutated part (narrow shape)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "mutation_kind",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "mutation_gets_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "catchup_requests_per_missed_part",
+      "block": "topology_recovery",
+      "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "catchup_requests_per_missed_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": null,
       "status": "ok"
     }
   ],

@@ -1,0 +1,964 @@
+[
+  {
+    "id": "objects_per_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape",
+        "part_type"
+      ],
+      "values": {
+        "narrow|compact": 11,
+        "narrow|wide": 19,
+        "types|compact": 22,
+        "types|wide": 154,
+        "wide|compact": 11,
+        "wide|wide": 89
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide|wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
+      "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part"
+    }
+  },
+  {
+    "id": "object_size_distribution",
+    "kind": "table",
+    "dim": "1",
+    "value": {
+      "index": [
+        "shape",
+        "part_type",
+        "object_size_bucket"
+      ],
+      "values": {
+        "narrow|compact|1MiB_32MiB": 0.0909,
+        "narrow|compact|4KiB_1MiB": 0.0909,
+        "narrow|compact|gt_32MiB": 0.0,
+        "narrow|compact|le_4KiB": 0.8182,
+        "narrow|wide|1MiB_32MiB": 0.2632,
+        "narrow|wide|4KiB_1MiB": 0.0526,
+        "narrow|wide|gt_32MiB": 0.0,
+        "narrow|wide|le_4KiB": 0.6842,
+        "wide|compact|1MiB_32MiB": 0.0909,
+        "wide|compact|4KiB_1MiB": 0.0909,
+        "wide|compact|gt_32MiB": 0.0,
+        "wide|compact|le_4KiB": 0.8182,
+        "wide|wide|1MiB_32MiB": 0.0,
+        "wide|wide|4KiB_1MiB": 0.4607,
+        "wide|wide|gt_32MiB": 0.0,
+        "wide|wide|le_4KiB": 0.5393
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide"
+      ]
+    },
+    "tolerance": {
+      "abs": 0.05,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "fraction of the PutObject payload sizes per bucket; the tolerance is the total-variation bound of the hold-out"
+    }
+  },
+  {
+    "id": "insert_tx_checks",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 0,
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "requests of the insert window besides PutObject and multipart writes: none in every repeat"
+    }
+  },
+  {
+    "id": "metadata_bytes_per_object",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 4096,
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0.08
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "allocated bytes of the part directories under <replica>/s3_meta per object"
+    },
+    "note": "Allocated bytes on ext4 (4 KiB blocks); apparent sizes are 110 to 121 B. The types tables allocate 4407 B per object (some metadata files exceed one block): the relative tolerance covers them."
+  },
+  {
+    "id": "metadata_iops_per_object_write",
+    "kind": "scalar",
+    "dim": "req",
+    "value": 1.1767,
+    "validity": {
+      "objects_per_part": [
+        11,
+        158
+      ]
+    },
+    "tolerance": {
+      "abs": 1.068,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
+      "a": 1.1766807868425955,
+      "b": 25.979068113540777,
+      "max_abs_residual": 1.068,
+      "points": 36
+    },
+    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+  },
+  {
+    "id": "metadata_iops_per_part_write",
+    "kind": "scalar",
+    "dim": "req",
+    "value": 25.979,
+    "validity": {
+      "objects_per_part": [
+        11,
+        158
+      ]
+    },
+    "tolerance": {
+      "abs": 1.068,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
+        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
+      "a": 1.1766807868425955,
+      "b": 25.979068113540777,
+      "max_abs_residual": 1.068,
+      "points": 36
+    },
+    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+  },
+  {
+    "id": "stats_gets_per_column",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject per file of the cold read, attributed by system.remote_data_paths: statistics.packed once per column, each read stream a .bin and a marks GET per part"
+    }
+  },
+  {
+    "id": "gets_per_stream_read",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 2,
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject per file of the cold read, attributed by system.remote_data_paths: statistics.packed once per column, each read stream a .bin and a marks GET per part"
+    }
+  },
+  {
+    "id": "bytes_per_get",
+    "kind": "table",
+    "dim": "B",
+    "value": {
+      "index": [
+        "shape"
+      ],
+      "values": {
+        "wide": 67992.8,
+        "types": 33210.8
+      }
+    },
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0.25
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T075800Z/s3/cold-select/cache-off/k3",
+        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k1",
+        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k2",
+        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject response bytes / GetObject of the cold read"
+    },
+    "note": "The statistics reads ask for the archive from their offset to its end, so bytes per GET follow the statistics archive more than the query range."
+  },
+  {
+    "id": "shape_columns",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape"
+      ],
+      "values": {
+        "narrow": 5,
+        "wide": 40,
+        "types": 21
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/Statistics/Statistics.cpp:933",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "cached_miss_gets_per_part_read",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape"
+      ],
+      "values": {
+        "wide": 5,
+        "types": 7
+      }
+    },
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "requests and bytes of the warm pass after a restart (setup ledger), per part read"
+    }
+  },
+  {
+    "id": "cached_miss_bytes_per_part_read",
+    "kind": "table",
+    "dim": "B",
+    "value": {
+      "index": [
+        "shape"
+      ],
+      "values": {
+        "wide": 1003955.0,
+        "types": 914467.5
+      }
+    },
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0.25
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "requests and bytes of the warm pass after a restart (setup ledger), per part read"
+    }
+  },
+  {
+    "id": "cache_fill_io_per_byte",
+    "kind": "scalar",
+    "dim": "1",
+    "value": 1.0159,
+    "validity": {
+      "shape": [
+        "wide",
+        "types"
+      ]
+    },
+    "tolerance": {
+      "abs": 0.02,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "allocated bytes the warm pass adds under <replica>/caches/s3_cache / bytes it downloads"
+    }
+  },
+  {
+    "id": "startup_gets_per_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "cache_enabled",
+        "shape"
+      ],
+      "values": {
+        "0|narrow": 15,
+        "0|wide": 50,
+        "1|narrow": 10,
+        "1|wide": 10
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide"
+      ],
+      "active_parts": [
+        2,
+        3
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/startup/intact/k1",
+        "cost-20261024T075800Z/s3/startup/intact/k2",
+        "cost-20261024T075800Z/s3/startup/intact/k3",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k1",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k2",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "per part: its 9 small files and statistics.packed once per column plus once (no cache); 9 files and statistics.packed once (cache)",
+      "startup_seconds": [
+        2.09,
+        3.11
+      ]
+    }
+  },
+  {
+    "id": "startup_requests",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "cache_enabled",
+        "startup_op"
+      ],
+      "values": {
+        "0|PutObject": 2,
+        "0|GetObject": 5,
+        "0|DeleteObject": 2,
+        "1|PutObject": 3,
+        "1|GetObject": 6,
+        "1|DeleteObject": 3
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide"
+      ],
+      "active_parts": [
+        2,
+        3
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/startup/intact/k1",
+        "cost-20261024T075800Z/s3/startup/intact/k2",
+        "cost-20261024T075800Z/s3/startup/intact/k3",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k1",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k2",
+        "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "two disk access checks per start without the cache, three with it (a PutObject, two GetObject and a DeleteObject each) and one GetObject per table file",
+      "startup_seconds": [
+        2.09,
+        3.11
+      ]
+    }
+  },
+  {
+    "id": "merge_gets_per_source_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape",
+        "part_type"
+      ],
+      "values": {
+        "narrow|compact": 8,
+        "narrow|wide": 11,
+        "wide|compact": 43,
+        "wide|wide": 81
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k1",
+        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k2",
+        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k3",
+        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k1",
+        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k2",
+        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k3",
+        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k1",
+        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k2",
+        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+      "rule": "Compact columns + 3, Wide 2 x columns + 1"
+    }
+  },
+  {
+    "id": "merge_gets_per_source_part_cached",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape",
+        "part_type"
+      ],
+      "values": {
+        "narrow|compact": 3,
+        "narrow|wide": 6,
+        "wide|compact": 3,
+        "wide|wide": 41
+      }
+    },
+    "validity": {
+      "shape": [
+        "narrow",
+        "wide"
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k1",
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k2",
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k3",
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k1",
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k2",
+        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k3",
+        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k1",
+        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k2",
+        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+      "rule": "Compact 3, Wide columns + 1"
+    }
+  },
+  {
+    "id": "delete_calls_per_removed_part",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:599",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "empty_part_objects",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 8,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2742",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "mutation_entry_objects",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMutationEntry.cpp:73",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "mutation_objects_written",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "mutation_kind",
+        "part_type"
+      ],
+      "values": {
+        "delete|compact": 11,
+        "delete|wide": 19,
+        "lightweight_delete|compact": 11,
+        "lightweight_delete|wide": 9,
+        "update_column|compact": 11,
+        "update_column|wide": 9
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:908",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "mutation_gets_per_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "cache_enabled",
+        "mutation_kind",
+        "part_type"
+      ],
+      "values": {
+        "0|delete|compact": 27,
+        "0|delete|wide": 16,
+        "0|lightweight_delete|compact": 30,
+        "0|lightweight_delete|wide": 28,
+        "0|update_column|compact": 26,
+        "0|update_column|wide": 7,
+        "1|delete|compact": 27,
+        "1|delete|wide": 10,
+        "1|lightweight_delete|compact": 29,
+        "1|lightweight_delete|wide": 5,
+        "1|update_column|compact": 26,
+        "1|update_column|wide": 2
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  }
+]

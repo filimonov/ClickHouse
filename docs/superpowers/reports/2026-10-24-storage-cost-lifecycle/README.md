@@ -222,7 +222,9 @@ Every merge case also asserts outdated byte-hours > 0: the objects of each merge
 
 Observed for the other workstreams:
 
-- **Merge reads (R2).** A merge reads 8 `GetObject` per 5-column Compact source part (16 for 2 parts, 64 for 8).
+- **Merge reads (R2).** A merge reads 8 `GetObject` per 5-column Compact source part (16 for 2 parts, 64 for 8). The
+  s3 report measures them as `merge_gets_per_source_part` (Compact: columns + 3; Wide: 2 × columns + 1),
+  `docs/superpowers/reports/2026-10-24-storage-cost-s3/README.md` §Merge.
 - **Outdated storage.** In the natural-merge windows outdated bytes outweigh active ones: `merge-natural.default`
   3.69–3.83 M byte-hours outdated against 2.36 M active, `small-inserts.default` 1.91–1.95 M against 0.38–0.39 M.
   Merged-away parts wait at least `old_parts_lifetime`, longer than every window here.
@@ -298,8 +300,8 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
 - The fit covers fast back-to-back inserts only: fan-in sits at 6 to 9, and parts stop merging once their sizes
   diverge (final parts of 23 and 6 inserted parts after 64 inserts). Slower inserts and larger final sizes are the
   validation run's domain.
-- Merge `GetObject` counts are assumption ranges here. Measured: 16 for 2 and 64 for 8 Compact source parts, 8 per
-  5-column Compact source part; Task 2 (R2) pins them exactly.
+- Merge `GetObject` counts are assumption ranges in these predictions. Measured: 16 for 2 and 64 for 8 Compact source
+  parts, 8 per 5-column Compact source part, which the s3 report's `merge_gets_per_source_part` reproduces.
 - The async cases bound part counts broadly (one flush per burst up to one per insert); they do not test the flush
   sharing estimate: the steady case's 4.8–5.0 inserts per flush is an observation from a cut case, not a hold-out: the rule form was adjusted after seeing it.
 - No `DeleteObject` falls inside a window: outdated parts wait at least `old_parts_lifetime` (480 s), longer than
