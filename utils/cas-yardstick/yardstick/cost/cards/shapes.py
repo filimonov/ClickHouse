@@ -128,6 +128,9 @@ class S3Card(LifecycleCard):
         return ' '.join(parts)
 
     def setup(self, ctx):
+        # The runner records and checks the card's mode; a manifest naming another mode would be silently ignored.
+        if ctx.manifest.get('mode', self.mode) != self.mode:
+            raise ValueError(f'{self.name}: manifest mode {ctx.manifest["mode"]} differs from the card mode {self.mode}')
         client = self.replica_client(ctx)
         client.query(f'CREATE DATABASE IF NOT EXISTS {DATABASE}')
         for table in self.p(ctx)['tables']:

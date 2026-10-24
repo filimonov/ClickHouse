@@ -8,7 +8,7 @@
     "s3_cached"
   ],
   "replicas": 1,
-  "mode": "stochastic",
+  "mode": "deterministic",
   "controls": {
     "merges": "stop",
     "gc": "off",

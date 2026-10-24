@@ -247,3 +247,16 @@ class PolicyTest(unittest.TestCase):
             st.update(parts_before=[{'table': table, 'name': 'p_1_1_0', 'partition_id': card.p(ctx)['dropped'].partition('/')[2] or 'all'}],
                       layout_before=layout(table, 'p_1_1_0', ['a', 'b']))
             self.assertEqual(card.expected_gone(ctx), want, policy)
+
+
+class ModeTest(unittest.TestCase):
+    """A card checks counts in its own mode; a manifest that names another mode is refused, not silently ignored."""
+
+    def test_setup_refuses_a_manifest_mode_the_card_does_not_run(self):
+        card = CARDS['mutation']
+        m = manifest('mutation.compact-update-one-column')
+        self.assertEqual(m['mode'], card.mode)
+        card.setup(ctx_for(m, FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})))
+        other = dict(m, mode='stochastic' if card.mode == 'deterministic' else 'deterministic')
+        with self.assertRaisesRegex(ValueError, 'mode'):
+            card.setup(ctx_for(other, FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})))
