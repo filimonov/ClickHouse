@@ -1,5 +1,5 @@
 ---
-description: 'CAS research (R4) of the storage cost calculator: request graphs of a part write by entry branch, table drop, GC rounds and reclamation stages, heartbeat, mount lease and local staging on the 26.8 binary, with source-cited rules, predictions and reconciliation.'
+description: 'CAS research (R4) of the storage cost calculator: request graphs of a part write by entry branch, table drop, GC rounds and reclamation stages, heartbeat, mount lease, local staging, cold reads and server start on the 26.8 binary, with source-cited rules, predictions and reconciliation.'
 sidebar_label: 'Storage cost CAS (R4)'
 sidebar_position: 56
 slug: /superpowers/reports/storage-cost-cas
@@ -12,16 +12,18 @@ doc_type: 'reference'
 Every CAS request graph below reconciles on the `cas` policy of the pinned binary (`tmp/src-26.8` at
 `09d0772a842c5d73cf3ef35b4c8b017d838215a0`). Deterministic cases match the exact integer per operation for caller
 `r1`; GC terms are fitted with spans and checked on distinct hold-outs; the lease rate is source-pinned and its fresh
-validation case passes with the idle-table cleanup listing it predicts. Results:
+validation case passes with the idle-table cleanup listing it predicts. Cold reads and server starts reconcile
+exactly on `cas` and `cas_cached` against a per-stream and per-part rule, each with a hold-out. Results:
 §[Cases and reconciliation](#reconciliation).
 
-- **Report run:** `cost-20261024T104750Z` at rig commit `83aba5425f9`: every cited case (48 passes, all ok),
+- **Report run:** `cost-20261024T201554Z` at rig commit `80e7b064858`: every cited case (108 passes, all ok),
   alone on the rig under `tmp/yardstick.lock`. Failed records kept for consumed edges: the first lease passes
   (`cost-20261024T082909Z`) and the consumed hold-outs (runs `cost-20261024T074131Z`, `cost-20261024T075656Z`; count
-  verdicts, unaffected by other prefixes). 62 records. Source commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
+  verdicts, unaffected by other prefixes). 122 records. Source commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`.
 - **Cards:** `utils/cas-yardstick/yardstick/cost/cards/cas.py` (`CasBranches`, `CasDrop`, `GcLifecycle`, `GcIdle`,
-  `GcScale`, `Lease`, `GcUnderLoad`); manifests in `experiments/`, predictions in `predictions/`.
+  `GcScale`, `Lease`, `GcUnderLoad`) and `cards/ops.py` (`ColdSelect`, `Startup`, on `cas` and `cas_cached`);
+  manifests in `experiments/`, predictions in `predictions/`.
 - **Cut by owner directive D14:** `gc-scale.mounts-2.10k`, `gc-scale.refgrowth-low.10k`,
   `gc-scale.refgrowth-high.10k`. The `mounts` and `ref_growth` terms of `gc_round_requests` are unsupported.
 - **Cut by owner directive D14:** `gc-under-load.default` (manifest and prediction only; coverage `status: cut`).
@@ -53,7 +55,7 @@ teardown, after the window and before the drop, so its requests are teardown tra
 
 Paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` unless they start with `src/`. The regexes are
 `CAS_FAMILIES` in `cards/cas_probe.py` (coefficient `cas_key_families`). `gc_hb` is its own family so heartbeat rows
-and round rows are disjoint by key (plan Review Focus 5). `roots/` holds the server's loose files, such as the
+and round rows are disjoint by key. `roots/` holds the server's loose files, such as the
 startup write probe (`Formats/CasLayout.h:317`–`:329`, `ContentAddressedTransaction.cpp:906`), and the mount-safety
 empty-root listing; no MergeTree part or table file lands there.
 
@@ -136,7 +138,7 @@ part plus the terminal) in every pass, 20 parts gave 3 in a GC-on smoke pass. Th
 ### GC round {#gc-round}
 
 - **Scheduling.** A round starts `cas_gc_interval_sec` after the previous round finished (`Gc/CasGcScheduler.cpp:349`).
-  Measured gap from Finish to the next Start: 10.0001 s at a 10 s interval.
+  Measured gap from Finish to the next Start: 10.0000–10.0001 s at a 10 s interval.
 - **Deferred round.** With nothing new, a round re-adopts the sealed generation without a fold (`:303`, `:413`): 16
   requests (LIST 3, `gc` GET 8 and PUT 1, `lease` GET 1, `ref_catalog` GET 3), plus one heartbeat pulse. After 8
   deferred rounds in a row the next one folds anyway (`Gc/CasGc.cpp:353`, `gc_fold_max_defer_rounds = 8` at
@@ -191,6 +193,42 @@ state the rate as `1 / (10 s + attempt latency)`; that text double counts the la
 to the scratch directory while hashed (`ContentAddressedTransaction.cpp:984`), uploaded at commit and removed after it
 (`:593`). The staging peak is the blob bytes of the parts committing at the same time (`staging_peak_bytes_rule`).
 
+### Cold reads {#reads}
+
+A part's manifest is read once when the server loads the part; the part view is retained
+(`Parts/PartFolderAccess.cpp:159`), so a query resolves blob keys without a request. Statistics, `checksums.txt` and
+the other small files are inline and cost nothing (`ContentAddressedTransaction.cpp:67`,
+`ContentAddressedMetadataStorage.cpp:2000`). Per part read, without the cache:
+
+- **First read: 2 `GetObject` per stream.** The stream's marks blob, loaded once into the mark cache
+  (`src/Storages/MergeTree/MergeTreeMarksLoader.cpp:109`), and one `.bin` range
+  (`src/Storages/MergeTree/MergeTreeReaderStream.cpp:270`). No statistics GET, unlike `s3`
+  (`statistics.packed` is inline).
+- **Later reads: 1 `GetObject` per stream**, the `.bin` range.
+- **With the cache** (`cas_cached`): the first read downloads one segment per `.bin` stream and one per marks blob not
+  yet cached. The cache keys segments by object path
+  (`src/Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.cpp:41`), and equal files share a blob, so
+  equal marks of several parts download once: at most 2 misses per stream. An identical read sends no request.
+
+The mark cache keys by part path, so without the cache equal marks blobs are fetched once per part file.
+
+### Startup {#startup}
+
+`Cluster.stop(1)`, `Cluster.start(1)` and a `count()`, inside the window. Every request, all outcomes:
+
+- **Fixed per start** (`cas_startup_requests`): disk access checks of the disk and, with the cache, of the cache
+  disk (`src/Disks/IDisk.cpp:254`); the pool write probe on `_probe/` (create-only PUTs, two of them answered 412);
+  the mount claim on `gc/server-roots/` (`Pool/CasMountRuntime.cpp:690`); `_pool_meta`, catalog, `_ckpt` and table
+  file reads; and one ref transaction. `cas`: GET 32, PUT 11, HEAD 6, DELETE 3, LIST 7. `cas_cached`: GET 35,
+  PUT 12, HEAD 11, DELETE 4, LIST 7. Of these, 4xx answers (`cas_startup_error_requests`): GET 4 and HEAD 3 (5 with
+  the cache) are 404, PUT 2 and DELETE 1 are 412. A mount renewal (one PUT every 10 s) can fall inside a start.
+- **Per loaded part** (`cas_startup_gets_per_part`): the manifest GET; a Wide part also reads its first column's marks
+  blob for the index granularity (`src/Storages/MergeTree/MergeTreeDataPartWide.cpp:60`). Compact 1, Wide 2. The
+  load reads no other blob: `data.cmrk4`, `primary.cidx`, `checksums.txt` and the rest are inline.
+- **Log replay** (`cas_startup_gets_per_log_record`): the table's refs are recovered by replaying its log since the
+  last snapshot (`Pool/CasRefLedger.cpp:441`), one GET per record: 3 per inserted part in the cases (precommit,
+  promote, rename).
+
 ## Cases and reconciliation {#reconciliation}
 
 Foreground counts are for caller `r1`, attempts per operation; every pass of a case gave the same integers.
@@ -213,27 +251,29 @@ Foreground counts are for caller `r1`, attempts per operation; every pass of a c
 fit (GET 12, PUT 13) before its counted run; see §[Changes](#changes).
 
 Staging: the scratch poller saw 160 068 975 B in every pass, exactly the part's staged blob files (5 × 32 012 225 B
-`.bin` plus 5 × 1 570 B `.cmrk2`). The runner's 0.5 s directory sampler missed it in all 3 passes of the report run
-(peaks 0.46–0.52 MB).
+`.bin` plus 5 × 1 570 B `.cmrk2`). The runner's 0.5 s directory sampler caught it in 1 of 3 passes of the report run
+(160.35 MB, allocated; 0.46 MB in the other two).
 
 ### GC {#results-gc}
 
 | Case | Role | Passes | Predicted | Measured |
 |---|---|---|---|---|
-| `gc-idle.populated` | fit | 3/3 ok | 16 requests per idle round; heartbeat 0.85–1.1 req/s | 16.0; 0.947 / 0.955 / 0.962 req/s; all rounds Deferred; Finish to next Start 10.0001 s; outside the rounds only `gc_hb` (and the lease) |
-| `gc-scale.objects-1k` | fit | 3/3 ok | fold 48, Deferred 18 | 48, 18; fold 269–285 ms |
-| `gc-scale.objects-10k` | fit | 3/3 ok | fold 224, Deferred 18 | 224, 18; fold 407–417 ms |
+| `gc-idle.populated` | fit | 3/3 ok | 16 requests per idle round; heartbeat 0.85–1.1 req/s | 16.0; 0.937 / 0.944 / 0.952 req/s; all rounds Deferred; Finish to next Start 10.0000–10.0001 s; outside the rounds only `gc_hb` (and the lease) |
+| `gc-scale.objects-1k` | fit | 3/3 ok | fold 48, Deferred 18 | 48, 18; fold 296–336 ms |
+| `gc-scale.objects-10k` | fit | 3/3 ok | fold 224, Deferred 18 | 224, 18; fold 545–759 ms |
 | `gc-scale.objects-5k` | hold-out (requests) | 3/3 ok | fold 128, Deferred 18 | 128, 18 |
-| `gc-scale.objects-3k` | hold-out (requests, duration) | 3/3 ok | fold 88, Deferred 18; fold 219–452 ms | 88, 18; 322–346 ms |
+| `gc-scale.objects-3k` | hold-out (requests, duration) | 3/3 ok | fold 88, Deferred 18; fold 219–452 ms | 88, 18; 333–344 ms |
 | `gc-scale.objects-30k` | hold-out | 0/3: consumed | fold 620 | 1259 (past the snapshot threshold) |
 | `gc-scale.objects-100k` | fit (K=1) | 0/1: consumed | fold 521–2000 | 3689 (past the snapshot threshold) |
-| `gc-lifecycle.drop` | fit | 3/3 ok | stage rounds 1 / 1 / 3 | 1 / 1 / 3; condemn 8.56–8.74 s (0.82–0.85 periods), blob delete 28.83–29.34 s (2.77–2.85) |
-| `gc-lifecycle.merge` | hold-out (stage rounds) | 3/3 ok | 1–2 / 1–2 / 3–4 | 1 / 1 / 3; 0.78–0.90 and 2.77–2.86 periods |
+| `gc-lifecycle.drop` | fit | 3/3 ok | stage rounds 1 / 1 / 3 | 1 / 1 / 3; condemn 8.36–8.59 s (0.79–0.81 periods), blob delete 28.46–29.38 s (2.72–2.77) |
+| `gc-lifecycle.merge` | hold-out (stage rounds) | 3/3 ok | 1–2 / 1–2 / 3–4 | 1 / 1 / 3; 0.78–0.87 and 2.77–2.80 periods |
 | `gc-lifecycle.drop-60s` | hold-out | 0/3: consumed | periods 0–1.1 and 2–3.1; foreground PUT 70–110 | 0.980–0.994 and 2.978–2.992 periods; PUT 113 |
-| `gc-lifecycle.drop-60s-12` | hold-out (replacement) | 3/3 ok | periods 0–1.1 and 2–3.1; PUT 108–135 | 0.969–0.975 and 2.962–2.970 periods (condemn 58.5–59.0 s, blob delete 178.8–179.8 s) |
+| `gc-lifecycle.drop-60s-12` | hold-out (replacement) | 3/3 ok | periods 0–1.1 and 2–3.1; PUT 108–135 | 0.960–0.970 and 2.953–2.967 periods (condemn 58.0–58.8 s, blob delete 178.3–179.5 s) |
 
 `objects-3k` was predicted from the fit of run `cost-20261024T074131Z` (255.2 ms + 5.356 ms per part); the report
-run refits on its own 1k and 10k passes (`coefficients.json`).
+run refits on its own 1k and 10k passes (`coefficients.json`). Fold durations vary between runs on the shared host:
+the 10k folds took 407–417 ms in run `cost-20261024T104750Z` and 545–759 ms in the report run, which widens the
+duration tolerance to 141.7 ms. Request counts did not change.
 
 Fold rounds per op and family, without the one heartbeat pulse each round carries: GET 17 + 1 per new manifest + 1
 per ref log record, PUT 5, LIST 4. Deferred rounds: GET 12, PUT 1, LIST 3.
@@ -242,12 +282,47 @@ per ref log record, PUT 5, LIST 4. Deferred rounds: GET 12, PUT 1, LIST 3.
 
 | Case | Role | Passes | Predicted | Measured |
 |---|---|---|---|---|
-| `lease.idle-10min` (run `cost-20261024T104750Z`) | validation | 3/3 ok | renewals 59–61; 0.095–0.1005 per s; cleanup listing GET 1–2, LIST 1–2 | 60 renewals each, 0.09998–0.09999 per s; GET 1, LIST 1 |
+| `lease.idle-10min` (run `cost-20261024T201554Z`) | validation | 3/3 ok | renewals 59–61; 0.095–0.1005 per s; cleanup listing GET 1–2, LIST 1–2 | 60 renewals each, 0.09999 per s; GET 1, LIST 1 |
 | `lease.idle-10min` (run `cost-20261024T082909Z`) | validation | 0/3: consumed | no foreground | 60 renewals each; GET 1, LIST 1 unpredicted |
 | `lease.idle-20min` (run `cost-20261024T082909Z`) | validation | 0/1: consumed | no foreground | 120 renewals; GET 3, LIST 3 unpredicted |
 
 The mount object takes one `PutObject` per renewal and nothing else. The GET and LIST are the table cleanup listing,
 priced in the `lease` cell.
+
+### Cold reads and startup {#results-reads}
+
+Run `cost-20261024T201554Z`; foreground of caller `r1`, every outcome. Predictions committed at `80e7b064858`,
+after one uncited smoke pass of the fit cases (`cost-20261024T200614Z`, `cost-20261024T200941Z`); the three hold-outs
+had not run.
+
+| Case | Role | Passes | Table | Predicted | Measured |
+|---|---|---|---|---|---|
+| `cold-select.cas-off-wide` | fit | 3/3 ok | wide, 4 Wide parts, 3 streams | GET 24 (2 × 3 × 4) | GET 24 |
+| `cold-select.cas-off-narrow` | fit | 3/3 ok | narrow, 4 Wide parts, 3 streams | GET 24 | GET 24 |
+| `cold-select.cas-warm-off-wide` | fit | 3/3 ok | wide; repeated read | GET 12; first read 24 | GET 12; first read 24 |
+| `cold-select.cas-warm-off-narrow` | fit | 3/3 ok | narrow; repeated read | GET 12; first read 24 | GET 12; first read 24 |
+| `cold-select.cas-holdout-narrow-3` | hold-out | 3/3 ok | narrow, 3 parts of 70 000 rows, 2 streams; repeated read | GET 6; first read 12 | GET 6; first read 12 |
+| `cold-select.cas-on-wide` | fit | 3/3 ok | `cas_cached`, wide | no request; misses 13 | none; misses 13 |
+| `cold-select.cas-on-narrow` | fit | 3/3 ok | `cas_cached`, narrow | no request; misses 17 | none; misses 17 |
+| `cold-select.cas-on-narrow-2` | fit | 3/3 ok | `cas_cached`, narrow, 60 000 rows | no request; misses 17 | none; misses 17 |
+| `cold-select.cas-on-wide-2` | fit | 3/3 ok | `cas_cached`, wide, 2 parts of 60 000 rows | no request; misses 7 | none; misses 7 |
+| `cold-select.cas-holdout-on-narrow-3` | hold-out | 3/3 ok | `cas_cached`, narrow, 3 parts, 2 streams | no request; misses 7–12 | none; misses 9 |
+| `startup.cas-intact` | fit | 3/3 ok | `cas`, 3 Compact | GET 44, PUT 11–12 | GET 44, PUT 11, HEAD 6, DELETE 3, LIST 7 |
+| `startup.cas-intact` | fit | 3/3 ok | `cas_cached`, 3 Compact | GET 47, PUT 12–13 | GET 47, PUT 12, HEAD 11, DELETE 4, LIST 7 |
+| `startup.cas-compact-5` | fit | 3/3 ok | `cas`, 5 Compact | GET 52, PUT 11–12 | GET 52, PUT 11, HEAD 6, DELETE 3, LIST 7 |
+| `startup.cas-compact-5` | fit | 3/3 ok | `cas_cached`, 5 Compact | GET 55, PUT 12–13 | GET 55, PUT 12, HEAD 11, DELETE 4, LIST 7 |
+| `startup.cas-wide-parts` | fit | 3/3 ok | `cas`, 2 Wide | GET 42, PUT 11–12 | GET 42, PUT 11, HEAD 6, DELETE 3, LIST 7 |
+| `startup.cas-wide-parts` | fit | 3/3 ok | `cas_cached`, 2 Wide | GET 45, PUT 12–13 | GET 45, PUT 12, HEAD 11, DELETE 4, LIST 7 |
+| `startup.cas-wide-parts-3` | fit | 3/3 ok | `cas`, 3 Wide | GET 47, PUT 11–12 | GET 47, PUT 11, HEAD 6, DELETE 3, LIST 7 |
+| `startup.cas-wide-parts-3` | fit | 3/3 ok | `cas_cached`, 3 Wide | GET 50, PUT 12–13 | GET 50, PUT 12, HEAD 11, DELETE 4, LIST 7 |
+| `startup.cas-holdout-wide-4` | hold-out | 3/3 ok | `cas`, 4 Wide (narrow shape) | GET 52, PUT 11–12 | GET 52, PUT 11, HEAD 6, DELETE 3, LIST 7 |
+| `startup.cas-holdout-wide-4` | hold-out | 3/3 ok | `cas_cached`, 4 Wide (narrow shape) | GET 55, PUT 12–13 | GET 55, PUT 12, HEAD 11, DELETE 4, LIST 7 |
+
+Without the cache every pass sent exactly the predicted GETs: per part read 2 per stream first, then 1. With the cache
+the measured pass sent nothing; the first read missed one segment per `.bin` stream and part plus one per marks blob
+not already cached (1.08 to 1.5 per part and stream). A start took 2.1–3.1 s (`startup_seconds`). The start's fixed
+requests include 404 and 412 answers: the write probe's create-only PUTs and GETs of `_log` records that do not exist
+yet.
 
 ## Coefficients {#coefficients}
 
@@ -258,11 +333,17 @@ Measured (owner `cas`, `coefficients.json`); each has a fit and a distinct hold-
 | `cas_objects_per_part[shape][part_type]` | distinct uploads of the shape generators: narrow Compact 1, narrow Wide 8; wide Compact 1, wide Wide 41.33; types Compact 2, types Wide 75 (data-dependent, see the validation report) | `fresh`, `adoption`, `staging-peak`; `objects-per-part.*` (validation report) | `inline`, `mix-holdout-2`; `objects-per-part.*-2` (validation report) | 100–4 000 000 rows per insert |
 | `cas_branch_population[write][branch]` | per part write, e.g. one-column mutation: fresh 1, hash hit 1, adoption 8, inline 9 | `fresh`, `hash-hit`, `adoption`, `staging-peak` | `mix-holdout-2` | as above |
 | `gc_round_requests[term]` | fold GET 17 + 1 per new manifest + 1 per tail log record, PUT 5, LIST 4; Deferred GET 12, PUT 1, LIST 3; per blob object 0 | `objects-1k`, `objects-10k` (residual 0) | `objects-5k`, `objects-3k` | 1 017–9 949 objects |
-| `gc_round_duration[term]` | fold 260.1 ms + 3.114 ms per new part (±39.2 ms, the largest fit or hold-out residual); Deferred 25.8 ms | `objects-1k`, `objects-10k` | `objects-3k` | as above |
-| `reclaim_delay_periods[stage]` | condemn 0.8376, manifest delete 0.8352, blob delete 2.8092 periods (±1, the phase) | `gc-lifecycle.drop` | `gc-lifecycle.merge`, `drop-60s-12` | interval 10–60 s |
+| `gc_round_duration[term]` | fold 276.2 ms + 6.962 ms per new part (±141.7 ms, the largest fit or hold-out residual); Deferred 45.3 ms | `objects-1k`, `objects-10k` | `objects-3k` | as above |
+| `reclaim_delay_periods[stage]` | condemn 0.8076, manifest delete 0.8051, blob delete 2.7543 periods (±1, the phase) | `gc-lifecycle.drop` | `gc-lifecycle.merge`, `drop-60s-12` | interval 10–60 s |
+| `cas_gets_per_stream_read` | 2 (marks blob and `.bin` range of a first read) | `cas-off-wide`, `cas-off-narrow`, `cas-warm-off-*` (first read) | `cas-holdout-narrow-3` | 2–3 streams per part read |
+| `cas_warm_gets_per_stream_read` | 1 (the `.bin` range) | `cas-warm-off-wide`, `cas-warm-off-narrow` | `cas-holdout-narrow-3` | as above |
+| `cas_cached_miss_gets_per_stream_read` | 2, the bound; equal marks blobs miss once | `cas-on-wide`, `cas-on-narrow`, `cas-on-narrow-2`, `cas-on-wide-2` | `cas-holdout-on-narrow-3` | as above |
+| `cas_startup_requests[cache][op]`, `cas_startup_error_requests[cache][op]` | answered 2xx: `cas` GET 28, PUT 9, HEAD 3, DELETE 2, LIST 7; `cas_cached` GET 31, PUT 10, HEAD 6, DELETE 3, LIST 7 (±1 PUT, a mount renewal). Answered 4xx: GET 4, PUT 2, HEAD 3 (`cas_cached` 5), DELETE 1 | `startup.cas-intact`, `cas-compact-5`, `cas-wide-parts`, `cas-wide-parts-3` | `startup.cas-holdout-wide-4` | one table |
+| `cas_startup_gets_per_part[part_type]` | Compact 1, Wide 2 | as above | `startup.cas-holdout-wide-4` | 100–100 000 rows per insert: starts measured at 20 000–100 000, placement verified from 100 (`cas-branches.inline`) |
+| `cas_startup_gets_per_log_record` | 1 (source rule, measured at 6–15 records) | as above | `startup.cas-holdout-wide-4` | one table; the rule holds below the 256-record snapshot threshold |
 
 The `mounts` and `ref_growth` terms of `gc_round_requests` are unsupported (cut by D14). `reclaim_delay_s[stage]`
-of the plan is stored as `reclaim_delay_periods[stage]`: seconds are periods × (interval + round duration), so one
+is stored as `reclaim_delay_periods[stage]`: seconds are periods × (interval + round duration), so one
 fit serves every interval.
 
 `lease_requests_per_s` is source-pinned instead of measured: 1 / `cas_mount_renew_period_s`
@@ -287,8 +368,8 @@ Pinned (registry, source-derived, reconciled exactly by the named cases): `cas_k
 | `storage` | `objects_per_part_by_shape`, `cas_gc`, `lifecycle` | supported |
 | `gc` | `cas_gc`, `lifecycle` (retired parts) | supported |
 | `lease` | `cas_lease` | supported |
-| `reads` | `reads_cache` | unsupported_cut: `cold-select` on `cas` not measured |
-| `recovery` | `startup_recovery` | unsupported_cut: the replication report measured CAS startup at 3 active parts only (validation report §Wiring) |
+| `reads` | `reads_cache` | supported |
+| `recovery` | `startup_recovery` | supported |
 
 The `lease` cell holds the idle-time traffic of a server: the mount lease renewal and, per table, the MergeTree
 cleanup thread's listing of the table's files (a catalog GET and a LIST per run, every `cas_table_cleanup_period_s`:
@@ -297,6 +378,18 @@ cell; `storage` holds byte-month rows only.
 
 `gc` carries `backlog_grows` when retired blobs per round exceed the graduation or the redelete budget (0 means
 unbounded).
+
+`reads` follows the `s3` cell without the statistics term. Without the cache: every part read costs
+`cas_warm_gets_per_stream_read` × `read_streams_per_part`, and each first read of a part (new parts and every active
+part after a restart) adds `cas_gets_per_stream_read` − `cas_warm_gets_per_stream_read` per stream. With the cache: part
+reads × `cache_miss_fraction` × `cas_cached_miss_gets_per_stream_read` × streams, the bound of 2 per stream.
+
+`recovery` per restart and replica: `cas_startup_requests` per op, plus (`active_parts` + `outdated_parts`) ×
+`cas_startup_gets_per_part[part_type]`, plus `cas_tables` × `cas_ref_log_tail_records` log GETs, plus one GET per
+retained mutation entry on one replica (`src/Storages/StorageMergeTree.cpp:1655`; replicated tables keep them in
+Keeper). With replicas > 1 a restarted replica also fetches its missed parts
+(`catchup_requests_per_missed_part[cas]`, replication report). The start's 404 and 412 answers are `client_error`
+rows with their status, so the billing preset decides whether they are billed.
 
 The cells read the measured tables through registry derivations (`cas_blob_uploads_per_part`,
 `cas_merge_result_blob_uploads`, `gc_round_requests_<term>`, `gc_round_duration_<term>`,
@@ -321,6 +414,7 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 | same | `objects-100k` and `objects-30k` fold past the snapshot threshold | rule restricted to ≤ 147 records; `objects-30k` consumed; `objects-5k` predicted before its run |
 | run `cost-20261024T075656Z` | `drop-60s` foreground PUT range assumed 70–110, measured 113 (the graph gives 113) | consumed; `drop-60s-12` with derived ranges predicted before its run |
 | run `cost-20261024T082909Z` | the lease cases expected no foreground; an idle table lists its files once per cleanup run | lease rate made source-pinned with both cases as validation; the listing recorded as a gap |
+| smoke `cost-20261024T200614Z` | `cold-select` and `startup` read `system.remote_data_paths` inside the window; on a CAS disk that query reads the catalog, lists the table and probes roots (GET 17, HEAD 6, LIST 6 per read) | card fix: CAS policies snapshot the layout in the teardown (`test_cas_policies_snapshot_the_layout_in_the_teardown_before_the_drop`) |
 
 ## Gaps and limitations {#gaps}
 
@@ -331,12 +425,17 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
   interval; the 60–310 s range of `cas_table_cleanup_period_s` is an assumption beyond the idle value. The first
   lease predictions expected no foreground and their passes failed on `ledger.unpredicted`; those edges are
   `consumed`, and `lease.idle-10min` was predicted afresh with the listing.
-- **Task 2 cards not run on `cas`.** `objects-per-part`, `mutation`, `drop`, `cold-select` and `startup` declare
-  `policies = ('s3', 's3_cached')` (`cards/shapes.py` `S3Card`) and are UNSUPPORTED on `cas`. The plan's
-  `cas_branch_population` hold-out `types-holdout` on `cas` is therefore replaced by the CAS-owned
-  `cas-branches.mix-holdout-2`. Hence `reads` is `unsupported_cut`. The validation report
-  (`docs/superpowers/reports/2026-10-24-storage-cost-validation`) ran the shape cards on `cas` and `cas_cached` after
-  `S3Card` opened to every policy; `recovery` stays `unsupported_cut`.
+- **Shape cards on `cas`.** `objects-per-part`, `mutation` and `drop` ran on `cas` and `cas_cached` in the
+  validation report (`docs/superpowers/reports/2026-10-24-storage-cost-validation`); `cas_branch_population` keeps the
+  CAS-owned hold-out `cas-branches.mix-holdout-2`.
+- **Cold reads of Compact parts** are priced at the Wide plan of 2 GETs per stream, an upper bound: a Compact part
+  has one blob (`data.bin`) and inline marks.
+- **Cached misses** are priced at the bound of 2 per stream. The cases measured fewer (1.08 to 1.5 per part and
+  stream) because their equal marks files share one blob across columns and parts; distinct marks reach the bound.
+- **Startup with more tables.** The fixed start requests were measured with one table on the disk
+  (`cas_tables` 1); catalog, `_ckpt` and table file reads per extra table are not measured. Outdated parts and retained
+  mutation entries are priced from the source like active parts; the cases have neither. The log replay assumes no
+  snapshot within the tail (`cas_ref_log_tail_records` ≤ 256).
 - **Multipart blobs.** A blob above the first upload buffer (32 MiB) is a multipart upload; the `inserts` cell prices
   one `PutObject` per blob. `staging-peak` blobs were 32 012 225 B, just below the buffer.
 - **Snapshot regime.** Past 256 ref log records since a table's last snapshot, a fold reads each record about twice
@@ -350,7 +449,7 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 - **Reclaim requests per object** (HEAD 2, `.meta` GET 3 and PUT 1, DELETE 2 per blob; GET 2 per manifest) come
   from `gc-lifecycle.drop` maintenance rows and are priced as constants; the integrated GC cost under load is not
   validated (`gc-under-load.default` is cut by D14).
-- **Concurrent runs.** Task 2's run `cost-20261024T075800Z` overlapped run `cost-20261024T075656Z` on the same
+- **Concurrent runs.** The `s3` report's run `cost-20261024T075800Z` overlapped run `cost-20261024T075656Z` on the same
   RustFS; counts are per pass prefix and unaffected, timings may be.
 
 ## Review {#review}
@@ -367,7 +466,7 @@ re-ran after them in the report run.
 | 3 | MAJOR | idle rounds force a fold after 8 deferrals | closed: `gc` prices 8 deferred + 1 fold per 9 idle rounds |
 | 4 | MAJOR | stages need not advance every round (budgets, clamp, spared, absent) | closed: conditions in §[Reclamation](#reclaim); exhausted budgets are `backlog_grows` |
 | 5 | MAJOR | lease rule text adds the latency twice | closed in §[Lease](#lease); the committed predictions keep their text; their numeric band holds |
-| 6 | MAJOR | time-window attribution is not causal | parked: the window method is the controller's ruling for this plan; §[Request origin](#origin) states both directions, exact claims come from GC-off cases |
+| 6 | MAJOR | time-window attribution is not causal | parked: the window method is the attribution rule of this report; §[Request origin](#origin) states both directions, exact claims come from GC-off cases |
 | 7 | MAJOR | observer slice can drop concurrent requests | closed: no slice; the placement read moved to the teardown, outside the window (`test_placement_is_read_in_the_teardown_outside_the_window`) |
 | 8 | MAJOR | lease renewals inside a round counted as round requests | closed: excluded from round rows (`test_lease_renewal_inside_a_round_is_not_a_round_request`) |
 | 9 | MAJOR | `families_disjoint` was tautological | closed: checks that outside every round only `gc_hb` and the lease run, on the rows; fails on a leaked GC request |
@@ -381,7 +480,7 @@ re-ran after them in the report run.
 | 17 | MAJOR | `backlog_grows` used one budget and treated 0 as a limit | closed: both budgets, 0 unbounded |
 | 18 | MAJOR | no metadata storage | closed: `.meta` and manifest byte-months |
 | 19 | MAJOR | staging used uncompressed logical bytes | closed: blob bytes of a part × (insert clients + 1 merge) |
-| 20 | MAJOR | `gc-under-load` prediction compared foreground exactly | closed: `exact = false`; Task 7 compares reclaimed with retired |
+| 20 | MAJOR | `gc-under-load` prediction compared foreground exactly | closed: `exact = false`; the validation report compares reclaimed with retired |
 | 21 | MAJOR | `gc-under-load` counted outdated parts as references | closed: active parts only (`test_retired_blobs_are_those_no_active_part_references`) |
 | 22 | MAJOR | coverage generation failed on consumed cases | closed |
 | 23 | MAJOR | coverage named the consumed `drop-60s` | closed: `drop-60s` consumed, `drop-60s-12` the hold-out |
@@ -389,7 +488,7 @@ re-ran after them in the report run.
 | 25 | MINOR | catalog GET cited the readable-runtime admission | closed: `Pool/CasRefLedger.cpp:3429` |
 | 26 | MINOR | placeholder provenance | closed |
 
-### Controller review, fix round 1 {#review-fix-1}
+### Review, fix round 1 {#review-fix-1}
 
 | Finding | Fix |
 |---|---|
@@ -405,6 +504,6 @@ re-ran after them in the report run.
 ```bash
 flock tmp/yardstick.lock sh -c 'utils/cas-yardstick/rustfs-bin.sh ensure; YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
   --binary tmp/bin/26.8/clickhouse --manifests docs/superpowers/reports/2026-10-24-storage-cost-cas \
-  --cases <experiment ids> --policies cas --runs-dir tmp/cas-yardstick/cost-runs'
+  --cases <experiment ids> --policies cas,cas_cached --runs-dir tmp/cas-yardstick/cost-runs'
 python3 -m unittest discover -s utils/cas-yardstick/tests -t utils/cas-yardstick -p 'test_cost_cards_cas.py'
 ```

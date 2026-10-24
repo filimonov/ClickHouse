@@ -10642,6 +10642,70 @@
       "status": "ok"
     },
     {
+      "id": "cas_gets_per_stream_read",
+      "block": "reads_cache",
+      "label": "GetObject per stream of the first read of a part on CAS: the marks blob and the .bin range (statistics are inline)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_gets_per_stream_read",
+      "verified_range": {
+        "read_streams_per_part": [
+          2,
+          3
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
+        "mapping": {
+          "cas_gets_per_stream_read": "S3GetObject = SelectedParts x 2 x streams read"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_warm_gets_per_stream_read",
+      "block": "reads_cache",
+      "label": "GetObject per stream of a repeated part read on CAS with the marks cached: the .bin range",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_warm_gets_per_stream_read",
+      "verified_range": {
+        "read_streams_per_part": [
+          2,
+          3
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a repeated query>'",
+        "mapping": {
+          "cas_warm_gets_per_stream_read": "S3GetObject = SelectedParts x streams read"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "shape_columns",
       "block": "schema",
       "label": "Statistics files read per part: one per column",
@@ -10737,6 +10801,43 @@
       "ui": {
         "tier": "hidden",
         "short": "Cache-miss GETs per part read",
+        "name": null
+      }
+    },
+    {
+      "id": "cas_cached_miss_gets_per_stream_read",
+      "block": "reads_cache",
+      "label": "GetObject per stream of a CAS part read that misses the filesystem cache: at most the marks blob and one .bin segment",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_cached_miss_gets_per_stream_read",
+      "verified_range": {
+        "read_streams_per_part": [
+          2,
+          3
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+        "mapping": {
+          "cas_cached_miss_gets_per_stream_read": "with cold caches, divided by the streams read"
+        }
+      },
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "GetObject per stream of a CAS part read that misses the file",
         "name": null
       }
     },
@@ -10975,6 +11076,80 @@
       }
     },
     {
+      "id": "cas_startup_gets_per_part",
+      "block": "topology_recovery",
+      "label": "GetObject per part a CAS server loads: the manifest, and the first marks blob of a Wide part",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_gets_per_part",
+      "verified_range": {
+        "insert_rows": [
+          100,
+          100000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.events WHERE event = 'S3GetObject'",
+        "mapping": {
+          "cas_startup_gets_per_part": "S3GetObject after a restart, minus the fixed requests and the log replay, / loaded parts"
+        }
+      },
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "GetObject per part a CAS server loads",
+        "name": null
+      }
+    },
+    {
+      "id": "cas_startup_gets_per_log_record",
+      "block": "topology_recovery",
+      "label": "GetObject per ref log record a CAS server replays per table at start (records since the last snapshot)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_gets_per_log_record",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok",
+      "ui": {
+        "tier": "hidden",
+        "short": "GetObject per ref log record a CAS server replays per table ",
+        "name": null
+      }
+    },
+    {
       "id": "startup_requests",
       "block": "topology_recovery",
       "label": "Requests a server start sends besides part loading (disk access checks, table files)",
@@ -11003,6 +11178,82 @@
         "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3GetObject', 'S3DeleteObjects')",
         "mapping": {
           "startup_requests": "right after a start, minus the part loads"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_requests",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start sends besides part loads and log replay (access checks, mount claim, pool and catalog reads), all outcomes",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_requests",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3GetObject', 'S3HeadObject', 'S3DeleteObjects', 'S3ListObjects')",
+        "mapping": {
+          "cas_startup_requests": "right after a start, minus the part loads"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_error_requests",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start sends that are answered 4xx (404 reads of absent keys, 412 conditional writes)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_error_requests",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3GetObject', 'S3HeadObject', 'S3PutObject', 'S3DeleteObjects')",
+        "mapping": {
+          "cas_startup_error_requests": "not separable from system.events; use the store access log"
         }
       },
       "status": "ok"

@@ -26,10 +26,10 @@
    "cas_branches": "supported"
   },
   "reads": {
-   "reads_cache": "unsupported_cut"
+   "reads_cache": "supported"
   },
   "recovery": {
-   "startup_recovery": "unsupported_cut"
+   "startup_recovery": "supported"
   },
   "gc": {
    "cas_gc": "supported",
@@ -1641,6 +1641,877 @@
      "dim": "count"
     }
    ]
+  },
+  "reads": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "branch",
+      "dim": "count",
+      "cond": {
+       "op": "==",
+       "a": {
+        "kind": "input",
+        "id": "cache_enabled",
+        "dim": "enum:cache_enabled"
+       },
+       "b": {
+        "kind": "const",
+        "value": "1",
+        "dim": "enum:cache_enabled"
+       }
+      },
+      "then": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "select_part_reads_per_day",
+          "dim": "count/day"
+         },
+         "b": {
+          "kind": "const",
+          "value": 30.416666666666668,
+          "dim": "day"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "cache_miss_fraction",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "coef",
+         "id": "cas_cached_miss_gets_per_stream_read",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "read_streams_per_part",
+         "dim": "count"
+        }
+       }
+      },
+      "else": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "select_part_reads_per_day",
+          "dim": "count/day"
+         },
+         "b": {
+          "kind": "const",
+          "value": 30.416666666666668,
+          "dim": "day"
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "coef",
+          "id": "cas_warm_gets_per_stream_read",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "read_streams_per_part",
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "parts_first_read_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "restarts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "active_parts",
+           "dim": "count"
+          }
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "cas_gets_per_stream_read",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "coef",
+           "id": "cas_warm_gets_per_stream_read",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "input",
+          "id": "read_streams_per_part",
+          "dim": "count"
+         }
+        }
+       }
+      }
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  },
+  "recovery": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "add",
+      "dim": "count",
+      "a": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "input",
+           "id": "restarts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "cas_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "GetObject",
+            "dim": "enum:replication_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "input",
+           "id": "restarts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "active_parts",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "outdated_parts",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "cas_startup_gets_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "cas_tables",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_ref_log_tail_records",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "coef",
+            "id": "cas_startup_gets_per_log_record",
+            "dim": "count"
+           }
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "branch",
+          "dim": "1",
+          "cond": {
+           "op": "==",
+           "a": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": 1,
+           "dim": "1"
+          },
+          "else": {
+           "kind": "const",
+           "value": 0,
+           "dim": "1"
+          }
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "retained_mutation_entries",
+         "dim": "count"
+        }
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "cas",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "add",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "cas_startup_requests",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         {
+          "kind": "const",
+          "value": "PutObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "cas",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "HeadObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "DeleteObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "ListObjectsV2",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "client_error",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_error_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "GetObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     },
+     "status": 404
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "client_error",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_error_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "HeadObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     },
+     "status": 404
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "client_error",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_error_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "PutObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     },
+     "status": 412
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "client_error",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "mul",
+       "dim": "1",
+       "a": {
+        "kind": "input",
+        "id": "restarts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       }
+      },
+      "b": {
+       "kind": "lookup",
+       "dim": "count",
+       "table_id": "cas_startup_error_requests",
+       "keys": [
+        {
+         "kind": "input",
+         "id": "cache_enabled",
+         "dim": "enum:cache_enabled"
+        },
+        {
+         "kind": "const",
+         "value": "DeleteObject",
+         "dim": "enum:replication_op"
+        }
+       ]
+      }
+     },
+     "status": 412
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
   },
   "gc": {
    "ledger_rows": [
@@ -5500,7 +6371,7 @@
    "ledger_rows": [
     {
      "row_type": "block_capacity",
-     "op_kind": "staging_peak",
+     "op_kind": "capacity",
      "outcome_class": "all",
      "category": "temporary",
      "route": null,
