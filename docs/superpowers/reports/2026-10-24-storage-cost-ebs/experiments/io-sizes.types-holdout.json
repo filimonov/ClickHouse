@@ -42,5 +42,5 @@
   "scale": 0.05,
   "repeats": 3,
   "timeout_s": 900,
-  "description": "Hold-out of the request-size distribution and I/O per byte: the complex-type schema of objects-per-part.types-holdout (Array, JSON, Nullable, Map, LowCardinality, a projection and a skip index), 4 inserts (80 x scale 0.05) of 80 000 rows, OPTIMIZE FINAL, full scan."
+  "description": "Fit (a consumed hold-out, replaced by io-sizes.mixed-holdout): the complex-type schema of objects-per-part.types-holdout (Array, JSON, Nullable, Map, LowCardinality, a projection and a skip index), 4 inserts (80 x scale 0.05) of 80 000 rows, OPTIMIZE FINAL, full scan."
 }
