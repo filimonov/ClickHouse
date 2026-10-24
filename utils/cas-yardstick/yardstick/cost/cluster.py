@@ -16,6 +16,10 @@ STOP_TIMEOUT_SEC = 120
 KEEPER_READY_TIMEOUT_SEC = 60
 KEEPER_POLL_SEC = 1
 ZK_PROBE = "SELECT count() FROM system.zookeeper WHERE path = '/'"
+# At a lock hand-over the previous holder's servers may still be releasing their ports.
+PORT_FREE_WAIT_SEC = 120
+PORT_POLL_SEC = 2
+_monotonic, _sleep = time.monotonic, time.sleep
 
 
 class GenerationCrashed(RuntimeError):
@@ -79,9 +83,13 @@ class Cluster:
                            check=True, timeout=timeout, start_new_session=args[0] == 'start', env=env)
 
     def start_all(self) -> None:
+        deadline = _monotonic() + PORT_FREE_WAIT_SEC
         problems = self.topology.preflight_new_endpoints()
+        while problems and _monotonic() + PORT_POLL_SEC <= deadline:
+            _sleep(PORT_POLL_SEC)
+            problems = self.topology.preflight_new_endpoints()
         if problems:
-            raise RuntimeError('endpoints not free, nothing launched: ' + '; '.join(problems))
+            raise RuntimeError(f'endpoints not free after {PORT_FREE_WAIT_SEC} s, nothing launched: ' + '; '.join(problems))
         n = self.topology.replicas
         self.clients = [self._client_factory(self.topology.http(i)) for i in range(1, n + 1)]
         self.startup_seconds = [0.0] * n

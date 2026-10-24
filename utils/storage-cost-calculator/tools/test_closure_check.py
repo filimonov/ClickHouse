@@ -449,9 +449,6 @@ class MainTest(unittest.TestCase):
         self.assertEqual(run_main(['--mode', 'dev']), 0)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class DerivationRefsTest(unittest.TestCase):
     """A cell that reads a measured table through registry derivations finds that table's evidence."""
@@ -513,3 +510,30 @@ class PerFamilyBackingTest(unittest.TestCase):
         self.assertEqual(cc._pending_cells(with_edge, self.files(expr), app, registry=registry), [])
         planned = self.cov([("rate", "a-card.x", "validation", "planned")])
         self.assertEqual(cc._pending_cells(planned, self.files(expr), app, registry=registry), [("cas", "gc", "fam_a")])
+
+    def test_measured_coefficient_without_evidence_rows_leaves_the_cell_pending(self):
+        # A coefficient with no row has no family; ignoring it would let the other families back the cell.
+        expr = {"kind": "mul", "a": {"kind": "coef", "id": "ca"}, "b": {"kind": "coef", "id": "orphan"}}
+        cov = self.cov([("ca", "a-card.x", "fit", "done"), ("ca", "a-card.y", "holdout", "done")])
+        app = {"cas": {"gc": {"fam_a": "supported"}}}
+        self.assertEqual(cc._pending_cells(cov, self.files(expr), app, measured={"ca", "orphan"}), [("cas", "gc", "fam_a")])
+        # A pinned (source) coefficient needs no rows.
+        self.assertEqual(cc._pending_cells(cov, self.files(expr), app, measured={"ca"}), [])
+
+    def test_support_passes_measured_ids_from_the_coefficients(self):
+        seen = {}
+
+        def fake(coverage, formulas_list, applicability=None, registry=None, measured=None):
+            seen["measured"] = measured
+            return []
+        coefficients = [{"id": "orphan", "evidence": {"kind": "measured"}}, {"id": "pinned", "evidence": {"kind": "source"}}]
+        with mock.patch.object(cc, "_pending_cells", fake), mock.patch.object(cc.artifacts, "validate_coverage", lambda c: []):
+            cov = self.cov([])
+            for card in cov["cards"]:
+                for case in card["cases"]:
+                    case.update(policies=["cas"], status="run", priority="P1")
+            cc.support({"quantities": []}, cov, [], pending=[], applicability={}, coefficients=coefficients)
+        self.assertEqual(seen["measured"], {"orphan"})
+
+if __name__ == '__main__':
+    unittest.main()

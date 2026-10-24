@@ -191,7 +191,7 @@ def derived_refs(node, registry):
     return out
 
 
-def _pending_cells(coverage, formulas_list, applicability=None, registry=None):
+def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
     A coefficient belongs to the families of the cards its evidence rows come from. A (cell, family) entry is backed
@@ -199,8 +199,12 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None):
     completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the variant; the
     cell's coefficients of other families are checked under their own entries. An entry with no coefficient of its
     family is backed by a `done` validation row (or fit and hold-out rows) of that family for a quantity the cell
-    references (source-derived evidence exercised by a fixture). A planned row backs nothing. With the contract's
-    `applicability`, only `supported` families need evidence; without it, every family does.
+    references (source-derived evidence exercised by a fixture). One such row backs the entry even when the cell
+    reads several pinned quantities: pinned values are source facts, and the row shows the fixture exercises the
+    cell on that variant. A planned row backs nothing. A coefficient in `measured` (the ids of measured
+    coefficients) with no evidence row at all belongs to no family, so every supported entry of a cell that reads
+    it stays pending. With the contract's `applicability`, only `supported` families need evidence; without it,
+    every family does.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
@@ -240,7 +244,9 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None):
                 if entry["unsupported"]:
                     continue
                 own = {c for c in entry["coefs"] if fam in families_of.get(c, set())}
-                backed = all(measured_ok(c, fam, v) for c in own) if own else pinned_ok(entry["quantities"], fam, v)
+                orphans = {c for c in entry["coefs"] if c in (measured or ()) and c not in families_of}
+                backed = not orphans and (all(measured_ok(c, fam, v) for c in own) if own
+                                          else pinned_ok(entry["quantities"], fam, v))
                 if not backed:
                     pending.append((v, op, fam))
     return pending
@@ -272,7 +278,7 @@ def _cells_on_cut(coverage, formulas_list, registry=None):
     return out
 
 
-def support(registry, coverage, formulas_list, require_formulas=False, pending=None, applicability=None):
+def support(registry, coverage, formulas_list, require_formulas=False, pending=None, applicability=None, coefficients=None):
     problems = [f"coverage {p}" for p in artifacts.validate_coverage(coverage)]
     if problems:
         return problems
@@ -295,7 +301,8 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
     problems += _cells_on_cut(coverage, formulas_list, registry)
     if _cut_coefficients(coverage) and not PRESETS.exists():
         print(f"note: {PRESETS} absent; cut propagation to presets not checked", file=sys.stderr)
-    pending_cells = _pending_cells(coverage, formulas_list, applicability, registry)
+    measured = {c.get("id") for c in coefficients or () if (c.get("evidence") or {}).get("kind") == "measured"}
+    pending_cells = _pending_cells(coverage, formulas_list, applicability, registry, measured)
     if require_formulas and applicability is not None:
         # A variant whose reports claim no family would price nothing; that is missing work, not a free column.
         problems += [f"variant {v}: no formulas file lists a supported family" for v in sorted(applicability)
@@ -888,7 +895,8 @@ def main(argv=None, fresh=None):
         pending = []
         # The generated contract says which families occur per variant; without it every family needs evidence.
         problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending,
-                            applicability=(contract or {}).get("applicability"))
+                            applicability=(contract or {}).get("applicability"),
+                            coefficients=(contract or {}).get("coefficients") if contract is not None else coefficients)
         if pending:
             print(f"note: {len(pending)} support cells pending (no evidence, no not_supported state)", file=sys.stderr)
         ids = {m.get("measurement_id") for m in measurements}

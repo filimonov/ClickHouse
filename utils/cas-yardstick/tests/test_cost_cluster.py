@@ -116,13 +116,38 @@ class ClusterTest(ClusterFixture):
         self.assertEqual(stopped.count(('sh', 'stop', 'r2')), 1)
         self.assertTrue([e for e in stopped if e[0] == 'relay_stop'])
 
+    def fake_clock(self):
+        now = [0.0]
+        sleeps = []
+
+        def sleep(s):
+            sleeps.append(s)
+            now[0] += s
+        return mock.patch.multiple(cluster_module, _monotonic=lambda: now[0], _sleep=sleep), sleeps
+
     def test_preflight_problem_launches_nothing(self):
         cluster = self.make()
         cluster.topology.preflight_new_endpoints = lambda: ['cannot bind 127.0.0.1:19701: busy']
-        with self.assertRaises(RuntimeError) as ctx:
+        patch, sleeps = self.fake_clock()
+        with patch, self.assertRaises(RuntimeError) as ctx:
             cluster.start_all()
         self.assertIn('19701', str(ctx.exception))
+        self.assertIn(f'after {cluster_module.PORT_FREE_WAIT_SEC} s', str(ctx.exception))
         self.assertEqual(self.log, [])
+        # Bounded: the wait never exceeds its limit.
+        self.assertLessEqual(sum(sleeps), cluster_module.PORT_FREE_WAIT_SEC)
+
+    def test_preflight_waits_for_ports_held_by_the_previous_pass(self):
+        # The servers of the previous lock holder may still be shutting down at hand-over.
+        cluster = self.make()
+        answers = [['cannot bind 127.0.0.1:19701: busy']] * 3 + [[]]
+        cluster.topology.preflight_new_endpoints = lambda: answers.pop(0)
+        patch, sleeps = self.fake_clock()
+        with patch:
+            cluster.start_all()
+        self.assertEqual(answers, [])
+        self.assertEqual(len(sleeps), 3)
+        self.assertIn(('sh', 'start', 'r1'), self.log)
 
     def test_generation_accumulation_across_restart(self):
         cluster = self.make()
