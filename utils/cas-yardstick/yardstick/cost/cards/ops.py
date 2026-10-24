@@ -199,8 +199,8 @@ class ColdSelect(S3Card):
         st['restarted_before_window'] = st['restarts']
 
     def cache_dir(self, ctx) -> str:
-        # CACHE_DISK in yardstick/config.py: `<disk>_cache/` relative to the server's data path.
-        return os.path.join(ctx.pass_dir, self.p(ctx)['replica'], 'data', ctx.policy.removesuffix('_cached') + '_cache')
+        # CACHE_DISK in yardstick/config.py: `<disk>_cache/`, which the server resolves under the replica's `caches/`.
+        return os.path.join(ctx.pass_dir, self.p(ctx)['replica'], 'caches', ctx.policy.removesuffix('_cached') + '_cache')
 
     def last_seq(self, ctx) -> int:
         if ctx.proxy is None:

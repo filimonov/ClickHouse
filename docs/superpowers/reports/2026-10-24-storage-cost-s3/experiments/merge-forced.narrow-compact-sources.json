@@ -1,0 +1,39 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "merge-forced.narrow-compact-sources",
+  "card": "merge-forced",
+  "case_id": "narrow-compact-sources",
+  "policies": [
+    "s3",
+    "s3_cached"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 100000,
+    "inserts": 8,
+    "optimize": "OPTIMIZE TABLE {table} FINAL"
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Eight Compact parts of 5 columns (100 000 rows), then OPTIMIZE FINAL: merge reads of Compact sources on both policies."
+}

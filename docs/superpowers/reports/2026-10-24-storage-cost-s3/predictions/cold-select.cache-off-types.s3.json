@@ -5,7 +5,17 @@
   "inputs": {
     "bytes_per_get_fit": 67992.84782608696,
     "fit_experiment": "cold-select.cache-off",
-    "fit_run": "cost-20261024T073405Z"
+    "fit_run": "cost-20261024T073405Z",
+    "falsified": {
+      "run": "cost-20261024T074526Z",
+      "observation": "bytes_per_get",
+      "band": {
+        "min": 33996,
+        "max": 101989
+      },
+      "measured": 33210.775862068964,
+      "disposition": "consumed for bytes_per_get; replaced by cold-select.cache-off-types-2"
+    }
   },
   "expected": {
     "foreground": {
@@ -13,12 +23,7 @@
         "GetObject": 58
       }
     },
-    "observations": {
-      "bytes_per_get": {
-        "min": 33996,
-        "max": 101989
-      }
-    }
+    "observations": {}
   },
   "tolerance": {
     "abs": {},
