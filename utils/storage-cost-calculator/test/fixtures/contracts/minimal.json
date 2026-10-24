@@ -18,9 +18,9 @@
  "evidence_statement": "Hand-written fixture contract: one variable per state, not measured.",
  "registry": [
   {
-   "id": "data_gib",
+   "id": "data_bytes",
    "block": "fixture",
-   "label": "data_gib",
+   "label": "data_bytes",
    "kind": "input",
    "scope": "cluster",
    "unit": "GiB",
@@ -28,6 +28,50 @@
    "enum": null,
    "table": null,
    "default": 1000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "ingest_rate",
+   "block": "fixture",
+   "label": "ingest_rate",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "GiB/day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 40,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "retention_days",
+   "block": "fixture",
+   "label": "retention_days",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 25,
    "rule": null,
    "coef": null,
    "validity": null,
@@ -82,10 +126,180 @@
    },
    "hint": null,
    "status": "ok"
+  },
+  {
+   "id": "mutations_per_month",
+   "block": "fixture",
+   "label": "mutations_per_month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_size_gib",
+   "block": "fixture",
+   "label": "provisioned_size_gib",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_iops",
+   "block": "fixture",
+   "label": "provisioned_iops",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "iops",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_mibps",
+   "block": "fixture",
+   "label": "provisioned_mibps",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "mibps",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 125,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "volumes_per_replica",
+   "block": "fixture",
+   "label": "volumes_per_replica",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "auto"
+   ],
+   "table": null,
+   "default": "auto",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
   }
  ],
  "sets": {},
- "precedence": [],
+ "precedence": [
+  {
+   "group": [
+    "data_bytes",
+    "ingest_rate",
+    "retention_days"
+   ],
+   "default_locked": [
+    "ingest_rate",
+    "retention_days"
+   ],
+   "rules": {
+    "data_bytes": {
+     "kind": "mul",
+     "dim": "GiB",
+     "a": {
+      "kind": "input",
+      "id": "ingest_rate",
+      "dim": "GiB/day"
+     },
+     "b": {
+      "kind": "input",
+      "id": "retention_days",
+      "dim": "day"
+     }
+    },
+    "ingest_rate": {
+     "kind": "div",
+     "dim": "GiB/day",
+     "a": {
+      "kind": "input",
+      "id": "data_bytes",
+      "dim": "GiB"
+     },
+     "b": {
+      "kind": "input",
+      "id": "retention_days",
+      "dim": "day"
+     },
+     "on_zero": "unavailable"
+    },
+    "retention_days": {
+     "kind": "div",
+     "dim": "day",
+     "a": {
+      "kind": "input",
+      "id": "data_bytes",
+      "dim": "GiB"
+     },
+     "b": {
+      "kind": "input",
+      "id": "ingest_rate",
+      "dim": "GiB/day"
+     },
+     "on_zero": "unavailable"
+    }
+   }
+  }
+ ],
  "coefficients": [
   {
    "id": "puts_per_insert_s3",
@@ -186,6 +400,49 @@
    "evidence": {
     "kind": "measured",
     "ref": "fixture:ebs_mibps_demand"
+   }
+  },
+  {
+   "id": "days_per_month",
+   "kind": "scalar",
+   "value": 30.416666666666668,
+   "dim": "day",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:days_per_month"
+   }
+  },
+  {
+   "id": "cas_mutation_puts",
+   "kind": "scalar",
+   "value": 4,
+   "dim": "count",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:cas_mutation_puts"
+   }
+  },
+  {
+   "id": "ebs_mutation_iops",
+   "kind": "table",
+   "dim": "iops",
+   "value": {
+    "index": [
+     "shape"
+    ],
+    "values": {
+     "wide": 10
+    }
+   },
+   "validity": null,
+   "status": "unsupported",
+   "evidence": {
+    "kind": "measured",
+    "ref": "cut: mutation card"
    }
   },
   {
@@ -856,6 +1113,7 @@
  "operations": [
   "storage",
   "inserts",
+  "mutations",
   "replacement"
  ],
  "families": [
@@ -869,6 +1127,10 @@
     "startup_recovery": "supported"
    },
    "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "mutations": {
     "lifecycle": "supported",
     "startup_recovery": "supported"
    },
@@ -886,6 +1148,10 @@
     "lifecycle": "supported",
     "startup_recovery": "supported"
    },
+   "mutations": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
    "replacement": {
     "lifecycle": "supported",
     "startup_recovery": "supported"
@@ -897,6 +1163,10 @@
     "startup_recovery": "supported"
    },
    "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "mutations": {
     "lifecycle": "supported",
     "startup_recovery": "supported"
    },
@@ -912,6 +1182,10 @@
    },
    "inserts": {
     "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "mutations": {
+    "lifecycle": "unsupported_cut",
     "startup_recovery": "supported"
    },
    "replacement": {
@@ -934,7 +1208,7 @@
       "basis": "predicted",
       "expr": {
        "kind": "input",
-       "id": "data_gib",
+       "id": "data_bytes",
        "dim": "GiB"
       }
      },
@@ -973,6 +1247,43 @@
    },
    "inserts": {
     "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "mutations": {
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "iops",
+       "a": {
+        "kind": "input",
+        "id": "mutations_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "iops",
+        "table_id": "ebs_mutation_iops",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "wide",
+          "dim": "enum:shape"
+         }
+        ]
+       }
+      }
+     }
+    ],
     "allocation": null,
     "states": [],
     "notes": []
@@ -1021,8 +1332,31 @@
       "basis": "predicted",
       "expr": {
        "kind": "input",
-       "id": "data_gib",
+       "id": "data_bytes",
        "dim": "GiB"
+      }
+     },
+     {
+      "row_type": "transfer",
+      "op_kind": "interserver_from_target",
+      "outcome_class": "ok",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB",
+       "a": {
+        "kind": "input",
+        "id": "ingest_rate",
+        "dim": "GiB/day"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "days_per_month",
+        "dim": "day"
+       }
       }
      }
     ],
@@ -1083,6 +1417,12 @@
     "states": [],
     "notes": []
    },
+   "mutations": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
    "replacement": {
     "ledger_rows": [
      {
@@ -1127,12 +1467,31 @@
       "basis": "predicted",
       "expr": {
        "kind": "input",
-       "id": "data_gib",
+       "id": "data_bytes",
        "dim": "GiB"
       }
      }
     ],
-    "allocation": null,
+    "allocation": {
+     "shares": [
+      {
+       "cell": "storage",
+       "weight": {
+        "kind": "const",
+        "value": 3,
+        "dim": "count"
+       }
+      },
+      {
+       "cell": "inserts",
+       "weight": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       }
+      }
+     ]
+    },
     "states": [],
     "notes": []
    },
@@ -1162,6 +1521,12 @@
       }
      }
     ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "mutations": {
+    "ledger_rows": [],
     "allocation": null,
     "states": [],
     "notes": []
@@ -1218,7 +1583,7 @@
       "basis": "predicted",
       "expr": {
        "kind": "input",
-       "id": "data_gib",
+       "id": "data_bytes",
        "dim": "GiB"
       }
      }
@@ -1270,7 +1635,7 @@
      {
       "row_type": "request",
       "op_kind": "PutObject",
-      "outcome_class": "ok",
+      "outcome_class": "all",
       "category": null,
       "route": null,
       "scope": "variant",
@@ -1286,6 +1651,36 @@
        "b": {
         "kind": "coef",
         "id": "puts_per_insert_cas",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "mutations": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "mutations_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "cas_mutation_puts",
         "dim": "count"
        }
       }

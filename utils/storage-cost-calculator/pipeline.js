@@ -395,7 +395,8 @@
     const B = billingMod();
     const ops = Object.keys(ev.cells);
     const rows = ops.flatMap((op) => ev.cells[op].rows.map((r) => Object.assign({}, r, { cell: op })));
-    const m = manualOf(inputs);
+    // Provisioning inputs matter only to a column that provisions volumes.
+    const m = rows.some((r) => r.row_type === 'block_io' || r.row_type === 'block_capacity') ? manualOf(inputs) : { manual: null };
     if (m.problem) return { problem: m.problem };
     let b;
     try {
@@ -466,22 +467,30 @@
     const deltas = {};
     for (const v of contract.variants) deltas[v] = { vs_ebs: delta(variants[v], variants.ebs), vs_s3: delta(variants[v], variants.s3) };
     const result = Object.assign(base, { page_state: pricesMissing ? 'prices_missing' : 'ok', page_reason: pricesMissing ? `price preset ${preset.id} has no prices (structure only)` : null, variants, cheapest, deltas, sweep: null });
-    if (opts.sweep) result.sweep = sweep(contract, inputs, pricePreset, opts.sweep.inputId, opts.sweep.values);
+    if (opts.sweep) result.sweep = sweep(contract, inputs, pricePreset, opts.sweep.inputId, opts.sweep.values, { outcome_mix: opts.outcome_mix, lockOrder: opts.lockOrder });
     return result;
   }
 
-  // Totals per variant against one swept input. The input is set in the resolved inputs; the caller re-resolves
-  // precedence groups if the swept input has derived partners.
-  function sweep(contract, inputs, preset, inputId, values) {
+  // Totals per variant against one swept input. Each point re-resolves the precedence groups with the swept input
+  // locked as the newest member (options.lockOrder is the persisted lock order), so derived partners follow it.
+  function sweep(contract, inputs, preset, inputId, values, options) {
+    const opts = options || {};
     const baseInputs = inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {}));
+    const isInput = new Set(contract.registry.filter((x) => x.kind === 'input').map((x) => x.id));
+    const inGroup = contract.precedence.some((g) => g.group.includes(inputId));
+    const locks = inGroup ? lockMember(contract, opts.lockOrder || [], inputId) : opts.lockOrder || [];
     const points = values.map((x) => {
-      const r = run(contract, new Map([...baseInputs, [inputId, x]]), preset, {});
+      const raw = Object.fromEntries([...baseInputs].filter(([id]) => isInput.has(id)));
+      raw[inputId] = x;
+      const res = resolveInputs(contract, raw, locks, {});
+      const point = new Map([...[...baseInputs].filter(([id]) => !isInput.has(id)), ...res.inputs]);
+      const r = run(contract, point, preset, { outcome_mix: opts.outcome_mix });
       const totals = {};
       for (const v of contract.variants) {
         const vr = r.variants[v];
         totals[v] = vr ? { value: vr.state === 'ok' ? vr.total : null, state: vr.state, extrapolated: vr.extrapolated } : { value: null, state: r.page_state, extrapolated: false };
       }
-      return { x, totals, page_state: r.page_state };
+      return { x, totals, page_state: r.page_state, problems: res.problems };
     });
     // Display arithmetic only (spec §4.5): a crossing is a sign change of total_a - total_b between consecutive ok
     // points; a point where the totals are equal carries no sign and does not end the run.

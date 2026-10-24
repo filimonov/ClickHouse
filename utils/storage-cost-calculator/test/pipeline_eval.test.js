@@ -136,7 +136,7 @@ test('test_cheapest_only_among_ok', () => {
 
 test('test_aggregate_once_then_allocate_back_sums_to_total', () => {
   // 51 000 GiB active + 400 GiB temporary crosses the 51 200 GB first tier only in aggregate.
-  const r = run({ data_gib: 51000, inserts_per_month: 40000 });
+  const r = run({ data_bytes: 51000, inserts_per_month: 40000 });
   const s3 = r.variants.s3;
   assert.equal(s3.state, 'ok');
   const storage = s3.lines.find((l) => l.rule_id === 'storage');
@@ -168,7 +168,7 @@ test('test_fractional_monthly_event_expands_without_rounding', () => {
 test('test_sweep_detects_numeric_crossing', () => {
   // x GiB on one gp3 volume (at least 6 GiB for the 3000 IOPS floor): ebs = 0.08 x; cas = 0.023 x + 1.3 for
   // 130 000 inserts x 2 PUTs. They cross at x = 22.8: ebs is cheaper at 20, cas at 30.
-  const s = pipeline.sweep(C, inputs({ inserts_per_month: 130000 }), AWS, 'data_gib', [10, 20, 30, 40]);
+  const s = pipeline.sweep(C, inputs({ inserts_per_month: 130000 }), AWS, 'data_bytes', [10, 20, 30, 40]);
   const at = (x) => s.points.find((p) => p.x === x).totals;
   close(at(20).ebs.value, 1.6);
   close(at(20).cas.value, 1.76);
@@ -181,9 +181,9 @@ test('test_sweep_detects_numeric_crossing', () => {
   assert.equal(s.breakEven.filter((b) => b.a === 'ebs' && b.b === 's3').length, 0);
   // A non-ok point breaks the chain: no crossing is drawn through it.
   const c = load((x) => {
-    x.formulas.cas.storage.states.push({ id: 'not_supported', cond: { kind: 'branch', dim: 'count', cond: { op: '==', a: { kind: 'input', id: 'data_gib', dim: 'GiB' }, b: { kind: 'const', value: 30, dim: 'GiB' } }, then: { kind: 'const', value: 1, dim: 'count' }, else: { kind: 'const', value: 0, dim: 'count' } }, reason: 'fixture gap' });
+    x.formulas.cas.storage.states.push({ id: 'not_supported', cond: { kind: 'branch', dim: 'count', cond: { op: '==', a: { kind: 'input', id: 'data_bytes', dim: 'GiB' }, b: { kind: 'const', value: 30, dim: 'GiB' } }, then: { kind: 'const', value: 1, dim: 'count' }, else: { kind: 'const', value: 0, dim: 'count' } }, reason: 'fixture gap' });
   });
-  const gap = pipeline.sweep(c, inputs({ inserts_per_month: 130000 }), AWS, 'data_gib', [10, 20, 30, 40]);
+  const gap = pipeline.sweep(c, inputs({ inserts_per_month: 130000 }), AWS, 'data_bytes', [10, 20, 30, 40]);
   assert.equal(gap.points[2].totals.cas.state, 'not_supported');
   assert.equal(gap.points[2].totals.cas.value, null);
   assert.deepEqual(gap.breakEven.filter((b) => b.a === 'ebs' && b.b === 'cas'), []);
@@ -216,9 +216,94 @@ test('test_missing_input_is_unavailable_not_zero', () => {
   assert.equal(r.variants.s3.total, null);
 });
 
+test('test_sweep_forwards_outcome_mix', () => {
+  // Half of the PUTs are 5XX, which the preset does not bill.
+  const opts = { outcome_mix: { PutObject: { ok: 0.5, server_error: 0.5 } } };
+  const ins = inputs({ inserts_per_month: 100000 });
+  const s = pipeline.sweep(C, ins, AWS, 'inserts_per_month', [100000], opts);
+  const direct = pipeline.run(C, ins, AWS, opts).variants.cas.total;
+  close(s.points[0].totals.cas.value, direct);
+  assert.ok(direct < pipeline.run(C, ins, AWS, {}).variants.cas.total);
+});
+
+test('test_sweep_reresolves_precedence_groups', () => {
+  // retention_days stays locked; sweeping data_bytes locks it as the newest member, so ingest_rate is derived.
+  const lockOrder = ['ingest_rate', 'retention_days'];
+  const s = pipeline.sweep(C, inputs(), AWS, 'data_bytes', [500, 2000], { lockOrder });
+  for (const p of s.points) {
+    const r = pipeline.resolveInputs(C, { data_bytes: p.x, ingest_rate: 40, retention_days: 25 }, ['retention_days', 'data_bytes'], {});
+    assert.deepEqual(r.problems, []);
+    close(r.inputs.get('ingest_rate'), p.x / 25);
+    close(p.totals.s3.value, pipeline.run(C, r.inputs, AWS, {}).variants.s3.total, `x=${p.x}`);
+  }
+  // The stale ingest_rate (40 GiB/day) would price 2000 GiB differently: replication follows ingest.
+  const stale = pipeline.run(C, inputs({ data_bytes: 2000 }), AWS, {}).variants.s3.total;
+  assert.ok(Math.abs(stale - s.points[1].totals.s3.value) > 1);
+});
+
+test('test_manual_provisioning_priced_and_missing_input_unavailable', () => {
+  const manual = { volumes_per_replica: 2, provisioned_size_gib: 600, provisioned_iops: 3000, provisioned_mibps: 125 };
+  const r = run(manual);
+  const ebs = r.variants.ebs;
+  assert.equal(ebs.state, 'ok');
+  assert.equal(ebs.provisioning.manual, true);
+  // 2 x 600 GiB x 0.08; baseline IOPS and throughput add nothing.
+  close(ebs.total, 96);
+  assert.ok(ebs.notes.some((n) => n.text === 'manual: 2 x (600 GiB, 3000 IOPS, 125 MiB/s)'));
+  assert.ok(ebs.notes.some((n) => /instance class for 250 MiB\/s/.test(n.text)));
+  const ins = inputs(manual);
+  ins.delete('provisioned_size_gib');
+  const m = pipeline.run(C, ins, AWS, {});
+  assert.equal(m.variants.ebs.state, 'unavailable');
+  assert.match(m.variants.ebs.reason, /volumes_per_replica = 2 needs provisioned_size_gib/);
+  assert.equal(m.variants.ebs.total, null);
+  // Columns without block rows are priced as usual.
+  assert.equal(m.variants.s3.state, 'ok');
+});
+
+test('test_applicability_unsupported_cut_with_nonzero_workload', () => {
+  assert.equal(run().variants.cas.state, 'ok');
+  const r = run({ mutations_per_month: 5 });
+  assert.equal(r.variants.cas.state, 'unsupported_cut');
+  assert.match(r.variants.cas.reason, /cas\.mutations: cut for lifecycle and the workload needs request PutObject/);
+  assert.equal(r.variants.cas.total, null);
+});
+
+test('test_declared_allocation_shares_split_every_line', () => {
+  const sp = run().variants.s3plain;
+  assert.equal(sp.state, 'ok');
+  for (const a of sp.allocation) assert.equal(a.basis, 'allocation.shares');
+  close(sp.cells.storage.money, sp.total * 0.75);
+  close(sp.cells.inserts.money, sp.total * 0.25);
+  // The PUT line goes 3:1 too, although only the inserts cell issues PUTs.
+  const put = sp.cells.storage.lines.find((l) => l.rule_id === 'put_copy_post_list');
+  close(put.share, 0.75);
+});
+
+test('test_cut_lookup_table_zero_and_nonzero', () => {
+  const zero = run();
+  assert.equal(zero.variants.ebs.state, 'ok');
+  assert.deepEqual(zero.variants.ebs.cells.mutations.zeroed_cut_terms, [{ refs: ['ebs_mutation_iops'], by: ['mutations_per_month'] }]);
+  const r = run({ mutations_per_month: 5 });
+  assert.equal(r.variants.ebs.state, 'unsupported_cut');
+  assert.match(r.variants.ebs.reason, /ebs_mutation_iops is unsupported .*mutations_per_month = 5 is non-zero/);
+});
+
+test('test_infeasible_allocation_is_unavailable', () => {
+  // Four 65 536 GiB gp3 volumes hold at most 262 144 GiB.
+  const r = run({ data_bytes: 300000 });
+  assert.equal(r.variants.ebs.state, 'unavailable');
+  assert.match(r.variants.ebs.reason, /no feasible volume allocation/);
+  assert.equal(r.variants.ebs.total, null);
+  assert.equal(r.variants.s3.state, 'ok');
+  assert.notEqual(r.cheapest, 'ebs');
+  assert.equal(r.deltas.s3.vs_ebs, null);
+});
+
 // ---- measured fixtures (tools/build_fixtures.py) --------------------------------------------------------------
 
 const MEASURED = process.env.SCC_MEASURED_FIXTURES || path.join(FIX, 'measured');
+const COEF_ONLY = '_coefficient_only.json';
 const REGISTRY = path.join(__dirname, '..', '..', '..', 'docs', 'superpowers', 'cost-model', 'inputs-registry.json');
 
 // Evaluates the fixture's cells for its inputs; returns predicted request attempts per "caller|op" ("*" = any caller
@@ -268,15 +353,25 @@ function compareFixture(fx) {
 test('test_measured_fixtures_within_tolerance', (t) => {
   const files = fs.existsSync(MEASURED) ? fs.readdirSync(MEASURED).filter((f) => f.endsWith('.json')).sort() : [];
   if (!files.length) {
-    const msg = `no measured fixtures in ${MEASURED}; build them with tools/build_fixtures.py`;
-    if (process.env.SCC_DEV === '1') assert.fail(msg);
-    t.skip(msg);
-    return;
+    const msg = `no measured fixtures in ${MEASURED}: run tools/build_fixtures.py (generate_contract.py generate does); SCC_DEV=1 skips this check`;
+    if (process.env.SCC_DEV === '1') {
+      t.skip(msg);
+      return;
+    }
+    assert.fail(msg);
   }
+  const read = (f) => JSON.parse(fs.readFileSync(path.join(MEASURED, f), 'utf8'));
+  assert.ok(files.includes(COEF_ONLY), `${MEASURED} has fixtures but no ${COEF_ONLY}: rebuild it with tools/build_fixtures.py`);
+  const fixtures = files.filter((f) => f !== COEF_ONLY).map((f) => [f, read(f)]);
   const failures = [];
-  for (const f of files) {
-    const fx = JSON.parse(fs.readFileSync(path.join(MEASURED, f), 'utf8'));
-    for (const p of compareFixture(fx)) failures.push(`${f} (${fx.measurement_id}): ${p}`);
-  }
+  for (const [f, fx] of fixtures) for (const p of compareFixture(fx)) failures.push(`${f} (${fx.measurement_id}): ${p}`);
   assert.deepEqual(failures, []);
+  // Every done fit or hold-out edge has a fixture, or is coefficient-only: its report has no cells and its
+  // prediction no request rows.
+  const only = read(COEF_ONLY);
+  const coverage = JSON.parse(fs.readFileSync(only.coverage, 'utf8'));
+  const withCells = new Set(fixtures.map(([, fx]) => fx.edge_id));
+  const without = coverage.evidence.map((e, i) => [`evidence[${i}]`, e])
+    .filter(([id, e]) => e.status === 'done' && ['fit', 'holdout'].includes(e.role) && !withCells.has(id)).map(([id]) => id);
+  assert.deepEqual(only.edges.map((e) => e.edge_id).sort(), without.sort());
 });
