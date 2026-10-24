@@ -1,6 +1,7 @@
 """Local I/O accounting of the cost rig: /proc counters, allocated-bytes sampling and strace attribution."""
 from __future__ import annotations
 
+import glob
 import os
 import re
 import shutil
@@ -166,18 +167,27 @@ def preflight_trace(scope_path: str = PTRACE_SCOPE, which=shutil.which) -> list:
 
 
 class Tracer:
-    def __init__(self, pass_dir: str, replica: int):
-        self.pass_dir, self.replica = pass_dir, replica
+    """One trace file per server generation: `strace -o` truncates, so a restart must not reuse the file."""
+
+    def __init__(self, pass_dir: str, replica: int, generation: int = 0):
+        self.pass_dir, self.replica, self.generation = pass_dir, replica, generation
 
     def path(self) -> str:
         # Absolute: server.sh changes into the replica directory before strace opens its output file.
-        return os.path.abspath(os.path.join(self.pass_dir, f'strace.r{self.replica}.txt'))
+        return os.path.abspath(os.path.join(self.pass_dir, f'strace.r{self.replica}.g{self.generation}.txt'))
+
+    @staticmethod
+    def paths(pass_dir: str, replica: int) -> list:
+        """Every generation's trace of `replica`, in generation order."""
+        found = glob.glob(os.path.join(os.path.abspath(pass_dir), f'strace.r{replica}.g*.txt'))
+        return sorted(found, key=lambda p: int(re.search(r'\.g(\d+)\.txt$', p).group(1)))
 
     def prefix(self) -> str:
         # server.sh word-splits the prefix, so a path with whitespace would be cut apart.
         if re.search(r'\s', self.path()):
             raise ValueError(f'trace path must not contain whitespace: {self.path()}')
-        return f'strace -f -ttt -yy -e trace={STRACE_SYSCALLS} -o {self.path()}'
+        # -T gives each call its duration, so a call that straddles a window edge can be told apart.
+        return f'strace -f -ttt -T -yy -e trace={STRACE_SYSCALLS} -o {self.path()}'
 
     def preflight_trace(self) -> list:
         return preflight_trace()
@@ -192,24 +202,42 @@ def path_filter(prefixes: list):
     return lambda path: path.startswith(prefixes)
 
 
-_CALL = re.compile(r'^(?:\d+\s+)?\d+\.\d+\s+(\w+)\((\d+)<(/[^>]*)>')
+_CALL = re.compile(r'^(?:(\d+)\s+)?(\d+\.\d+)\s+(\w+)\((\d+)<(/[^>]*)>')
 _DONE = re.compile(r'^.*\)\s+=\s+(-?\d+)(?:\s.*)?$')
-_UNFINISHED = re.compile(r'^(?:(\d+)\s+)?\d+\.\d+\s+(\w+)\((\d+)<(/[^>]*)>.*<unfinished \.\.\.>\s*$')
-_RESUMED = re.compile(r'^(?:(\d+)\s+)?\d+\.\d+\s+<\.\.\. (\w+) resumed>.*\)\s+=\s+(-?\d+)(?:\s.*)?$')
+_UNFINISHED = re.compile(r'^(?:(\d+)\s+)?(\d+\.\d+)\s+(\w+)\((\d+)<(/[^>]*)>.*<unfinished \.\.\.>\s*$')
+_RESUMED = re.compile(r'^(?:(\d+)\s+)?(\d+\.\d+)\s+<\.\.\. (\w+) resumed>.*\)\s+=\s+(-?\d+)(?:\s.*)?$')
+_DURATION = re.compile(r'<(\d+\.\d+)>\s*$')
 
 
-def parse_strace(path: str, path_filter=None) -> dict:
+def parse_strace(paths, path_filter=None, window=None) -> dict:
     """Per-syscall count, returned bytes and size histogram for fds that resolve to absolute paths.
 
-    Sockets, pipes and ttys carry no leading `/` in the `-yy` decoration and are not counted.
-    Failed calls (negative return) are skipped.
+    `paths` is one trace file or a list (one per server generation). Sockets, pipes and ttys carry no leading `/`
+    in the `-yy` decoration and are not counted. Failed calls (negative return) are skipped. With `window`
+    `(t0_s, t1_s)`, only calls that start and end inside it count; a call that straddles an edge is listed in
+    `crossing`, and the rest are counted in `outside`. A call's end is its start plus the `-T` duration.
     """
+    files = [paths] if isinstance(paths, str) else list(paths)
     syscalls: dict = {}
+    crossing: list = []
+    outside = 0
     pending: dict = {}
 
-    def record(name: str, fd_path: str, ret: int) -> None:
+    def record(name: str, fd_path: str, ret: int, pid=None, start=None, end=None) -> None:
+        nonlocal outside
         if ret < 0 or (path_filter and not path_filter(fd_path)):
             return
+        if window is not None:
+            t0, t1 = window
+            if start >= t0 and end <= t1:
+                pass
+            elif start <= t1 and end >= t0:
+                crossing.append({'pid': pid or '', 'syscall': name, 'path': fd_path, 'start': start, 'end': end,
+                                 'bytes': ret if name not in ('fsync', 'fdatasync') else 0})
+                return
+            else:
+                outside += 1
+                return
         entry = syscalls.setdefault(name, {'count': 0, 'bytes': 0, 'size_histogram': {}})
         entry['count'] += 1
         if name not in ('fsync', 'fdatasync'):
@@ -218,27 +246,43 @@ def parse_strace(path: str, path_filter=None) -> dict:
                 bucket = size_bucket(ret)
                 entry['size_histogram'][bucket] = entry['size_histogram'].get(bucket, 0) + 1
 
-    with open(path, errors='replace') as f:
-        for line in f:
-            m = _UNFINISHED.match(line)
-            if m:
-                pending[m.group(1)] = (m.group(2), re.sub(r' \(deleted\)$', '', m.group(4)))
-                continue
-            m = _RESUMED.match(line.rstrip('\n'))
-            if m:
-                call = pending.pop(m.group(1), None)
-                if call and call[0] == m.group(2):
-                    record(call[0], call[1], int(m.group(3)))
-                continue
-            m, done = _CALL.match(line), _DONE.match(line.rstrip('\n'))
-            if m and done:
-                record(m.group(1), re.sub(r' \(deleted\)$', '', m.group(3)), int(done.group(1)))
-    return {'tool': 'strace', 'syscalls': syscalls}
+    def duration(line):
+        d = _DURATION.search(line)
+        return float(d.group(1)) if d else 0.0
+
+    for path in files:
+        pending.clear()  # pids do not carry over between generations
+        with open(path, errors='replace') as f:
+            for raw in f:
+                line = raw.rstrip('\n')
+                m = _UNFINISHED.match(line)
+                if m:
+                    pending[m.group(1)] = (m.group(3), re.sub(r' \(deleted\)$', '', m.group(5)), float(m.group(2)))
+                    continue
+                m = _RESUMED.match(line)
+                if m:
+                    call = pending.pop(m.group(1), None)
+                    if call and call[0] == m.group(3):
+                        end = call[2] + duration(line) if _DURATION.search(line) else float(m.group(2))
+                        record(call[0], call[1], int(m.group(4)), m.group(1), call[2], end)
+                    continue
+                m, done = _CALL.match(line), _DONE.match(line)
+                if m and done:
+                    start = float(m.group(2))
+                    record(m.group(3), re.sub(r' \(deleted\)$', '', m.group(5)), int(done.group(1)), m.group(1), start,
+                           start + duration(line))
+    out = {'tool': 'strace', 'syscalls': syscalls}
+    if window is not None:
+        out.update(window=list(window), crossing=crossing, outside=outside, files=files)
+    return out
 
 
-def limitations(pass_dir: str, local_dirs, drop_caches_path: str = DROP_CACHES) -> list:
+def limitations(pass_dir: str, local_dirs, drop_caches_path: str = DROP_CACHES, traced: bool = False) -> list:
     result = ['process_io includes embedded Keeper on replica 1',
-              'host diskstats include RustFS, proxy and unrelated activity']
+              'host diskstats include RustFS, proxy and unrelated activity', DirSampler.LIMITATION]
     if not os.access(drop_caches_path, os.W_OK):
         result.append('page cache not dropped (no root)')
+    if traced:
+        result.append('IOPS and MiB/s are syscall demand averaged over the window; page cache and writeback sit '
+                      'between them and the device, so they are not device peaks')
     return result

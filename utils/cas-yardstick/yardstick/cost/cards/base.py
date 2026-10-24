@@ -116,6 +116,11 @@ class CostCard:
     def inventory_families(self, ctx) -> list:
         return []
 
+    def classify(self, ctx, attempts: list, families: list) -> dict:
+        """Split window attempts into foreground, maintenance and rig; by key family unless the card knows better."""
+        from .. import ledger  # noqa: PLC0415 (the ledger imports the proxy; cards stay importable without it)
+        return ledger.classify(attempts, families)
+
     def reclassify(self, ctx, bounds) -> None:
         """Attach logical categories (`garbage` after a DROP, ...) to the pass replay before byte-hours are taken."""
 

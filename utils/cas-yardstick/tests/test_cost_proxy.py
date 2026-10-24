@@ -554,6 +554,8 @@ class ParsingTest(ProxyBase):
                           {'key': 'c & d', 'deleted': True, 'code': None}])
         for row in (verbose, quiet):
             self.assertEqual(validate_ledger_row(row), [])
+        self.assertEqual(verbose['delete_keys'], ['a', 'b'])
+        self.assertEqual(quiet['delete_keys'], ['a', 'b', 'c & d'])
 
     def test_completed_parts_parsed(self):
         self.up.respond = lambda h, req: reply(h, 200, b'<CompleteMultipartUploadResult/>', XML)
@@ -719,6 +721,28 @@ class BrokenUpstreamTest(ProxyBase):
         self.assertIn('closed', row['error'])
         self.assertEqual(row['resp_payload_bytes'], 10)
         self.assertEqual(validate_ledger_row(row), [])
+
+    def test_delete_keys_recorded_when_the_response_is_lost(self):
+        self.point_at(b'HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n<Delete')
+        with contextlib.redirect_stderr(io.StringIO()):
+            c = self.conn()
+            c.request('POST', '/b?delete', b'<Delete><Object><Key>x</Key></Object><Object><Key>y</Key></Object></Delete>')
+            with self.assertRaises((http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError)):
+                c.getresponse().read()
+        row = self.wait_attempts(1)[0]
+        self.assertEqual(row['upstream']['outcome'], 'unknown')
+        self.assertIsNone(row['response_body']['delete_results'])
+        self.assertEqual(row['delete_keys'], ['x', 'y'])
+        self.assertEqual(validate_ledger_row(row), [])
+
+    def test_chunked_body_cut_midway_keeps_the_bytes_already_relayed(self):
+        self.point_at(b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\naaaa\r\n6\r\nbbb')
+        (status, body), _, row = self.get_through_proxy()
+        self.assertIsNone(body)
+        self.assertEqual(row['upstream']['outcome'], 'unknown')
+        self.assertEqual(row['resp_payload_bytes'], 4 + 3)
+        head = len(b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n')
+        self.assertEqual(row['resp_wire_bytes'], head + len(b'4\r\naaaa\r\n6\r\nbbb'))
 
     def test_bad_status_line(self):
         self.point_at(b'garbage\r\n\r\n')

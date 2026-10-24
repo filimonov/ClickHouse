@@ -62,6 +62,13 @@ class FakeRig:
         self.calls.append('list')
         return [{'key': f'{prefix}{n}'} for n in range(self.objects)]
 
+    lists_uploads_by_prefix = False
+    uploads = ()
+
+    def list_multipart_uploads(self, bucket, prefix):
+        self.calls.append('list_uploads')
+        return list(self.uploads)
+
     def abort_multipart(self, bucket, key, upload_id):
         self.calls.append('abort')
         self.aborts.append((bucket, key, upload_id))
@@ -187,7 +194,7 @@ class RunnerFixture(unittest.TestCase):
     def deps(self, **kw):
         fields = dict(binary='/bin/ch', run_id='run1', runs_dir=self.runs_dir, topology=self.topology,
                       proxy=self.proxy, rig=self.rig, store_id='s', scale=1.0, keep_prefix=False,
-                      binary_sha256='0' * 64, commit='abc')
+                      binary_sha256='0' * 64, commit='abc', binary_download_sha256=None, rig_commit='f' * 40)
         fields.update(kw)
         return Deps(**fields)
 
@@ -221,7 +228,10 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(record['ledger']['maintenance'], {})
         self.assertEqual(record['window']['crossing'], [])
         self.assertLess(record['window']['t_start_us'], record['window']['t_end_us'])
-        self.assertEqual(record['inventory']['initial'], 'empty_verified')
+        self.assertEqual(record['inventory']['initial'], 'declared')
+        self.assertIn('not enumerable', record['inventory']['note'])
+        self.assertEqual((record['window']['open_attempts'], record['ledger']['complete']), ([], True))
+        self.assertEqual(record['inventory']['reclassified'], [])
         self.assertGreater(record['inventory']['byte_hours']['active']['upper'], 0)
         self.assertEqual(record['assertions'], {'puts': {'expected': 2, 'actual': 2, 'ok': True}})
         self.assertEqual((record['unit_count'], record['observations'], record['effective_counts']),
@@ -324,6 +334,70 @@ class RunnerTest(RunnerFixture):
         record = self.go()
         self.assertEqual((record['status'], len(record['window']['crossing'])), ('ok', 1))
 
+    def test_open_attempt_without_row_marks_the_ledger_incomplete(self):
+        self.card.mode = 'stochastic'
+
+        opened = []
+
+        def measured(ctx):
+            self.writes(2)(ctx)
+            ctx.proxy.seq += 1  # begun in the window, never finished: no row
+            opened.append(ctx.proxy.seq)
+            ctx.proxy.open = [(ctx.proxy.seq, 'r1'), (ctx.proxy.seq - 1, 'rig')]
+        self.card.on_measured = measured
+        record = self.go()
+        self.assertEqual(record['status'], 'ok')
+        self.assertFalse(record['ledger']['complete'])
+        self.assertEqual(record['window']['open_attempts'],
+                         [{'seq': opened[0], 'caller': 'r1', 'op': 'PutObject', 'key': 'k'}])
+        self.assertIn(opened[0], record['window']['crossing'])
+        self.assertEqual(measurements_problems(record), [])
+
+    def test_failed_assertion_fails_the_record_and_keeps_the_numbers(self):
+        self.card.on_measured = self.writes(1)
+        record = self.go()
+        self.assertEqual((record['status'], record['reason']), ('FAILED', 'assertions_failed'))
+        self.assertEqual(record['partial']['assertions']['puts'], {'expected': 2, 'actual': 1, 'ok': False})
+        self.assertIn('puts', record['diagnostics']['error_text'])
+        self.assertIn('ledger', record['partial'])
+        self.assertEqual(measurements_problems(record), [])
+
+    def test_empty_inventory_verified_only_where_uploads_can_be_listed(self):
+        self.card.on_measured = self.writes(2)
+        self.rig.lists_uploads_by_prefix = True
+        self.rig.uploads = []
+        record = self.go()
+        self.assertEqual(record['inventory']['initial'], 'empty_verified')
+        self.assertNotIn('note', record['inventory'])
+        self.rig.uploads = [{'key': 'run1/s3/fake/small/k0/x', 'upload_id': 'u'}]
+        record = self.go()
+        self.assertEqual((record['status'], record['reason']), ('FAILED', 'prefix_not_empty'))
+
+    def test_traced_card_counts_only_calls_inside_the_window(self):
+        from unittest import mock
+        from yardstick.cost import cluster as cluster_module
+        from yardstick.cost import localio
+        self.card.trace = True
+        self.card.on_measured = self.writes(2)
+
+        def trace(ctx):
+            # Generation 0 of replica 1: one call during setup (t = 0.5 s), one inside the window.
+            with open(localio.Tracer(ctx.pass_dir, 1, 0).path(), 'w') as f:
+                f.write('7 0.500000 write(3</d/a>, "s"..., 10) = 10 <0.000001>\n')
+                f.write(f'7 {(ctx.proxy.t + 1) / 1e6:.6f} write(3</d/a>, "w"..., 20) = 20 <0.000001>\n')
+        self.card.on_setup = lambda ctx: None
+        original = self.card.measured
+        self.card.measured = lambda ctx: (trace(ctx), original(ctx))[1]
+        with mock.patch.object(localio.Tracer, 'preflight_trace', return_value=[]), \
+                mock.patch.object(cluster_module, 'traced_child_pid', side_effect=lambda pid, d: pid):
+            record = self.go()
+        self.assertEqual(record['status'], 'ok', record.get('diagnostics'))
+        t = record['local']['r1']['trace']
+        self.assertEqual((t['syscalls']['write']['count'], t['outside'], t['crossing']), (1, 1, []))
+        self.assertEqual(t['window'], [record['window']['t_start_us'] / 1e6, record['window']['t_end_us'] / 1e6])
+        self.assertIn('syscall demand', record['local']['r1']['limitations'][-1])
+        self.assertEqual(measurements_problems(record), [])
+
     def test_invalid_record_becomes_failed_invalid_record(self):
         self.card.on_measured = lambda ctx: ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x')
         original = self.card.measured
@@ -336,7 +410,8 @@ class RunnerTest(RunnerFixture):
 
     def test_stochastic_crossing_is_recorded_not_failed(self):
         self.card.mode = 'stochastic'
-        self.card.on_measured = lambda ctx: ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x', end=False)
+        self.card.on_measured = lambda ctx: (ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x', end=False),
+                                             ctx.proxy.emit(key='run1/s3/fake/small/k0/data/y'))
         record = self.go()
         self.assertEqual(record['status'], 'ok')
         self.assertEqual(len(record['window']['crossing']), 1)

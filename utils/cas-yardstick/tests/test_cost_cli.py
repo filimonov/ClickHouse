@@ -50,8 +50,10 @@ class FakeProxy:
 
 
 class FakeRig:
-    def __init__(self, *a):
-        pass
+    endpoints = []
+
+    def __init__(self, endpoint, *a):
+        FakeRig.endpoints.append(endpoint)
 
     def ensure_bucket(self, bucket):
         pass
@@ -77,7 +79,9 @@ def write_manifest(d, card, case, policies, repeats=2, replicas=1):
 
 
 def run_args(tmp, manifests, **kw):
-    base = dict(binary=os.path.join(tmp, 'clickhouse'), manifests=manifests, cases='all', policies='s3,cas',
+    with open(os.path.join(tmp, 'SHA256SUMS'), 'w') as f:
+        f.write('d' * 64 + '  ' + os.path.join(tmp, 'clickhouse') + '\n')
+    base = dict(binary=os.path.join(tmp, 'clickhouse'), source_dir=None, manifests=manifests, cases='all', policies='s3,cas',
                 replicas=1, repeats=None, scale=1.0, runs_dir=os.path.join(tmp, 'runs'), port_base=19700,
                 endpoint=None, keep_prefix=False, commit='abc123')
     base.update(kw)
@@ -97,6 +101,8 @@ class RunTest(unittest.TestCase):
 
             def fake_run_case(card, manifest, policy, k, deps):
                 calls.append((manifest['case_id'], policy, k, deps.commit, deps.binary_sha256))
+                self.assertEqual(len(deps.rig_commit), 40)
+                self.assertEqual(deps.binary_download_sha256, 'd' * 64)
                 status = 'FAILED' if (manifest['case_id'], policy, k) == ('one', 'cas', 2) else 'ok'
                 if policy == 'unsupported':
                     status = 'UNSUPPORTED'
@@ -120,6 +126,8 @@ class RunTest(unittest.TestCase):
             self.assertEqual([c[:3] for c in calls], [('one', 's3', 1), ('one', 's3', 2), ('one', 'cas', 1),
                                                      ('one', 'cas', 2), ('two', 'cas', 1)])
             self.assertEqual({c[3] for c in calls}, {'abc123'})
+            # The shared observer client goes through the proxy's rig listener, never to the store directly.
+            self.assertEqual(FakeRig.endpoints[-1], 'http://127.0.0.1:19134')
             self.assertEqual(len({c[4] for c in calls}), 1)
             self.assertEqual(len(calls[0][4]), 64)
             self.assertEqual(code, 1)
@@ -156,6 +164,36 @@ class RunTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 go(run_args(tmp, [m]), started=True, run_case=explode)
             self.assertTrue(proxies[-1].stopped)
+
+    def test_cleanup_failure_makes_run_exit_non_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            touch(os.path.join(tmp, 'clickhouse'))
+            m = os.path.join(tmp, 'm')
+            write_manifest(m, 'c', 'one', ['s3'], repeats=1)
+
+            def dirty(card, manifest, policy, k, deps):
+                return {**ok_record('c', 'one'), 'cleanup': {'aborted_uploads': 0, 'deleted_keys': 0,
+                                                             'verified_empty': False, 'errors': ['delete_prefix: x']}}
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = cli.cmd_run(run_args(tmp, [m], policies='s3'), run_case=dirty, proxy_factory=FakeProxy,
+                                   rig_factory=FakeRig, rustfs=FakeRustfs(False), cards={'c': object()})
+            self.assertEqual(code, 1)
+            self.assertIn('cleanup failed', out.getvalue())
+
+    def test_download_hash_and_source_commit_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'bin', '26.8'))
+            binary = os.path.join(tmp, 'bin', '26.8', 'clickhouse')
+            touch(binary)
+            with open(os.path.join(tmp, 'bin', 'SHA256SUMS'), 'w') as f:
+                # Paths are relative to an ancestor of the sums file, as in the repository's tmp/bin/SHA256SUMS.
+                f.write('a' * 64 + '  bin/26.6/clickhouse\n' + 'b' * 64 + '  bin/26.8/clickhouse\n')
+            self.assertEqual(cli.download_sha256(binary), 'b' * 64)
+            self.assertIsNone(cli.download_sha256(os.path.join(tmp, 'elsewhere')))
+            self.assertEqual(cli.source_dir_for(binary, root=tmp), None)
+            os.makedirs(os.path.join(tmp, 'src-26.8'))
+            self.assertEqual(cli.source_dir_for(binary, root=tmp), os.path.join(tmp, 'src-26.8'))
 
     def test_table_columns(self):
         row = cli.table_row(ok_record())
@@ -260,7 +298,8 @@ class ProbeTest(unittest.TestCase):
             args = run_args(tmp, [m])
             args.manifests = m
             out = io.StringIO()
-            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess):
+            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
                 code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
             self.assertEqual(code, 2)
@@ -292,7 +331,8 @@ class ProbeTest(unittest.TestCase):
                 args = run_args(tmp, [m])
                 args.manifests = m
                 out = io.StringIO()
-                with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess):
+                with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
                     code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                          rustfs=FakeRustfs(False), cards=cards, tools_dir=tools_dir)
                 return code, out.getvalue()
@@ -341,7 +381,8 @@ class ProbeTest(unittest.TestCase):
             args = run_args(tmp, [m])
             args.manifests = m
             out = io.StringIO()
-            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess):
+            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
                 code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
             self.assertEqual(code, 2)

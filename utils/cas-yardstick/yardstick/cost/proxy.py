@@ -146,6 +146,12 @@ def parse_delete_results(request: bytes, response: bytes):
     return results
 
 
+def parse_delete_keys(request: bytes):
+    """Keys a DeleteObjects request names, or None when the body is not XML."""
+    req = _xml(request)
+    return None if req is None else [_text(o, 'Key') for o in _kids(req, 'Object')]
+
+
 def parse_listing(body: bytes):
     root = _xml(body)
     if root is None:
@@ -251,9 +257,9 @@ def relay_chunked(src, gone: type, raw_cb=None, data_cb=None, last_cb=None):
             data = _read1(src, min(remaining, CHUNK), gone)
             remaining -= len(data)
             payload += len(data)
-            raw(data)
-            if data_cb:
+            if data_cb:  # before raw_cb: a client gone mid-chunk must not hide bytes the store already sent
                 data_cb(data)
+            raw(data)
         raw(_readline(src, gone))
 
 
@@ -718,6 +724,11 @@ class _Handler(socketserver.BaseRequestHandler):
             return
         if row['op'] == 'CompleteMultipartUpload':
             row['response_body']['completed_parts'] = parse_completed_parts(bytes(a.request_body))
+        elif row['op'] == 'DeleteObjects':
+            # Kept before forwarding: if the response is lost, replay still knows which keys may be gone.
+            keys = parse_delete_keys(bytes(a.request_body))
+            if keys is not None:
+                row['delete_keys'] = keys
 
     # --- response ---
 
@@ -785,13 +796,19 @@ class _Handler(socketserver.BaseRequestHandler):
             if relay:
                 self.c_send(piece)
 
+        # Counted piece by piece, so a body cut midway keeps the bytes that did cross.
+        def chunk_raw(piece):
+            row['resp_wire_bytes'] += len(piece)
+            raw_cb(piece)
+
+        def chunk_data(data):
+            row['resp_payload_bytes'] += len(data)
+            on_data(data)
+
         if no_body:
             pass
         elif chunked:
-            payload, wire = relay_chunked(uf, UpstreamGone, raw_cb, on_data,
-                                          (lambda: self.proxy.finishing(a)) if relay else None)
-            row['resp_payload_bytes'] = payload
-            row['resp_wire_bytes'] += wire
+            relay_chunked(uf, UpstreamGone, chunk_raw, chunk_data, (lambda: self.proxy.finishing(a)) if relay else None)
         elif clen is not None:
             remaining = clen
             while remaining:

@@ -53,7 +53,7 @@ class Cluster:
         self._client_factory = client_factory
         self._relay_factory = relay_factory
         self._proc_io = proc_io_reader
-        # str, or a callable replica -> str when each replica traces into its own file.
+        # str, or a callable (replica, generation) -> str when each server generation traces into its own file.
         self.trace_prefix = trace_prefix
         self.clients: list = []
         self.relays: list = []
@@ -70,7 +70,8 @@ class Cluster:
         env = None
         if args[0] == 'start' and self.trace_prefix:
             replica = int(os.path.basename(run_dir)[1:])
-            prefix = self.trace_prefix(replica) if callable(self.trace_prefix) else self.trace_prefix
+            generation = len(self.generations.get(replica, []))
+            prefix = self.trace_prefix(replica, generation) if callable(self.trace_prefix) else self.trace_prefix
             env = {**os.environ, 'TRACE_PREFIX': prefix}
         with open(os.path.join(run_dir, 'server_control.log'), 'a') as log:
             # SYSTEM SHUTDOWN signals the server's process group; keep the caller out of it.

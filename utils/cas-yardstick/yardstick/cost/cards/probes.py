@@ -1,4 +1,4 @@
-"""Phase-0 acceptance probes (design §5.3); the runtime estimate's sample cards live in `samples.py`.
+"""Phase-0 acceptance probes (design §5.3); the CAS probe lives in `cas_probe.py`, the estimate's samples in `samples.py`.
 
 Manifests in the phase-0 report directory (`experiments/<experiment_id>.json`) carry every parameter. The
 expected request counts live in `predictions/<experiment_id>.<policy>.json`; their `source_refs` cite the
@@ -13,7 +13,6 @@ import time
 
 from .. import ledger as L
 from ..localio import Tracer, parse_strace, path_filter
-from ..s3client import ACCESS_KEY, SECRET_KEY, S3Client
 from . import CARDS
 from .base import DATABASE, POLL_S, CostCard
 
@@ -25,29 +24,11 @@ HOURS_PER_MONTH = 730  # the AWS price-list month; storage prices are per GB-mon
 CREATE_OPS = ('PutObject', 'CopyObject', 'CompleteMultipartUpload')
 WRITE_SYSCALLS = ('write', 'pwrite64', 'writev')
 IO_SYSCALLS = WRITE_SYSCALLS + ('read', 'pread64', 'readv')
-# Observation keys the formulas cells read as measured request counts (registry quantities `probe_<n>_requests`).
+# Cell inputs (`observations.inputs`, registry quantities): upstream-ok requests per op `probe_<n>_requests`,
+# 4XX responses `probe_<n>_error_requests`, and storage `probe_<category>_gib_months`.
 REQUEST_INPUTS = {'PutObject': 'put', 'GetObject': 'get', 'HeadObject': 'head', 'ListObjectsV2': 'list',
                   'DeleteObject': 'delete', 'DeleteObjects': 'batch_delete'}
-
-# CAS key families (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h).
-# Anchored on the layout's own suffix shapes so the pass prefix (which contains `/cas/` as the policy name) never
-# matches. `payload` marks the families a dropped table turns into garbage; the rest are control state.
-CAS_FAMILIES = [
-    {'name': 'blob_meta', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+\.meta$', 'category': 'metadata',
-     'maintenance': False, 'payload': False},
-    {'name': 'blob', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+$', 'category': 'active',
-     'maintenance': False, 'payload': True},
-    {'name': 'manifest', 'regex': r'/cas/manifests/.+/[0-9a-f]+-[0-9a-f]+/\d{6}(\.[a-z0-9]+)?$', 'category': 'active',
-     'maintenance': False, 'payload': True},
-    {'name': 'refs', 'regex': r'/cas/(ns/(stream|state)/|ref_catalog$)', 'category': 'metadata',
-     'maintenance': False, 'payload': False},
-    {'name': 'lease', 'regex': r'/gc/server-roots/', 'category': 'metadata', 'maintenance': True, 'payload': False},
-    {'name': 'gc', 'regex': r'/gc/(state|maintenance_state|hb)$|/gc/gen/', 'category': 'metadata',
-     'maintenance': True, 'payload': False},
-    {'name': 'pool_meta', 'regex': r'/_pool_meta$', 'category': 'metadata', 'maintenance': False, 'payload': False},
-    {'name': 'roots', 'regex': r'/roots/', 'category': 'metadata', 'maintenance': False, 'payload': False},
-]
-
+ERROR_INPUTS = {'HeadObject': 'head', 'GetObject': 'get'}
 
 # --- arithmetic the predictions rest on ------------------------------------------------------
 
@@ -80,10 +61,32 @@ def gib_months(byte_hours: float) -> float:
     return byte_hours / GIB / HOURS_PER_MONTH
 
 
-def request_inputs(foreground: dict) -> dict:
-    """Attempts per op summed over callers, the way the drill sums the measured side."""
-    return {f'probe_{n}_requests': sum(ops.get(op, {}).get('attempts', 0) for ops in foreground.values())
-            for op, n in REQUEST_INPUTS.items()}
+def integrated(draft: dict) -> dict:
+    """Workload usage per caller and op: foreground plus maintenance, which the cells price together."""
+    out: dict = {}
+    for part in ('foreground', 'maintenance'):
+        for caller, ops in (draft['ledger'].get(part) or {}).items():
+            for op, c in ops.items():
+                t = out.setdefault(caller, {}).setdefault(op, dict.fromkeys(L.COUNT_FIELDS, 0))
+                for k in t:
+                    t[k] += c.get(k, 0)
+    return out
+
+
+def request_inputs(usage: dict) -> dict:
+    """Per op, summed over callers: upstream-ok requests whose reply arrived, and HEAD/GET 4XX responses."""
+    def total(op, field):
+        return sum(ops.get(op, {}).get(field, 0) for ops in usage.values())
+    out = {f'probe_{n}_requests': total(op, 'upstream_ok') - total(op, 'accepted_dropped')
+           for op, n in REQUEST_INPUTS.items()}
+    out.update({f'probe_{n}_error_requests': total(op, 'upstream_4xx') for op, n in ERROR_INPUTS.items()})
+    return out
+
+
+def storage_inputs(draft: dict) -> dict:
+    """Upper byte-hour bound of every category that held bytes, in GiB-months: the drill flags any it misses."""
+    return {f'probe_{cat}_gib_months': gib_months(b['upper'])
+            for cat, b in draft['inventory']['byte_hours'].items() if b['upper'] > 0}
 
 
 def category(draft: dict, name: str) -> dict:
@@ -122,11 +125,6 @@ def window_rows(ctx) -> list:
     ctx.proxy.flush()
     start = ctx.window()['start_seq']
     return [r for r in L.read_rows(ctx.proxy.ledger_path) if r.get('kind') == 'attempt' and r['seq'] > start]
-
-
-def rig_client(ctx) -> S3Client:
-    """The rig's own requests through the proxy's `rig` port, so an observer mutation lands in the ledger."""
-    return S3Client(f'http://127.0.0.1:{ctx.proxy.ports["rig"]}', ACCESS_KEY, SECRET_KEY)
 
 
 def _sql(value) -> str:
@@ -206,7 +204,7 @@ class ManifestCard(CostCard):
             client.query('SYSTEM FLUSH LOGS')
 
     def observe(self, ctx, draft):
-        return request_inputs(draft['ledger']['foreground'])
+        return {'inputs': {**request_inputs(integrated(draft)), **storage_inputs(draft)}}
 
     def predicted(self, ctx) -> dict:
         return prediction(ctx.manifest['experiment_id'], ctx.policy, self.p(ctx).get('report_dir'))
@@ -226,6 +224,19 @@ def register(cls):
     return cls
 
 
+def active_by_creator(ctx, draft) -> dict:
+    """Upper `active` byte-hours in the window per creating caller, in GiB-months; they sum to the record's bound
+    because each identity's bound is taken on its own."""
+    bounds, w = ctx.replay(), draft['window']
+    out = {}
+    for caller in sorted(set(bounds.creators.values())):
+        sub = L.Bounds(bounds.lower, bounds.upper, {i: m for i, m in bounds.mutations.items()
+                                                    if bounds.creators.get(i) == caller})
+        sub.cats = bounds.cats
+        out[caller] = gib_months(L.byte_hours(sub, w['t_start_us'], w['t_end_us'])['active']['upper'])
+    return out
+
+
 # --- the five probes --------------------------------------------------------------------------
 
 @register
@@ -243,11 +254,18 @@ class ReplicatedFetch(ManifestCard):
     replicated = True
 
     def observe(self, ctx, draft):
-        # The receiver's load reads are a predicted range; r1's relay carries what the sender shipped.
-        return {**super().observe(ctx, draft),
-                'probe_r2_get_requests': request_inputs({'r2': draft['ledger']['foreground'].get('r2', {})})[
-                    'probe_get_requests'],
-                'probe_interserver_gib': draft['interserver']['relay0']['from_target'] / GIB}
+        # Two cells: `inserts` (r1 writes the part) and `recovery` (r1 serves it, r2 fetches and loads it), sharing
+        # the storage tier. Storage splits by the caller that created each object; interserver bytes count in both
+        # directions (`from_target`: what a replica's interserver server sent; `to_target`: what it received).
+        out = super().observe(ctx, draft)
+        usage = integrated(draft)
+        relays = draft['interserver'].values()
+        out['inputs'].update(
+            probe_r2_get_requests=request_inputs({'r2': usage.get('r2', {})})['probe_get_requests'],
+            probe_interserver_gib=sum(r['from_target'] for r in relays) / GIB,
+            probe_interserver_to_gib=sum(r['to_target'] for r in relays) / GIB,
+            **{f'probe_{c}_active_gib_months': v for c, v in active_by_creator(ctx, draft).items()})
+        return out
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
@@ -294,10 +312,10 @@ class MultipartFault(ManifestCard):
                                    for inv in (bounds.lower, bounds.upper))
 
     def teardown(self, ctx):
-        # The rig aborts the upload ClickHouse could not abort, as an observer: the abort is replayed, not billed.
-        rig = rig_client(ctx)
+        # The rig aborts the upload ClickHouse could not abort, as an observer through the proxy's rig listener:
+        # the abort is replayed, not billed.
         for bucket, key, upload_id in self.state(ctx).get('uploads', []):
-            rig.abort_multipart(bucket, key, upload_id)
+            ctx.rig.abort_multipart(bucket, key, upload_id)
         super().teardown(ctx)
 
     def observe(self, ctx, draft):
@@ -305,9 +323,7 @@ class MultipartFault(ManifestCard):
         ids = {u[2] for u in self.state(ctx).get('uploads', [])}
         self.state(ctx)['after_abort'] = max(sum(p['size'] for ident, p in inv.incomplete.items() if ident[2] in ids)
                                              for inv in (after.lower, after.upper))
-        return {**super().observe(ctx, draft),
-                'probe_incomplete_gib_months': gib_months(category(draft, 'incomplete')['upper']),
-                'multipart': {k: v for k, v in self.state(ctx).items() if k != 'rows'}}
+        return {**super().observe(ctx, draft), 'multipart': {k: v for k, v in self.state(ctx).items() if k != 'rows'}}
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
@@ -331,119 +347,29 @@ class MultipartFault(ManifestCard):
 
 
 @register
-class CasGcCohort(ManifestCard):
-    name = 'probe_cas_gc_cohort'
-    policies = ('cas',)
-    mode = 'stochastic'
-
-    def inventory_families(self, ctx):
-        return CAS_FAMILIES
-
-    def complete(self, ctx, timeout_s=300):
-        super().complete(ctx, timeout_s)
-        st = self.state(ctx)
-        st['cohort'] = cohort(window_rows(ctx))
-        st['t_drop_us'] = time.time_ns() // 1000
-        r1 = self.clients(ctx)[0]
-        r1.query(f'DROP TABLE {DATABASE}.{self.table} SYNC')
-        deadline = time.monotonic() + self.p(ctx)['reclaim_timeout_s']
-        while True:
-            gone = _count(r1, f"SELECT count() FROM system.tables WHERE database = '{DATABASE}' "
-                              f"AND name = '{self.table}'") == 0
-            st['deleted'] = deletions(window_rows(ctx), st['cohort'], st['t_drop_us'])
-            if (gone and len(st['deleted']) == len(st['cohort'])) or time.monotonic() >= deadline:
-                break
-            time.sleep(1)
-        last = max((d['t_us'] for d in st['deleted'].values()), default=None)
-        st['reclaim_delay_s'] = None if last is None else (last - st['t_drop_us']) / 1e6
-        for client in ctx.cluster.clients:
-            client.query('SYSTEM FLUSH LOGS')
-        t0 = ctx.window()['t_start_us']
-        st['gc_rounds_reclaiming'] = sum(_count(c, (
-            "SELECT count() FROM system.cas_gc_log WHERE event_type = 'Finish' AND event_time_microseconds >= "
-            f"fromUnixTimestamp64Micro({t0}) AND objects_deleted + manifests_deleted + entries_redeleted > 0"))
-            for c in ctx.cluster.clients)
-        st['expect_rows'] = sum(1 for r in window_rows(ctx) if r.get('expect_negotiated'))
-
-    def reclassify(self, ctx, bounds):
-        st = self.state(ctx)
-        if st.get('cohort'):
-            bounds.reclassify(sorted(st['cohort']), 'garbage', st['t_drop_us'], 'DROP TABLE SYNC')
-
-    def observe(self, ctx, draft):
-        st = self.state(ctx)
-        expect = self.predicted(ctx)['inputs']['expect_negotiated_rows']
-        return {**super().observe(ctx, draft),
-                'probe_garbage_gib_months': gib_months(category(draft, 'garbage')['upper']),
-                'probe_active_gib_months': gib_months(category(draft, 'active')['upper']),
-                'cohort_size': len(st['cohort']), 'cohort_reclaimed': len(st['deleted']),
-                'reclaim_delay_s': st['reclaim_delay_s'], 'gc_rounds_reclaiming': st['gc_rounds_reclaiming'],
-                'deleting_callers': sorted({d['caller'] for d in st['deleted'].values()}),
-                'expect_negotiated_rows': st['expect_rows'], 'expect_matches_source': st['expect_rows'] == expect}
-
-    def assertions(self, ctx, draft):
-        out = super().assertions(ctx, draft)
-        obs, bh = draft['observations'], category(draft, 'garbage')
-        out['cohort_nonempty'] = (True, obs['cohort_size'] > 0)
-        out['cohort_reclaimed'] = (obs['cohort_size'], obs['cohort_reclaimed'])
-        out['gc_log_evidence'] = (True, obs['gc_rounds_reclaiming'] > 0)
-        out['deletes_by_r1'] = (['r1'], obs['deleting_callers'])  # the only replica holding the table
-        out['reclaim_delay_s>0'] = (True, (obs['reclaim_delay_s'] or 0) > 0)
-        out['garbage_byte_hours>0'] = (True, bh['lower'] > 0 and bh['upper'] > 0)
-        out['expect_negotiated_rows'] = (self.predicted(ctx)['inputs']['expect_negotiated_rows'],
-                                         obs['expect_negotiated_rows'])
-        return out
-
-
-def _payload(key) -> bool:
-    family = L.family_of(CAS_FAMILIES, key)
-    return bool(family and family['payload'])
-
-
-def cohort(rows: list) -> set:
-    """(bucket, key) of payload and manifest objects r1 created in the window; control families are excluded."""
-    return {(r['bucket'], r['key']) for r in rows if r['caller'] == 'r1' and r['op'] in CREATE_OPS
-            and r['upstream']['outcome'] == 'ok' and _payload(r.get('key'))}
-
-
-def deletions(rows: list, keys: set, after_us: int) -> dict:
-    """identity -> {t_us, caller} of the first upstream-ok deletion of each cohort key after `after_us`."""
-    out = {}
-    for r in rows:
-        if r['caller'] not in L.WORKLOAD_CALLERS or r['upstream']['outcome'] != 'ok' or r['t_start_us'] < after_us:
-            continue
-        if r['op'] == 'DeleteObject':
-            hit = [(r['bucket'], r['key'])]
-        elif r['op'] == 'DeleteObjects':
-            hit = [(r['bucket'], d['key']) for d in (r.get('response_body') or {}).get('delete_results') or []
-                   if d.get('deleted') or not d.get('code')]
-        else:
-            continue
-        for ident in hit:
-            if ident in keys and ident not in out:
-                out[ident] = {'t_us': r['t_end_us'], 'caller': r['caller']}
-    return out
-
-
-@register
 class LocalVolume(ManifestCard):
     name = 'probe_local_volume'
     policies = ('local',)
     trace = True
 
-    def data_dir_io(self, ctx) -> dict:
-        return parse_strace(Tracer(ctx.pass_dir, 1).path(), path_filter([ctx.local_dirs[0]]))['syscalls']
+    def data_dir_io(self, ctx, draft) -> dict:
+        """Data-directory calls inside the window, over every server generation's trace."""
+        w = draft['window']
+        return parse_strace(Tracer.paths(ctx.pass_dir, 1), path_filter([ctx.local_dirs[0]]),
+                            window=(w['t_start_us'] / 1e6, w['t_end_us'] / 1e6))
 
     def observe(self, ctx, draft):
-        io = self.data_dir_io(ctx)
+        traced = self.data_dir_io(ctx, draft)
+        io = traced['syscalls']
         window_s = (draft['window']['t_end_us'] - draft['window']['t_start_us']) / 1e6
         calls = sum(io.get(s, {}).get('count', 0) for s in IO_SYSCALLS)
         nbytes = sum(io.get(s, {}).get('bytes', 0) for s in IO_SYSCALLS)
+        out = super().observe(ctx, draft)
         # Window averages of syscall demand: page cache and writeback sit between these and the device.
-        return {**super().observe(ctx, draft),
-                'probe_block_capacity_gib': draft['local']['r1']['peak_allocated_bytes'] / GIB,
-                'probe_block_iops': calls / window_s, 'probe_block_mibps': nbytes / MIB / window_s,
-                'data_dir_io': io,
+        out['inputs'].update(probe_block_capacity_gib=draft['local']['r1']['peak_allocated_bytes'] / GIB,
+                             probe_block_iops=calls / window_s, probe_block_mibps=nbytes / MIB / window_s)
+        return {**out, 'data_dir_io': io, 'data_dir_crossing': len(traced['crossing']),
+                'data_dir_outside': traced['outside'],
                 'data_dir_write_syscalls': sorted(s for s in WRITE_SYSCALLS if io.get(s, {}).get('count')),
                 'window_s': window_s}
 

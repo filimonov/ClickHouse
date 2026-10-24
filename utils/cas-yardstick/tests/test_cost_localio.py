@@ -153,6 +153,28 @@ class StraceTest(unittest.TestCase):
         s = self.parse()['syscalls']
         self.assertEqual(s['write']['bytes'], 4096 + 5000 + 4096 + 512 + 10 + 100 + 300 + 64 + 1)
 
+    def test_window_clips_calls_and_lists_crossing_ones(self):
+        # Two generations of one replica; the window is [10, 20] s. Durations come from strace -T.
+        g0 = ('7 5.000000 write(3</data/a>, "s"..., 100) = 100 <0.000010>\n'           # setup: outside
+              '7 9.999990 write(3</data/a>, "c"..., 200 <unfinished ...>\n'             # crosses the start
+              '7 10.000100 <... write resumed>) = 200 <0.000110>\n'
+              '7 12.000000 write(3</data/a>, "w"..., 300) = 300 <0.000020>\n')         # inside
+        g1 = ('9 15.000000 pwrite64(4</data/b>, "w"..., 400, 0) = 400 <0.000020>\n'    # inside, after a restart
+              '9 19.999999 write(4</data/b>, "e"..., 500) = 500 <0.000500>\n'          # crosses the end
+              '9 25.000000 write(4</data/b>, "t"..., 600) = 600 <0.000010>\n')         # teardown: outside
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for n, text in enumerate((g0, g1)):
+                paths.append(localio.Tracer(tmp, 1, n).path())
+                with open(paths[-1], 'w') as f:
+                    f.write(text)
+            self.assertEqual(localio.Tracer.paths(tmp, 1), paths)
+            r = localio.parse_strace(paths, window=(10.0, 20.0))
+        self.assertEqual(r['syscalls']['write'], {'count': 1, 'bytes': 300, 'size_histogram': {'512': 1}})
+        self.assertEqual(r['syscalls']['pwrite64']['count'], 1)
+        self.assertEqual([(c['syscall'], c['bytes']) for c in r['crossing']], [('write', 200), ('write', 500)])
+        self.assertEqual((r['outside'], r['window'], r['files']), (2, [10.0, 20.0], paths))
+
     def test_size_bucket(self):
         self.assertEqual([localio.size_bucket(n) for n in (1, 4096, 4097, 65536)], ['1', '4096', '8192', '65536'])
 
@@ -160,10 +182,11 @@ class StraceTest(unittest.TestCase):
 class TracerTest(unittest.TestCase):
     def test_prefix(self):
         # A relative pass dir (a relative --runs-dir) still yields an absolute output path: server.sh changes directory.
-        self.assertEqual(localio.Tracer('rel/pass', 1).path(), os.path.join(os.getcwd(), 'rel/pass/strace.r1.txt'))
-        prefix = localio.Tracer('/p/pass', 2).prefix()
-        self.assertEqual(prefix, 'strace -f -ttt -yy -e trace=write,pwrite64,writev,read,pread64,readv,fsync,fdatasync '
-                                 '-o /p/pass/strace.r2.txt')
+        self.assertEqual(localio.Tracer('rel/pass', 1).path(), os.path.join(os.getcwd(), 'rel/pass/strace.r1.g0.txt'))
+        # Each generation of a replica gets its own file: `strace -o` truncates, so a restart must not reuse one.
+        prefix = localio.Tracer('/p/pass', 2, 3).prefix()
+        self.assertEqual(prefix, 'strace -f -ttt -T -yy -e trace=write,pwrite64,writev,read,pread64,readv,fsync,fdatasync '
+                                 '-o /p/pass/strace.r2.g3.txt')
         with self.assertRaises(ValueError):
             localio.Tracer('/has space', 1).prefix()
 
@@ -226,9 +249,12 @@ class LimitationsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             writable = os.path.join(tmp, 'drop_caches')
             open(writable, 'w').close()
-            self.assertEqual(localio.limitations(tmp, [], drop_caches_path=writable), [keeper, diskstats])
+            sampled = localio.DirSampler.LIMITATION
+            self.assertEqual(localio.limitations(tmp, [], drop_caches_path=writable), [keeper, diskstats, sampled])
             missing = os.path.join(tmp, 'nope')
-            self.assertEqual(localio.limitations(tmp, [], drop_caches_path=missing), [keeper, diskstats, pagecache])
+            self.assertEqual(localio.limitations(tmp, [], drop_caches_path=missing), [keeper, diskstats, sampled, pagecache])
+            traced = localio.limitations(tmp, [], drop_caches_path=writable, traced=True)
+            self.assertIn('syscall demand', traced[-1])
 
 
 class ClusterIntegration(unittest.TestCase):
@@ -243,10 +269,11 @@ class ClusterIntegration(unittest.TestCase):
     def test_trace_prefix_reaches_server_sh_env_for_start_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, 'r2'))
-            cluster = self.make_cluster(tmp, lambda i: f'strace -o x.r{i}')
+            cluster = self.make_cluster(tmp, lambda i, g: f'strace -o x.r{i}.g{g}')
+            cluster.generations[2] = [{}]  # one generation already ran
             with mock.patch.object(cluster_module.subprocess, 'run') as run:
                 cluster._run_server_sh(['start', '/bin/true', cluster.run_dir(2), '9000'])
-                self.assertEqual(run.call_args.kwargs['env']['TRACE_PREFIX'], 'strace -o x.r2')
+                self.assertEqual(run.call_args.kwargs['env']['TRACE_PREFIX'], 'strace -o x.r2.g1')
                 cluster._run_server_sh(['stop', cluster.run_dir(2)])
                 self.assertIsNone(run.call_args.kwargs.get('env'))
             untraced = self.make_cluster(tmp, None)

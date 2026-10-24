@@ -144,6 +144,28 @@ class Summarize(unittest.TestCase):
         self.assertEqual((rig['injected'], rig['upstream_unknown']), (1, 1))
 
 
+class AcceptedDropped(unittest.TestCase):
+    def test_upstream_ok_with_a_lost_reply_is_counted_apart(self):
+        a = [put('k', 1, up='ok', down='dropped'), put('k', 1, up='unknown', down='dropped'), put('k', 1)]
+        c = ledger.summarize(a)['r1']['PutObject']
+        self.assertEqual((c['dropped'], c['accepted_dropped'], c['upstream_ok']), (2, 1, 2))
+
+
+class ClientErrors(unittest.TestCase):
+    def test_4xx_counted_apart_from_other_errors(self):
+        a = [att('HeadObject', 'k', up='error', upstream={'outcome': 'error', 'http_status': 404, 's3_code': None}),
+             att('HeadObject', 'k', up='error', upstream={'outcome': 'error', 'http_status': 503, 's3_code': 'SlowDown'}),
+             att('HeadObject', 'k')]
+        c = ledger.summarize(a)['r1']['HeadObject']
+        self.assertEqual((c['upstream_error'], c['upstream_4xx'], c['upstream_ok']), (2, 1, 1))
+
+
+class Creators(unittest.TestCase):
+    def test_bounds_name_the_caller_that_created_each_identity(self):
+        r = rep([put('a', 1, caller='r1'), put('b', 1, caller='r2'), put('a', 2, caller='r2'), put('c', 1, up='error')])
+        self.assertEqual(r.creators, {('b', 'a'): 'r1', ('b', 'b'): 'r2'})
+
+
 class Retries(unittest.TestCase):
     def failed(self, **kw):
         return put('k', 5, up='error', down='dropped', payload_sha256='h', **kw)
@@ -327,6 +349,101 @@ class ByteHours(unittest.TestCase):
             self.assertAlmostEqual(out['outdated'][bound], H)
             self.assertAlmostEqual(out['garbage'][bound], H)
         self.assertEqual(r.lower.objects[('b', 'data/x')]['category'], 'garbage')
+
+
+class ByteHourBounds(unittest.TestCase):
+    """Bounds follow each transition's effect on bytes, not its kind (shrinks early in lower, growths late)."""
+
+    def test_overwrite_shrink_then_grow(self):
+        # 100 B over hours 0..5, overwritten with 1 B during [1, 2], back to 100 B during [3, 4].
+        a = [put('x', 100, (0, 0)), put('x', 1, (H, 2 * H)), put('x', 100, (3 * H, 4 * H))]
+        out = ledger.byte_hours(rep(a), 0, 5 * H)
+        self.assertAlmostEqual(out['active']['lower'], 203)
+        self.assertAlmostEqual(out['active']['upper'], 401)
+
+    def test_overwrite_growing(self):
+        a = [put('x', 1, (0, 0)), put('x', 100, (H, 2 * H))]
+        out = ledger.byte_hours(rep(a), 0, 3 * H)
+        self.assertAlmostEqual(out['active']['lower'], 2 * 1 + 100)    # grows at 2H
+        self.assertAlmostEqual(out['active']['upper'], 1 + 2 * 100)    # grows at H
+
+    def test_overwrite_shrinking(self):
+        a = [put('x', 100, (0, 0)), put('x', 1, (H, 2 * H))]
+        out = ledger.byte_hours(rep(a), 0, 3 * H)
+        self.assertAlmostEqual(out['active']['lower'], 100 + 2 * 1)    # shrinks at H
+        self.assertAlmostEqual(out['active']['upper'], 2 * 100 + 1)    # shrinks at 2H
+
+    def test_overlapping_overwrites(self):
+        # 10 B, then 1 B during [1, 3] and 50 B during [2, 4]: in [2, 3] any of the three sizes is possible.
+        a = [put('x', 10, (0, 0)), put('x', 1, (H, 3 * H)), put('x', 50, (2 * H, 4 * H))]
+        out = ledger.byte_hours(rep(a), 0, 5 * H)
+        self.assertAlmostEqual(out['active']['lower'], 10 + 1 + 1 + 1 + 50)
+        self.assertAlmostEqual(out['active']['upper'], 10 + 10 + 50 + 50 + 50)
+
+    def test_unknown_overwrite(self):
+        # An unknown shrink counts in lower only; an unknown growth in upper only.
+        shrink = ledger.byte_hours(rep([put('x', 100, (0, 0)), put('x', 1, (H, H), up='unknown')]), 0, 2 * H)
+        self.assertAlmostEqual(shrink['active']['lower'], 101)
+        self.assertAlmostEqual(shrink['active']['upper'], 200)
+        grow = ledger.byte_hours(rep([put('x', 1, (0, 0)), put('x', 100, (H, H), up='unknown')]), 0, 2 * H)
+        self.assertAlmostEqual(grow['active']['lower'], 2)
+        self.assertAlmostEqual(grow['active']['upper'], 101)
+
+    def test_every_schedule_lies_inside_the_bounds(self):
+        # Brute force: every ordered choice of effect times inside each attempt's interval stays within the bounds.
+        a = [put('x', 7, (0, H)), put('x', 3, (H // 2, 2 * H)), att('DeleteObject', 'x', (H, 3 * H)),
+             put('x', 9, (2 * H, 4 * H))]
+        out = ledger.byte_hours(rep(a), 0, 5 * H)['active']
+        grid = [i * H // 4 for i in range(21)]
+        sizes = [7, 3, 0, 9]
+        import itertools
+        choices = [[t for t in grid if x['t_start_us'] <= t <= x['t_end_us']] for x in a]
+        for times in itertools.product(*choices):
+            if list(times) != sorted(times):
+                continue
+            total, prev = 0, 0
+            for t, s in zip(list(times) + [5 * H], [0] + sizes):
+                total += s * (t - prev) / H
+                prev = t
+            self.assertLessEqual(out['lower'] - 1e-9, total, times)
+            self.assertGreaterEqual(out['upper'] + 1e-9, total, times)
+
+
+class BatchDeleteKeys(unittest.TestCase):
+    def test_unknown_batch_delete_retires_requested_keys_in_lower_only(self):
+        a = [put('x', H, (0, 0)), att('DeleteObjects', '', (H, H), up='unknown', delete_keys=['x'])]
+        r = rep(a)
+        self.assertEqual(r.lower.objects, {})
+        self.assertIn(('b', 'x'), r.upper.objects)
+        out = ledger.byte_hours(r, 0, 3 * H)
+        self.assertAlmostEqual(out['active']['lower'], H)
+        self.assertAlmostEqual(out['active']['upper'], 3 * H)
+
+    def test_classify_treats_empty_key_as_keyless(self):
+        a = att('DeleteObjects', '', delete_keys=['gc/1', 'gc/2'])
+        self.assertEqual(ledger.classify([a], FAMILIES)['maintenance'], [a])
+        b = att('DeleteObjects', '', body={'delete_results': [{'key': 'gc/1', 'deleted': True, 'code': None}]})
+        self.assertEqual(ledger.classify([b], FAMILIES)['maintenance'], [b])
+
+
+class RetryIdentity(unittest.TestCase):
+    def test_range_and_query_are_part_of_the_identity(self):
+        f = att('GetObject', 'k', up='error', down='dropped', seq=1, req_headers={'range': 'bytes=0-9'})
+        other = att('GetObject', 'k', seq=2, req_headers={'range': 'bytes=10-19'})
+        same = att('GetObject', 'k', seq=3, req_headers={'range': 'bytes=0-9'})
+        self.assertEqual(ledger.correlate_retries([f, other]), [])
+        self.assertEqual(ledger.correlate_retries([f, same]), [[1, 3]])
+        page1 = att('ListObjectsV2', '', up='error', seq=4, query={'list-type': '2', 'prefix': 'p/'})
+        page2 = att('ListObjectsV2', '', seq=5, query={'list-type': '2', 'prefix': 'p/', 'continuation-token': 't'})
+        self.assertEqual(ledger.correlate_retries([page1, page2]), [])
+
+
+class Reclassified(unittest.TestCase):
+    def test_bounds_log_each_reclassification_for_the_record(self):
+        r = rep([put('data/x', H, (0, 0))])
+        r.reclassify([('b', 'data/x')], 'garbage', H, evidence='DROP TABLE SYNC')
+        self.assertEqual(r.reclassified, [{'category': 'garbage', 't_us': H, 'evidence': 'DROP TABLE SYNC',
+                                           'keys': [['b', 'data/x']]}])
 
 
 class CheckRows(unittest.TestCase):

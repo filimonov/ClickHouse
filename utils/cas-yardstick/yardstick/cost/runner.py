@@ -17,6 +17,8 @@ from .localio import DirSampler, Tracer, device_of, limitations, parse_strace, r
 VARIANTS = {'local': 'ebs', 's3': 's3', 's3plain': 's3plain', 'cas': 'cas'}
 SAMPLE_INTERVAL_S = 0.5
 CLOSING_OPS = ('CompleteMultipartUpload', 'AbortMultipartUpload')
+UNLISTED_UPLOADS_NOTE = ('objects listed empty; incomplete uploads not enumerable on RustFS rc.3; '
+                         'prior passes abort their uploads from the ledger')
 
 
 @dataclass
@@ -32,6 +34,8 @@ class Deps:
     keep_prefix: bool
     binary_sha256: str
     commit: str
+    binary_download_sha256: str | None = None
+    rig_commit: str = ''
 
 
 class CaseFailure(Exception):
@@ -101,7 +105,8 @@ class _Pass:
             'experiment_id': f'{card.name}.{case}', 'run_id': deps.run_id, 'card': card.name, 'case_id': case,
             'policy': policy, 'variant': variant, 'cache_enabled': cached, 'replicas': deps.topology.replicas,
             'k': k, 'scale': deps.scale, 'mode': card.mode, 'binary_sha256': deps.binary_sha256,
-            'commit': deps.commit, 'pass_dir': self.pass_dir}
+            'binary_download_sha256': deps.binary_download_sha256, 'commit': deps.commit,
+            'rig_commit': deps.rig_commit, 'pass_dir': self.pass_dir}
         self.sections: dict = {}
         self.cluster = None
         self.ctx = None
@@ -111,6 +116,7 @@ class _Pass:
         self.teardown_done = False
         self.samplers: list = []
         self.hashes: list = []
+        self.initial: dict = {}
 
     # --- status records ---
 
@@ -138,6 +144,17 @@ class _Pass:
             return self.failed(f'{type(e).__name__}: {e}', traceback.format_exc())
         if leftovers:
             return self.failed('prefix_not_empty', f'{len(leftovers)} objects under {self.key_prefix}/; nothing launched')
+        # Replay starts from an empty inventory; that is verified only where the store can list uploads by prefix.
+        self.initial = {'initial': 'declared', 'note': UNLISTED_UPLOADS_NOTE}
+        if getattr(self.deps.rig, 'lists_uploads_by_prefix', False):
+            try:
+                uploads = self.deps.rig.list_multipart_uploads(self.bucket, self.key_prefix + '/')
+            except Exception as e:
+                return self.failed(f'{type(e).__name__}: {e}', traceback.format_exc())
+            if uploads:
+                return self.failed('prefix_not_empty', f'{len(uploads)} incomplete uploads under {self.key_prefix}/; '
+                                                       'nothing launched')
+            self.initial = {'initial': 'empty_verified'}
         record = None
         try:
             try:
@@ -189,7 +206,7 @@ class _Pass:
             problems = Tracer(self.pass_dir, 1).preflight_trace()
             if problems:
                 raise CaseFailure('trace_unavailable', '; '.join(problems))
-            trace_prefix = lambda i: Tracer(self.pass_dir, i).prefix()  # noqa: E731
+            trace_prefix = lambda i, g: Tracer(self.pass_dir, i, g).prefix()  # noqa: E731
 
         def writer(*args):
             self.hashes.append(self.config_writer(*args))
@@ -232,6 +249,10 @@ class _Pass:
         self.sections['assertions'] = {
             name: {'expected': expected, 'actual': actual, 'ok': expected == actual}
             for name, (expected, actual) in card.assertions(self.ctx, dict(self.sections)).items()}
+        failed = {n: a for n, a in self.sections['assertions'].items() if not a['ok']}
+        if failed:
+            raise CaseFailure('assertions_failed', '; '.join(
+                f'{n}: expected {a["expected"]!r}, actual {a["actual"]!r}' for n, a in sorted(failed.items())))
         return {**self.common, 'status': 'ok', **self.sections}
 
     def collect_counters(self, baselines: dict, relay_start: list, local_dirs) -> None:
@@ -252,17 +273,17 @@ class _Pass:
             sampled = sampler.stop()
             where = local_dirs[i - 1] if local_dirs else self.cluster.run_dir(i)
             traced = self.card.trace
+            # The trace is parsed once the window marks exist (collect_ledger), so it can be clipped to them.
             local[f'r{i}'] = {**sampled, **{key: device_of(where)[key] for key in ('device', 'fs')},
-                              'attribution': 'process_io',
-                              'trace': parse_strace(Tracer(self.pass_dir, i).path()) if traced else None,
-                              'limitations': limitations(self.pass_dir, local_dirs)}
+                              'attribution': 'process_io', 'trace': None,
+                              'limitations': limitations(self.pass_dir, local_dirs, traced=traced)}
         self.samplers = []
         self.sections['local'] = local
 
     def pass_attempts(self, rows: list) -> dict:
         marks = {r['label']: r for r in rows if r.get('kind') == 'mark'}
         sliced = ledger_mod.slice(rows, self.labels)
-        return {'marks': {role: marks[label] for role, label in self.labels.items()}, 'sliced': sliced}
+        return {'marks': {role: marks[label] for role, label in self.labels.items()}, 'sliced': sliced, 'rows': rows}
 
     def collect_ledger(self) -> None:
         open_now = self.deps.proxy.open_attempts()  # before the read: a finished attempt then only over-counts
@@ -274,18 +295,28 @@ class _Pass:
         crossing = [s for s in found['sliced'].crossing if s in by_seq and by_seq[s]['caller'] != 'rig']
         # An attempt still running has no row. One that began before the window ended spans its boundary.
         # The proxy serves several passes: an attempt older than this pass's setup belongs to an earlier one.
-        crossing = sorted(set(crossing) | {o['seq'] for o in open_now if o['caller'] != 'rig'
-                                           and marks['setup_start']['seq'] <= o['seq'] < marks['window_end']['seq']})
+        open_mine = [o for o in open_now if o['caller'] != 'rig'
+                     and marks['setup_start']['seq'] <= o['seq'] < marks['window_end']['seq']]
+        crossing = sorted(set(crossing) | {o['seq'] for o in open_mine})
+        # Without a row, an open attempt's requests and inventory effect are unknown: the counts are lower bounds.
+        all_seqs = {r['seq'] for r in found['rows'] if r.get('kind') == 'attempt'}
+        unresolved = [{'seq': o['seq'], 'caller': o['caller'], 'op': o['op'], 'key': o['key']}
+                      for o in sorted(open_mine, key=lambda o: o['seq']) if o['seq'] not in all_seqs]
         t_w0, t_w1 = marks['window_start']['t_us'], marks['window_end']['t_us']
         self.sections['window'] = {'start_seq': marks['window_start']['seq'], 'end_seq': marks['window_end']['seq'],
-                                   't_start_us': t_w0, 't_end_us': t_w1, 'crossing': crossing}
-        split = ledger_mod.classify(by_phase['window'], self.families)
+                                   't_start_us': t_w0, 't_end_us': t_w1, 'crossing': crossing,
+                                   'open_attempts': unresolved}
+        if self.card.trace:
+            for name, local in self.sections['local'].items():
+                local['trace'] = parse_strace(Tracer.paths(self.pass_dir, int(name[1:])), window=(t_w0 / 1e6, t_w1 / 1e6))
+        split = self.card.classify(self.ctx, by_phase['window'], self.families)
         self.sections['ledger'] = {
             'foreground': ledger_mod.summarize(split['foreground']),
             'maintenance': ledger_mod.summarize(split['maintenance']),
             'setup': ledger_mod.summarize(workload['setup']),
             'teardown': ledger_mod.summarize(workload['teardown']),
-            'rig': ledger_mod.summarize(split['rig']).get('rig', {})}
+            'rig': ledger_mod.summarize(split['rig']).get('rig', {}),
+            'complete': not unresolved}
         if crossing and self.card.mode == 'deterministic':
             raise CaseFailure('window_crossing', f'attempts {crossing} cross a window boundary in a deterministic card')
         # Observer mutations (a probe's own abort through the rig port) stay in the lifecycle replay although
@@ -294,8 +325,8 @@ class _Pass:
         bounds = ledger_mod.replay(attempts, Inventory(), self.families)
         self.card.reclassify(self.ctx, bounds)
         uncertain = {t['id'] for inv in (bounds.lower, bounds.upper) for t in inv.transitions if t['uncertain']}
-        self.sections['inventory'] = {'initial': 'empty_verified', 'byte_hours': ledger_mod.byte_hours(bounds, t_w0, t_w1),
-                                      'uncertain_identities': len(uncertain)}
+        self.sections['inventory'] = {**self.initial, 'byte_hours': ledger_mod.byte_hours(bounds, t_w0, t_w1),
+                                      'uncertain_identities': len(uncertain), 'reclassified': bounds.reclassified}
 
     # --- views for cards ---
 

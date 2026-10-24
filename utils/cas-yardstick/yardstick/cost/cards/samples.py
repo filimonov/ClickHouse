@@ -8,7 +8,8 @@ from __future__ import annotations
 import time
 
 from .base import DATABASE, POLL_S
-from .probes import CAS_FAMILIES, CREATE_OPS, ManifestCard, _count, register
+from .cas_probe import CAS_FAMILIES
+from .probes import CREATE_OPS, ManifestCard, _count, register
 
 
 @register

@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from yardstick.cost import cli, ledger as L
-from yardstick.cost.cards import CARDS, probes
+from yardstick.cost.cards import CARDS, cas_probe, probes
 from yardstick.cost.cards.base import CardContext
 from yardstick.cost.ledger import Inventory
 
@@ -82,9 +82,9 @@ class Ledger:
         return row
 
 
-def ctx_for(card, tmp, ledger, policy, cluster=None, families=(), local_dirs=()):
+def ctx_for(card, tmp, ledger, policy, cluster=None, families=(), local_dirs=(), rig=None):
     attempts = lambda: [r for r in L.read_rows(ledger.path) if r.get('kind') == 'attempt']  # noqa: E731
-    return CardContext(cluster=cluster or FakeCluster(), proxy=FakeProxy(ledger.path), rig=None,
+    return CardContext(cluster=cluster or FakeCluster(), proxy=FakeProxy(ledger.path), rig=rig,
                        pass_dir=tmp, local_dirs=list(local_dirs), policy=policy, variant=policy,
                        cache_enabled=False, manifest=manifest(card.name),
                        replay=lambda: L.replay(attempts(), Inventory(), list(families)),
@@ -121,13 +121,22 @@ class RegistryAndArtifactsTest(unittest.TestCase):
 
     def test_formula_cells_named_after_probes_carry_the_predicted_counts(self):
         with open(os.path.join(R, 'formulas.json')) as f:
-            cells = {op: (fdoc['variant'], cell) for fdoc in json.load(f) for op, cell in fdoc['cells'].items()}
+            named = {op: (fdoc['variant'], cell) for fdoc in json.load(f) for op, cell in fdoc['cells'].items()}
+        # A probe's cells are named `<probe>` or `<probe>.<operation>`; the drill bills them together.
+        cells = {}
+        for name, (variant, cell) in named.items():
+            probe = name.split('.')[0]
+            v, rows = cells.get(probe, (variant, []))
+            self.assertEqual(v, variant, name)
+            cells[probe] = (variant, rows + cell['ledger_rows'])
         self.assertEqual(set(cells), set(cli.PROBES))
-        for probe, (variant, cell) in cells.items():
+        self.assertEqual(sorted(n for n in named if n.startswith('probe_replicated_fetch')),
+                         ['probe_replicated_fetch.inserts', 'probe_replicated_fetch.recovery'])
+        for probe, (variant, ledger_rows) in cells.items():
             m = manifest(probe)
             self.assertEqual(variant, {'s3': 's3', 'cas': 'cas', 'local': 'ebs'}[m['policies'][0]])
             pred = probes.prediction(m['experiment_id'], m['policies'][0])
-            requests = [r for r in cell['ledger_rows'] if r['row_type'] == 'request']
+            requests = [r for r in ledger_rows if r['row_type'] == 'request']
             predicted = [(op, want) for ops in pred['expected']['foreground'].values() for op, want in ops.items()]
             # Every op the prediction names has a row, so the drill checks and bills it; an omission fails here.
             self.assertEqual({op for op, _ in predicted} - {r['op_kind'] for r in requests}, set(), probe)
@@ -138,12 +147,13 @@ class RegistryAndArtifactsTest(unittest.TestCase):
                 if any(o == op and not isinstance(w, int) for o, w in predicted):
                     inputs = [r for r in requests if r['op_kind'] == op and r['expr']['kind'] == 'input']
                     self.assertTrue(inputs, f'{probe} {op}: a predicted range needs a measured input row')
-            for r in cell['ledger_rows']:
+            for r in ledger_rows:
                 if r['expr']['kind'] == 'input':
                     self.assertIn(r['expr']['id'], REGISTRY_IDS, probe)
-        fetch = cells['probe_replicated_fetch'][1]['ledger_rows']
-        self.assertEqual([(r['route'], r['expr']['id']) for r in fetch if r['row_type'] == 'transfer'],
-                         [('ec2_ec2_cross_az', 'probe_interserver_gib')])
+        fetch = cells['probe_replicated_fetch'][1]
+        self.assertEqual([(r['op_kind'], r['route'], r['expr']['id']) for r in fetch if r['row_type'] == 'transfer'],
+                         [('interserver_from_target', 'ec2_ec2_cross_az', 'probe_interserver_gib'),
+                          ('interserver_to_target', 'ec2_ec2_cross_az', 'probe_interserver_to_gib')])
 
     def test_settings_and_controls_come_from_the_manifest(self):
         card = CARDS['probe_multipart_fault']
@@ -218,6 +228,28 @@ class ReplicatedFetchTest(unittest.TestCase):
                               'relay0.from_target>0', 'relay1.from_target', 'rows.r2'])
 
 
+class ReplicatedFetchObserveTest(unittest.TestCase):
+    def test_inputs_split_storage_by_creator_and_count_both_directions(self):
+        card = CARDS['probe_replicated_fetch']
+        with tempfile.TemporaryDirectory() as tmp:
+            led = Ledger(os.path.join(tmp, 'l'))
+            led.add('PutObject', 'a', caller='r1', req_payload_bytes=3600, t=0)
+            led.add('PutObject', 'b', caller='r2', req_payload_bytes=7200, t=0)
+            led.add('GetObject', 'a', caller='r2')
+            ctx = ctx_for(card, tmp, led, 's3', FakeCluster(2))
+            bh = L.byte_hours(ctx.replay(), 0, 3_600_000_000)
+            draft = {'ledger': {'foreground': L.summarize(led.rows[1:])}, 'window': {'t_start_us': 0, 't_end_us': 3_600_000_000},
+                     'inventory': {'byte_hours': bh},
+                     'interserver': {'relay0': {'from_target': 1 << 30, 'to_target': 1 << 20},
+                                     'relay1': {'from_target': 0, 'to_target': 0}}}
+            inputs = card.observe(ctx, draft)['inputs']
+        self.assertEqual((inputs['probe_interserver_gib'], inputs['probe_interserver_to_gib']), (1.0, 1 / 1024))
+        self.assertEqual(inputs['probe_r2_get_requests'], 1)
+        r1, r2 = inputs['probe_r1_active_gib_months'], inputs['probe_r2_active_gib_months']
+        self.assertAlmostEqual(r2, 2 * r1)
+        self.assertAlmostEqual(r1 + r2, inputs['probe_active_gib_months'])
+
+
 class MultipartFaultTest(unittest.TestCase):
     KEY = f'{PREFIX}/r1/abc/sbin'
 
@@ -236,13 +268,13 @@ class MultipartFaultTest(unittest.TestCase):
             led.add('AbortMultipartUpload', self.KEY, upload_id='u1', up='not_sent', down='injected')
         for op, key in extra:
             led.add(op, key)
-        ctx = ctx_for(card, tmp, led, 's3', FakeCluster(1))
-        card.complete(ctx)
         rig = mock.Mock()
         rig.abort_multipart.side_effect = (lambda b, k, u: led.add('AbortMultipartUpload', k, caller='rig',
                                                                    upload_id=u)) if abort else None
-        with mock.patch.object(probes, 'rig_client', return_value=rig):
-            card.teardown(ctx)
+        # The shared observer client (the proxy's rig listener) does the abort; no card builds its own client.
+        ctx = ctx_for(card, tmp, led, 's3', FakeCluster(1), rig=rig)
+        card.complete(ctx)
+        card.teardown(ctx)
         replay = ctx.replay()
         t0, t1 = led.rows[0]['t_us'], led.t + 100
         draft = {'ledger': {'foreground': L.summarize([r for r in led.rows[1:] if r['caller'] != 'rig'])},
@@ -257,7 +289,8 @@ class MultipartFaultTest(unittest.TestCase):
             card, ctx, draft, rig = self.run_probe(tmp, extra=[('PutObject', f'{PREFIX}/r1/k')])
             rig.abort_multipart.assert_called_once_with('b', self.KEY, 'u1')
             self.assertEqual(failing(card.assertions(ctx, draft)), [])
-            self.assertGreater(draft['observations']['probe_incomplete_gib_months'], 0)
+            self.assertGreater(draft['observations']['inputs']['probe_incomplete_gib_months'], 0)
+            self.assertFalse(hasattr(probes, 'rig_client'))
 
     def test_assertions_fail_on_the_wrong_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -326,11 +359,11 @@ class CasGcCohortTest(unittest.TestCase):
             led.add('PutObject', f'{CAS_P}/blobs/ch128/cd/cd11', caller='r2')
             led.add('PutObject', f'{CAS_P}/blobs/ch128/ef/ef22', up='error')
             led.add('HeadObject', f'{CAS_P}/blobs/ch128/aa/aa33')
-            self.assertEqual(probes.cohort(led.rows[1:]), {('b', BLOB), ('b', MANIFEST_KEY)})
-            names = [L.family_of(probes.CAS_FAMILIES, k)['name'] for k in CONTROL]
+            self.assertEqual(cas_probe.cohort(led.rows[1:]), {('b', BLOB), ('b', MANIFEST_KEY)})
+            names = [L.family_of(cas_probe.CAS_FAMILIES, k)['name'] for k in CONTROL]
             self.assertEqual(names, ['blob_meta', 'refs', 'refs', 'refs', 'gc', 'gc', 'gc', 'lease', 'pool_meta', 'roots'])
             # The pass prefix holds the policy name `cas`; anchored regexes never take it for a layout key.
-            self.assertIsNone(L.family_of(probes.CAS_FAMILIES, 'run/cas/probe_cas_gc_cohort/gate/k1/r1/x'))
+            self.assertIsNone(L.family_of(cas_probe.CAS_FAMILIES, 'run/cas/probe_cas_gc_cohort/gate/k1/r1/x'))
 
     def test_deletions_after_drop_by_workload_callers(self):
         keys = {('b', BLOB), ('b', MANIFEST_KEY)}
@@ -341,12 +374,12 @@ class CasGcCohortTest(unittest.TestCase):
             led.add('DeleteObject', BLOB, up='error', t=20_100)
             led.add('DeleteObjects', None, caller='r2', t=30_000,
                     response_body={'delete_results': [{'key': MANIFEST_KEY, 'deleted': True, 'code': None}]})
-            self.assertEqual(probes.deletions(led.rows[1:], keys, 15_000),
+            self.assertEqual(cas_probe.deletions(led.rows[1:], keys, 15_000),
                              {('b', MANIFEST_KEY): {'t_us': 30_010, 'caller': 'r2'}})
             led.add('DeleteObject', BLOB, t=40_000)
-            self.assertEqual(set(probes.deletions(led.rows[1:], keys, 15_000)), keys)
+            self.assertEqual(set(cas_probe.deletions(led.rows[1:], keys, 15_000)), keys)
 
-    def run_probe(self, tmp, reclaim=True, gc_rows='2\n', expect=False, payload=True):
+    def run_probe(self, tmp, reclaim=True, gc_rows='2\n', expect=False, payload=True, rounds=''):
         card = CARDS['probe_cas_gc_cohort']
         led = Ledger(os.path.join(tmp, 'ledger'))
         if payload:
@@ -357,16 +390,42 @@ class CasGcCohortTest(unittest.TestCase):
         if reclaim:
             led.add('DeleteObject', BLOB, t=future)
             led.add('DeleteObject', MANIFEST_KEY, t=future + 2_000_000)
-        cluster = FakeCluster(1, {'system.tables': '0\n', 'cas_gc_log': gc_rows, 'count() FROM yardstick.t': '20000\n'})
-        ctx = ctx_for(card, tmp, led, 'cas', cluster, probes.CAS_FAMILIES)
+        cluster = FakeCluster(1, {'GROUP BY round_id': rounds, 'system.tables': '0\n', 'cas_gc_log': gc_rows,
+                                  'count() FROM yardstick.t': '20000\n'})
+        ctx = ctx_for(card, tmp, led, 'cas', cluster, cas_probe.CAS_FAMILIES)
         card.p(ctx)['reclaim_timeout_s'] = 0
         card.complete(ctx)
         bounds = ctx.replay()
         card.reclassify(ctx, bounds)
-        draft = {'ledger': {'foreground': L.summarize(led.rows[1:])}, 'window': {'crossing': []},
+        split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
+        draft = {'ledger': {'foreground': L.summarize(split['foreground']), 'maintenance': L.summarize(split['maintenance'])},
+                 'window': {'crossing': [], 't_start_us': led.rows[0]['t_us'], 't_end_us': future + 3_000_000},
                  'inventory': {'byte_hours': L.byte_hours(bounds, led.rows[0]['t_us'], future + 3_000_000)}}
         draft['observations'] = card.observe(ctx, draft)
         return card, ctx, draft, cluster
+
+    def test_request_origin_follows_the_callers_gc_rounds(self):
+        rows = [{'caller': 'r1', 't_start_us': 5}, {'caller': 'r1', 't_start_us': 15}, {'caller': 'r2', 't_start_us': 15},
+                {'caller': 'r1', 't_start_us': 40}, {'caller': 'rig', 't_start_us': 15}]
+        out = cas_probe.attribute(rows, {'r1': [[10, 20], [30, None]], 'r2': []})
+        self.assertEqual([r['t_start_us'] for r in out['maintenance']], [15, 40])  # r1 inside its own rounds only
+        self.assertEqual([(r['caller'], r['t_start_us']) for r in out['foreground']], [('r1', 5), ('r2', 15)])
+        self.assertEqual(len(out['rig']), 1)
+        client = FakeClient({'round_id': '10\t20\t1\n30\t0\t0\n'})
+        self.assertEqual(cas_probe.gc_rounds(client), [[10, 20], [30, None]])
+
+    def test_gc_round_traffic_is_maintenance_and_priced_with_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # The GC put of `gc/state` (third row, 1 ms after the window mark + 2 rows) falls inside a round.
+            start = 1_000_000 + 3000
+            card, ctx, draft, _ = self.run_probe(tmp, rounds=f'{start - 1}\t{start + 1}\t1\n')
+            self.assertEqual(draft['ledger']['maintenance']['r1']['PutObject']['attempts'], 1)
+            self.assertEqual(draft['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
+            inputs = draft['observations']['inputs']
+            self.assertEqual(inputs['probe_put_requests'], 3)  # cells price foreground and maintenance together
+            self.assertGreater(inputs['probe_metadata_gib_months'], 0)
+            self.assertEqual(draft['observations']['request_attribution'],
+                             {'method': 'gc_round_windows', 'rounds': {'r1': 1}})
 
     def test_assertions_both_directions(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -396,12 +455,14 @@ STRACE = """101 1.000001 write(5</d/local/r1/store/t/all_1_1_0/data.bin>, "...".
 101 1.000002 write(6</d/r1/server.log>, "x", 1) = 1
 101 1.000003 pwrite64(7</d/r1/data/other.bin>, "..."..., 512, 0) = 512
 101 1.000004 read(5</d/local/r1/store/t/all_1_1_0/data.bin>, "..."..., 100) = 100
+101 5.000000 write(5</d/local/r1/store/t/all_1_1_0/data.bin>, "..."..., 999) = 999
 """
 
 
 class LocalVolumeTest(unittest.TestCase):
     def draft(self, write_bytes=4096, peak=8192, device='dm-0', limitations=('page cache not dropped',)):
         return {'ledger': {'foreground': {}}, 'window': {'crossing': [], 't_start_us': 0, 't_end_us': 2_000_000},
+                'inventory': {'byte_hours': {}},
                 'proc_io': {'r1': {'write_bytes': write_bytes}},
                 'local': {'r1': {'peak_allocated_bytes': peak, 'device': device, 'fs': 'ext4',
                                  'limitations': list(limitations)}}}
@@ -409,7 +470,7 @@ class LocalVolumeTest(unittest.TestCase):
     def test_observe_and_assertions_both_directions(self):
         card = CARDS['probe_local_volume']
         with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, 'strace.r1.txt'), 'w') as f:
+            with open(os.path.join(tmp, 'strace.r1.g0.txt'), 'w') as f:
                 f.write(STRACE)
             ctx = ctx_for(card, tmp, Ledger(os.path.join(tmp, 'l')), 'local', FakeCluster(1), local_dirs=['/d/local/r1'])
             card.state(ctx)['rows'] = [4_000_000]
@@ -417,10 +478,13 @@ class LocalVolumeTest(unittest.TestCase):
             draft['observations'] = card.observe(ctx, draft)
             obs = draft['observations']
             self.assertEqual(obs['data_dir_write_syscalls'], ['write'])
-            self.assertEqual((obs['probe_block_iops'], obs['probe_block_capacity_gib']), (1.0, 8192 / (1 << 30)))
-            self.assertAlmostEqual(obs['probe_block_mibps'], 4196 / (1 << 20) / 2)
+            inputs = obs['inputs']
+            # The write at 5 s is after the 0..2 s window: counted as outside, not as demand.
+            self.assertEqual((inputs['probe_block_iops'], inputs['probe_block_capacity_gib']), (1.0, 8192 / (1 << 30)))
+            self.assertAlmostEqual(inputs['probe_block_mibps'], 4196 / (1 << 20) / 2)
+            self.assertEqual((obs['data_dir_outside'], obs['data_dir_crossing']), (1, 0))
             self.assertEqual(failing(card.assertions(ctx, draft)), [])
-            with open(os.path.join(tmp, 'strace.r1.txt'), 'w') as f:
+            with open(os.path.join(tmp, 'strace.r1.g0.txt'), 'w') as f:
                 f.write(STRACE.replace('write(5', 'writev(5'))
             bad = self.draft(write_bytes=0, peak=0, device='', limitations=())
             bad['observations'] = card.observe(ctx, bad)

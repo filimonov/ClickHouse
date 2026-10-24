@@ -17,10 +17,13 @@ MARK_ROLES = ('setup_start', 'window_start', 'window_end', 'teardown_end')
 WORKLOAD_CALLERS = ('r1', 'r2', 'r3')
 COUNT_FIELDS = ('attempts', 'delivered', 'dropped', 'injected', 'rejected', 'upstream_ok', 'upstream_error',
                 'upstream_unknown', 'req_payload_bytes', 'resp_payload_bytes', 'list_pages', 'list_keys',
-                'delete_calls', 'delete_keys')
+                'delete_calls', 'delete_keys', 'accepted_dropped', 'upstream_4xx')
 # Signature and SDK bookkeeping change on every retry; everything else under x-amz-* is part of the request's meaning.
 VOLATILE_HEADERS = {'x-amz-date', 'x-amz-security-token', 'x-amz-content-sha256', 'x-amz-user-agent',
                     'amz-sdk-invocation-id', 'amz-sdk-request'}
+# Presigned-URL signature parameters; every other query parameter (pagination, uploadId, ...) is request meaning.
+VOLATILE_QUERY = {'x-amz-date', 'x-amz-signature', 'x-amz-credential', 'x-amz-security-token', 'x-amz-expires',
+                  'x-amz-signedheaders', 'x-amz-algorithm'}
 US_PER_HOUR = 3_600_000_000
 
 
@@ -91,12 +94,21 @@ def family_of(families: list, key):
     return None
 
 
+def batch_keys(a) -> list:
+    """Keys a `DeleteObjects` attempt names: per-key results when the response was parsed, else the request's."""
+    results = (a.get('response_body') or {}).get('delete_results')
+    if results is not None:
+        return [r['key'] for r in results]
+    return list(a.get('delete_keys') or [])
+
+
 def classify(attempts: list, families: list) -> dict:
     """Split attempts into `foreground`, `maintenance` (workload callers) and `rig`.
 
-    A family's `maintenance` flag marks its keys as maintenance traffic. A `DeleteObjects` attempt has no key:
-    it is maintenance iff it lists at least one key and every listed key matches a maintenance family.
-    Other keyless attempts (bucket-level LIST) are foreground.
+    A family's `maintenance` flag marks its keys as maintenance traffic. A `DeleteObjects` attempt has no key
+    (the proxy records `""`): it is maintenance iff it names at least one key and every key matches a maintenance
+    family. Other keyless attempts (bucket-level LIST) are foreground. Key families say what an object is, not
+    who caused a request: cards that need request origin attribute it causally (see measurement-contract.md).
     """
     def maintenance(f):
         return f is not None and bool(f.get('maintenance'))
@@ -106,8 +118,8 @@ def classify(attempts: list, families: list) -> dict:
         if a['caller'] == 'rig':
             out['rig'].append(a)
             continue
-        if a.get('key') is None and a['op'] == 'DeleteObjects':
-            keys = [r['key'] for r in (a.get('response_body') or {}).get('delete_results') or []]
+        if not a.get('key') and a['op'] == 'DeleteObjects':
+            keys = batch_keys(a)
             is_m = bool(keys) and all(maintenance(family_of(families, k)) for k in keys)
         else:
             is_m = maintenance(family_of(families, a.get('key')))
@@ -125,6 +137,11 @@ def summarize(attempts: list) -> dict:
         up = a['upstream']['outcome']
         if up in ('ok', 'error', 'unknown'):
             c['upstream_' + up] += 1
+        if up == 'error' and 400 <= (a['upstream'].get('http_status') or 0) < 500:
+            c['upstream_4xx'] += 1  # billed unless free-listed; 5XX and unsent requests are not
+        if up == 'ok' and a['downstream']['outcome'] == 'dropped':
+            # The store did the work (and bills it); only the reply to the caller was lost.
+            c['accepted_dropped'] += 1
         c['req_payload_bytes'] += a.get('req_payload_bytes') or 0
         c['resp_payload_bytes'] += a.get('resp_payload_bytes') or 0
         if a['op'] == 'ListObjectsV2':
@@ -148,9 +165,12 @@ def _failed(a) -> bool:
 def _identity(a):
     headers = {k.lower(): v for k, v in (a.get('req_headers') or {}).items()}
     cond = tuple(sorted((k, v) for k, v in headers.items()
-                        if k in ('if-match', 'if-none-match') or (k.startswith('x-amz-') and k not in VOLATILE_HEADERS)))
+                        if k in ('if-match', 'if-none-match', 'range')
+                        or (k.startswith('x-amz-') and k not in VOLATILE_HEADERS)))
+    # A different range or listing page is a different request, not a retry of the failed one.
+    query = tuple(sorted((k, v) for k, v in (a.get('query') or {}).items() if k.lower() not in VOLATILE_QUERY))
     return (a['caller'], a['op'], a['store_id'], a.get('bucket'), a.get('key'), a.get('upload_id'),
-            a.get('part_number'), a.get('payload_sha256'), cond)
+            a.get('part_number'), a.get('payload_sha256'), cond, query)
 
 
 def correlate_retries(attempts: list) -> list:
@@ -220,13 +240,28 @@ class Inventory:
 
 
 class Bounds:
-    def __init__(self, lower: Inventory, upper: Inventory):
+    """End-state inventories of the two replays, plus the per-identity transitions `byte_hours` bounds.
+
+    `mutations` maps an identity to its transitions in seq order: `(t_start_us, t_end_us, certain, state)`,
+    where `state` is `(size, category, uncertain)` or None (absent). `cats` holds `reclassify` calls.
+    """
+
+    def __init__(self, lower: Inventory, upper: Inventory, mutations=None, creators=None):
         self.lower = lower
         self.upper = upper
+        self.mutations = mutations if mutations is not None else {}
+        self.creators = creators if creators is not None else {}  # identity -> caller of its first creation
+        self.cats: dict = defaultdict(list)
+        self.reclassified: list = []  # the calls, so a record can be replayed from its raw ledger slice
 
     def reclassify(self, identities, category, t_us, evidence):
+        identities = list(identities)
         for inv in (self.lower, self.upper):
             inv.reclassify(identities, category, t_us, evidence)
+        for ident in identities:
+            self.cats[ident].append((t_us, category))
+        self.reclassified.append({'category': category, 't_us': t_us, 'evidence': evidence,
+                                  'keys': [list(i) for i in identities]})
 
 
 def _range_length(spec, total):
@@ -294,7 +329,11 @@ def _retire(inv: Inventory, a, t, cache):
         inv.delete_object((b, k), t)
     elif op == 'DeleteObjects':
         # Quiet mode lists only failures in the response; the proxy merges both sides into `deleted`/`code`.
-        for r in (a.get('response_body') or {}).get('delete_results') or []:
+        results = (a.get('response_body') or {}).get('delete_results')
+        if results is None:
+            # Response lost or unparsed: the store may have deleted every requested key.
+            results = [{'key': k, 'deleted': True, 'code': None} for k in a.get('delete_keys') or []]
+        for r in results:
             if r.get('deleted') or not r.get('code'):
                 inv.delete_object((b, r['key']), t)
 
@@ -304,16 +343,14 @@ def _end(a):
 
 
 def replay(attempts: list, initial: Inventory, families: list) -> Bounds:
-    """Replay the ledger twice into `Bounds(lower, upper)`, the byte-hours-minimising and -maximising readings.
+    """Replay the ledger into `Bounds`: two end-state inventories and the transitions `byte_hours` integrates.
 
     Every mutation has a creation side (put, copy, part upload, the object a Complete makes) and a
     retirement side (delete, abort, the parts a Complete retires). A Complete has both.
-    - `lower`: creations at `t_end_us`, only when the outcome is ok; retirements at `t_start_us`,
-      also when the outcome is `unknown`.
-    - `upper`: creations at `t_start_us`, also when `unknown`; retirements at `t_end_us`, only when ok.
-    `error`, `not_sent` and `rejected` outcomes change nothing. Objects made by an `unknown` attempt carry
-    `outcome_unknown`. `completed_parts` is parsed by the proxy from the Complete request body, so it is
-    available even when the response was not read.
+    End states: `lower` applies creations only when the outcome is ok and retirements also when it is
+    `unknown`; `upper` the reverse. `error`, `not_sent` and `rejected` outcomes change nothing. Objects made by
+    an `unknown` attempt carry `outcome_unknown`. `completed_parts` is parsed by the proxy from the Complete
+    request body, and `delete_keys` from the DeleteObjects request body, so both exist without a response.
     """
     plans = (
         (('ok',), ('ok', 'unknown'), _end, lambda a: a['t_start_us'], False),
@@ -339,43 +376,96 @@ def replay(attempts: list, initial: Inventory, families: list) -> Bounds:
             else:
                 _retire(inv, a, t, cache)
         bounds.append(inv)
-    return Bounds(*bounds)
+    mutations, creators = _mutations(attempts, initial, families)
+    return Bounds(*bounds, mutations=mutations, creators=creators)
 
 
-def _integrate(inv: Inventory, t0: int, t1: int) -> dict:
-    by_ident = defaultdict(list)
-    for i, tr in enumerate(inv.transitions):
-        by_ident[tr['id']].append((tr['t_us'], i, tr))
-    totals: dict = defaultdict(float)
-    for events in by_ident.values():
-        events.sort(key=lambda e: e[:2])
-        state = None
-        for n, (t, _, tr) in enumerate(events):
-            if tr['action'] == 'set':
-                state = (tr['size'], tr['category'], tr['uncertain'])
-            elif tr['action'] == 'del':
-                state = None
-            elif state is not None:
-                state = (state[0], tr['category'], state[2])
-            end = events[n + 1][0] if n + 1 < len(events) else t1
-            overlap = min(end, t1) - max(t, t0)
-            if state is not None and overlap > 0:
-                size, category, uncertain = state
-                totals['uncertain' if uncertain else category] += size * overlap / US_PER_HOUR
-    return totals
+def _mutations(attempts: list, initial: Inventory, families: list) -> tuple:
+    """Per-identity transitions in seq order, and the caller that first created each identity. Sizes come from
+    one seq-order pass that applies ok and unknown attempts, so a copy or a Complete reads the source and part
+    sizes the request could have seen."""
+    inv = copy.deepcopy(initial)
+    inv.transitions = []
+    out: dict = defaultdict(list)
+    creators: dict = {}
+    for ident, o in initial.objects.items():
+        out[ident].append((o['created_us'], o['created_us'], True, (o['size'], o['category'], o['uncertain'])))
+    for ident, p in initial.incomplete.items():
+        out[ident].append((p['t_us'], p['t_us'], True, (p['size'], 'incomplete', p.get('uncertain', False))))
+    cache: dict = {}
+    for a in sorted(attempts, key=lambda x: x['seq']):
+        outcome = a['upstream']['outcome']
+        if outcome not in ('ok', 'unknown') or a['op'] not in CREATE_OPS | RETIRE_OPS:
+            continue
+        before = len(inv.transitions)
+        if a['op'] in CREATE_OPS:
+            _create(inv, a, a['t_start_us'], families, cache, False)
+        if a['op'] in RETIRE_OPS:
+            _retire(inv, a, a['t_start_us'], cache)
+        for tr in inv.transitions[before:]:
+            state = (tr['size'], tr['category'], tr['uncertain']) if tr['action'] == 'set' else None
+            out[tr['id']].append((a['t_start_us'], _end(a), outcome == 'ok', state))
+            if state is not None:
+                creators.setdefault(tr['id'], a['caller'])
+    return out, creators
+
+
+def _envelope(transitions: list, cats: list, t0: int, t1: int, totals: dict, sign: int) -> None:
+    """Add the pointwise minimum (`sign` -1) or maximum (+1) over the possible states, per category, to `totals`.
+
+    State 0 is "absent"; state k follows transition k. State k is possible at t when transition k may have
+    started (`t_start_us <= t`) and no later certain transition must already have ended (`t <= t_end_us`).
+    An unknown-outcome transition never forces the state before it out. Every real schedule passes through
+    possible states only, so integrating their minimum and maximum bounds its byte-hours.
+    """
+    n = len(transitions)
+    earliest = [float('-inf')] + [tr[0] for tr in transitions]
+    latest = [float('inf')] * (n + 1)
+    bound = float('inf')
+    for k in range(n, -1, -1):
+        latest[k] = bound
+        if k and transitions[k - 1][2]:
+            bound = min(bound, transitions[k - 1][1])
+    states = [None] + [tr[3] for tr in transitions]
+    points = sorted({t0, t1} | {t for tr in transitions for t in tr[:2] if t0 < t < t1}
+                    | {tc for tc, _ in cats if t0 < tc < t1})
+    for lo, hi in zip(points, points[1:]):
+        if hi <= lo:
+            continue
+        mid = (lo + hi) / 2
+        values: dict = defaultdict(list)
+        possible = [k for k in range(n + 1) if earliest[k] <= mid <= latest[k]]
+        for k in possible:
+            state = states[k]
+            if state is None:
+                continue
+            size, category, uncertain = state
+            for tc, c in cats:
+                if earliest[k] <= tc <= mid:
+                    category = c
+            values['uncertain' if uncertain else category].append(size)
+        for category, sizes in values.items():
+            # A category the possible states do not all fill can hold zero bytes at this instant.
+            pick = max(sizes) if sign > 0 else (min(sizes) if len(sizes) == len(possible) else 0)
+            totals[category] += pick * (hi - lo) / US_PER_HOUR
 
 
 def byte_hours(bounds: Bounds, t0_us: int, t1_us: int) -> dict:
-    """Byte-hours per category inside [t0_us, t1_us], clipped to the window.
+    """Byte-hours per category inside [t0_us, t1_us], as `{lower, upper}`.
 
-    `lower` and `upper` are the per-category minimum and maximum of the two replays, so `lower <= upper` holds
-    even when overlapping operations on one identity reorder differently in the two readings.
-    Objects of unknown size land in `uncertain` with size 0.
+    Each transition counts by its effect on bytes: a shrink takes effect at `t_start_us` in `lower` and at
+    `t_end_us` in `upper`, a growth the reverse, and overlapping transitions on one identity are bounded by
+    every order they could have taken effect in (`_envelope`). Objects of unknown size land in `uncertain`
+    with size 0.
     """
-    a, b = _integrate(bounds.lower, t0_us, t1_us), _integrate(bounds.upper, t0_us, t1_us)
-    cats = set(a) | set(b) | {'incomplete', 'uncertain'}
-    return {c: {'lower': min(a.get(c, 0.0), b.get(c, 0.0)), 'upper': max(a.get(c, 0.0), b.get(c, 0.0))}
-            for c in sorted(cats)}
+    lower: dict = defaultdict(float)
+    upper: dict = defaultdict(float)
+    for ident, transitions in bounds.mutations.items():
+        cats = sorted(bounds.cats.get(ident, []))
+        _envelope(transitions, cats, t0_us, t1_us, lower, -1)
+        _envelope(transitions, cats, t0_us, t1_us, upper, +1)
+    cats = set(lower) | set(upper) | {'incomplete', 'uncertain'}
+    return {c: {'lower': lower.get(c, 0.0), 'upper': upper.get(c, 0.0)} for c in sorted(cats)}
 
 
 # --- row sanity --------------------------------------------------------------------------------
