@@ -77,11 +77,16 @@
       },
       locks: ['data_bytes', 'retention_days'],
     },
-    // The user's own workload: registry defaults until edited.
+    // The standard deployment: what the workload knobs alone describe. Wide table, async inserts on (the async buffer
+    // flushes ~1 MiB, the registry default), default merges, a modest number of cold part reads, no mutations, 3
+    // replicas in one zone, filesystem cache on. Everything else stays at its registry default.
     custom: {
       label: 'Custom',
-      description: 'Registry defaults; edit any input',
-      values: {},
+      description: 'A typical deployment: wide table, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, no ALTER UPDATE/DELETE; edit any input',
+      values: {
+        replicas: 3, topology: 'same_az', shape: 'wide', async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000,
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+      },
       locks: [],
     },
   };

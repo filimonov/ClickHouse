@@ -28,7 +28,7 @@ function load(mutate) {
 const C = load();
 const page = (uiState, c) => {
   const k = c || C;
-  const out = ui.compute(k, ui.defaultState(k, 'custom'), uiState || {});
+  const out = ui.compute(k, Object.assign(ui.defaultState(k, 'custom'), { inputs: {} }), uiState || {});
   return Object.assign(out, { parts: ui.renderParts(out.vm, out.page) });
 };
 const sectionOf = (html, marker) => {

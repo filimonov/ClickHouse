@@ -19,7 +19,8 @@ const load = (mutate) => {
 const C = load();
 
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-const base = (over) => Object.assign(ui.defaultState(C, 'custom'), over || {});
+// Registry defaults of the fixture, not the custom preset's standard profile (ids the fixture lacks).
+const base = (over) => Object.assign(ui.defaultState(C, 'custom'), { inputs: {} }, over || {});
 function page(state, uiState, c) {
   const out = ui.compute(c || C, state, uiState || {});
   return Object.assign(out, { html: ui.render(out.vm, out.page), parts: ui.renderParts(out.vm, out.page) });
