@@ -10,6 +10,12 @@
    part_type = wide
    type_mix = plain
    part_files = data.bin,data.cmrk4,primary.cidx,count.txt,serialization.json,statistics.packed,columns.txt,columns_substreams.txt,metadata_version.txt,default_compression_codec.txt,checksums.txt
+   probe_batch_delete_requests = 0
+   probe_delete_requests = 0
+   probe_get_requests = 0
+   probe_head_requests = 0
+   probe_list_requests = 0
+   probe_put_requests = 11
 2. rows (branch | predicted | measured | expected | exact)
    request PutObject ok | - | 11 | 11 | 11 | true
 3. ledger summary

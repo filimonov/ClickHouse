@@ -1,6 +1,6 @@
 {
   "probe": "probe_replicated_fetch",
-  "measurement_id": "cost-20261024T013942Z/s3/probe_replicated_fetch/gate/k1",
+  "measurement_id": "cost-20261024T015941Z/s3/probe_replicated_fetch/gate/k1",
   "cells": {
     "probe_replicated_fetch": {
       "stage1_inputs": {
@@ -27,7 +27,15 @@
             "default_compression_codec.txt",
             "checksums.txt"
           ],
-          "receiver_load_reads_expected": 9
+          "receiver_load_reads_expected": 9,
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 20,
+          "probe_head_requests": 0,
+          "probe_interserver_gib": 0.000029861927032470703,
+          "probe_list_requests": 0,
+          "probe_put_requests": 22,
+          "probe_r2_get_requests": 9
         },
         "coefs": {
           "s3_max_single_part_upload_size": 33554432,
@@ -36,7 +44,16 @@
           "cas_expect_continue_min_bytes": 1048576,
           "cas_inline_cap_bytes": 1048576
         },
-        "observations": {}
+        "observations": {
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 20,
+          "probe_head_requests": 0,
+          "probe_interserver_gib": 0.000029861927032470703,
+          "probe_list_requests": 0,
+          "probe_put_requests": 22,
+          "probe_r2_get_requests": 9
+        }
       },
       "stage2_rows": [
         {
@@ -51,13 +68,60 @@
           "exact": true,
           "upstream_ok": 22,
           "op_predicted": 22
+        },
+        {
+          "row": "request GetObject ok",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 11,
+          "measured": 20,
+          "expected": {
+            "min": 19,
+            "max": 22
+          },
+          "exact": true,
+          "upstream_ok": 20,
+          "op_predicted": 20
+        },
+        {
+          "row": "request GetObject ok",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 9,
+          "measured": 20,
+          "expected": {
+            "min": 19,
+            "max": 22
+          },
+          "exact": true,
+          "upstream_ok": 20,
+          "op_predicted": 20
+        },
+        {
+          "row": "transfer interserver all",
+          "row_type": "transfer",
+          "op_kind": "interserver",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 0.000029861927032470703,
+          "measured": null,
+          "expected": null,
+          "exact": null
         }
       ],
       "stage3_ledger_summary": {
         "by_row_type": {
           "request": {
+            "rows": 3,
+            "quantity": 42
+          },
+          "transfer": {
             "rows": 1,
-            "quantity": 22
+            "quantity": 0.000029861927032470703
           }
         },
         "states": [],
@@ -75,11 +139,31 @@
           "note": "0.005 per 1000",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "scope": "variant"
+        },
+        {
+          "rule_id": "get_and_other",
+          "unit": "requests",
+          "quantity": 20,
+          "money": 0.000008000000000000001,
+          "tiers": null,
+          "note": "0.0004 per 1000",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "ec2_ec2_cross_az",
+          "unit": "GB",
+          "quantity": 0.000029861927032470703,
+          "money": 2.98619270324707e-7,
+          "tiers": null,
+          "note": "0.01 per GB, each_direction",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+          "scope": "variant"
         }
       ],
-      "billing_total": 0.00010999999999999999,
+      "billing_total": 0.0001182986192703247,
       "stage5_allocation": null,
-      "measurement_id": "cost-20261024T013942Z/s3/probe_replicated_fetch/gate/k1"
+      "measurement_id": "cost-20261024T015941Z/s3/probe_replicated_fetch/gate/k1"
     }
   },
   "mismatches": []

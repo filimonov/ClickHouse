@@ -1,6 +1,6 @@
 {
   "probe": "probe_s3_insert",
-  "measurement_id": "cost-20261024T013942Z/s3/probe_s3_insert/gate/k1",
+  "measurement_id": "cost-20261024T015941Z/s3/probe_s3_insert/gate/k1",
   "cells": {
     "probe_s3_insert": {
       "stage1_inputs": {
@@ -26,7 +26,13 @@
             "metadata_version.txt",
             "default_compression_codec.txt",
             "checksums.txt"
-          ]
+          ],
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_list_requests": 0,
+          "probe_put_requests": 11
         },
         "coefs": {
           "s3_max_single_part_upload_size": 33554432,
@@ -35,7 +41,14 @@
           "cas_expect_continue_min_bytes": 1048576,
           "cas_inline_cap_bytes": 1048576
         },
-        "observations": {}
+        "observations": {
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_list_requests": 0,
+          "probe_put_requests": 11
+        }
       },
       "stage2_rows": [
         {
@@ -78,7 +91,7 @@
       ],
       "billing_total": 0.000054999999999999995,
       "stage5_allocation": null,
-      "measurement_id": "cost-20261024T013942Z/s3/probe_s3_insert/gate/k1"
+      "measurement_id": "cost-20261024T015941Z/s3/probe_s3_insert/gate/k1"
     }
   },
   "mismatches": []

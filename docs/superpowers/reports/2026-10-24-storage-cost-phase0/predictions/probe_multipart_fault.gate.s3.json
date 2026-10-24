@@ -142,7 +142,7 @@
       "line": 116
     },
     {
-      "claim": "the SDK loop itself (contrib/aws at 22f694afbdc: AWSClient::AttemptExhaustively)",
+      "claim": "the SDK loop itself, AWSClient::AttemptExhaustively; OUTSIDE the pinned tree: tmp/src-26.8 has no contrib checkout, read at the submodule commit 22f694afbdc that tmp/src-26.8 pins for contrib/aws",
       "path": "contrib/aws/src/aws-cpp-sdk-core/source/client/AWSClient.cpp",
       "line": 357
     },

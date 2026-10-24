@@ -19,7 +19,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | 1. Ledger | done | this file |
 | 2. Spec review rounds (Codex) until no MAJOR | done | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (applied, rev 4.1); r5: 0 MAJOR, 2 MINOR, READY (applied, rev 4.2). Findings per round 25 → 18 → 15 → 6 → 2 |
 | 3. Implementation plan (`writing-plans`) | done | three plans: `docs/superpowers/plans/2026-10-24-storage-cost-{phase0-rig,research,calculator}.md`; Codex plan review r1: 3 CRITICAL, ~30 MAJOR, 2 MINOR (`tmp/codex_plan_r1_findings.md`) → plans rewritten (frozen schemas in Plan 1 Task 0, experiment manifests, coverage evidence edges, evaluator+billing+drill pulled into phase 0, classic-script distribution, proxy framing, Keeper config, window semantics); r2: 4 CRITICAL, ~24 MAJOR (`tmp/codex_plan_r2_findings.md`) → plans revision 3 (Expect negotiation, traced writes, process generations, bounded replay, table coefficients + lookup, EBS formulas owner, CardContext, cleanup order, manual provisioning path, lock rules, closure in the Node suite). Stop rule: two rounds done; remaining issues are for per-task reviewers |
-| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Task 14 (five acceptance probes on the live rig, predictions from the 26.8 source, runtime estimate) in progress 03:02 (opus implementer) |
+| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Task 14 done by the implementer 03:40: live gate exit 0, five PASS with exact predictions (s3 insert 11/11 PUT; multipart Create 1/UploadPart 3/Complete 4/Abort 4; CAS cohort 40/40 reclaimed in 12.9 s; 0 `Expect` rows; `write` syscall); estimate P1 14.5 h, P1+P2 17.8 h → no cuts; in review (opus) |
 | 5. Umbrella review of the branch | pending | |
 | 6. Look & feel in a browser at several resolutions | pending | |
 | 7. Fix and repeat 5–7 | pending | |
@@ -70,8 +70,9 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 
 ## Phase-0 gate {#phase0-gate}
 
-Gate passed 2026-10-24: `cost probe` exit 0 with five PASS in run `cost-20261024T013942Z`; predictions committed in
-`3157c681db5` before the run. Report: `docs/superpowers/reports/2026-10-24-storage-cost-phase0/README.md`.
+Gate passed 2026-10-24: `cost probe` exit 0 with five PASS in run `cost-20261024T013942Z`, and again in
+`cost-20261024T015941Z` after fix round 1 completed the formulas cells (every predicted op is a drill row; the fetch
+cell bills the interserver bytes); predictions committed in `3157c681db5` before both runs. Report: `docs/superpowers/reports/2026-10-24-storage-cost-phase0/README.md`.
 
 | Probe | Verdict | Prediction vs ledger |
 |---|---|---|
@@ -82,7 +83,9 @@ Gate passed 2026-10-24: `cost probe` exit 0 with five PASS in run `cost-20261024
 | `probe_local_volume` | PASS | data-dir writes use `write` only (3 803 calls) as predicted; peak 257 MB on `dm-1`/`ext4` (host root LVM, label "host-specific"); priced as `single` 6 GiB gp3 |
 
 - **Runtime estimate:** P1 14.5 h, P1+P2 17.8 h (about 18.6 h with per-pass start/stop overhead); budget 72 h, so
-  no cut under §5.5 and no quantity or preset disabled.
+  no cut under §5.5 and no quantity or preset disabled. Cut order if a later estimate exceeds 72 h (§5.5): P2
+  cards first (largest family first), then `replication-zero-copy`, then the combined complex-type (`types-*`)
+  shape; measurement integrity and lifecycle coverage are never cut.
 - **Source facts against plan assumptions:** (1) `Expect: 100-continue` is negotiated only for conditional PUTs of
   at least 1 MiB; blob publication is unconditional, so CAS blob uploads never negotiate it (D11 holds only for
   conditional writes). (2) A failing S3 call costs `(s3_retry_attempts + 1)^2` HTTP attempts (SDK loop inside a
@@ -95,3 +98,4 @@ Gate passed 2026-10-24: `cost probe` exit 0 with five PASS in run `cost-20261024
 - **Rig defects fixed in Task 14:** relative `--runs-dir` broke `strace -o` and the `local` disk path (servers
   `cd` into their replica dir); `cost probe` ignored failed record assertions; observer aborts were not replayed;
   closure_check could not read an array `formulas.json`.
+| 2026-10-24 03:57 | Step 4: Task 14 fix round 1 just dispatched (03:56); implementer editing the phase-0 README; no live run yet (last runs 013942Z/014123Z); no codex/RustFS/own server processes | none |

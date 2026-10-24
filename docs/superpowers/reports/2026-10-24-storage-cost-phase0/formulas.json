@@ -38,6 +38,45 @@
               "value": 22,
               "dim": "count"
             }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 11,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_r2_get_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "transfer",
+            "op_kind": "interserver",
+            "outcome_class": "all",
+            "category": null,
+            "route": "ec2_ec2_cross_az",
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_interserver_gib",
+              "dim": "GiB"
+            }
           }
         ],
         "allocation": null,
@@ -125,6 +164,45 @@
             }
           },
           {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_put_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_delete_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObjects",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_batch_delete_requests",
+              "dim": "count"
+            }
+          },
+          {
             "row_type": "storage",
             "op_kind": "incomplete_parts",
             "outcome_class": "all",
@@ -204,6 +282,84 @@
     "cells": {
       "probe_cas_gc_cohort": {
         "ledger_rows": [
+          {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_put_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "HeadObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_head_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_get_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "ListObjectsV2",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_list_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_delete_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObjects",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_batch_delete_requests",
+              "dim": "count"
+            }
+          },
           {
             "row_type": "storage",
             "op_kind": "garbage",

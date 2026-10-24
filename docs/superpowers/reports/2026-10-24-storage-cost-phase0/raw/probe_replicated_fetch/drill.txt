@@ -11,13 +11,27 @@
    type_mix = plain
    part_files = data.bin,data.cmrk4,primary.cidx,count.txt,serialization.json,statistics.packed,columns.txt,columns_substreams.txt,metadata_version.txt,default_compression_codec.txt,checksums.txt
    receiver_load_reads_expected = 9
+   probe_batch_delete_requests = 0
+   probe_delete_requests = 0
+   probe_get_requests = 20
+   probe_head_requests = 0
+   probe_interserver_gib = 0.000029861927032470703
+   probe_list_requests = 0
+   probe_put_requests = 22
+   probe_r2_get_requests = 9
 2. rows (branch | predicted | measured | expected | exact)
    request PutObject ok | - | 22 | 22 | 22 | true
+   request GetObject ok | - | 11 | 20 | {"min":19,"max":22} | true
+   request GetObject ok | - | 9 | 20 | {"min":19,"max":22} | true
+   transfer interserver all | - | 0.000029861927032470703 | null | null | null
 3. ledger summary
-   request: 1 rows, quantity 22
+   request: 3 rows, quantity 42
+   transfer: 1 rows, quantity 0.000029861927032470703
 4. billing
    put_copy_post_list: 22 requests = $0.00010999999999999999
-   total = $0.00010999999999999999
+   get_and_other: 20 requests = $0.000008000000000000001
+   ec2_ec2_cross_az: 0.000029861927032470703 GB = $2.98619270324707e-7
+   total = $0.0001182986192703247
 5. allocation
    none
 OK probe_replicated_fetch: 1 cell(s)

@@ -17,17 +17,33 @@
    deleting_callers = r1
    expect_matches_source = true
    gc_rounds_reclaiming = 2
-   probe_active_gib_months = 4.194353254514788e-11
-   probe_garbage_gib_months = 2.2991420337930315e-9
-   reclaim_delay_s = 12.90356
+   probe_active_gib_months = 3.9208445947509555e-11
+   probe_batch_delete_requests = 2
+   probe_delete_requests = 42
+   probe_garbage_gib_months = 2.2928012676921188e-9
+   probe_get_requests = 327
+   probe_head_requests = 61
+   probe_list_requests = 14
+   probe_put_requests = 208
+   reclaim_delay_s = 12.875028
 2. rows (branch | predicted | measured | expected | exact)
-   storage garbage all | - | 2.2991420337930315e-9 | null | null | null
-   storage active all | - | 4.194353254514788e-11 | null | null | null
+   request PutObject ok | - | 208 | 208 | {"min":40,"max":2000} | null
+   request HeadObject ok | - | 61 | 61 | {"min":20,"max":2000} | null
+   request GetObject ok | - | 327 | 327 | null | null
+   request ListObjectsV2 ok | - | 14 | 14 | null | null
+   request DeleteObject ok | - | 42 | 42 | null | null
+   request DeleteObjects ok | - | 2 | 2 | null | null
+   storage garbage all | - | 2.2928012676921188e-9 | null | null | null
+   storage active all | - | 3.9208445947509555e-11 | null | null | null
 3. ledger summary
-   storage: 2 rows, quantity 2.3410855663381795e-9
+   request: 6 rows, quantity 654
+   storage: 2 rows, quantity 2.3320097136396284e-9
 4. billing
-   storage: 2.3410855663381795e-9 GB-month = $5.384496802577813e-11
-   total = $5.384496802577813e-11
+   put_copy_post_list: 222 requests = $0.00111
+   get_and_other: 388 requests = $0.0001552
+   delete_cancel: 44 requests = $0
+   storage: 2.3320097136396284e-9 GB-month = $5.3636223413711455e-11
+   total = $0.0012652000536362237
 5. allocation
    none
 OK probe_cas_gc_cohort: 1 cell(s)

@@ -1,6 +1,6 @@
 {
   "probe": "probe_cas_gc_cohort",
-  "measurement_id": "cost-20261024T013942Z/cas/probe_cas_gc_cohort/gate/k1",
+  "measurement_id": "cost-20261024T015941Z/cas/probe_cas_gc_cohort/gate/k1",
   "cells": {
     "probe_cas_gc_cohort": {
       "stage1_inputs": {
@@ -26,9 +26,15 @@
           ],
           "expect_matches_source": true,
           "gc_rounds_reclaiming": 2,
-          "probe_active_gib_months": 4.194353254514788e-11,
-          "probe_garbage_gib_months": 2.2991420337930315e-9,
-          "reclaim_delay_s": 12.90356
+          "probe_active_gib_months": 3.9208445947509555e-11,
+          "probe_batch_delete_requests": 2,
+          "probe_delete_requests": 42,
+          "probe_garbage_gib_months": 2.2928012676921188e-9,
+          "probe_get_requests": 327,
+          "probe_head_requests": 61,
+          "probe_list_requests": 14,
+          "probe_put_requests": 208,
+          "reclaim_delay_s": 12.875028
         },
         "coefs": {
           "s3_max_single_part_upload_size": 33554432,
@@ -46,19 +52,109 @@
           "expect_matches_source": true,
           "expect_negotiated_rows": 0,
           "gc_rounds_reclaiming": 2,
-          "probe_active_gib_months": 4.194353254514788e-11,
-          "probe_garbage_gib_months": 2.2991420337930315e-9,
-          "reclaim_delay_s": 12.90356
+          "probe_active_gib_months": 3.9208445947509555e-11,
+          "probe_batch_delete_requests": 2,
+          "probe_delete_requests": 42,
+          "probe_garbage_gib_months": 2.2928012676921188e-9,
+          "probe_get_requests": 327,
+          "probe_head_requests": 61,
+          "probe_list_requests": 14,
+          "probe_put_requests": 208,
+          "reclaim_delay_s": 12.875028
         }
       },
       "stage2_rows": [
+        {
+          "row": "request PutObject ok",
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 208,
+          "measured": 208,
+          "expected": {
+            "min": 40,
+            "max": 2000
+          },
+          "exact": null,
+          "upstream_ok": 208,
+          "op_predicted": 208
+        },
+        {
+          "row": "request HeadObject ok",
+          "row_type": "request",
+          "op_kind": "HeadObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 61,
+          "measured": 61,
+          "expected": {
+            "min": 20,
+            "max": 2000
+          },
+          "exact": null,
+          "upstream_ok": 41,
+          "op_predicted": 61
+        },
+        {
+          "row": "request GetObject ok",
+          "row_type": "request",
+          "op_kind": "GetObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 327,
+          "measured": 327,
+          "expected": null,
+          "exact": null,
+          "upstream_ok": 327,
+          "op_predicted": 327
+        },
+        {
+          "row": "request ListObjectsV2 ok",
+          "row_type": "request",
+          "op_kind": "ListObjectsV2",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 14,
+          "measured": 14,
+          "expected": null,
+          "exact": null,
+          "upstream_ok": 14,
+          "op_predicted": 14
+        },
+        {
+          "row": "request DeleteObject ok",
+          "row_type": "request",
+          "op_kind": "DeleteObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 42,
+          "measured": 42,
+          "expected": null,
+          "exact": null,
+          "upstream_ok": 42,
+          "op_predicted": 42
+        },
+        {
+          "row": "request DeleteObjects ok",
+          "row_type": "request",
+          "op_kind": "DeleteObjects",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 2,
+          "measured": 2,
+          "expected": null,
+          "exact": null,
+          "upstream_ok": 2,
+          "op_predicted": 2
+        },
         {
           "row": "storage garbage all",
           "row_type": "storage",
           "op_kind": "garbage",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 2.2991420337930315e-9,
+          "predicted": 2.2928012676921188e-9,
           "measured": null,
           "expected": null,
           "exact": null
@@ -69,7 +165,7 @@
           "op_kind": "active",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 4.194353254514788e-11,
+          "predicted": 3.9208445947509555e-11,
           "measured": null,
           "expected": null,
           "exact": null
@@ -77,9 +173,13 @@
       ],
       "stage3_ledger_summary": {
         "by_row_type": {
+          "request": {
+            "rows": 6,
+            "quantity": 654
+          },
           "storage": {
             "rows": 2,
-            "quantity": 2.3410855663381795e-9
+            "quantity": 2.3320097136396284e-9
           }
         },
         "states": [],
@@ -89,31 +189,61 @@
       },
       "stage4_billing_lines": [
         {
+          "rule_id": "put_copy_post_list",
+          "unit": "requests",
+          "quantity": 222,
+          "money": 0.00111,
+          "tiers": null,
+          "note": "0.005 per 1000",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "get_and_other",
+          "unit": "requests",
+          "quantity": 388,
+          "money": 0.0001552,
+          "tiers": null,
+          "note": "0.0004 per 1000",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "delete_cancel",
+          "unit": "requests",
+          "quantity": 44,
+          "money": 0,
+          "tiers": null,
+          "note": "0 per 1000",
+          "source_url": "https://aws.amazon.com/s3/pricing/",
+          "scope": "variant"
+        },
+        {
           "rule_id": "storage",
           "unit": "GB-month",
-          "quantity": 2.3410855663381795e-9,
-          "money": 5.384496802577813e-11,
+          "quantity": 2.3320097136396284e-9,
+          "money": 5.3636223413711455e-11,
           "tiers": [
             {
               "from_gb": 0,
               "up_to_gb": 51200,
-              "gb": 2.3410855663381795e-9,
+              "gb": 2.3320097136396284e-9,
               "price_per_gb_month": 0.023,
-              "money": 5.384496802577813e-11
+              "money": 5.3636223413711455e-11
             }
           ],
-          "note": "garbage 2.2991420337930315e-9 GiB-months, active 4.194353254514788e-11 GiB-months",
+          "note": "garbage 2.2928012676921188e-9 GiB-months, active 3.9208445947509555e-11 GiB-months",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "by_category": {
-            "garbage": 2.2991420337930315e-9,
-            "active": 4.194353254514788e-11
+            "garbage": 2.2928012676921188e-9,
+            "active": 3.9208445947509555e-11
           },
           "scope": "variant"
         }
       ],
-      "billing_total": 5.384496802577813e-11,
+      "billing_total": 0.0012652000536362237,
       "stage5_allocation": null,
-      "measurement_id": "cost-20261024T013942Z/cas/probe_cas_gc_cohort/gate/k1"
+      "measurement_id": "cost-20261024T015941Z/cas/probe_cas_gc_cohort/gate/k1"
     }
   },
   "mismatches": []

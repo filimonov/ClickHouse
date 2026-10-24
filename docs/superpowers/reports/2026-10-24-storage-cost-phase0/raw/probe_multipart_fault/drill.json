@@ -1,6 +1,6 @@
 {
   "probe": "probe_multipart_fault",
-  "measurement_id": "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1",
+  "measurement_id": "cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1",
   "cells": {
     "probe_multipart_fault": {
       "stage1_inputs": {
@@ -35,7 +35,7 @@
           "http_attempts_per_failing_call": 4,
           "expected_exceptions": [
             {
-              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
+              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1/r1/kii/rhkbzmijtjdqqkudcqmmpxjlkngfz, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
               "type": "RuntimeError"
             }
           ],
@@ -57,12 +57,18 @@
             "uploads": [
               [
                 "yardstick-cost",
-                "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll",
-                "NjMxZjIzYzQtZTczYy00ZGUxLWEwNjMtY2U4YmNiYzVhNzU3LjY3MWJiYmI4LWVmMzEtNDQzOC04ODdjLWJiMzUzMDdkMWQxNHgxNzkyODA2MDAxNjQzOTIwNzQ1"
+                "cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1/r1/kii/rhkbzmijtjdqqkudcqmmpxjlkngfz",
+                "ZTA5NzhhMTAtOWY4ZC00MGYwLWJmOTEtYThhNTlhZjJiNWZjLmUxMDE1YzU2LTg0YmUtNGZjMC1iM2Y3LTc2NjhlNzNhN2UzYXgxNzkyODA3MTk5ODQzODAyMDc0"
               ]
             ]
           },
-          "probe_incomplete_gib_months": 6.084541535577658e-9
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_incomplete_gib_months": 6.429014891190412e-9,
+          "probe_list_requests": 0,
+          "probe_put_requests": 14
         },
         "coefs": {
           "s3_max_single_part_upload_size": 33554432,
@@ -74,7 +80,7 @@
         "observations": {
           "expected_exceptions": [
             {
-              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
+              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1/r1/kii/rhkbzmijtjdqqkudcqmmpxjlkngfz, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
               "type": "RuntimeError"
             }
           ],
@@ -96,12 +102,18 @@
             "uploads": [
               [
                 "yardstick-cost",
-                "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll",
-                "NjMxZjIzYzQtZTczYy00ZGUxLWEwNjMtY2U4YmNiYzVhNzU3LjY3MWJiYmI4LWVmMzEtNDQzOC04ODdjLWJiMzUzMDdkMWQxNHgxNzkyODA2MDAxNjQzOTIwNzQ1"
+                "cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1/r1/kii/rhkbzmijtjdqqkudcqmmpxjlkngfz",
+                "ZTA5NzhhMTAtOWY4ZC00MGYwLWJmOTEtYThhNTlhZjJiNWZjLmUxMDE1YzU2LTg0YmUtNGZjMC1iM2Y3LTc2NjhlNzNhN2UzYXgxNzkyODA3MTk5ODQzODAyMDc0"
               ]
             ]
           },
-          "probe_incomplete_gib_months": 6.084541535577658e-9
+          "probe_batch_delete_requests": 0,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_incomplete_gib_months": 6.429014891190412e-9,
+          "probe_list_requests": 0,
+          "probe_put_requests": 14
         }
       },
       "stage2_rows": [
@@ -180,12 +192,60 @@
           "exact": null
         },
         {
+          "row": "request PutObject ok",
+          "row_type": "request",
+          "op_kind": "PutObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 14,
+          "measured": 14,
+          "expected": {
+            "min": 1,
+            "max": 14
+          },
+          "exact": true,
+          "upstream_ok": 14,
+          "op_predicted": 14
+        },
+        {
+          "row": "request DeleteObject ok",
+          "row_type": "request",
+          "op_kind": "DeleteObject",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": {
+            "min": 0,
+            "max": 14
+          },
+          "exact": true,
+          "upstream_ok": 0,
+          "op_predicted": 0
+        },
+        {
+          "row": "request DeleteObjects ok",
+          "row_type": "request",
+          "op_kind": "DeleteObjects",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 0,
+          "expected": {
+            "min": 0,
+            "max": 1
+          },
+          "exact": true,
+          "upstream_ok": 0,
+          "op_predicted": 0
+        },
+        {
           "row": "storage incomplete_parts all",
           "row_type": "storage",
           "op_kind": "incomplete_parts",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 6.084541535577658e-9,
+          "predicted": 6.429014891190412e-9,
           "measured": null,
           "expected": null,
           "exact": null
@@ -194,12 +254,12 @@
       "stage3_ledger_summary": {
         "by_row_type": {
           "request": {
-            "rows": 6,
-            "quantity": 12
+            "rows": 9,
+            "quantity": 26
           },
           "storage": {
             "rows": 1,
-            "quantity": 6.084541535577658e-9
+            "quantity": 6.429014891190412e-9
           }
         },
         "states": [],
@@ -211,8 +271,8 @@
         {
           "rule_id": "put_copy_post_list",
           "unit": "requests",
-          "quantity": 4,
-          "money": 0.00002,
+          "quantity": 18,
+          "money": 0.00008999999999999999,
           "tiers": null,
           "note": "0.005 per 1000; not billed: 4 server_error",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
@@ -231,28 +291,28 @@
         {
           "rule_id": "storage",
           "unit": "GB-month",
-          "quantity": 6.084541535577658e-9,
-          "money": 1.3994445531828615e-10,
+          "quantity": 6.429014891190412e-9,
+          "money": 1.4786734249737947e-10,
           "tiers": [
             {
               "from_gb": 0,
               "up_to_gb": 51200,
-              "gb": 6.084541535577658e-9,
+              "gb": 6.429014891190412e-9,
               "price_per_gb_month": 0.023,
-              "money": 1.3994445531828615e-10
+              "money": 1.4786734249737947e-10
             }
           ],
-          "note": "incomplete 6.084541535577658e-9 GiB-months; incomplete billed as storage",
+          "note": "incomplete 6.429014891190412e-9 GiB-months; incomplete billed as storage",
           "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
           "by_category": {
-            "incomplete": 6.084541535577658e-9
+            "incomplete": 6.429014891190412e-9
           },
           "scope": "variant"
         }
       ],
-      "billing_total": 0.00002000013994445532,
+      "billing_total": 0.0000900001478673425,
       "stage5_allocation": null,
-      "measurement_id": "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1"
+      "measurement_id": "cost-20261024T015941Z/s3/probe_multipart_fault/gate/k1"
     }
   },
   "mismatches": []

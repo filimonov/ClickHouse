@@ -1,6 +1,6 @@
 {
   "probe": "probe_local_volume",
-  "measurement_id": "cost-20261024T013942Z/local/probe_local_volume/gate/k1",
+  "measurement_id": "cost-20261024T015941Z/local/probe_local_volume/gate/k1",
   "cells": {
     "probe_local_volume": {
       "stage1_inputs": {
@@ -43,10 +43,16 @@
           "data_dir_write_syscalls": [
             "write"
           ],
-          "probe_block_capacity_gib": 0.239532470703125,
-          "probe_block_iops": 1840.8539858627448,
-          "probe_block_mibps": 114.81239499654819,
-          "window_s": 2.065889
+          "probe_batch_delete_requests": 0,
+          "probe_block_capacity_gib": 0.23952865600585938,
+          "probe_block_iops": 1830.3611822891498,
+          "probe_block_mibps": 114.15796834578468,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_list_requests": 0,
+          "probe_put_requests": 0,
+          "window_s": 2.077732
         },
         "coefs": {
           "s3_max_single_part_upload_size": 33554432,
@@ -84,10 +90,16 @@
           "data_dir_write_syscalls": [
             "write"
           ],
-          "probe_block_capacity_gib": 0.239532470703125,
-          "probe_block_iops": 1840.8539858627448,
-          "probe_block_mibps": 114.81239499654819,
-          "window_s": 2.065889
+          "probe_batch_delete_requests": 0,
+          "probe_block_capacity_gib": 0.23952865600585938,
+          "probe_block_iops": 1830.3611822891498,
+          "probe_block_mibps": 114.15796834578468,
+          "probe_delete_requests": 0,
+          "probe_get_requests": 0,
+          "probe_head_requests": 0,
+          "probe_list_requests": 0,
+          "probe_put_requests": 0,
+          "window_s": 2.077732
         }
       },
       "stage2_rows": [
@@ -97,7 +109,7 @@
           "op_kind": "capacity",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 0.239532470703125,
+          "predicted": 0.23952865600585938,
           "measured": null,
           "expected": null,
           "exact": null
@@ -108,7 +120,7 @@
           "op_kind": "iops",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 1840.8539858627448,
+          "predicted": 1830.3611822891498,
           "measured": null,
           "expected": null,
           "exact": null
@@ -119,7 +131,7 @@
           "op_kind": "mibps",
           "outcome_class": "all",
           "branch_taken": [],
-          "predicted": 114.81239499654819,
+          "predicted": 114.15796834578468,
           "measured": null,
           "expected": null,
           "exact": null
@@ -129,11 +141,11 @@
         "by_row_type": {
           "block_capacity": {
             "rows": 1,
-            "quantity": 0.239532470703125
+            "quantity": 0.23952865600585938
           },
           "block_io": {
             "rows": 2,
-            "quantity": 1955.666380859293
+            "quantity": 1944.5191506349345
           }
         },
         "states": [],
@@ -177,9 +189,9 @@
       "stage5_allocation": {
         "scope": "volume",
         "demand": {
-          "capacity_gib": 0.239532470703125,
-          "peak_iops": 1840.8539858627448,
-          "peak_mibps": 114.81239499654819
+          "capacity_gib": 0.23952865600585938,
+          "peak_iops": 1830.3611822891498,
+          "peak_mibps": 114.15796834578468
         },
         "layout": "single",
         "volumes": 1,
@@ -218,7 +230,7 @@
         ],
         "rejected": []
       },
-      "measurement_id": "cost-20261024T013942Z/local/probe_local_volume/gate/k1"
+      "measurement_id": "cost-20261024T015941Z/local/probe_local_volume/gate/k1"
     }
   },
   "mismatches": []

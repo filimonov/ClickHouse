@@ -18,7 +18,13 @@
    http_attempts_per_failing_call = 4
    expected_exceptions = [object Object]
    multipart = [object Object]
-   probe_incomplete_gib_months = 6.084541535577658e-9
+   probe_batch_delete_requests = 0
+   probe_delete_requests = 0
+   probe_get_requests = 0
+   probe_head_requests = 0
+   probe_incomplete_gib_months = 6.429014891190412e-9
+   probe_list_requests = 0
+   probe_put_requests = 14
 2. rows (branch | predicted | measured | expected | exact)
    request CreateMultipartUpload ok | - | 1 | 1 | 1 | true
    request UploadPart ok | - | 3 | 3 | 3 | true
@@ -26,15 +32,18 @@
    request CompleteMultipartUpload server_error | - | 4 | null | null | null
    request AbortMultipartUpload ok | - | 0 | 4 | 4 | true
    request AbortMultipartUpload server_error | - | 4 | null | null | null
-   storage incomplete_parts all | - | 6.084541535577658e-9 | null | null | null
+   request PutObject ok | - | 14 | 14 | {"min":1,"max":14} | true
+   request DeleteObject ok | - | 0 | 0 | {"min":0,"max":14} | true
+   request DeleteObjects ok | - | 0 | 0 | {"min":0,"max":1} | true
+   storage incomplete_parts all | - | 6.429014891190412e-9 | null | null | null
 3. ledger summary
-   request: 6 rows, quantity 12
-   storage: 1 rows, quantity 6.084541535577658e-9
+   request: 9 rows, quantity 26
+   storage: 1 rows, quantity 6.429014891190412e-9
 4. billing
-   put_copy_post_list: 4 requests = $0.00002
+   put_copy_post_list: 18 requests = $0.00008999999999999999
    delete_cancel: 0 requests = $0
-   storage: 6.084541535577658e-9 GB-month = $1.3994445531828615e-10
-   total = $0.00002000013994445532
+   storage: 6.429014891190412e-9 GB-month = $1.4786734249737947e-10
+   total = $0.0000900001478673425
 5. allocation
    none
 OK probe_multipart_fault: 1 cell(s)

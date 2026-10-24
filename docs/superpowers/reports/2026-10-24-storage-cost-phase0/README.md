@@ -16,7 +16,7 @@ All five acceptance probes of design §5.3 pass on the pinned binary: every pred
 |---|---|
 | Binary | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
 | Source | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Gate run | `cost-20261024T013942Z`, rig commit `50c9b33b4b0` plus the two path fixes in the commit that adds this report |
+| Gate run | `cost-20261024T015941Z`, after the completed formulas cells; the earlier passing run `cost-20261024T013942Z` had the same counts |
 | Store | RustFS binary behind the ledger proxy, bucket `yardstick-cost` |
 | Records | `measurements.jsonl` (five `measurement/1` records) |
 
@@ -34,6 +34,13 @@ exit 0
 Each PASS means: the pass is `ok`, every record assertion holds, `drill.mjs` reconciles the probe's formulas
 cell against the ledger with no mismatch, and `render_check.mjs` finds every value and money line in the page
 markup. Drill-downs are in `raw/<probe>/drill.{txt,json}`.
+
+Every op a prediction names is a row of the probe's cell in `formulas.json`, so the drill checks and bills all of
+them. An exact prediction is a `const` row; a predicted range is an `input` row the drill fills from the record's
+observations (`probe_<op>_requests`, `probe_r2_get_requests`), and the drill checks the measured total against the
+range. The drill compares one total per op across all its rows and callers: the split of an op into `ok` and
+`server_error` rows (the injected 500s of the multipart probe) is used for billing but is not reconciled against
+the ledger's outcomes. The fetch cell also bills the bytes r1's relay shipped as `ec2_ec2_cross_az` transfer.
 
 ### `probe_s3_insert` {#probe-s3-insert}
 
@@ -80,9 +87,9 @@ without forwarding it. The disk sets `s3_retry_attempts = 1`.
 | Incomplete bytes before the abort (lower and upper replay) | 40 939 368 .. 40 953 993 | 40 939 368, 40 939 368 |
 | Object at the upload key | none | none |
 | Incomplete bytes after the rig's abort | 0 | 0 |
-| `incomplete` byte-hours in the window | > 0 | 3 714 .. 4 769 |
+| `incomplete` byte-hours in the window | > 0 | 3 851 .. 5 039 |
 
-The drill bills the incomplete-storage line as storage (`storage: 6.08e-9 GB-month`).
+The drill bills the incomplete-storage line as storage (`storage: 6.43e-9 GB-month`).
 
 ### `probe_cas_gc_cohort` {#probe-cas-gc-cohort}
 
@@ -96,7 +103,7 @@ The drill bills the incomplete-storage line as storage (`storage: 6.08e-9 GB-mon
 | Cohort reclaimed by `DeleteObject(s)` | all | 40 of 40, by r1 |
 | `system.cas_gc_log` `Finish` rows that deleted objects | > 0 | 2 |
 | `reclaim_delay_s` (DROP to last cohort deletion) | > 0 | 12.9 |
-| `garbage` byte-hours | > 0 | 1 801.6 .. 1 802.1 |
+| `garbage` byte-hours | > 0 | 1 796.6 .. 1 797.2 |
 | Ledger rows with `expect_negotiated` | 0 | 0 |
 
 ### `probe_local_volume` {#probe-local-volume}
@@ -109,10 +116,10 @@ The drill bills the incomplete-storage line as storage (`storage: 6.08e-9 GB-mon
 | Write syscalls under the data directory | `write` only | `write` only: 3 803 calls, 248 711 389 bytes |
 | Size histogram (bytes: calls) | present | 4096: 1400, 1048576: 200, 262144: 200, 2048: 200, ... |
 | `proc_io.write_bytes` of r1 | > 0 | > 0 |
-| Union peak of allocated bytes, r1 | > 0 | 257 196 032 |
+| Union peak of allocated bytes, r1 | > 0 | 257 191 936 |
 | Device, filesystem | recorded | `dm-1`, `ext4` |
 
-Demand carried into pricing: capacity 0.24 GiB, 1 841 syscall IOPS, 114.8 MiB/s (window averages over 2.07 s).
+Demand carried into pricing: capacity 0.24 GiB, 1 830 syscall IOPS, 114.2 MiB/s (window averages over 2.08 s).
 `allocateVolumes` picks `single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s` at $0.48 per month (the IOPS-per-GiB cap
 sets the size).
 
@@ -127,12 +134,12 @@ All paths are under `tmp/src-26.8/`. The prediction files list every reference w
   `auto_statistics_types = 'basic, uniq_v2'` (`MergeTreeSettings.cpp:2046`).
 - **A file up to 32 MiB is one `PutObject`, with no HEAD after it** (`src/IO/WriteBufferFromS3.cpp:180`,
   `src/IO/S3Defines.h:26`, `:55`).
-- **A 32..48 MiB object is `CreateMultipartUpload` plus two parts of 32 MiB and the rest**
+- **A 32..48 MiB object is `CreateMultipartUpload` plus two parts: one of 32 MiB and the rest**
   (`src/Common/BufferAllocationPolicy.cpp:51-52`, `src/IO/WriteBufferFromS3.cpp:178-198`).
 - **Each failing S3 call costs `(s3_retry_attempts + 1)^2` HTTP attempts.** The SDK retries inside one call
   (`src/IO/S3/Client.cpp:116`) and ClickHouse wraps the call in its own loop (`src/IO/S3/Client.cpp:823`). With
   the default 500 a failing `CompleteMultipartUpload` would be retried about 250 000 times, so the probe sets 1.
-- **`CompleteMultipartUpload` is retried above the client only for `NoSuchKey` and `InvalidPart`**
+- **`CompleteMultipartUpload` is retried above the client only for `NoSuchKey`, `InvalidPart` and `InvalidPartOrder`**
   (`src/IO/S3Common.cpp:48`); the failed finalize cancels the buffer once and aborts once
   (`src/IO/WriteBuffer.cpp:76`, `:102`; `src/IO/WriteBufferFromS3.cpp:244`).
 - **A `String` column writes its sizes to `s.size.bin`**, so `s.bin` holds only characters

@@ -17,6 +17,8 @@ sys.path.insert(0, TOOLS)
 import artifacts  # noqa: E402
 
 R = probes.REPORT_DIR
+with open(os.path.join(probes.REPO, 'docs', 'superpowers', 'cost-model', 'inputs-registry.json')) as _f:
+    REGISTRY_IDS = {q['id'] for q in json.load(_f)['quantities']}
 PREFIX = 'run/s3/probe/gate/k1'
 
 
@@ -125,13 +127,23 @@ class RegistryAndArtifactsTest(unittest.TestCase):
             m = manifest(probe)
             self.assertEqual(variant, {'s3': 's3', 'cas': 'cas', 'local': 'ebs'}[m['policies'][0]])
             pred = probes.prediction(m['experiment_id'], m['policies'][0])
-            totals = {}
-            for row in cell['ledger_rows']:
-                if row['row_type'] == 'request':
-                    totals[row['op_kind']] = totals.get(row['op_kind'], 0) + row['expr']['value']
-            for op, n in totals.items():
-                self.assertEqual(n, sum(ops[op] for ops in pred['expected']['foreground'].values() if op in ops),
-                                 f'{probe} {op}')
+            requests = [r for r in cell['ledger_rows'] if r['row_type'] == 'request']
+            predicted = [(op, want) for ops in pred['expected']['foreground'].values() for op, want in ops.items()]
+            # Every op the prediction names has a row, so the drill checks and bills it; an omission fails here.
+            self.assertEqual({op for op, _ in predicted} - {r['op_kind'] for r in requests}, set(), probe)
+            for op in {op for op, _ in predicted}:
+                consts = sum(r['expr']['value'] for r in requests if r['op_kind'] == op and r['expr']['kind'] == 'const')
+                exact = sum(w for o, w in predicted if o == op and isinstance(w, int))
+                self.assertEqual(consts, exact, f'{probe} {op}')
+                if any(o == op and not isinstance(w, int) for o, w in predicted):
+                    inputs = [r for r in requests if r['op_kind'] == op and r['expr']['kind'] == 'input']
+                    self.assertTrue(inputs, f'{probe} {op}: a predicted range needs a measured input row')
+            for r in cell['ledger_rows']:
+                if r['expr']['kind'] == 'input':
+                    self.assertIn(r['expr']['id'], REGISTRY_IDS, probe)
+        fetch = cells['probe_replicated_fetch'][1]['ledger_rows']
+        self.assertEqual([(r['route'], r['expr']['id']) for r in fetch if r['row_type'] == 'transfer'],
+                         [('ec2_ec2_cross_az', 'probe_interserver_gib')])
 
     def test_settings_and_controls_come_from_the_manifest(self):
         card = CARDS['probe_multipart_fault']
@@ -225,7 +237,6 @@ class MultipartFaultTest(unittest.TestCase):
         for op, key in extra:
             led.add(op, key)
         ctx = ctx_for(card, tmp, led, 's3', FakeCluster(1))
-        card.measured_faults = None
         card.complete(ctx)
         rig = mock.Mock()
         rig.abort_multipart.side_effect = (lambda b, k, u: led.add('AbortMultipartUpload', k, caller='rig',
@@ -258,6 +269,16 @@ class MultipartFaultTest(unittest.TestCase):
                              ['incomplete_after_abort', 'insert_failed', 'ledger.r1.CompleteMultipartUpload',
                               'ledger.r1.PutObject', 'no_object_created', 'part2.correlated', 'part2.same_payload', 'residue.lower.in_band',
                               'residue.upper.in_band'])
+
+    def test_multipart_shape_assertions_fail_when_the_shape_differs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft, _ = self.run_probe(tmp, extra=[('PutObject', f'{PREFIX}/r1/k')])
+            fg = draft['ledger']['foreground']['r1']
+            fg['CreateMultipartUpload'], fg['UploadPart'] = counts(2), counts(1)
+            card.state(ctx)['part_identities'] = 3
+            draft['inventory']['byte_hours']['incomplete'] = {'lower': 0.0, 'upper': 0.0}
+            self.assertEqual([n for n in failing(card.assertions(ctx, draft)) if not n.startswith('ledger.')],
+                             ['CreateMultipartUpload', 'UploadPart>=2', 'incomplete_byte_hours>0', 'part_identities'])
 
     def test_faults_installed_before_the_insert(self):
         card = CARDS['probe_multipart_fault']
@@ -361,13 +382,14 @@ class CasGcCohortTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             card, ctx, draft, _ = self.run_probe(tmp, reclaim=False, gc_rows='0\n', expect=True)
             self.assertEqual(failing(card.assertions(ctx, draft)),
-                             ['cohort_reclaimed', 'expect_negotiated_rows', 'gc_log_evidence', 'ledger.r1.HeadObject',
+                             ['cohort_reclaimed', 'deletes_by_r1', 'expect_negotiated_rows', 'gc_log_evidence',
+                              'ledger.r1.HeadObject',
                               'ledger.r1.PutObject', 'reclaim_delay_s>0'])
             self.assertFalse(draft['observations']['expect_matches_source'])
         with tempfile.TemporaryDirectory() as tmp:
             card, ctx, draft, _ = self.run_probe(tmp, payload=False)
             self.assertEqual([n for n in failing(card.assertions(ctx, draft)) if not n.startswith('ledger.')],
-                             ['cohort_nonempty', 'garbage_byte_hours>0', 'reclaim_delay_s>0'])
+                             ['cohort_nonempty', 'deletes_by_r1', 'garbage_byte_hours>0', 'reclaim_delay_s>0'])
 
 
 STRACE = """101 1.000001 write(5</d/local/r1/store/t/all_1_1_0/data.bin>, "..."..., 4096) = 4096

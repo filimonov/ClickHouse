@@ -1,4 +1,4 @@
-"""Phase-0 acceptance probes (design §5.3) and the two sample cards behind the runtime estimate.
+"""Phase-0 acceptance probes (design §5.3); the runtime estimate's sample cards live in `samples.py`.
 
 Manifests in the phase-0 report directory (`experiments/<experiment_id>.json`) carry every parameter. The
 expected request counts live in `predictions/<experiment_id>.<policy>.json`; their `source_refs` cite the
@@ -25,6 +25,9 @@ HOURS_PER_MONTH = 730  # the AWS price-list month; storage prices are per GB-mon
 CREATE_OPS = ('PutObject', 'CopyObject', 'CompleteMultipartUpload')
 WRITE_SYSCALLS = ('write', 'pwrite64', 'writev')
 IO_SYSCALLS = WRITE_SYSCALLS + ('read', 'pread64', 'readv')
+# Observation keys the formulas cells read as measured request counts (registry quantities `probe_<n>_requests`).
+REQUEST_INPUTS = {'PutObject': 'put', 'GetObject': 'get', 'HeadObject': 'head', 'ListObjectsV2': 'list',
+                  'DeleteObject': 'delete', 'DeleteObjects': 'batch_delete'}
 
 # CAS key families (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h).
 # Anchored on the layout's own suffix shapes so the pass prefix (which contains `/cas/` as the policy name) never
@@ -75,6 +78,12 @@ def multipart_parts(size: int, first: int = 32 << 20, rest: int = 16 << 20) -> l
 
 def gib_months(byte_hours: float) -> float:
     return byte_hours / GIB / HOURS_PER_MONTH
+
+
+def request_inputs(foreground: dict) -> dict:
+    """Attempts per op summed over callers, the way the drill sums the measured side."""
+    return {f'probe_{n}_requests': sum(ops.get(op, {}).get('attempts', 0) for ops in foreground.values())
+            for op, n in REQUEST_INPUTS.items()}
 
 
 def category(draft: dict, name: str) -> dict:
@@ -196,6 +205,9 @@ class ManifestCard(CostCard):
         for client in ctx.cluster.clients:
             client.query('SYSTEM FLUSH LOGS')
 
+    def observe(self, ctx, draft):
+        return request_inputs(draft['ledger']['foreground'])
+
     def predicted(self, ctx) -> dict:
         return prediction(ctx.manifest['experiment_id'], ctx.policy, self.p(ctx).get('report_dir'))
 
@@ -230,6 +242,13 @@ class ReplicatedFetch(ManifestCard):
     replicas = 2
     replicated = True
 
+    def observe(self, ctx, draft):
+        # The receiver's load reads are a predicted range; r1's relay carries what the sender shipped.
+        return {**super().observe(ctx, draft),
+                'probe_r2_get_requests': request_inputs({'r2': draft['ledger']['foreground'].get('r2', {})})[
+                    'probe_get_requests'],
+                'probe_interserver_gib': draft['interserver']['relay0']['from_target'] / GIB}
+
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
         r1, r2 = ctx.cluster.clients[:2]
@@ -240,8 +259,9 @@ class ReplicatedFetch(ManifestCard):
         out['relay1.from_target'] = (0, relays['relay1']['from_target'])
         out['ReplicatedPartFetches.r1'] = (0, draft['events']['r1'].get('ReplicatedPartFetches', 0))
         out['ReplicatedPartFetches.r2'] = (1, draft['events']['r2'].get('ReplicatedPartFetches', 0))
-        out['part_log.r2.DownloadPart'] = (1, _count(r2, f"SELECT count() FROM system.part_log WHERE event_type = "
-                                                        f"'DownloadPart' AND database = '{DATABASE}' AND table = '{self.table}'"))
+        downloads = (f"SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' "
+                     f"AND database = '{DATABASE}' AND table = '{self.table}'")
+        out['part_log.r2.DownloadPart'] = (1, _count(r2, downloads))
         return out
 
 
@@ -285,7 +305,8 @@ class MultipartFault(ManifestCard):
         ids = {u[2] for u in self.state(ctx).get('uploads', [])}
         self.state(ctx)['after_abort'] = max(sum(p['size'] for ident, p in inv.incomplete.items() if ident[2] in ids)
                                              for inv in (after.lower, after.upper))
-        return {'probe_incomplete_gib_months': gib_months(draft['inventory']['byte_hours']['incomplete']['upper']),
+        return {**super().observe(ctx, draft),
+                'probe_incomplete_gib_months': gib_months(category(draft, 'incomplete')['upper']),
                 'multipart': {k: v for k, v in self.state(ctx).items() if k != 'rows'}}
 
     def assertions(self, ctx, draft):
@@ -293,7 +314,7 @@ class MultipartFault(ManifestCard):
         st, inputs = self.state(ctx), self.predicted(ctx)['inputs']
         lo, hi = inputs['residue_bytes_band']
         fg = draft['ledger']['foreground'].get('r1', {})
-        bh = draft['inventory']['byte_hours']['incomplete']
+        bh = category(draft, 'incomplete')
         out['insert_failed'] = (True, bool(draft['observations'].get('expected_exceptions')))
         out['CreateMultipartUpload'] = (1, fg.get('CreateMultipartUpload', {}).get('attempts', 0))
         out['UploadPart>=2'] = (True, fg.get('UploadPart', {}).get('attempts', 0) >= 2)
@@ -352,7 +373,8 @@ class CasGcCohort(ManifestCard):
     def observe(self, ctx, draft):
         st = self.state(ctx)
         expect = self.predicted(ctx)['inputs']['expect_negotiated_rows']
-        return {'probe_garbage_gib_months': gib_months(category(draft, 'garbage')['upper']),
+        return {**super().observe(ctx, draft),
+                'probe_garbage_gib_months': gib_months(category(draft, 'garbage')['upper']),
                 'probe_active_gib_months': gib_months(category(draft, 'active')['upper']),
                 'cohort_size': len(st['cohort']), 'cohort_reclaimed': len(st['deleted']),
                 'reclaim_delay_s': st['reclaim_delay_s'], 'gc_rounds_reclaiming': st['gc_rounds_reclaiming'],
@@ -365,6 +387,7 @@ class CasGcCohort(ManifestCard):
         out['cohort_nonempty'] = (True, obs['cohort_size'] > 0)
         out['cohort_reclaimed'] = (obs['cohort_size'], obs['cohort_reclaimed'])
         out['gc_log_evidence'] = (True, obs['gc_rounds_reclaiming'] > 0)
+        out['deletes_by_r1'] = (['r1'], obs['deleting_callers'])  # the only replica holding the table
         out['reclaim_delay_s>0'] = (True, (obs['reclaim_delay_s'] or 0) > 0)
         out['garbage_byte_hours>0'] = (True, bh['lower'] > 0 and bh['upper'] > 0)
         out['expect_negotiated_rows'] = (self.predicted(ctx)['inputs']['expect_negotiated_rows'],
@@ -417,9 +440,11 @@ class LocalVolume(ManifestCard):
         calls = sum(io.get(s, {}).get('count', 0) for s in IO_SYSCALLS)
         nbytes = sum(io.get(s, {}).get('bytes', 0) for s in IO_SYSCALLS)
         # Window averages of syscall demand: page cache and writeback sit between these and the device.
-        return {'probe_block_capacity_gib': draft['local']['r1']['peak_allocated_bytes'] / GIB,
+        return {**super().observe(ctx, draft),
+                'probe_block_capacity_gib': draft['local']['r1']['peak_allocated_bytes'] / GIB,
                 'probe_block_iops': calls / window_s, 'probe_block_mibps': nbytes / MIB / window_s,
-                'data_dir_io': io, 'data_dir_write_syscalls': sorted(s for s in WRITE_SYSCALLS if io.get(s, {}).get('count')),
+                'data_dir_io': io,
+                'data_dir_write_syscalls': sorted(s for s in WRITE_SYSCALLS if io.get(s, {}).get('count')),
                 'window_s': window_s}
 
     def assertions(self, ctx, draft):
@@ -433,68 +458,3 @@ class LocalVolume(ManifestCard):
         out['device_fs_recorded'] = (True, bool(local['device']) and bool(local['fs']))
         out['limitations_recorded'] = (True, bool(local['limitations']))
         return out
-
-
-# --- sample cards of the runtime estimate (minimal; owned later by the lifecycle and CAS GC workstreams) ---
-
-@register
-class MergeNatural(ManifestCard):
-    name = 'merge-natural'
-    policies = ('s3', 'cas', 'local')
-    mode = 'stochastic'
-
-    def complete(self, ctx, timeout_s=300):
-        """Natural merges have no end; wait until none has run for `quiet_s`, at most `quiesce_timeout_s`."""
-        r1, p = self.clients(ctx)[0], self.p(ctx)
-        sql = f"SELECT count() FROM system.merges WHERE database = '{DATABASE}' AND table = '{self.table}'"
-        start = quiet_since = time.monotonic()
-        while time.monotonic() - quiet_since < p['quiet_s'] and time.monotonic() - start < p['quiesce_timeout_s']:
-            if _count(r1, sql):
-                quiet_since = time.monotonic()
-            time.sleep(POLL_S)
-        self.state(ctx)['quiesced'] = time.monotonic() - quiet_since >= p['quiet_s']
-        self.state(ctx)['active_parts'] = _count(r1, f"SELECT count() FROM system.parts WHERE active AND "
-                                                     f"database = '{DATABASE}' AND table = '{self.table}'")
-        super().complete(ctx, timeout_s)
-
-    def observe(self, ctx, draft):
-        return {k: self.state(ctx)[k] for k in ('quiesced', 'active_parts')}
-
-    def assertions(self, ctx, draft):
-        return {}
-
-
-@register
-class GcScale(ManifestCard):
-    name = 'gc-scale'
-    policies = ('cas',)
-    mode = 'stochastic'
-
-    def inventory_families(self, ctx):
-        return CAS_FAMILIES
-
-    def complete(self, ctx, timeout_s=300):
-        """After the inserts, wait for one GC round that starts later to finish."""
-        super().complete(ctx, timeout_s)
-        t0, deadline = time.time_ns() // 1000, time.monotonic() + timeout_s
-        sql = ("SELECT count(), max(duration_ms) FROM system.cas_gc_log WHERE event_type = 'Finish' AND outcome = "
-               f"'Success' AND event_time_microseconds >= fromUnixTimestamp64Micro({t0}) FORMAT TSV")
-        while True:
-            for client in ctx.cluster.clients:
-                client.query('SYSTEM FLUSH LOGS')
-            found = [client.query(sql).split() for client in ctx.cluster.clients]
-            done = [int(f[1]) for f in found if int(f[0])]
-            if done or time.monotonic() >= deadline:
-                break
-            time.sleep(1)
-        self.state(ctx)['gc_round_ms'] = done[0] if done else None
-
-    def observe(self, ctx, draft):
-        created = sum(c.get('upstream_ok', 0) for ops in draft['ledger']['foreground'].values()
-                      for op, c in ops.items() if op in CREATE_OPS)
-        return {'gc_round_ms': self.state(ctx)['gc_round_ms'], 'objects_created': created}
-
-    def assertions(self, ctx, draft):
-        return {'gc_round_finished': (True, self.state(ctx)['gc_round_ms'] is not None)}
-
-
