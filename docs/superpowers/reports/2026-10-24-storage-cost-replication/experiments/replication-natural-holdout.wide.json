@@ -1,0 +1,52 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "replication-natural-holdout.wide",
+  "card": "replication-natural-holdout",
+  "case_id": "wide",
+  "policies": [
+    "s3",
+    "s3plain",
+    "cas",
+    "local"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "follower": "r2",
+    "seed": 20261024,
+    "order_by": "k",
+    "quiet_s": 30,
+    "quiesce_timeout_s": 900,
+    "replica_settings": {
+      "r1": {},
+      "r2": {}
+    },
+    "window": "inserts",
+    "columns": "k UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64",
+    "row_bytes": 160,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed} + 1) % 100 AS c1, sipHash64(k, {seed} + 2) % 1000 AS c2, sipHash64(k, {seed} + 3) % 10000 AS c3, sipHash64(k, {seed} + 4) % 100000 AS c4, sipHash64(k, {seed} + 5) % 1000000 AS c5, sipHash64(k, {seed} + 6) % 10 AS c6, sipHash64(k, {seed} + 7) % 100 AS c7, sipHash64(k, {seed} + 8) % 1000 AS c8, sipHash64(k, {seed} + 9) % 10000 AS c9, sipHash64(k, {seed} + 10) % 100000 AS c10, sipHash64(k, {seed} + 11) % 1000000 AS c11, sipHash64(k, {seed} + 12) % 10 AS c12, sipHash64(k, {seed} + 13) % 100 AS c13, sipHash64(k, {seed} + 14) % 1000 AS c14, sipHash64(k, {seed} + 15) % 10000 AS c15, sipHash64(k, {seed} + 16) % 100000 AS c16, sipHash64(k, {seed} + 17) % 1000000 AS c17, sipHash64(k, {seed} + 18) % 10 AS c18, sipHash64(k, {seed} + 19) % 100 AS c19 FROM numbers({rows})",
+    "rows": 50000,
+    "inserts": 24,
+    "statements": [
+      {
+        "sql": "ALTER TABLE {table} UPDATE c1 = c1 + 1 WHERE 1"
+      }
+    ],
+    "expected_rows": 1200000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 1800,
+  "description": "24 inserts of 50 000 rows into a 20-column UInt64 table on r1 with natural merges and default settings, the same quiet wait, then one ALTER UPDATE: the hold-out of the natural split."
+}
