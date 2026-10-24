@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "b92cb0fbac40c40a",
+ "version": "32326c8653f1e057",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "b92cb0fbac40c40a",
+  "contract_version": "32326c8653f1e057",
   "registry_version": "0.3.0",
-  "registry_sha256": "14e50be05247594ede3691114c72b80f2e024de73057e04118ff84fb828b4559",
+  "registry_sha256": "32a908d73e78569f34c0aa2db7820d9af576e4e79aba5b032c81966a7170e45a",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "918d64ffd61169458cc85029b3af5c2dc69c0f46601c6358cc37b1c16709d4fd",
+  "coverage_sha256": "fba0ab8d6784bc153286e19e7f1647fdc534e995082fd712bdc22c198edee7a8",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -44,6 +44,13 @@
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    },
    {
+    "report": "2026-10-24-storage-cost-replication",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "f35fd96a7302188ab0298ecf4561169643cab164",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "c7dc9ea071998b283ce659bfde701995a4475181d13e6e17aa1547205675a5ec"
+   },
+   {
     "report": "2026-10-24-storage-cost-s3",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
     "rig_commit": "7f9ef7459c81007a04953676239d6e28fc71d7f3",
@@ -58,9 +65,9 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "4a1598559a2c8a13295df4b7456e0e47735495d9759b8a620bdd79cd6ccc806c"
+  "breakeven_sha256": "9ccdb76824e594f517370156e48403c197f8eb867d6bb4bf89a1eba738412358"
  },
- "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 36 coefficient(s): 27 measured, 9 pinned to source. 34 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 6 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 45 coefficient(s): 36 measured, 9 pinned to source. 43 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -9763,7 +9770,7 @@
   {
    "id": "catchup_requests_per_missed_part",
    "block": "topology_recovery",
-   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+   "label": "Requests per part a restarted replica fetches to catch up, both replicas, per S3 operation",
    "kind": "measured",
    "scope": "cluster",
    "unit": "count",
@@ -9771,7 +9778,8 @@
    "enum": null,
    "table": {
     "index": [
-     "variant_id"
+     "variant_id",
+     "replication_op"
     ],
     "dim": "count"
    },
@@ -9782,6 +9790,501 @@
    "evidence": {
     "kind": "measured",
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+    "mapping": {
+     "catchup_requests_per_missed_part": "S3 requests after the restart minus startup, per DownloadPart row"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "result_type",
+   "block": "replication",
+   "label": "Result type of a replicated part: inserted, merged or mutated",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "insert",
+    "merge",
+    "mutation"
+   ],
+   "table": null,
+   "default": "insert",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Interpreters/PartLog.cpp:67",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "replication_role",
+   "block": "replication",
+   "label": "Side of a part fetch a request belongs to: the replica serving it or the one fetching",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "sender",
+    "receiver"
+   ],
+   "table": null,
+   "default": "sender",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:469",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "replication_op",
+   "block": "replication",
+   "label": "S3 operation of a replication, recovery or retry request row",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "PutObject",
+    "GetObject",
+    "HeadObject",
+    "DeleteObject",
+    "DeleteObjects",
+    "ListObjectsV2",
+    "CreateMultipartUpload",
+    "UploadPart",
+    "CompleteMultipartUpload",
+    "AbortMultipartUpload"
+   ],
+   "table": null,
+   "default": "PutObject",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:567",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "fault_class",
+   "block": "replication",
+   "label": "Failed store request class: a 5XX answer the store never saw, or a response lost after the store accepted the request",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "status_5xx",
+    "lost_response"
+   ],
+   "table": null,
+   "default": "status_5xx",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:116",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "attempt_kind",
+   "block": "replication",
+   "label": "Which attempts a retry row counts: every attempt, or only the attempts the store saw (billable)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "attempts",
+    "store_reached"
+   ],
+   "table": null,
+   "default": "attempts",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:852",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "acquire_requests",
+   "block": "replication",
+   "label": "Requests per part a follower fetches, by result type and side (sender reads, receiver writes and load reads)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "result_type",
+     "replication_role",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "acquire_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+    "mapping": {
+     "acquire_requests": "S3 requests of each replica while its DownloadPart rows accrue, per DownloadPart row"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "acquire_bytes",
+   "block": "replication",
+   "label": "Interserver bytes the sender ships per byte on disk of a fetched part",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "result_type"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "acquire_bytes",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(size_in_bytes) FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
+    "mapping": {
+     "acquire_bytes": "interserver bytes sent / DownloadPart size_in_bytes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "local_exec_requests",
+   "block": "replication",
+   "label": "Requests a follower sends per merge or mutation result it executes itself",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "result_type",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "local_exec_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+    "mapping": {
+     "local_exec_requests": "S3 requests per MergeParts or MutatePart row on a follower"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "fetch_fraction",
+   "block": "replication",
+   "label": "Share of follower acquisitions that are fetches, per result type, with default settings",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "result_type"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "fetch_fraction",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+    "mapping": {
+     "fetch_fraction": "DownloadPart / (DownloadPart + MergeParts or MutatePart) of the result type on followers"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "zero_copy_requests",
+   "block": "replication",
+   "label": "Requests per part a follower fetches with zero-copy replication (s3), by result type and side",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "result_type",
+     "replication_role",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "zero_copy_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+    "mapping": {
+     "zero_copy_requests": "S3 requests per DownloadPart row with allow_remote_fs_zero_copy_replication = 1"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "startup_requests_after_restart",
+   "block": "topology_recovery",
+   "label": "Requests a restarted replica sends before its first catch-up fetch",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "startup_requests_after_restart",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+    "mapping": {
+     "startup_requests_after_restart": "S3 requests between the server start and the first DownloadPart"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "replacement_requests_per_part",
+   "block": "topology_recovery",
+   "label": "Requests per part when a new replica joins a populated table (cut: replacement.default is a P2 case)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": 0,
+   "rule": null,
+   "coef": "replacement_requests_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+    "mapping": {
+     "replacement_requests_per_part": "not measured: the replacement card is cut"
+    }
+   },
+   "status": "unsupported"
+  },
+  {
+   "id": "retry_outcome_mix",
+   "block": "reliability",
+   "label": "Extra request attempts per failed attempt, and how many of them reach the store, per fault class",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id",
+     "fault_class",
+     "replication_op",
+     "attempt_kind"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "retry_outcome_mix",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3WriteRequestsErrors', 'S3WriteRequestRetryableErrors', 'S3WriteRequestAttempts')",
+    "mapping": {
+     "retry_outcome_mix": "S3WriteRequestAttempts - S3WriteRequestsCount per S3WriteRequestsErrors"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "failed_upload_residue",
+   "block": "reliability",
+   "label": "Incomplete multipart bytes left after a failed upload the server aborts itself",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id"
+    ],
+    "dim": "B"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "failed_upload_residue",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3AbortMultipartUpload', 'S3CreateMultipartUpload')",
+    "mapping": {
+     "failed_upload_residue": "S3CreateMultipartUpload - S3CompleteMultipartUpload - S3AbortMultipartUpload uploads stay open"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "fetch_retry_rate",
+   "block": "reliability",
+   "label": "Fetch attempts per fetched part when the interserver connection drops (cut: fault-fetch is a P2 case)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id"
+    ],
+    "dim": "1"
+   },
+   "default": 0,
+   "rule": null,
+   "coef": "fetch_retry_rate",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+    "mapping": {
+     "fetch_retry_rate": "not measured: the fault-fetch case is cut"
+    }
+   },
+   "status": "unsupported"
+  },
+  {
+   "id": "replacement_rate",
+   "block": "topology_recovery",
+   "label": "Replica replacements per month (a new replica fetches every part)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "user input; non-zero needs replacement_requests_per_part, which is unsupported (cut)",
     "version": "0.3.0"
    },
    "hint": null,
@@ -10554,6 +11057,630 @@
     "kind": "source",
     "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:106",
     "version": "26.8@09d0772a842"
+   }
+  },
+  {
+   "id": "acquire_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "result_type",
+     "replication_role",
+     "replication_op"
+    ],
+    "values": {
+     "cas|insert|receiver|GetObject": 8.8333,
+     "cas|insert|receiver|ListObjectsV2": 0.5,
+     "cas|insert|receiver|PutObject": 7.0,
+     "cas|insert|sender|GetObject": 2.5,
+     "cas|merge|receiver|GetObject": 8.0,
+     "cas|merge|receiver|PutObject": 7.0,
+     "cas|merge|sender|GetObject": 1.0,
+     "cas|mutation|receiver|GetObject": 8.0,
+     "cas|mutation|receiver|PutObject": 7.0,
+     "cas|mutation|sender|GetObject": 1.0,
+     "s3plain|insert|receiver|GetObject": 9.0,
+     "s3plain|insert|receiver|HeadObject": 1.0,
+     "s3plain|insert|receiver|PutObject": 13.0,
+     "s3plain|insert|sender|GetObject": 11.0,
+     "s3plain|merge|receiver|GetObject": 9.0,
+     "s3plain|merge|receiver|HeadObject": 1.0,
+     "s3plain|merge|receiver|PutObject": 13.0,
+     "s3plain|merge|sender|GetObject": 11.0,
+     "s3|insert|receiver|GetObject": 9.0,
+     "s3|insert|receiver|PutObject": 11.0,
+     "s3|insert|sender|GetObject": 11.0,
+     "s3|merge|receiver|GetObject": 9.0,
+     "s3|merge|receiver|PutObject": 11.0,
+     "s3|merge|sender|GetObject": 11.0,
+     "s3|mutation|receiver|GetObject": 9.0,
+     "s3|mutation|receiver|PutObject": 11.0,
+     "s3|mutation|sender|GetObject": 11.0
+    }
+   },
+   "validity": {
+    "part_rows": [
+     50000,
+     200000
+    ]
+   },
+   "tolerance": {
+    "abs": 1.0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k3",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "per part the follower fetched (DownloadPart rows): the follower's requests (receiver) and the originator's reads of the objects it wrote in the window minus the same reads in the matching replication-local case, where nothing is fetched (sender; inserts use the merge baseline); s3, s3plain and ebs equal in every repeat, cas the mean of K=3; an absent op is 0"
+   }
+  },
+  {
+   "id": "acquire_bytes",
+   "kind": "table",
+   "dim": "1",
+   "value": {
+    "index": [
+     "variant_id",
+     "result_type"
+    ],
+    "values": {
+     "cas|insert": 0.008806945374958864,
+     "cas|merge": 0.004484893895549125,
+     "cas|mutation": 0.008810231671920615,
+     "ebs|insert": 1.0008048534610308,
+     "ebs|merge": 1.0004090108811197,
+     "ebs|mutation": 1.0008047623536769,
+     "s3plain|insert": 1.000804700184805,
+     "s3plain|merge": 1.0004090108811197,
+     "s3|insert": 1.000804700184805,
+     "s3|merge": 1.0004090108811197,
+     "s3|mutation": 1.0008047623536769
+    }
+   },
+   "validity": {
+    "part_rows": [
+     50000,
+     200000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.05
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/s3/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/s3plain/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k1",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k2",
+     "cost-20261024T115147Z/local/replication-fetch/insert/k3",
+     "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/s3plain/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k1",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k2",
+     "cost-20261024T115147Z/local/replication-fetch/merge/k3",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/s3/replication-fetch/mutation/k3",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/cas/replication-fetch/mutation/k3",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k1",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k2",
+     "cost-20261024T115147Z/local/replication-fetch/mutation/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "interserver bytes the originator sent (relay0 from_target) / bytes on disk of the fetched parts (DownloadPart size_in_bytes), mean of K=3"
+   }
+  },
+  {
+   "id": "local_exec_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "result_type",
+     "replication_op"
+    ],
+    "values": {
+     "cas|merge|GetObject": 9.6667,
+     "cas|merge|HeadObject": 1.0,
+     "cas|merge|PutObject": 7.0,
+     "cas|mutation|GetObject": 33.0,
+     "cas|mutation|HeadObject": 1.0,
+     "cas|mutation|PutObject": 8.3333,
+     "s3plain|merge|GetObject": 32.0,
+     "s3plain|merge|HeadObject": 1.0,
+     "s3plain|merge|PutObject": 13.0,
+     "s3|merge|GetObject": 32.0,
+     "s3|merge|PutObject": 11.0,
+     "s3|mutation|GetObject": 26.0,
+     "s3|mutation|PutObject": 11.0
+    }
+   },
+   "validity": {
+    "source_parts": [
+     1,
+     4
+    ]
+   },
+   "tolerance": {
+    "abs": 1.0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/replication-local/merge/k1",
+     "cost-20261024T115147Z/s3/replication-local/merge/k2",
+     "cost-20261024T115147Z/s3/replication-local/merge/k3",
+     "cost-20261024T115147Z/s3plain/replication-local/merge/k1",
+     "cost-20261024T115147Z/s3plain/replication-local/merge/k2",
+     "cost-20261024T115147Z/s3plain/replication-local/merge/k3",
+     "cost-20261024T115147Z/cas/replication-local/merge/k1",
+     "cost-20261024T115147Z/cas/replication-local/merge/k2",
+     "cost-20261024T115147Z/cas/replication-local/merge/k3",
+     "cost-20261024T115147Z/local/replication-local/merge/k1",
+     "cost-20261024T115147Z/local/replication-local/merge/k2",
+     "cost-20261024T115147Z/local/replication-local/merge/k3",
+     "cost-20261024T115147Z/s3/replication-local/mutation/k1",
+     "cost-20261024T115147Z/s3/replication-local/mutation/k2",
+     "cost-20261024T115147Z/s3/replication-local/mutation/k3",
+     "cost-20261024T115147Z/cas/replication-local/mutation/k1",
+     "cost-20261024T115147Z/cas/replication-local/mutation/k2",
+     "cost-20261024T115147Z/cas/replication-local/mutation/k3",
+     "cost-20261024T115147Z/local/replication-local/mutation/k1",
+     "cost-20261024T115147Z/local/replication-local/mutation/k2",
+     "cost-20261024T115147Z/local/replication-local/mutation/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "the follower's requests per merge or mutation result it executed itself; merge rows are for 4 Compact sources of 50 000 rows (the per-source rule is in the README)"
+   }
+  },
+  {
+   "id": "zero_copy_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "result_type",
+     "replication_role",
+     "replication_op"
+    ],
+    "values": {
+     "insert|receiver|GetObject": 9.0,
+     "insert|receiver|HeadObject": 1.0,
+     "merge|receiver|GetObject": 9.0,
+     "merge|receiver|HeadObject": 1.0,
+     "mutation|receiver|GetObject": 9.0,
+     "mutation|receiver|HeadObject": 1.0
+    }
+   },
+   "validity": {
+    "part_rows": [
+     50000,
+     200000
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/replication-zero-copy/insert/k1",
+     "cost-20261024T115147Z/s3/replication-zero-copy/insert/k2",
+     "cost-20261024T115147Z/s3/replication-zero-copy/insert/k3",
+     "cost-20261024T115147Z/s3/replication-zero-copy/merge/k1",
+     "cost-20261024T115147Z/s3/replication-zero-copy/merge/k2",
+     "cost-20261024T115147Z/s3/replication-zero-copy/merge/k3",
+     "cost-20261024T115147Z/s3/replication-zero-copy/mutation/k1",
+     "cost-20261024T115147Z/s3/replication-zero-copy/mutation/k2",
+     "cost-20261024T115147Z/s3/replication-zero-copy/mutation/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "as acquire_requests, with allow_remote_fs_zero_copy_replication = 1"
+   }
+  },
+  {
+   "id": "fetch_fraction",
+   "kind": "table",
+   "dim": "1",
+   "value": {
+    "index": [
+     "variant_id",
+     "result_type"
+    ],
+    "values": {
+     "cas|insert": 1.0,
+     "cas|merge": 0.0,
+     "cas|mutation": 0.0,
+     "ebs|insert": 1.0,
+     "ebs|merge": 0.0,
+     "ebs|mutation": 0.0,
+     "s3plain|insert": 1.0,
+     "s3plain|merge": 0.0,
+     "s3|insert": 1.0,
+     "s3|merge": 0.0,
+     "s3|mutation": 0.0
+    }
+   },
+   "validity": {
+    "inserts": [
+     24,
+     24
+    ]
+   },
+   "tolerance": {
+    "abs": 0.05,
+    "rel": 0.0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T121344Z/s3/replication-natural-fit/default/k1",
+     "cost-20261024T121344Z/s3/replication-natural-fit/default/k2",
+     "cost-20261024T121344Z/s3/replication-natural-fit/default/k3",
+     "cost-20261024T121344Z/s3plain/replication-natural-fit/default/k1",
+     "cost-20261024T121344Z/s3plain/replication-natural-fit/default/k2",
+     "cost-20261024T121344Z/s3plain/replication-natural-fit/default/k3",
+     "cost-20261024T121344Z/cas/replication-natural-fit/default/k1",
+     "cost-20261024T121344Z/cas/replication-natural-fit/default/k2",
+     "cost-20261024T121344Z/cas/replication-natural-fit/default/k3",
+     "cost-20261024T121344Z/local/replication-natural-fit/default/k1",
+     "cost-20261024T121344Z/local/replication-natural-fit/default/k2",
+     "cost-20261024T121344Z/local/replication-natural-fit/default/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "follower fetches / follower acquisitions per result type (cards/replication.py follower_split), mean of K=3",
+    "spread": {
+     "s3|insert": [
+      1.0,
+      1.0
+     ],
+     "s3|merge": [
+      0.0,
+      0.0
+     ],
+     "s3|mutation": [
+      0.0,
+      0.0
+     ],
+     "s3plain|insert": [
+      1.0,
+      1.0
+     ],
+     "s3plain|merge": [
+      0.0,
+      0.0
+     ],
+     "cas|insert": [
+      1.0,
+      1.0
+     ],
+     "cas|merge": [
+      0.0,
+      0.0
+     ],
+     "cas|mutation": [
+      0.0,
+      0.0
+     ],
+     "ebs|insert": [
+      1.0,
+      1.0
+     ],
+     "ebs|merge": [
+      0.0,
+      0.0
+     ],
+     "ebs|mutation": [
+      0.0,
+      0.0
+     ]
+    }
+   }
+  },
+  {
+   "id": "catchup_requests_per_missed_part",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "replication_op"
+    ],
+    "values": {
+     "cas|GetObject": 7.2,
+     "cas|PutObject": 5.8,
+     "s3plain|GetObject": 21.6,
+     "s3plain|HeadObject": 1.0,
+     "s3plain|PutObject": 14.6,
+     "s3|GetObject": 21.6,
+     "s3|PutObject": 12.6
+    }
+   },
+   "validity": {
+    "inserts_while_down": [
+     250,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0.25
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T123232Z/s3/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/s3plain/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/cas/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/local/restart-catchup/10min/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "requests of both replicas after the follower's first catch-up fetch / parts it fetched; K=1"
+   }
+  },
+  {
+   "id": "startup_requests_after_restart",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "replication_op"
+    ],
+    "values": {
+     "cas|DeleteObject": 2,
+     "cas|GetObject": 33,
+     "cas|HeadObject": 1,
+     "cas|ListObjectsV2": 5,
+     "cas|PutObject": 6,
+     "s3plain|CopyObject": 1,
+     "s3plain|DeleteObject": 2,
+     "s3plain|GetObject": 53,
+     "s3plain|HeadObject": 1,
+     "s3plain|ListObjectsV2": 9,
+     "s3plain|PutObject": 1,
+     "s3|DeleteObject": 1,
+     "s3|GetObject": 48,
+     "s3|PutObject": 1
+    }
+   },
+   "validity": {
+    "active_parts": [
+     3,
+     3
+    ]
+   },
+   "tolerance": {
+    "abs": 2,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T123232Z/s3/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/s3plain/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/cas/restart-catchup/10min/k1",
+     "cost-20261024T123232Z/local/restart-catchup/10min/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "the follower's requests from its start to its first catch-up fetch; K=1"
+   }
+  },
+  {
+   "id": "retry_outcome_mix",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "fault_class",
+     "replication_op",
+     "attempt_kind"
+    ],
+    "values": {
+     "cas|lost_response|GetObject|attempts": 1,
+     "cas|lost_response|GetObject|store_reached": 1,
+     "cas|status_5xx|GetObject|attempts": 1,
+     "cas|status_5xx|GetObject|store_reached": 1,
+     "cas|status_5xx|PutObject|attempts": 1,
+     "s3plain|lost_response|PutObject|attempts": 1,
+     "s3plain|lost_response|PutObject|store_reached": 1,
+     "s3plain|status_5xx|PutObject|attempts": 1,
+     "s3|lost_response|PutObject|attempts": 1,
+     "s3|lost_response|PutObject|store_reached": 1,
+     "s3|status_5xx|PutObject|attempts": 1
+    }
+   },
+   "validity": {
+    "nth": [
+     3,
+     7
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/faults/put-5xx/k1",
+     "cost-20261024T115147Z/s3/faults/put-5xx/k2",
+     "cost-20261024T115147Z/s3/faults/put-5xx/k3",
+     "cost-20261024T115147Z/s3/faults/lost-response/k1",
+     "cost-20261024T115147Z/s3/faults/lost-response/k2",
+     "cost-20261024T115147Z/s3/faults/lost-response/k3",
+     "cost-20261024T115147Z/s3/faults/none/k1",
+     "cost-20261024T115147Z/s3/faults/none/k2",
+     "cost-20261024T115147Z/s3/faults/none/k3",
+     "cost-20261024T115147Z/s3plain/faults/put-5xx/k1",
+     "cost-20261024T115147Z/s3plain/faults/put-5xx/k2",
+     "cost-20261024T115147Z/s3plain/faults/put-5xx/k3",
+     "cost-20261024T115147Z/s3plain/faults/lost-response/k1",
+     "cost-20261024T115147Z/s3plain/faults/lost-response/k2",
+     "cost-20261024T115147Z/s3plain/faults/lost-response/k3",
+     "cost-20261024T115147Z/s3plain/faults/none/k1",
+     "cost-20261024T115147Z/s3plain/faults/none/k2",
+     "cost-20261024T115147Z/s3plain/faults/none/k3",
+     "cost-20261024T115147Z/cas/faults/put-5xx/k1",
+     "cost-20261024T115147Z/cas/faults/put-5xx/k2",
+     "cost-20261024T115147Z/cas/faults/put-5xx/k3",
+     "cost-20261024T115147Z/cas/faults/lost-response/k1",
+     "cost-20261024T115147Z/cas/faults/lost-response/k2",
+     "cost-20261024T115147Z/cas/faults/lost-response/k3",
+     "cost-20261024T115147Z/cas/faults/none/k1",
+     "cost-20261024T115147Z/cas/faults/none/k2",
+     "cost-20261024T115147Z/cas/faults/none/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "per failed attempt: attempts (attempt_kind attempts) and attempts the store saw (store_reached: upstream outcome other than not_sent) of the fault case minus the fault-free insert (faults.none); an absent key is 0"
+   }
+  },
+  {
+   "id": "failed_upload_residue",
+   "kind": "table",
+   "dim": "B",
+   "value": {
+    "index": [
+     "variant_id"
+    ],
+    "values": {
+     "s3": 0,
+     "s3plain": 0
+    }
+   },
+   "validity": {
+    "upload_parts": [
+     2,
+     3
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T115147Z/s3/faults/multipart-abort/k1",
+     "cost-20261024T115147Z/s3/faults/multipart-abort/k2",
+     "cost-20261024T115147Z/s3/faults/multipart-abort/k3",
+     "cost-20261024T115147Z/s3plain/faults/multipart-abort/k1",
+     "cost-20261024T115147Z/s3plain/faults/multipart-abort/k2",
+     "cost-20261024T115147Z/s3plain/faults/multipart-abort/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "incomplete multipart bytes in the replay after the window, before any rig abort"
    }
   },
   {
@@ -21023,6 +22150,8 @@
  },
  "owners": {
   "coefficients": {
+   "acquire_bytes": "2026-10-24-storage-cost-replication",
+   "acquire_requests": "2026-10-24-storage-cost-replication",
    "bytes_per_get": "2026-10-24-storage-cost-s3",
    "cache_fill_io_per_byte": "2026-10-24-storage-cost-s3",
    "cached_miss_bytes_per_part_read": "2026-10-24-storage-cost-s3",
@@ -21031,13 +22160,17 @@
    "cas_expect_continue_min_bytes": "2026-10-24-storage-cost-phase0",
    "cas_inline_cap_bytes": "2026-10-24-storage-cost-phase0",
    "cas_objects_per_part": "2026-10-24-storage-cost-cas",
+   "catchup_requests_per_missed_part": "2026-10-24-storage-cost-replication",
    "compressed_block_frame_bytes": "2026-10-24-storage-cost-phase0",
    "delete_calls_per_removed_part": "2026-10-24-storage-cost-s3",
    "empty_part_objects": "2026-10-24-storage-cost-s3",
+   "failed_upload_residue": "2026-10-24-storage-cost-replication",
+   "fetch_fraction": "2026-10-24-storage-cost-replication",
    "gc_round_duration": "2026-10-24-storage-cost-cas",
    "gc_round_requests": "2026-10-24-storage-cost-cas",
    "gets_per_stream_read": "2026-10-24-storage-cost-s3",
    "insert_tx_checks": "2026-10-24-storage-cost-s3",
+   "local_exec_requests": "2026-10-24-storage-cost-replication",
    "merge_effective_fan_in": "2026-10-24-storage-cost-lifecycle",
    "merge_fan_in_distribution": "2026-10-24-storage-cost-lifecycle",
    "merge_gets_per_source_part": "2026-10-24-storage-cost-s3",
@@ -21052,13 +22185,16 @@
    "object_size_distribution": "2026-10-24-storage-cost-s3",
    "objects_per_part": "2026-10-24-storage-cost-s3",
    "reclaim_delay_periods": "2026-10-24-storage-cost-cas",
+   "retry_outcome_mix": "2026-10-24-storage-cost-replication",
    "s3_max_single_part_upload_size": "2026-10-24-storage-cost-phase0",
    "s3_min_upload_part_size": "2026-10-24-storage-cost-phase0",
    "shape_columns": "2026-10-24-storage-cost-s3",
    "startup_gets_per_part": "2026-10-24-storage-cost-s3",
    "startup_requests": "2026-10-24-storage-cost-s3",
+   "startup_requests_after_restart": "2026-10-24-storage-cost-replication",
    "stats_gets_per_column": "2026-10-24-storage-cost-s3",
-   "warm_gets_per_stream_read": "2026-10-24-storage-cost-s3"
+   "warm_gets_per_stream_read": "2026-10-24-storage-cost-s3",
+   "zero_copy_requests": "2026-10-24-storage-cost-replication"
   },
   "cells": {
    "cas/deletes": "2026-10-24-storage-cost-cas",
