@@ -230,6 +230,14 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(failed(checks), ['counter.r2.ReplicatedPartFetches', 'path.r2.insert.fetch'])
 
 
+class RowAssertionsTest(unittest.TestCase):
+    def test_a_missing_replica_count_fails_instead_of_being_skipped(self):
+        ok = replication.row_assertions(['r1', 'r2'], [10, 10], 10)
+        self.assertEqual(failed(ok), [])
+        short = replication.row_assertions(['r1', 'r2'], [10], 10)
+        self.assertEqual(failed(short), ['rows.counted_replicas', 'rows.r2'])
+
+
 class RequestRolesTest(unittest.TestCase):
     def test_originator_reads_of_its_own_new_objects_are_the_sender_side(self):
         def a(caller, op, key):

@@ -91,6 +91,14 @@ def follower_split(part_logs: dict) -> dict:
     return out
 
 
+def row_assertions(names: list, counted: list, expected: int) -> dict:
+    """Row counts per replica; a replica without a count fails rather than dropping out of the check."""
+    out = {'rows.counted_replicas': (len(names), len(counted))}
+    for i, name in enumerate(names):
+        out[f'rows.{name}'] = (expected, counted[i] if i < len(counted) else None)
+    return out
+
+
 def request_roles(rows: list, originator: str) -> dict:
     """Per replica and role, request counts per op.
 
@@ -236,9 +244,7 @@ class ReplicationCard(LifecycleCard):
         out = compare_ledger(pred, draft['ledger']['foreground'], exact)
         for key, want in pred['expected']['observations'].items():
             out[f'observation.{key}'] = check_observation(want, draft['observations'].get(key), draft['observations'])
-        rows = self.p(ctx)['expected_rows']
-        for name, actual in zip(self.names(), self.state(ctx).get('rows', [])):
-            out[f'rows.{name}'] = (rows, actual)
+        out.update(row_assertions(self.names(), self.state(ctx).get('rows', []), self.p(ctx)['expected_rows']))
         active = self.state(ctx)['active']
         out['active_parts.equal'] = (active[self.names()[0]], active[self.follower(ctx)])
         if exact:

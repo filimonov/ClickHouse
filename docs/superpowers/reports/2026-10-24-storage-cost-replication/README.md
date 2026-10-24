@@ -41,7 +41,7 @@ The rule is the lifecycle report's `acquisition_rule` (`MergeFromLogEntryTask.cp
 |---|---|---|
 | Inserted part | always | fetch (`GET_PART` entry) |
 | `always_fetch_merged_part` / `always_fetch_mutated_part` | table setting on the follower only | fetch (`MergeFromLogEntryTask.cpp:101`, `MutateFromLogEntryTask.cpp:85`) |
-| Default settings, every source present, entry younger than 3600 s | default | local execution (`:224` and `MutateFromLogEntryTask.cpp:138` do not fire) |
+| Default settings, every source present, entry younger than `prefer_fetch_merged_part_time_threshold` (3600 s) or sources below `prefer_fetch_merged_part_size_threshold` (10 GiB on disk) | default | local execution (the age and size branch, `MergeFromLogEntryTask.cpp:224`, `:233`, `MutateFromLogEntryTask.cpp:139`–`:140`, does not fire) |
 | A source missing when the entry runs | natural merges only | fetch of the merged part (`MergeFromLogEntryTask.cpp:155`) |
 
 An unsuccessful preparation makes the task call `executeFetch` (`ReplicatedMergeMutateTaskBase.cpp:207`). A fetch
@@ -112,8 +112,10 @@ catch-up therefore fetches the parts the originator holds at the restart, not ev
   `s3_retry_attempts = 1`); `GetObject` bypasses the outer loop (`:567`) and a non-retryable error stops at once.
   One injected failure is retried once.
   `s3_retry_attempts` defaults to 500 (`IO/S3Defines.h:47`).
-- **5XX before the store.** The proxy answers 500 without forwarding: the failed attempt never reached the store;
-  the retry is the only billed request.
+- **Rejected before the store (`rejected_before_store`).** The proxy answers 500 without forwarding: the failed
+  attempt has `store_reached` 0 and the retry is the only request the store saw. A 5XX the store itself returns is
+  `store_reached` 1; whether it is billed is the billing artifact's outcome rule (`billing-contract.json`), not
+  this report's.
 - **Lost response.** The store accepted the request; the reply was lost. The retry reaches the store again: both
   are billed.
 - **Failed multipart upload.** A write buffer whose upload fails is cancelled and aborts its own multipart upload
@@ -169,9 +171,9 @@ exceed the Compact `acquire_requests`. Before its first fetch the follower sends
 
 Extra attempts per failed attempt against the same insert without a fault (`faults.none`), `retry_outcome_mix`:
 
-| Variant | 5XX before the store | Lost response |
+| Variant | `rejected_before_store` | `lost_response` |
 |---|---|---|
-| `s3`, `s3plain` | PUT +1 (the injected attempt is not billed) | PUT +1 (both reached the store) |
+| `s3`, `s3plain` | PUT +1 attempt, store_reached +0 net: the rejected attempt never reached the store | PUT +1 attempt, store_reached +1 (both reached the store) |
 | `cas` | PUT +1, GET +1 | GET +1: CAS reads what landed instead of reissuing the PUT |
 
 Multipart abort (`failed_upload_residue`): on `s3` and `s3plain` the INSERT fails, the failing part is sent
@@ -192,7 +194,6 @@ accepts, and the incomplete inventory is 0 with no rig action. CAS republishes t
 | `faults.multipart-abort-part3` | `s3` | 3 / 0 | holdout |
 | `faults.multipart-abort-part3` | `s3plain` | 3 / 0 | holdout (consumed) |
 | `faults.multipart-abort-part3b` | `cas` | 0 / 3 | holdout (consumed) |
-| `faults.multipart-abort-part3c` | `cas` | not run | holdout (planned, Task 7) |
 | `faults.none` | `cas` | 3 / 0 | fit |
 | `faults.none` | `s3` | 3 / 0 | fit |
 | `faults.none` | `s3plain` | 3 / 0 | fit |
@@ -282,6 +283,13 @@ Hold-out checks (prediction from the fit coefficients, measured mean of the hold
 | `startup_requests_after_restart` | `restart-catchup.3min` | `s3` | DeleteObject | 1 | 1 | 2 | yes |
 | `startup_requests_after_restart` | `restart-catchup.3min` | `s3` | GetObject | 48 | 48 | 2 | yes |
 | `startup_requests_after_restart` | `restart-catchup.3min` | `s3` | PutObject | 1 | 1 | 2 | yes |
+| `catchup_requests_per_missed_part` | `restart-catchup.3min` | `cas` | GetObject | 7.2 | 7.0 | 1.8 | yes |
+| `catchup_requests_per_missed_part` | `restart-catchup.3min` | `cas` | PutObject | 5.8 | 5.0 | 1.45 | yes |
+| `startup_requests_after_restart` | `restart-catchup.3min` | `cas` | DeleteObject | 2 | 2 | 2 | yes |
+| `startup_requests_after_restart` | `restart-catchup.3min` | `cas` | GetObject | 33 | 33 | 2 | yes |
+| `startup_requests_after_restart` | `restart-catchup.3min` | `cas` | HeadObject | 1 | 1 | 2 | yes |
+| `startup_requests_after_restart` | `restart-catchup.3min` | `cas` | ListObjectsV2 | 5 | 5 | 2 | yes |
+| `startup_requests_after_restart` | `restart-catchup.3min` | `cas` | PutObject | 6 | 6 | 2 | yes |
 | `retry_outcome_mix` | `faults.put-5xx-nth7` | `s3` | PutObject|attempts | 12 | 12 | 0 | yes |
 | `retry_outcome_mix` | `faults.put-5xx-nth7` | `s3` | PutObject|store_reached | 11 | 11 | 0 | yes |
 | `failed_upload_residue` | `faults.multipart-abort-part3` | `s3` | cost-20261024T115147Z/s3/faults/multipart-abort-part3/k1 | 0 | 0 | 0 | yes |
@@ -300,6 +308,18 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 | `s3` | 500 | 5 | 0 | {"DeleteObject": 1, "GetObject": 48, "PutObject": 1} | {"GetObject": 108, "PutObject": 63} |
 | `s3plain` | 500 | 5 | 0 | {"CopyObject": 1, "DeleteObject": 2, "GetObject": 53, "HeadObject": 1, "ListObjectsV2": 9, "PutObject": 1} | {"GetObject": 108, "HeadObject": 5, "PutObject": 73} |
 
+### Hold-outs per coefficient {#holdouts}
+
+| Coefficient | Hold-out (done) | Consumed |
+|---|---|---|
+| `acquire_requests`, `acquire_bytes` | `replication-fetch.insert-wide` on `s3`, `local` | `s3plain`, `cas` |
+| `local_exec_requests` | `replication-local.merge-8` on `s3`, `local` | `s3plain`, `cas` |
+| `zero_copy_requests` | `replication-zero-copy.insert-wide` on `s3` | — |
+| `fetch_fraction` | `replication-natural-holdout.wide` on `s3`, `s3plain`, `cas`, `local` (prediction `630bc885ee4`; s3plain `2c006846dbc`) | — |
+| `catchup_requests_per_missed_part`, `startup_requests_after_restart` | `restart-catchup.3min` on `s3`, `cas` | — |
+| `retry_outcome_mix` | `faults.put-5xx-nth7` on `s3` | `s3plain`, `cas` |
+| `failed_upload_residue` | `faults.multipart-abort-part3` on `s3` | `s3plain`; `cas` `part3b` (fresh `part3c` planned) |
+
 ## Coefficients {#coefficients}
 
 | Coefficient | Index | Tolerance | Validity | Fit |
@@ -308,9 +328,9 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 | `acquire_bytes` | variant_id, result_type | abs 0.0, rel 0.05 | {"part_rows": [50000, 200000]} | interserver bytes the originator sent (relay0 from_target) / bytes on disk of the fetched parts (DownloadPart size_in_bytes), mean of K=3 |
 | `local_exec_requests` | variant_id, result_type, replication_op | abs 1.0, rel 0 | {"source_parts": [1, 4]} | the follower's requests per merge or mutation result it executed itself; merge rows are for 4 Compact sources of 50 000 rows (the per-source rule is in the README) |
 | `zero_copy_requests` | result_type, replication_role, replication_op | abs 0, rel 0 | {"part_rows": [50000, 200000]} | as acquire_requests, with allow_remote_fs_zero_copy_replication = 1 |
-| `fetch_fraction` | variant_id, result_type | abs 0.05, rel 0.0 | {"inserts": [24, 24]} | follower fetches / follower acquisitions per result type (cards/replication.py follower_split), mean of K=3 |
-| `catchup_requests_per_missed_part` | variant_id, replication_op | abs 0, rel 0.25 | {"inserts_while_down": [250, 500]} | requests of both replicas after the follower's first catch-up fetch / parts it fetched; K=1 |
-| `startup_requests_after_restart` | variant_id, replication_op | abs 2, rel 0 | {"active_parts": [3, 3]} | the follower's requests from its start to its first catch-up fetch; K=1 |
+| `fetch_fraction` | variant_id, result_type | abs 0.05, rel 0.0 | {"inserts": [24, 24], "prefer_fetch_merged_part_time_threshold": [3600, 3600], "prefer_fetch_merged_part_size_threshold": [10737418240, 10737418240]} | follower fetches / follower acquisitions per result type (cards/replication.py follower_split), mean of K=3 |
+| `catchup_requests_per_missed_part` | variant_id, replication_op | abs 0, rel 0.25 | {"inserts_while_down": [250, 500]} | requests of both replicas after the follower's first catch-up fetch / parts it fetched, from the raw ledger with maintenance excluded; K=1; an absent key is 0 |
+| `startup_requests_after_restart` | variant_id, replication_op | abs 2, rel 0 | {"active_parts": [3, 3]} | the follower's requests from its start to its first catch-up fetch, maintenance excluded; K=1; an absent key is 0 |
 | `retry_outcome_mix` | variant_id, fault_class, replication_op, attempt_kind | abs 0, rel 0 | {"nth": [3, 7]} | per failed attempt: attempts (attempt_kind attempts) and attempts the store saw (store_reached: upstream outcome other than not_sent) of the fault case minus the fault-free insert (faults.none); an absent key is 0 |
 | `failed_upload_residue` | variant_id | abs 0, rel 0 | {"upload_parts": [2, 3]} | incomplete multipart bytes in the replay after the window, before any rig abort |
 
@@ -326,8 +346,9 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 - **CAS `faults.multipart-abort` k2, k3 (FAILED by a too strict card; resolved as a timing bound).** In each of the
   8 publications the server aborts its own upload: `WriteBufferFromS3::tryToAbortMultipartUpload` waits for every
   part task (`task_tracker->safeWaitAll`, `IO/WriteBufferFromS3.cpp:273`) and then sends `AbortMultipartUpload`
-  (`:274`, `:469`), which the store answered ok every time (8 per repeat). In k2 and k3 the relay saw the response of the last
-  publication's part 1 finish 2.2 ms after that abort started (k3: seq 1503), so the bounded replay keeps the
+  (`:274`, `:469`), which the store answered ok every time (8 per repeat). In k2 (the 6th of the 8 uploads, part 1 at seq 1300, abort at
+  seq 1303) and k3 (seq 1503, 2.2 ms after its abort started) the relay saw a part-1 response finish after that
+  upload's abort started, so the bounded replay keeps the
   32 MiB part in its upper inventory and retires it in the lower: residue lower 0, upper 33 554 432 bytes, after
   the 30 s wait. The server had the part's answer before aborting, so the store holds no residue. Had it kept one,
   the server would not abort again, and neither would the rig: the runner's cleanup aborts only uploads without an
@@ -351,6 +372,15 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 - **Fault outcomes are checked in the fit, not the card.** The cards assert that each fault fired and its retry
   chain; the billable split (`store_reached`) is derived from the records' ledger counts when the coefficient is
   fitted. A card assertion of it needs a rerun and is parked (§[Review](#review)).
+- **s3 `recovery` cell wiring is Task 7.** The s3 report's `recovery` cell still carries the `not_supported` state
+  for `missed_parts_per_restart` > 0. Replacing it with two rows keyed by `replication_op`
+  (`GetObject` and `PutObject`: `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
+  `catchup_requests_per_missed_part[variant_id][replication_op]`, plus `startup_requests_after_restart`) and the
+  follower rows of `inserts` (`acquire_requests[s3][insert][receiver|sender][…]`) is placed on Task 7; this report
+  defines the ids and values only.
+- **Records come from the card before `bac037b336d`.** Every fault record was measured with the card that asserted
+  the upper residue bound; the k2/k3 CAS failures are that assertion. Task 7 reruns `faults.multipart-abort` on
+  CAS, the fresh hold-out `faults.multipart-abort-part3c` and the residue cases with the current card.
 - **Replacement and fetch faults are cut** (D14): a non-zero `replacement_rate` is unsupported.
 
 ## Cross-report id mismatches {#cross-report}
@@ -363,7 +393,7 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 ## Review {#review}
 
 One Codex round (`gpt-6-astra`, reasoning high, read-only), run while the natural and restart runs were in
-progress: 10 MAJOR, 1 MINOR, verdict REVISE. Dispositions:
+progress: 9 MAJOR, 1 MINOR, verdict REVISE. Dispositions (rows 1–9 MAJOR, row 10 the MINOR):
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -378,7 +408,7 @@ progress: 10 MAJOR, 1 MINOR, verdict REVISE. Dispositions:
 | 9 | Retry outcomes discarded | Closed in the coefficient: `retry_outcome_mix` has an `attempt_kind` key (`attempts`, `store_reached`). The card-level assertion of the split is parked: it needs a new rig commit and a rerun of every fault case |
 | 10 | Retry formula stated too generally | Closed: scoped to the retryable writes; `GetObject` bypasses the outer loop |
 
-The MINOR (#10 in the table) is closed; no finding is parked except the card assertion of #9.
+The MINOR (row 10) is closed; no finding is parked except the card assertion of #9.
 
 ## Reproduce {#reproduce}
 

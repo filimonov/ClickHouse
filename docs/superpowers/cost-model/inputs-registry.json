@@ -8076,17 +8076,17 @@
     {
       "id": "fault_class",
       "block": "replication",
-      "label": "Failed store request class: a 5XX answer the store never saw, or a response lost after the store accepted the request",
+      "label": "Failed request class: rejected before the store (a 5XX answer the store never saw, store_reached 0) or a response lost after the store accepted the request (store_reached 1); a 5XX the store itself returns is store_reached 1 and billed per the billing artifact",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",
       "value_type": "enum",
       "enum": [
-        "status_5xx",
+        "rejected_before_store",
         "lost_response"
       ],
       "table": null,
-      "default": "status_5xx",
+      "default": "rejected_before_store",
       "rule": null,
       "coef": null,
       "validity": null,
@@ -10362,7 +10362,7 @@
     {
       "id": "catchup_requests_per_missed_part",
       "block": "topology_recovery",
-      "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+      "label": "GetObject and PutObject (and the other S3 operations, keyed by replication_op) per part a restarted replica fetches to catch up, sender and receiver together",
       "kind": "measured",
       "scope": "cluster",
       "unit": "count",
@@ -10370,7 +10370,8 @@
       "enum": null,
       "table": {
         "index": [
-          "variant_id"
+          "variant_id",
+          "replication_op"
         ],
         "dim": "count"
       },
@@ -10383,7 +10384,12 @@
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
         "version": "0.3.0"
       },
-      "hint": null,
+      "hint": {
+        "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_time >= (SELECT max(event_time) FROM system.text_log WHERE message LIKE '%Starting ClickHouse%') -- on the restarted replica; then the S3 events below",
+        "mapping": {
+          "catchup_requests_per_missed_part": "(S3GetObject, S3PutObject on both replicas since the restart, minus the restarted replica's requests before its first DownloadPart) / DownloadPart rows since the restart"
+        }
+      },
       "status": "ok"
     },
     {

@@ -325,6 +325,14 @@
       "inserts": [
         24,
         24
+      ],
+      "prefer_fetch_merged_part_time_threshold": [
+        3600,
+        3600
+      ],
+      "prefer_fetch_merged_part_size_threshold": [
+        10737418240,
+        10737418240
       ]
     },
     "tolerance": {
@@ -415,6 +423,8 @@
       "values": {
         "cas|GetObject": 7.2,
         "cas|PutObject": 5.8,
+        "ebs|GetObject": 0,
+        "ebs|PutObject": 0,
         "s3plain|GetObject": 21.6,
         "s3plain|HeadObject": 1.0,
         "s3plain|PutObject": 14.6,
@@ -447,7 +457,7 @@
     },
     "status": "ok",
     "fit": {
-      "method": "requests of both replicas after the follower's first catch-up fetch / parts it fetched; K=1"
+      "method": "requests of both replicas after the follower's first catch-up fetch / parts it fetched, from the raw ledger with maintenance excluded; K=1; an absent key is 0"
     }
   },
   {
@@ -465,6 +475,8 @@
         "cas|HeadObject": 1,
         "cas|ListObjectsV2": 5,
         "cas|PutObject": 6,
+        "ebs|GetObject": 0,
+        "ebs|PutObject": 0,
         "s3plain|CopyObject": 1,
         "s3plain|DeleteObject": 2,
         "s3plain|GetObject": 53,
@@ -501,7 +513,7 @@
     },
     "status": "ok",
     "fit": {
-      "method": "the follower's requests from its start to its first catch-up fetch; K=1"
+      "method": "the follower's requests from its start to its first catch-up fetch, maintenance excluded; K=1; an absent key is 0"
     }
   },
   {
@@ -518,15 +530,15 @@
       "values": {
         "cas|lost_response|GetObject|attempts": 1,
         "cas|lost_response|GetObject|store_reached": 1,
-        "cas|status_5xx|GetObject|attempts": 1,
-        "cas|status_5xx|GetObject|store_reached": 1,
-        "cas|status_5xx|PutObject|attempts": 1,
+        "cas|rejected_before_store|GetObject|attempts": 1,
+        "cas|rejected_before_store|GetObject|store_reached": 1,
+        "cas|rejected_before_store|PutObject|attempts": 1,
         "s3plain|lost_response|PutObject|attempts": 1,
         "s3plain|lost_response|PutObject|store_reached": 1,
-        "s3plain|status_5xx|PutObject|attempts": 1,
+        "s3plain|rejected_before_store|PutObject|attempts": 1,
         "s3|lost_response|PutObject|attempts": 1,
         "s3|lost_response|PutObject|store_reached": 1,
-        "s3|status_5xx|PutObject|attempts": 1
+        "s3|rejected_before_store|PutObject|attempts": 1
       }
     },
     "validity": {
