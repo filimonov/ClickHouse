@@ -47,6 +47,10 @@ STATE_IDS = ("ok", "not_supported", "backlog_grows", "unsupported_cut", "unavail
 PROBE_PREFIX = "probe_"
 BREAKEVEN = "breakeven.json"
 BLOCKS = closure_check.BLOCKS
+# The default form must fit one screen: workload knobs plus at most this many ClickHouse settings.
+MAX_SETTING_INPUTS = 10
+UI_SHORT_MAX = 40
+SOURCE_PREFIX = "tmp/src-26.8/"
 
 # Validates the assembled contract with the page's own loader and renders every expression with the page's renderer,
 # so the document shows exactly what "show calculation" shows.
@@ -191,6 +195,7 @@ def build(opts, mode="dev"):
         return None, None, problems, pending, notes
     for label, bad in (("registry", artifacts.validate_registry(reg)), ("coverage", artifacts.validate_coverage(cov))):
         problems += [f"{label} {p}" for p in bad]
+    problems += registry_ui_problems(reg)
     if problems:
         return None, None, problems, pending, notes
     domain = cov["domain"]
@@ -283,7 +288,7 @@ def build(opts, mode="dev"):
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
         "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending)),
-        "registry": reg["quantities"], "sets": reg["sets"], "precedence": reg["precedence"],
+        "registry": with_measured_by(reg["quantities"], coefficients, coef_owner, evidence), "sets": reg["sets"], "precedence": reg["precedence"],
         "coefficients": coefficients, "billing": bil,
         "variants": domain["variants"], "operations": domain["operations"], "families": domain["families"],
         "state_ids": list(STATE_IDS),
@@ -325,6 +330,63 @@ def build(opts, mode="dev"):
     if page in outputs:
         problems += page_scripts(outputs[page], page)
     return outputs, fixtures[:2], problems, pending, notes
+
+
+def registry_ui_problems(reg):
+    """Every input needs a page tier and a short label; the setting tier is capped so the default form stays short."""
+    out, settings = [], []
+    for q in reg["quantities"]:
+        if q["kind"] != "input":
+            continue
+        ui = q.get("ui")
+        if ui is None:
+            out.append(f"registry {q['id']}: input has no ui tier")
+            continue
+        if len(ui["short"]) > UI_SHORT_MAX:
+            out.append(f"registry {q['id']}: ui.short is {len(ui['short'])} characters, at most {UI_SHORT_MAX}")
+        if ui["tier"] == "setting":
+            settings.append(q["id"])
+    if len(settings) > MAX_SETTING_INPUTS:
+        out.append(f"registry: {len(settings)} inputs in the setting tier, at most {MAX_SETTING_INPUTS}: {', '.join(settings)}")
+    return out
+
+
+def cite(text, commit):
+    """`tmp/src-26.8/src/X.cpp:12` -> `src/X.cpp:12 @ <commit>`: the reader can open the file at the measured build."""
+    if not commit:
+        return text.replace(SOURCE_PREFIX, "")
+    return re.sub(r"(?:tmp/src-26\.8/)?(src/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)", rf"\1 @ {commit}", text)
+
+
+def measured_build(evidence):
+    """Short ClickHouse commit every report measured, or None when the reports disagree."""
+    commits = {e.get("commit") for e in evidence if e.get("commit")}
+    return next(iter(commits))[:11] if len(commits) == 1 else None
+
+
+def measured_by(q, coefficients, coef_owner, commit):
+    ev = q["evidence"]
+    head = {"source": "Default from", "assumed": "Assumed:", "provider": "Provider rule:", "measured": "Measured:"}[ev["kind"]]
+    parts = [f"{head} {cite(ev['ref'], commit)}."]
+    for c in coefficients:
+        r = (c.get("validity") or {}).get(q["id"])
+        if not r:
+            continue
+        ids = (c.get("evidence") or {}).get("measurement_ids") or []
+        report = coef_owner.get(c["id"], "no report")
+        parts.append(f"Measured from {r[0]:g} to {r[1]:g} by {c['id']} ({report}, {len(ids)} measurement(s)).")
+    return " ".join(parts)
+
+
+def with_measured_by(quantities, coefficients, coef_owner, evidence):
+    """Registry rows for the contract; each input's `ui` gains the evidence sentence the info dialog shows."""
+    commit = measured_build(evidence)
+    out = []
+    for q in quantities:
+        if q["kind"] == "input" and q.get("ui"):
+            q = dict(q, ui=dict(q["ui"], measured_by=measured_by(q, coefficients, coef_owner, commit)))
+        out.append(q)
+    return out
 
 
 def coefficient_identity(coefficients, coef_owner, evidence):
@@ -479,6 +541,18 @@ def inputs_block(contract, rendered):
                    f"{_code(q['scope'])} | {_code(q['unit'])} | {_code(json.dumps(q['default'])) if q['default'] is not None else ''} | "
                    f"{_code(json.dumps(q['validity'])) if q['validity'] else ''} | {_code(rendered['rules'].get(q['id']))} | "
                    f"{_cell_text(ev['kind'])}: {_cell_text(ev['ref'])} ({_cell_text(ev['version'])}) | {_code(q['status'])} |")
+    out += ["", "Form placement. `workload` and `setting` inputs make up the default form (at most "
+            f"{MAX_SETTING_INPUTS} settings); `advanced` inputs sit in the collapsed low-level section; `hidden` inputs are "
+            "model constants or table keys, shown only in the info dialog. Rule: a product manager can set it after one "
+            "sentence and it moves money for a typical workload -> `setting`; can set it but it rarely matters -> "
+            "`advanced`; needs more than one sentence -> `hidden`.", "",
+            "| Tier | Id | ClickHouse name | Form label | Block |", "|---|---|---|---|---|"]
+    order = {t: i for i, t in enumerate(artifacts.REGISTRY_UI_TIERS)}
+    inputs = [q for q in contract["registry"] if q["kind"] == "input" and q.get("ui")]
+    for q in sorted(inputs, key=lambda q: (order[q["ui"]["tier"]], q["block"], q["id"])):
+        ui = q["ui"]
+        out.append(f"| {_code(ui['tier'])} | {_code(q['id'])} | {_code(ui['name']) if ui['name'] else ''} | "
+                   f"{_cell_text(ui['short'])} | {_code(q['block'])} |")
     if contract["precedence"]:
         out += ["", "| Precedence group | Locked by default | Rules |", "|---|---|---|"]
         for g, rules in zip(contract["precedence"], rendered["precedence"]):

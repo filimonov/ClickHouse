@@ -647,8 +647,15 @@ def _validate_cell(cell, path, tables):
 
 # --- registry ----------------------------------------------------------------------------------
 
+# Page placement of a registry input: workload and setting fields are on the form, advanced ones in the
+# low-level section, hidden ones only in the info dialog. `nearest` maps a lookup key without a measurement to one with.
+REGISTRY_UI_TIERS = ("workload", "setting", "advanced", "hidden")
+
+
 def validate_registry(d):
-    quantity = obj({
+    ui = obj_optional({"tier": enum(*REGISTRY_UI_TIERS), "name": nullable(nonempty_string), "short": nonempty_string,
+                       "nearest": either(list_of(nonempty_string), dict_of(nonempty_string))}, {"nearest"})
+    quantity = obj_optional({
         "id": nonempty_string, "block": nonempty_string, "label": nonempty_string,
         "kind": enum("input", "pinned", "measured", "derivation"),
         "scope": enum("cluster", "replica", "pool", "volume"),
@@ -663,7 +670,8 @@ def validate_registry(d):
                          "ref": nonempty_string, "version": nonempty_string}),
         "hint": nullable(obj({"sql": nonempty_string, "mapping": dict_of(string)})),
         "status": enum("ok", "unsupported"),
-    })
+        "ui": ui,
+    }, {"ui"})
     spec = {
         "schema": literal("registry/1"), "version": nonempty_string,
         "quantities": list_of(quantity),

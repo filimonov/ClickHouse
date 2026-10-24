@@ -22,6 +22,11 @@
     "version": "1"
    },
    "hint": null,
+   "ui": {
+    "tier": "workload",
+    "name": null,
+    "short": "Parts inserted"
+   },
    "status": "ok"
   },
   {

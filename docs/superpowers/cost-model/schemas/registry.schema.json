@@ -198,6 +198,51 @@
               }
             ]
           },
+          "ui": {
+            "type": "object",
+            "properties": {
+              "tier": {
+                "enum": [
+                  "workload",
+                  "setting",
+                  "advanced",
+                  "hidden"
+                ]
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "short": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "nearest": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "tier",
+              "name",
+              "short"
+            ],
+            "additionalProperties": false
+          },
           "status": {
             "enum": [
               "ok",

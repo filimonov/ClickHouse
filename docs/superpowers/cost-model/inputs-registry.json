@@ -22,6 +22,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Data size"
+      },
       "status": "ok"
     },
     {
@@ -44,6 +49,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Ingest rate"
+      },
       "status": "ok"
     },
     {
@@ -66,6 +76,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Retention"
+      },
       "status": "ok"
     },
     {
@@ -93,6 +108,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Replicas"
+      },
       "status": "ok"
     },
     {
@@ -120,6 +140,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Shards"
+      },
       "status": "ok"
     },
     {
@@ -150,6 +175,11 @@
           "topology": "cross_az when the replica hosts of one shard run in different availability zones (see the cloud console or instance metadata)"
         }
       },
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Replica placement"
+      },
       "status": "ok"
     },
     {
@@ -175,6 +205,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "setting",
+        "name": "enable_filesystem_cache",
+        "short": "Filesystem cache"
+      },
       "status": "ok"
     },
     {
@@ -201,6 +236,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "Table width"
+      },
       "status": "ok"
     },
     {
@@ -227,6 +267,11 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Column types"
+      },
       "status": "ok"
     },
     {
@@ -804,6 +849,11 @@
           "part_level": "level; inserted parts of a plain MergeTree are 0"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Part level"
+      },
       "status": "ok"
     },
     {
@@ -916,6 +966,11 @@
           "adaptive_granularity": "1 when index_granularity_bytes != 0 and either enable_mixed_granularity_parts = 1 or the table has no non-adaptive part left (check the marks files: .mrk is non-adaptive); table SETTINGS override both settings"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": "index_granularity_bytes",
+        "short": "Adaptive granularity"
+      },
       "status": "ok"
     },
     {
@@ -945,6 +1000,11 @@
         "mapping": {
           "quantize_pq_codec": "1 when any column's codec is Quantize('pq', ...)"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Quantize codec"
       },
       "status": "ok"
     },
@@ -1322,6 +1382,11 @@
         "mapping": {
           "object_bytes": "column_data_compressed_bytes of a Wide part column (one file each); a Compact part writes all columns into data.bin, see data_compressed_bytes in system.parts"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Bytes per object"
       },
       "status": "ok"
     },
@@ -1732,6 +1797,11 @@
           "insert_kind": "select when the INSERT reads a SELECT, else data"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "INSERT with data or INSERT SELECT"
+      },
       "status": "ok"
     },
     {
@@ -1758,6 +1828,11 @@
         "mapping": {
           "insert_data_block_rows": "max_insert_block_size, or the block size of the inserting client (clickhouse-client uses max_insert_block_size too)"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": "max_insert_block_size",
+        "short": "Rows per insert block"
       },
       "status": "ok"
     },
@@ -1842,6 +1917,11 @@
           "insert_protocol": "native for interface 1 (TCP), inline for 2 (HTTP)"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Insert protocol"
+      },
       "status": "ok"
     },
     {
@@ -1868,6 +1948,11 @@
         "mapping": {
           "insert_payload_bytes": "avg(bytes)"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Inline INSERT payload bytes"
       },
       "status": "ok"
     },
@@ -1896,6 +1981,11 @@
           "insert_clients": "the most async inserts waiting at once (all tables), or the application's insert concurrency"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Concurrent insert clients"
+      },
       "status": "ok"
     },
     {
@@ -1922,6 +2012,11 @@
         "mapping": {
           "insert_rows": "avg(written_rows)"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "Rows per INSERT"
       },
       "status": "ok"
     },
@@ -1950,6 +2045,11 @@
           "insert_bytes_uncompressed": "avg(written_bytes)"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Uncompressed bytes per INSERT"
+      },
       "status": "ok"
     },
     {
@@ -1977,6 +2077,11 @@
           "partitions_per_insert": "avg(c)"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Partitions per INSERT"
+      },
       "status": "ok"
     },
     {
@@ -2003,6 +2108,11 @@
         "mapping": {
           "insert_rate": "count() / 86400"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "INSERTs per second"
       },
       "status": "ok"
     },
@@ -2033,6 +2143,11 @@
         "mapping": {
           "async_insert": "value in the inserting user's profile; MergeTree SETTINGS async_insert = 1 also enables it"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": "async_insert",
+        "short": "Async inserts"
       },
       "status": "ok"
     },
@@ -2119,6 +2234,11 @@
           "deduplicate_insert": "value in the inserting user's profile"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": "deduplicate_insert",
+        "short": "Insert deduplication"
+      },
       "status": "ok"
     },
     {
@@ -2175,6 +2295,11 @@
         "mapping": {
           "async_insert_source": "query when the profile or query sets async_insert = 1, table when only MergeTree SETTINGS async_insert = 1 does"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Async insert source"
       },
       "status": "ok"
     },
@@ -3842,6 +3967,11 @@
         "mapping": {
           "merge_size_ratio": "weighted_rows / part_rows (rows of an inserted part)"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Final part size in inserts"
       },
       "status": "ok"
     },
@@ -5876,6 +6006,11 @@
           "merge_fan_in_bucket": "length(merged_from) in the bucket ranges"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Merge fan-in bucket"
+      },
       "status": "ok"
     },
     {
@@ -5953,6 +6088,11 @@
         "mapping": {
           "merge_result_size_bucket": "rows / part_rows in the bucket ranges"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Merge result size bucket"
       },
       "status": "ok"
     },
@@ -6219,6 +6359,11 @@
         "mapping": {
           "cas_gc_interval_s": "cas_gc_interval_sec of the CAS disk; 60 when absent"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": "cas_gc_interval_sec",
+        "short": "CAS GC interval"
       },
       "status": "ok"
     },
@@ -6502,6 +6647,11 @@
           "cas_hash_hit_fraction": "blob_reuse_adopt observed / (blob_put + blob_reuse_adopt observed)"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Share of data already in the pool"
+      },
       "status": "ok"
     },
     {
@@ -6529,6 +6679,11 @@
           "cas_blob_bytes": "avg(size)"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS blob bytes"
+      },
       "status": "ok"
     },
     {
@@ -6551,6 +6706,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "CAS mutations per second"
+      },
       "status": "ok"
     },
     {
@@ -6573,6 +6733,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Parts per mutation"
+      },
       "status": "ok"
     },
     {
@@ -6595,6 +6760,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Columns per mutation"
+      },
       "status": "ok"
     },
     {
@@ -6617,6 +6787,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "DROP TABLE per second"
+      },
       "status": "ok"
     },
     {
@@ -6639,6 +6814,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Parts per dropped table"
+      },
       "status": "ok"
     },
     {
@@ -6688,6 +6868,11 @@
           "cas_pool_objects": "blob files x 2 (.meta) + parts"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS pool objects"
+      },
       "status": "ok"
     },
     {
@@ -6715,6 +6900,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS write kind"
+      },
       "status": "ok"
     },
     {
@@ -6742,6 +6932,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS write branch"
+      },
       "status": "ok"
     },
     {
@@ -6777,6 +6972,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "GC round term"
+      },
       "status": "ok"
     },
     {
@@ -6804,6 +7004,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Unchanged marks share"
+      },
       "status": "ok"
     },
     {
@@ -6830,6 +7035,11 @@
         "mapping": {
           "cas_manifest_bytes": "compressed manifest; inline bytes sum is an upper bound"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS manifest bytes"
       },
       "status": "ok"
     },
@@ -6880,6 +7090,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Table cleanup period"
+      },
       "status": "ok"
     },
     {
@@ -6902,6 +7117,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Tables on the CAS disk"
+      },
       "status": "ok"
     },
     {
@@ -6929,6 +7149,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Ref log tail records"
+      },
       "status": "ok"
     },
     {
@@ -6955,6 +7180,11 @@
         "version": "0.3.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "GC stage"
+      },
       "status": "ok"
     },
     {
@@ -8055,6 +8285,11 @@
           "large_objects_per_part": "avg(c); a Compact part has one data file (data.bin)"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Multipart files per part"
+      },
       "status": "ok"
     },
     {
@@ -8081,6 +8316,11 @@
         "mapping": {
           "mutations_per_month": "count() over 7 days, scaled to a 730-hour month"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "ALTER UPDATE/DELETE per month"
       },
       "status": "ok"
     },
@@ -8109,6 +8349,11 @@
           "mutated_compact_parts_per_month": "MutatePart rows of Compact parts over 7 days, scaled to a month"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Compact parts mutated per month"
+      },
       "status": "ok"
     },
     {
@@ -8135,6 +8380,11 @@
         "mapping": {
           "mutated_wide_parts_per_month": "MutatePart rows of Wide parts over 7 days, scaled to a month"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Wide parts mutated per month"
       },
       "status": "ok"
     },
@@ -8167,6 +8417,11 @@
           "mutation_kind": "UPDATE of one column: update_column; DELETE WHERE: delete; DELETE FROM: lightweight_delete"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Mutation kind"
+      },
       "status": "ok"
     },
     {
@@ -8194,6 +8449,11 @@
           "select_part_reads_per_day": "sum of SelectedParts over a day"
         }
       },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "Cold part reads per day"
+      },
       "status": "ok"
     },
     {
@@ -8220,6 +8480,11 @@
         "mapping": {
           "read_streams_per_part": "the substreams of the columns a query reads (length(arr) reads only arr.size0)"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Columns read per part"
       },
       "status": "ok"
     },
@@ -8253,6 +8518,11 @@
           "cache_miss_fraction": "bytes the cache read from S3 / all bytes it served"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Cache miss share"
+      },
       "status": "ok"
     },
     {
@@ -8279,6 +8549,11 @@
         "mapping": {
           "cache_size_gib": "max_size in GiB"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": null,
+        "short": "Filesystem cache size"
       },
       "status": "ok"
     },
@@ -8307,6 +8582,11 @@
           "restarts_per_month": "server starts over 30 days"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Restarts per month"
+      },
       "status": "ok"
     },
     {
@@ -8333,6 +8613,11 @@
         "mapping": {
           "missed_parts_per_restart": "DownloadPart rows after a restart"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Parts fetched per restart"
       },
       "status": "ok"
     },
@@ -8441,6 +8726,11 @@
           "large_objects_per_merge_result": "avg(c) over merged parts"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Multipart files per merge"
+      },
       "status": "ok"
     },
     {
@@ -8468,6 +8758,11 @@
           "large_objects_per_mutated_part": "avg(c) of the rewritten columns"
         }
       },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Multipart files per mutation"
+      },
       "status": "ok"
     },
     {
@@ -8494,6 +8789,11 @@
         "mapping": {
           "retained_mutation_entries": "count()"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Retained mutation entries"
       },
       "status": "ok"
     },
@@ -9084,6 +9384,11 @@
         "mapping": {
           "index_granularity": "value"
         }
+      },
+      "ui": {
+        "tier": "setting",
+        "name": "index_granularity",
+        "short": "Rows per granule"
       },
       "status": "ok"
     },
@@ -10487,6 +10792,11 @@
           "provisioned_size_gib": "total_space / 2^30 of the data disk"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Manual EBS volume size"
+      },
       "status": "ok"
     },
     {
@@ -10514,6 +10824,11 @@
           "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Manual EBS volume IOPS"
+      },
       "status": "ok"
     },
     {
@@ -10540,6 +10855,11 @@
         "mapping": {
           "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Manual EBS volume throughput"
       },
       "status": "ok"
     },
@@ -10570,6 +10890,11 @@
           "volumes_per_replica": "number of disks in the volume of the table storage policy"
         }
       },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "EBS volumes per replica"
+      },
       "status": "ok"
     },
     {
@@ -10596,6 +10921,11 @@
         "mapping": {
           "ebs_capacity_headroom": "(total_space - free_space) / sum(bytes_on_disk) at the busiest merge, plus the largest part a merge may write (max_bytes_to_merge_at_max_space_in_pool)"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "EBS free-space headroom"
       },
       "status": "ok"
     },
@@ -10672,6 +11002,11 @@
         "version": "0.2.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "EBS demand operation"
+      },
       "status": "ok"
     },
     {
@@ -10697,6 +11032,11 @@
         "version": "0.2.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "EBS demand direction"
+      },
       "status": "ok"
     },
     {
@@ -10730,6 +11070,11 @@
         "version": "0.2.0"
       },
       "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "EBS request size bucket"
+      },
       "status": "ok"
     },
     {
@@ -10929,6 +11274,11 @@
         "mapping": {
           "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "EBS peak-to-average factor"
       },
       "status": "ok"
     }

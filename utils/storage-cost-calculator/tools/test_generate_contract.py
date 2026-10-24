@@ -395,6 +395,62 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("needs exactly one <!-- inputs:begin --> ... <!-- inputs:end --> pair", log)
 
+    def edit_input(self, fn):
+        def go(doc):
+            for q in doc["quantities"]:
+                if q["kind"] == "input":
+                    fn(q)
+        self.edit_json(self.cm / "inputs-registry.json", go)
+
+    def test_input_without_ui_tier_fails(self):
+        self.edit_input(lambda q: q.pop("ui"))
+        code, log = self.run_gc("generate")
+        self.assertEqual(code, 1)
+        self.assert_failure(log, "registry parts_inserted: input has no ui tier")
+
+    def test_ui_short_label_over_40_characters_fails(self):
+        self.edit_input(lambda q: q["ui"].update(short="x" * 41))
+        code, log = self.run_gc("generate")
+        self.assertEqual(code, 1)
+        self.assert_failure(log, "registry parts_inserted: ui.short is 41 characters, at most 40")
+
+    def test_unknown_ui_tier_fails(self):
+        self.edit_input(lambda q: q["ui"].update(tier="basic"))
+        code, log = self.run_gc("generate")
+        self.assertEqual(code, 1)
+        self.assertIn("ui.tier: expected one of", log)
+
+    def test_contract_carries_measured_by_and_the_doc_the_placement_table(self):
+        contract = self.generate()
+        q = next(x for x in contract["registry"] if x["id"] == "parts_inserted")
+        self.assertEqual(q["ui"]["tier"], "workload")
+        self.assertTrue(q["ui"]["measured_by"].startswith(("Assumed:", "Default from", "Provider rule:", "Measured:")), q["ui"])
+        self.assertIn("| `workload` | `parts_inserted` |  | Parts inserted | `simple` |", self.doc.read_text())
+
+
+class RegistryUiTest(unittest.TestCase):
+    def registry(self, settings):
+        qs = [{"id": f"s{i}", "kind": "input", "ui": {"tier": "setting", "name": None, "short": "x"}} for i in range(settings)]
+        return {"quantities": qs + [{"id": "m", "kind": "measured"}]}
+
+    def test_setting_tier_capped_at_ten(self):
+        self.assertEqual(gc.registry_ui_problems(self.registry(10)), [])
+        self.assertEqual(len(gc.registry_ui_problems(self.registry(11))), 1)
+        self.assertIn("11 inputs in the setting tier, at most 10", gc.registry_ui_problems(self.registry(11))[0])
+
+    def test_live_registry_passes(self):
+        reg = json.loads((gc.DEFAULTS["cost_model"] / "inputs-registry.json").read_text())
+        self.assertEqual(gc.registry_ui_problems(reg), [])
+        tiers = {q["id"]: q["ui"]["tier"] for q in reg["quantities"] if q["kind"] == "input"}
+        for workload in ("data_bytes", "ingest_rate", "retention_days", "replicas", "shards", "topology"):
+            self.assertEqual(tiers[workload], "workload", workload)
+        for table_key in ("io_op", "io_direction", "io_size_bucket", "cas_write", "cas_branch", "gc_stage", "gc_round_term"):
+            self.assertEqual(tiers[table_key], "hidden", table_key)
+
+    def test_cite_names_the_measured_build(self):
+        self.assertEqual(gc.cite("see tmp/src-26.8/src/Core/Settings.cpp:178 and src/A.cpp:1-3", "09d0772a842"),
+                         "see src/Core/Settings.cpp:178 @ 09d0772a842 and src/A.cpp:1-3 @ 09d0772a842")
+
 
 if __name__ == "__main__":
     unittest.main()
