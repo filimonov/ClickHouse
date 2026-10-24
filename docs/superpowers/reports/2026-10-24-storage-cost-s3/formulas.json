@@ -355,69 +355,6 @@
        ]
       }
      }
-    },
-    {
-     "row_type": "request",
-     "op_kind": "GetObject",
-     "outcome_class": "ok",
-     "category": null,
-     "route": null,
-     "scope": "variant",
-     "basis": "predicted",
-     "expr": {
-      "kind": "mul",
-      "dim": "count",
-      "a": {
-       "kind": "mul",
-       "dim": "1",
-       "a": {
-        "kind": "input",
-        "id": "parts_inserted_per_month",
-        "dim": "count"
-       },
-       "b": {
-        "kind": "sub",
-        "dim": "count",
-        "a": {
-         "kind": "input",
-         "id": "replicas",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "const",
-         "value": 1,
-         "dim": "count"
-        }
-       }
-      },
-      "b": {
-       "kind": "lookup",
-       "dim": "count",
-       "table_id": "acquire_requests",
-       "keys": [
-        {
-         "kind": "const",
-         "value": "s3",
-         "dim": "enum:variant_id"
-        },
-        {
-         "kind": "const",
-         "value": "insert",
-         "dim": "enum:result_type"
-        },
-        {
-         "kind": "const",
-         "value": "receiver",
-         "dim": "enum:replication_role"
-        },
-        {
-         "kind": "const",
-         "value": "GetObject",
-         "dim": "enum:replication_op"
-        }
-       ]
-      }
-     }
     }
    ],
    "allocation": null,
@@ -1885,178 +1822,42 @@
        ]
       }
      }
-    },
+    }
+   ],
+   "allocation": null,
+   "states": [
     {
-     "row_type": "request",
-     "op_kind": "GetObject",
-     "outcome_class": "ok",
-     "category": null,
-     "route": null,
-     "scope": "variant",
-     "basis": "predicted",
-     "expr": {
-      "kind": "mul",
-      "dim": "count",
-      "a": {
-       "kind": "mul",
-       "dim": "1",
-       "a": {
-        "kind": "mul",
-        "dim": "1",
-        "a": {
-         "kind": "input",
-         "id": "restarts_per_month",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "input",
-         "id": "replicas",
-         "dim": "count"
-        }
-       },
-       "b": {
-        "kind": "branch",
-        "dim": "1",
-        "cond": {
-         "op": ">",
-         "a": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "const",
-          "value": 1,
-          "dim": "count"
-         }
-        },
-        "then": {
-         "kind": "const",
-         "value": 1,
-         "dim": "1"
-        },
-        "else": {
-         "kind": "const",
-         "value": 0,
-         "dim": "1"
-        }
-       }
-      },
-      "b": {
-       "kind": "mul",
-       "dim": "count",
+     "id": "not_supported",
+     "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
+     "cond": {
+      "kind": "branch",
+      "dim": "bool",
+      "cond": {
+       "op": ">",
        "a": {
         "kind": "input",
         "id": "missed_parts_per_restart",
         "dim": "count"
        },
        "b": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "catchup_requests_per_missed_part",
-        "keys": [
-         {
-          "kind": "const",
-          "value": "s3",
-          "dim": "enum:variant_id"
-         },
-         {
-          "kind": "const",
-          "value": "GetObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
-      }
-     }
-    },
-    {
-     "row_type": "request",
-     "op_kind": "PutObject",
-     "outcome_class": "ok",
-     "category": null,
-     "route": null,
-     "scope": "variant",
-     "basis": "predicted",
-     "expr": {
-      "kind": "mul",
-      "dim": "count",
-      "a": {
-       "kind": "mul",
-       "dim": "1",
-       "a": {
-        "kind": "mul",
-        "dim": "1",
-        "a": {
-         "kind": "input",
-         "id": "restarts_per_month",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "input",
-         "id": "replicas",
-         "dim": "count"
-        }
-       },
-       "b": {
-        "kind": "branch",
-        "dim": "1",
-        "cond": {
-         "op": ">",
-         "a": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "const",
-          "value": 1,
-          "dim": "count"
-         }
-        },
-        "then": {
-         "kind": "const",
-         "value": 1,
-         "dim": "1"
-        },
-        "else": {
-         "kind": "const",
-         "value": 0,
-         "dim": "1"
-        }
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
        }
       },
-      "b": {
-       "kind": "mul",
-       "dim": "count",
-       "a": {
-        "kind": "input",
-        "id": "missed_parts_per_restart",
-        "dim": "count"
-       },
-       "b": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "catchup_requests_per_missed_part",
-        "keys": [
-         {
-          "kind": "const",
-          "value": "s3",
-          "dim": "enum:variant_id"
-         },
-         {
-          "kind": "const",
-          "value": "PutObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+      "then": {
+       "kind": "const",
+       "value": 1,
+       "dim": "bool"
+      },
+      "else": {
+       "kind": "const",
+       "value": 0,
+       "dim": "bool"
       }
      }
     }
    ],
-   "allocation": null,
-   "states": [],
    "notes": []
   },
   "local_disk": {
@@ -2215,8 +2016,7 @@
   "inserts": {
    "objects_per_part_by_shape": "supported",
    "thresholds": "supported",
-   "multipart_graph": "supported",
-   "replication": "supported"
+   "multipart_graph": "supported"
   },
   "merges": {
    "lifecycle": "supported",
