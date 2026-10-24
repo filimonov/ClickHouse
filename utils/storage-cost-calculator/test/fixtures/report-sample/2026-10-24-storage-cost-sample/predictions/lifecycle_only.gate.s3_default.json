@@ -1,0 +1,26 @@
+{
+ "schema": "prediction/1",
+ "experiment_id": "lifecycle_only.gate",
+ "policy": "s3_default",
+ "inputs": {
+  "flush_interval_ms": 200
+ },
+ "expected": {
+  "foreground": {},
+  "observations": {
+   "flushes": 5
+  }
+ },
+ "tolerance": {
+  "abs": {},
+  "rel": {}
+ },
+ "source_refs": [
+  {
+   "claim": "a part below min_bytes_for_wide_part is written compact",
+   "path": "src/Storages/MergeTree/MergeTreeData.cpp",
+   "line": 1234
+  }
+ ],
+ "prediction_commit": "78133cca87d"
+}

@@ -3,8 +3,10 @@
 
 For every coverage evidence edge with status `done` and role `fit` or `holdout`, joins the report's prediction
 (`predictions/<experiment_id>.<policy>.json`), each cited measurement and the report's formulas cells for the
-measured variant, and writes one fixture per (edge, measurement). The output directory is rebuilt from scratch so
-a fixture never outlives its evidence. Exit 1 with every problem listed when an edge does not resolve.
+measured variant, and writes one fixture per (edge, measurement). An edge whose report has no cells for the card and
+whose prediction has no foreground request rows fits a coefficient without a request path to replay: it is listed in
+`_coefficient_only.json` instead. The output directory is rebuilt from scratch so a fixture never outlives its
+evidence. Exit 1 with every problem listed when an edge does not resolve.
 
     python3 tools/build_fixtures.py --reports 'docs/superpowers/reports/2026-10-24-storage-cost-*/' \\
         --coverage docs/superpowers/cost-model/coverage.json --out utils/storage-cost-calculator/test/fixtures/measured/
@@ -20,6 +22,7 @@ from pathlib import Path
 import artifacts
 
 ROLES = ("fit", "holdout")
+COEF_ONLY = "_coefficient_only.json"
 
 
 def _load(path):
@@ -74,10 +77,10 @@ def _safe(s):
 
 
 def build(report_dirs, coverage):
-    """Returns (fixtures {file name: fixture}, problems)."""
+    """Returns (fixtures {file name: fixture}, coefficient-only edges, problems)."""
     problems = artifacts.validate_coverage(coverage)
     if problems:
-        return {}, [f"coverage: {p}" for p in problems]
+        return {}, [], [f"coverage: {p}" for p in problems]
     measurements = {}
     for r in report_dirs:
         for mid, entry in _measurements(r).items():
@@ -85,8 +88,9 @@ def build(report_dirs, coverage):
                 problems.append(f"measurement {mid} appears in {measurements[mid][1]} and {entry[1]}")
             measurements[mid] = (entry[0], entry[1], r)
     fixtures = {}
-    edges = [e for e in coverage["evidence"] if e["status"] == "done" and e["role"] in ROLES]
-    for e in edges:
+    coefficient_only = []
+    edges = [(f"evidence[{i}]", e) for i, e in enumerate(coverage["evidence"]) if e["status"] == "done" and e["role"] in ROLES]
+    for edge_id, e in edges:
         where = f"edge {e['coefficient']} {e['role']} {e['experiment_id']}.{e['policy']}"
         name = f"{e['experiment_id']}.{e['policy']}.json"
         preds = [r / "predictions" / name for r in report_dirs if (r / "predictions" / name).exists()]
@@ -100,6 +104,8 @@ def build(report_dirs, coverage):
             continue
         if not e["measurement_ids"]:
             problems.append(f"{where}: done edge cites no measurement")
+        has_requests = any(ops for ops in pred["expected"]["foreground"].values())
+        without_cells = False
         for k, mid in enumerate(e["measurement_ids"]):
             if mid not in measurements:
                 problems.append(f"{where}: measurement {mid} is in no report's measurements.jsonl")
@@ -116,19 +122,26 @@ def build(report_dirs, coverage):
                 problems.append(f"{where}: measurement {mid} is {m['experiment_id']}.{m['policy']}")
                 continue
             cells, problem = _cells(report, m["variant"], m["card"])
+            if problem and not has_requests:
+                without_cells = True
+                continue
             if problem:
                 problems.append(f"{where}: {problem}")
                 continue
             fixtures[_safe(f"{e['experiment_id']}.{e['policy']}.{e['coefficient']}.{e['role']}.k{k}") + ".json"] = {
                 "experiment_id": e["experiment_id"], "policy": e["policy"], "coefficient": e["coefficient"],
-                "role": e["role"], "inputs": pred["inputs"],
+                "role": e["role"], "edge_id": edge_id, "inputs": pred["inputs"],
                 "expected_rows": _flatten(pred["expected"]["foreground"], lambda q: q),
                 "measured_rows": _flatten(m["ledger"]["foreground"], lambda c: c["attempts"]),
                 "tolerance": pred["tolerance"], "measurement_id": mid,
                 "variant": m["variant"], "mode": m["mode"], "card": m["card"], "report": str(report),
                 "cells": cells, "coefficients": _coefficients(report),
             }
-    return fixtures, problems
+        if without_cells:
+            coefficient_only.append({"edge_id": edge_id, "coefficient": e["coefficient"], "role": e["role"],
+                                     "experiment_id": e["experiment_id"], "policy": e["policy"],
+                                     "measurement_ids": e["measurement_ids"]})
+    return fixtures, coefficient_only, problems
 
 
 def main(argv=None):
@@ -138,7 +151,7 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     reports = sorted(Path(p) for p in glob.glob(a.reports) if Path(p).is_dir())
-    fixtures, problems = build(reports, _load(a.coverage))
+    fixtures, coefficient_only, problems = build(reports, _load(a.coverage))
     if problems:
         print("build_fixtures: " + "\n  ".join([f"{len(problems)} problem(s):", *problems]), file=sys.stderr)
         return 1
@@ -148,7 +161,11 @@ def main(argv=None):
         old.unlink()
     for name, fx in sorted(fixtures.items()):
         (out / name).write_text(json.dumps(fx, indent=1, sort_keys=True) + "\n")
-    print(f"build_fixtures: {len(fixtures)} fixture(s) from {len(reports)} report(s) into {out}")
+    # The Node check compares this list with the coverage edges that have no fixture.
+    only = {"coverage": str(Path(a.coverage).resolve()), "edges": coefficient_only}
+    (out / COEF_ONLY).write_text(json.dumps(only, indent=1, sort_keys=True) + "\n")
+    print(f"build_fixtures: {len(fixtures)} fixture(s) and {len(coefficient_only)} coefficient-only edge(s) "
+          f"from {len(reports)} report(s) into {out}")
     return 0
 
 

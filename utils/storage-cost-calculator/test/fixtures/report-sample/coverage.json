@@ -71,6 +71,23 @@
    "prediction_commit": "78133cca87d",
    "measurement_ids": [],
    "status": "planned"
+  },
+  {
+   "coefficient": "flush_interval",
+   "experiment_id": "lifecycle_only.gate",
+   "policy": "s3_default",
+   "span": {
+    "flush_interval_ms": [
+     100,
+     1000
+    ]
+   },
+   "role": "holdout",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [
+    "run42/s3_default/lifecycle_only/gate/k0"
+   ],
+   "status": "done"
   }
  ],
  "domain": {

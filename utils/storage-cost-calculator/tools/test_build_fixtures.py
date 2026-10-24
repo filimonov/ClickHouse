@@ -44,8 +44,9 @@ class BuildFixturesTest(unittest.TestCase):
         code, err = self.run_main()
         self.assertEqual(code, 0, err)
         # The done validation edge and the planned hold-out edge produce nothing.
-        self.assertEqual(sorted(p.name for p in self.out.iterdir()), [NAME])
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["_coefficient_only.json", NAME])
         fx = json.loads((self.out / NAME).read_text())
+        self.assertEqual(fx["edge_id"], "evidence[0]")
         self.assertEqual((fx["coefficient"], fx["role"], fx["variant"], fx["mode"]), ("puts_per_compact_part", "fit", "s3", "deterministic"))
         self.assertEqual(fx["measurement_id"], "run42/s3_default/insert_basic/small_part/k0")
         self.assertEqual(fx["inputs"]["parts_inserted"], 1)
@@ -66,7 +67,24 @@ class BuildFixturesTest(unittest.TestCase):
         cov["evidence"] = []
         code, err = self.run_main(cov)
         self.assertEqual(code, 0, err)
-        self.assertEqual(list(self.out.iterdir()), [])
+        self.assertEqual([p.name for p in self.out.iterdir()], ["_coefficient_only.json"])
+        self.assertEqual(json.loads((self.out / "_coefficient_only.json").read_text())["edges"], [])
+
+    def test_edge_without_cells_or_request_rows_is_coefficient_only(self):
+        code, err = self.run_main()
+        self.assertEqual(code, 0, err)
+        only = json.loads((self.out / "_coefficient_only.json").read_text())
+        self.assertEqual(only["coverage"], str((SAMPLE / "coverage.json").resolve()))
+        self.assertEqual(only["edges"], [{"edge_id": "evidence[3]", "coefficient": "flush_interval", "role": "holdout",
+                                          "experiment_id": "lifecycle_only.gate", "policy": "s3_default",
+                                          "measurement_ids": ["run42/s3_default/lifecycle_only/gate/k0"]}])
+
+    def test_coefficient_only_edge_still_needs_its_measurement(self):
+        cov = self.coverage()
+        cov["evidence"][3]["measurement_ids"] = ["run42/s3_default/lifecycle_only/gate/k7"]
+        code, err = self.run_main(cov)
+        self.assertEqual(code, 1)
+        self.assertIn("lifecycle_only/gate/k7 is in no report", err)
 
     def test_missing_prediction_fails_with_the_edge(self):
         cov = self.coverage()
@@ -113,8 +131,11 @@ class BuildFixturesTest(unittest.TestCase):
 class NodeCheckTest(unittest.TestCase):
     """The Node suite's measured-fixture test accepts the sample and rejects a measurement the model does not match."""
 
-    def node_check(self, out):
-        env = dict(os.environ, SCC_DEV="1", SCC_MEASURED_FIXTURES=str(out))
+    def node_check(self, out, dev=False):
+        env = dict(os.environ, SCC_MEASURED_FIXTURES=str(out))
+        env.pop("SCC_DEV", None)
+        if dev:
+            env["SCC_DEV"] = "1"
         return subprocess.run(["node", "--test", "--test-name-pattern", "test_measured_fixtures_within_tolerance",
                                str(CALC / "test/pipeline_eval.test.js")], env=env, capture_output=True, text=True)
 
@@ -140,11 +161,26 @@ class NodeCheckTest(unittest.TestCase):
             done = self.node_check(out)
             self.assertIn("r1 HeadObject: measured 2, no model row", done.stdout)
 
-    def test_empty_directory_fails_under_dev(self):
+    def test_empty_directory_fails_unless_dev(self):
         with tempfile.TemporaryDirectory() as tmp:
             done = self.node_check(Path(tmp))
             self.assertNotEqual(done.returncode, 0)
             self.assertIn("no measured fixtures in", done.stdout)
+            done = self.node_check(Path(tmp), dev=True)
+            self.assertEqual(done.returncode, 0, done.stdout)
+            self.assertIn("# SKIP no measured fixtures in", done.stdout)
+
+    def test_coefficient_only_list_must_match_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "measured"
+            with contextlib.redirect_stdout(io.StringIO()):
+                build_fixtures.main(["--reports", str(SAMPLE / "*/"), "--coverage", str(SAMPLE / "coverage.json"), "--out", str(out)])
+            only = json.loads((out / "_coefficient_only.json").read_text())
+            only["edges"] = []
+            (out / "_coefficient_only.json").write_text(json.dumps(only))
+            done = self.node_check(out)
+            self.assertNotEqual(done.returncode, 0)
+            self.assertIn("evidence[3]", done.stdout)
 
 
 if __name__ == "__main__":
