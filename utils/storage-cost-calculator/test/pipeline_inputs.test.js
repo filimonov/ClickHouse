@@ -67,12 +67,16 @@ test('test_override_locks_member_and_group_equation_holds', () => {
   assert.equal(r2.fields.retention_days.overridden, true);
   assert.equal(r2.fields.ingest_rate.derived, true);
   close(r2.inputs.get('ingest_rate'), 400);
-  // Three overrides over-determine the group: reported, the last one is not applied.
-  const r3 = pipeline.resolveInputs(REAL, raw, ['ingest_rate', 'retention_days'], { data_bytes: 2000, retention_days: 5, ingest_rate: 7 });
-  assert.equal(r3.problems.length, 1);
-  assert.match(r3.problems[0], /ingest_rate/);
-  assert.equal(r3.fields.ingest_rate.overridden, false);
-  close(r3.inputs.get('ingest_rate'), 400);
+  // Three overrides over-determine the group. Overrides apply in member order, so the last member is rejected
+  // whatever the key order.
+  for (const over of [{ data_bytes: 2000, ingest_rate: 7, retention_days: 5 }, { retention_days: 5, ingest_rate: 7, data_bytes: 2000 }]) {
+    const r3 = pipeline.resolveInputs(REAL, raw, ['ingest_rate', 'retention_days'], over);
+    assert.equal(r3.problems.length, 1);
+    assert.match(r3.problems[0], /override retention_days/);
+    assert.equal(r3.fields.retention_days.overridden, false);
+    assert.equal(r3.fields.ingest_rate.overridden, true);
+    close(r3.inputs.get('retention_days'), 2000 / 7);
+  }
 });
 
 test('test_override_survives_preset_change_and_is_marked', () => {
@@ -106,6 +110,8 @@ test('test_reset_override_restores_default_locks', () => {
   close(reset.inputs.get('data_bytes'), 500);
   // An empty lock order means the defaults.
   assert.deepEqual(pipeline.resolveInputs(REAL, raw, [], {}).lockOrder, group.default_locked);
+  // A partial order keeps its entry as the newest lock and fills the older slot from the defaults.
+  assert.deepEqual(pipeline.resolveInputs(REAL, raw, ['data_bytes'], {}).lockOrder, ['ingest_rate', 'data_bytes']);
 });
 
 test('test_lock_order_roundtrips_as_state', () => {
@@ -190,8 +196,10 @@ test('test_manual_provisioning_inputs_reach_allocator', () => {
   const alloc = billing.allocateVolumes({ capacity_gib: 100, peak_iops: 6000, peak_mibps: 200 }, preset, undefined, manual);
   assert.equal(alloc.manual, true);
   assert.equal(alloc.feasible, true);
+  // 50 GiB x 0.08 per GiB-month; 3000 IOPS and 125 MiB/s are the gp3 baselines, so they add nothing.
   assert.equal(alloc.monthly_cost, 4);
   // A bad volume count is rejected as input, before it reaches the allocator.
   const bad = pipeline.resolveInputs(c, { volumes_per_replica: 'many' }, [], {});
   assert.ok(bad.problems.some((p) => /volumes_per_replica.*many/.test(p)));
+  assert.ok(pipeline.resolveInputs(c, { volumes_per_replica: 1.5 }, [], {}).problems.some((p) => /volumes_per_replica.*1\.5/.test(p)));
 });

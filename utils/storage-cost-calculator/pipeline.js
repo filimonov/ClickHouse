@@ -24,7 +24,7 @@
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
   const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
-  // Returns {value} or {problem}. A rate may arrive as {value, per}. An enum that lists `auto` also takes a number
+  // Returns {value} or {problem}. A rate may arrive as {value, per}. An enum that lists `auto` also takes an integer
   // >= 1 (volumes_per_replica); the allocator validates the number against the volume limits.
   function parseValue(q, v) {
     if (isRate(q) && v !== null && typeof v === 'object') {
@@ -40,7 +40,7 @@
     }
     if (q.value_type === 'enum') {
       if (typeof v === 'string' && q.enum.includes(v)) return { value: v };
-      if (q.enum.includes('auto') && isFiniteNumber(v) && v >= 1) return { value: v };
+      if (q.enum.includes('auto') && Number.isInteger(v) && v >= 1) return { value: v };
       return { problem: `${q.id}: ${JSON.stringify(v)} is not one of ${q.enum.join(', ')}` };
     }
     return { problem: `${q.id}: value_type ${q.value_type} cannot be set as an input` };
@@ -111,7 +111,11 @@
     const eff = locks.map((l) => l.slice());
     const overridden = new Set();
     // An override locks its member and releases the oldest lock that is not itself an override.
-    for (const [id, v] of Object.entries(overrides || {})) {
+    // Applied in group member order: URL round-trips do not preserve key order, and the result must not depend on it.
+    const memberRank = new Map(groups.flatMap((g) => g.group).map((id, k) => [id, k]));
+    const rank = (id) => (memberRank.has(id) ? memberRank.get(id) : Infinity);
+    const ordered = Object.entries(overrides || {}).sort((a, b) => rank(a[0]) - rank(b[0]));
+    for (const [id, v] of ordered) {
       if (!isInput(id)) { problems.push(`override ${id} is not a registry input`); continue; }
       const p = parseValue(byId.get(id), v);
       if (p.problem) { problems.push(`override ${p.problem}`); continue; }
@@ -144,6 +148,7 @@
       for (const id of unlocked) {
         const rule = g.rules && g.rules[id];
         if (!rule) { problems.push(`group member ${id} has no rule in its precedence group`); continue; }
+        // Mirrors the context shape `evaluate` reads; only inputs are populated.
         const ctx = { inputs: values, coefs: new Map(), tables: new Map(), sets: new Map(), vars: new Map(), prices: null };
         const r = model().evaluate(rule, ctx);
         if (r.state !== 'ok') problems.push(`${id}: derivation from ${eff[i].join(', ')} is unavailable`);
