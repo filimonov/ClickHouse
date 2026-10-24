@@ -119,9 +119,9 @@
       "line": 195
     },
     {
-      "claim": "a mutable ref-table runtime admission reads the pool catalog (GET cas/ref_catalog)",
+      "claim": "a positive ref append reads the pool catalog (GET cas/ref_catalog) before the _log create",
       "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
-      "line": 640
+      "line": 3429
     },
     {
       "claim": ".bin, .mrk/.mrk2/.mrk3, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed stay blobs; every other part file (data.cmrk4, primary.cidx, checksums.txt, ...) is an inline candidate",
@@ -144,5 +144,5 @@
       "line": 302
     }
   ],
-  "prediction_commit": "pending"
+  "prediction_commit": "8ae3a262cae"
 }
