@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "7641fb2702771d74",
+ "contract_version": "ebcd9cc8a2a51754",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -21,24 +21,24 @@
        "x": 3750,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 720,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3162.3480536609513,
+         "value": 3171.8088536609516,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -46,24 +46,24 @@
        "x": 7500,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1440,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3334.944532574396,
+         "value": 3344.405332574396,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -71,24 +71,24 @@
        "x": 15000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2880,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3680.1374904012855,
+         "value": 3689.598290401286,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -96,24 +96,24 @@
        "x": 30000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 4361.689848172126,
+         "value": 4371.150648172127,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -121,24 +121,24 @@
        "x": 60000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 11520,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 5682.428121596747,
+         "value": 5691.888921596747,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -146,43 +146,53 @@
        "x": 120000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 23040,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 8323.904668445986,
+         "value": 8333.365468445987,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "s3",
+       "x_between": [
+        15000,
+        30000
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     },
     "ingest_rate": {
@@ -199,24 +209,24 @@
        "x": 125,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 720,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3162.3480536609513,
+         "value": 3171.8088536609516,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -224,24 +234,24 @@
        "x": 250,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1440,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3334.944532574396,
+         "value": 3344.405332574396,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -249,24 +259,24 @@
        "x": 500,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2880,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3680.1374904012855,
+         "value": 3689.598290401286,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -274,24 +284,24 @@
        "x": 1000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 4361.689848172126,
+         "value": 4371.150648172127,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -299,24 +309,24 @@
        "x": 2000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 11520,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 5682.428121596747,
+         "value": 5691.888921596747,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -324,43 +334,53 @@
        "x": 4000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 23040,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 8323.904668445986,
+         "value": 8333.365468445987,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "s3",
+       "x_between": [
+        500,
+        1000
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     },
     "replicas": {
@@ -375,8 +395,8 @@
        "x": 1,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1440,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -386,13 +406,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -400,24 +420,24 @@
        "x": 2,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2880,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3680.1374904012855,
+         "value": 3689.598290401286,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -425,24 +445,24 @@
        "x": 4,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 7444.998222919634,
+         "value": 7473.380622919633,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -450,37 +470,37 @@
        "x": 6,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 8640,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 11188.675734379449,
+         "value": 11235.979734379449,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -508,24 +528,24 @@
        "x": 450,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 86.4,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -533,24 +553,24 @@
        "x": 900,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 172.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -558,24 +578,24 @@
        "x": 1800,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 345.6,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -583,24 +603,24 @@
        "x": 3600,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 691.2,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -608,24 +628,24 @@
        "x": 7200,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 1382.4,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -633,37 +653,37 @@
        "x": 14400,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 2764.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -686,24 +706,24 @@
        "x": 5,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 86.4,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -711,24 +731,24 @@
        "x": 10,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 172.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -736,24 +756,24 @@
        "x": 20,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 345.6,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -761,24 +781,24 @@
        "x": 40,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 691.2,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -786,24 +806,24 @@
        "x": 80,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 1382.4,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -811,37 +831,37 @@
        "x": 160,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 2764.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -862,24 +882,24 @@
        "x": 1,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 172.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -887,24 +907,24 @@
        "x": 2,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 345.6,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -912,24 +932,24 @@
        "x": 4,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 691.2,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -937,37 +957,37 @@
        "x": 6,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "value": 1036.8,
+         "state": "ok",
+         "extrapolated": true
         },
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": false
+         "extrapolated": true
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -995,24 +1015,24 @@
        "x": 2560,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 491.52,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 268.1896373232526,
+         "value": 268.6626773232526,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1020,24 +1040,24 @@
        "x": 5120,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 983.04,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 385.9552671015007,
+         "value": 386.4283071015007,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1045,24 +1065,24 @@
        "x": 10240,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1966.08,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4865266579968,
+         "value": 621.9595666579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1070,24 +1090,24 @@
        "x": 20480,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3932.16,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 1092.549045770989,
+         "value": 1093.0220857709892,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1095,24 +1115,24 @@
        "x": 40960,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 7864.32,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 2003.9501676294967,
+         "value": 2004.4232076294968,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1120,37 +1140,37 @@
        "x": 81920,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 15728.64,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.2763277139893,
+         "value": 3806.749367713989,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1173,24 +1193,24 @@
        "x": 7.013698630136986,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 491.52,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 268.1896373232526,
+         "value": 268.6626773232526,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1198,24 +1218,24 @@
        "x": 14.027397260273972,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 983.04,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 385.9552671015007,
+         "value": 386.4283071015007,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1223,24 +1243,24 @@
        "x": 28.054794520547944,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1966.08,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4865266579968,
+         "value": 621.9595666579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1248,24 +1268,24 @@
        "x": 56.10958904109589,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3932.16,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 1092.549045770989,
+         "value": 1093.0220857709892,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1273,24 +1293,24 @@
        "x": 112.21917808219177,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 7864.32,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 2003.9501676294967,
+         "value": 2004.4232076294968,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1298,37 +1318,37 @@
        "x": 224.43835616438355,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 15728.64,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.2763277139893,
+         "value": 3806.749367713989,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1349,8 +1369,8 @@
        "x": 1,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 983.04,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1360,13 +1380,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1374,24 +1394,24 @@
        "x": 2,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1966.08,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4865266579968,
+         "value": 621.9595666579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1399,24 +1419,24 @@
        "x": 4,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3932.16,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 1247.6508933159937,
+         "value": 1249.0700133159937,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1424,37 +1444,37 @@
        "x": 6,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5898.24,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 1863.5723226983828,
+         "value": 1865.937522698383,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1482,8 +1502,8 @@
        "x": 12800,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1228.8,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1493,13 +1513,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1507,8 +1527,8 @@
        "x": 25600,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2457.6,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1518,13 +1538,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1532,8 +1552,8 @@
        "x": 51200,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4915.2,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1543,13 +1563,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1557,8 +1577,8 @@
        "x": 102400,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 9830.4,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1568,13 +1588,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1582,8 +1602,8 @@
        "x": 204800,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 19660.8,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1593,13 +1613,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1618,26 +1638,27 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
+       "ok",
        "unavailable"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1660,8 +1681,8 @@
        "x": 17.534246575342465,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1228.8,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1671,13 +1692,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1685,8 +1706,8 @@
        "x": 35.06849315068493,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2457.6,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1696,13 +1717,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1710,8 +1731,8 @@
        "x": 70.13698630136986,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4915.2,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1721,13 +1742,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1735,8 +1756,8 @@
        "x": 140.27397260273972,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 9830.4,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1746,13 +1767,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1760,8 +1781,8 @@
        "x": 280.54794520547944,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 19660.8,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1771,13 +1792,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1796,26 +1817,27 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
+       "ok",
        "unavailable"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1836,8 +1858,8 @@
        "x": 1,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4915.2,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1847,13 +1869,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1861,24 +1883,24 @@
        "x": 2,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 9830.4,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 2603.952234703301,
+         "value": 2604.8983147033014,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1886,24 +1908,24 @@
        "x": 4,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 19660.8,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 5166.060149406604,
+         "value": 5168.898389406604,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1911,37 +1933,37 @@
        "x": 6,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 29491.2,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
-         "value": 7728.168064109904,
+         "value": 7732.898464109904,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "ok"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -1969,8 +1991,8 @@
        "x": 5000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1440,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -1980,13 +2002,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -1994,8 +2016,8 @@
        "x": 10000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2880,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2005,13 +2027,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2019,8 +2041,8 @@
        "x": 20000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2030,13 +2052,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2044,8 +2066,8 @@
        "x": 40000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 11520,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2055,13 +2077,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2069,8 +2091,8 @@
        "x": 80000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 23040,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2080,13 +2102,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2094,8 +2116,8 @@
        "x": 160000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 46080,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2105,26 +2127,26 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -2147,8 +2169,8 @@
        "x": 125,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1440,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2158,13 +2180,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2172,8 +2194,8 @@
        "x": 250,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2880,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2183,13 +2205,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2197,8 +2219,8 @@
        "x": 500,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2208,13 +2230,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2222,8 +2244,8 @@
        "x": 1000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 11520,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2233,13 +2255,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2247,8 +2269,8 @@
        "x": 2000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 23040,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2258,13 +2280,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2272,8 +2294,8 @@
        "x": 4000,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 46080,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2283,26 +2305,26 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"
@@ -2323,8 +2345,8 @@
        "x": 1,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1920,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2334,13 +2356,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2348,8 +2370,8 @@
        "x": 2,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3840,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2359,13 +2381,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2373,8 +2395,8 @@
        "x": 3,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5760,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2384,13 +2406,13 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       },
@@ -2398,8 +2420,8 @@
        "x": 6,
        "totals": {
         "ebs": {
-         "value": null,
-         "state": "unavailable",
+         "value": 11520,
+         "state": "ok",
          "extrapolated": false
         },
         "s3": {
@@ -2409,26 +2431,26 @@
         },
         "s3plain": {
          "value": null,
-         "state": "unavailable",
-         "extrapolated": false
+         "state": "not_supported",
+         "extrapolated": true
         },
         "cas": {
          "value": null,
          "state": "unsupported_cut",
-         "extrapolated": false
+         "extrapolated": true
         }
        }
       }
      ],
      "states": {
       "ebs": [
-       "unavailable"
+       "ok"
       ],
       "s3": [
        "unavailable"
       ],
       "s3plain": [
-       "unavailable"
+       "not_supported"
       ],
       "cas": [
        "unsupported_cut"

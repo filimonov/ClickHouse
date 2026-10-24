@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "7641fb2702771d74",
+ "version": "ebcd9cc8a2a51754",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "7641fb2702771d74",
+  "contract_version": "ebcd9cc8a2a51754",
   "registry_version": "0.3.0",
-  "registry_sha256": "639f79fe5152d858a2e4b14b81d70261ed71a0bb04b84a9620b1100bc28a4a61",
+  "registry_sha256": "23e6f1faa18f25e5e9c23fd710609180f5ac77afd0c1d8eaa9b69b3eaf49663e",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "588b7cfaff03b3d70575eedde106e7cdf9359f64058b78c74980cf182bd7e946",
+  "coverage_sha256": "4939abd40bb3d852b3e30c11eb69472870348c4a3dc28a2da9ee46854a6291fd",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -28,6 +28,13 @@
     "rig_commit": "83aba5425f902bf312ab699e79dcdab92a6a2fee",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "95a11ad6da06ec08e8ceffb171e6d185c2c3ad2060f5662a34c14b401127dc2b"
+   },
+   {
+    "report": "2026-10-24-storage-cost-ebs",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "d56cc2d7804464469bb6f0a694ea963369933d1b",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "5af6fac8c75d89b82a6ba66dee690b09c171fe68da8a2751eb106630a2f456e1"
    },
    {
     "report": "2026-10-24-storage-cost-lifecycle",
@@ -59,15 +66,15 @@
    },
    {
     "report": "2026-10-24-storage-cost-s3plain",
-    "commit": "pending",
-    "rig_commit": "pending",
-    "binary_sha256": "pending",
-    "raw_sha256sums": "pending"
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "b7016f71689d4cc68231c533b4ac6f83ae369cd2",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "e5cc75973a3622968a3eed6ffb66f5ea1e11a711fac881f9447c5479122e970f"
    }
   ],
-  "breakeven_sha256": "da257e4590a82b57ea9b867b5786c3a9f1f7cd39a51b7341b4da07a94947e63d"
+  "breakeven_sha256": "1b6e8e9ce18c56bcfc280761f872c841fb8d75c0e51b2f9e21e8d95106ce9c41"
  },
- "evidence_statement": "Built from 6 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 46 coefficient(s): 37 measured, 9 pinned to source. 44 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 7 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 59 coefficient(s): 41 measured, 18 pinned to source. 56 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 4 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -8150,418 +8157,6 @@
    "status": "ok"
   },
   {
-   "id": "provisioned_size_gib",
-   "block": "local_disk",
-   "label": "Manual provisioning: size of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "GiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_size_gib": "total_space / 2^30 of the data disk"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_iops",
-   "block": "local_disk",
-   "label": "Manual provisioning: IOPS of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "iops",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 3000,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_mibps",
-   "block": "local_disk",
-   "label": "Manual provisioning: throughput of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "mibps",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 125,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "volumes_per_replica",
-   "block": "local_disk",
-   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
-   "kind": "input",
-   "scope": "replica",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "auto"
-   ],
-   "table": null,
-   "default": "auto",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "auto picks the cheapest feasible layout of the billing contract",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
-    "mapping": {
-     "volumes_per_replica": "number of disks in the volume of the table storage policy"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_headroom",
-   "block": "ebs",
-   "label": "Free space provisioned above the active data, as a fraction of it (outdated parts until old_parts_lifetime, merge results before their sources go, metadata, growth)",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0.2,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "not measured: rig parts are small, so the rig peak over active bytes does not carry to production sizes; 0.2 is an operator choice",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "ebs_headroom": "(total_space - free_space) / bytes_on_disk of active parts minus 1 is the current overhead"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_io_rule",
-   "block": "ebs",
-   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split; each request is counted on its own (no credit for merged sequential I/O), an upper bound of IOPS",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "ssd_256kib_split_no_merge_credit"
-   ],
-   "table": null,
-   "default": "ssd_256kib_split_no_merge_credit",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "ebs_max_io_bytes",
-   "block": "ebs",
-   "label": "Largest I/O an SSD volume counts as one IOPS",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 262144,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_op",
-   "block": "ebs",
-   "label": "Operation key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "inserts",
-    "merges",
-    "mutations",
-    "deletes",
-    "reads",
-    "recovery"
-   ],
-   "table": null,
-   "default": "inserts",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_direction",
-   "block": "ebs",
-   "label": "Direction key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "write",
-    "read"
-   ],
-   "table": null,
-   "default": "write",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_size_bucket",
-   "block": "ebs",
-   "label": "Request-size bucket (power-of-two upper bound)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "<=4KiB",
-    "8KiB",
-    "16KiB",
-    "32KiB",
-    "64KiB",
-    "128KiB",
-    "256KiB",
-    "512KiB",
-    "1MiB",
-    ">1MiB"
-   ],
-   "table": null,
-   "default": "1MiB",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_bytes_per_op",
-   "block": "ebs",
-   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_bytes_per_op",
-   "validity": {
-    "insert_rows": [
-     80000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "io_request_size_distribution",
-   "block": "ebs",
-   "label": "Fraction of volume requests per size bucket, by operation and direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction",
-     "io_size_bucket"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_request_size_distribution",
-   "validity": {
-    "insert_rows": [
-     80000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_request_size_distribution": "not in system tables: strace -f -e trace=write,pwrite64,read,pread64 on the server, sizes per call"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_ios_per_mib",
-   "block": "ebs",
-   "label": "EBS I/Os per MiB of volume demand under ebs_io_rule, by operation and direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "req/MiB",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction"
-    ],
-    "dim": "req/MiB"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "ebs_ios_per_mib",
-   "validity": {
-    "insert_rows": [
-     80000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "ebs_ios_per_mib": "CloudWatch VolumeWriteOps / (VolumeWriteBytes / 2^20) is the device-side figure, after merging"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "peak_factor",
-   "block": "ebs",
-   "label": "Provisioned peak over the mean volume demand of inserts and merges; 1 provisions for the mean rate (merges then take longer, they are not refused)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 1,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
-    "mapping": {
-     "peak_factor": "max over mean of the per-second sums over a busy hour; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
-    }
-   },
-   "status": "ok"
-  },
-  {
    "id": "large_objects_per_part",
    "block": "inserts",
    "label": "Part files larger than the 32 MiB first upload buffer, per inserted part (each one multipart upload)",
@@ -10444,7 +10039,7 @@
   {
    "id": "catchup_requests_per_missed_part",
    "block": "topology_recovery",
-   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+   "label": "Requests per part a restarted replica fetches to catch up, per S3 operation (replication report)",
    "kind": "measured",
    "scope": "cluster",
    "unit": "count",
@@ -10452,7 +10047,8 @@
    "enum": null,
    "table": {
     "index": [
-     "variant_id"
+     "variant_id",
+     "replication_op"
     ],
     "dim": "count"
    },
@@ -10608,6 +10204,787 @@
     "sql": "SELECT part_type, count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts' GROUP BY part_type",
     "mapping": {
      "merge_result_part_type": "the part type most merged parts have"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_size_gib",
+   "block": "local_disk",
+   "label": "Manual provisioning: size of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_size_gib": "total_space / 2^30 of the data disk"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_iops",
+   "block": "local_disk",
+   "label": "Manual provisioning: IOPS of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "iops",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_mibps",
+   "block": "local_disk",
+   "label": "Manual provisioning: throughput of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "mibps",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 125,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "volumes_per_replica",
+   "block": "local_disk",
+   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
+   "kind": "input",
+   "scope": "replica",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "auto"
+   ],
+   "table": null,
+   "default": "auto",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "auto picks the cheapest feasible layout of the billing contract",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
+    "mapping": {
+     "volumes_per_replica": "number of disks in the volume of the table storage policy"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_headroom",
+   "block": "ebs",
+   "label": "Free space provisioned above the active data, as a fraction of it (outdated parts until old_parts_lifetime, merge results before their sources go, metadata, growth)",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0.2,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "not measured: rig parts are small, so the rig peak over active bytes does not carry to production sizes; 0.2 is an operator choice",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "ebs_headroom": "(total_space - free_space) / bytes_on_disk of active parts minus 1 is the current overhead"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_io_rule",
+   "block": "ebs",
+   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "ssd_256kib_merged_sequential"
+   ],
+   "table": null,
+   "default": "ssd_256kib_merged_sequential",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "ebs_max_io_bytes",
+   "block": "ebs",
+   "label": "Largest I/O an SSD volume counts as one IOPS",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 262144,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_op",
+   "block": "ebs",
+   "label": "Operation key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "inserts",
+    "merges",
+    "mutations",
+    "deletes",
+    "reads",
+    "recovery"
+   ],
+   "table": null,
+   "default": "inserts",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_direction",
+   "block": "ebs",
+   "label": "Direction key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "write",
+    "read"
+   ],
+   "table": null,
+   "default": "write",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_size_bucket",
+   "block": "ebs",
+   "label": "Request-size bucket (power-of-two upper bound)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "<=4KiB",
+    "8KiB",
+    "16KiB",
+    "32KiB",
+    "64KiB",
+    "128KiB",
+    "256KiB",
+    "512KiB",
+    "1MiB",
+    ">1MiB"
+   ],
+   "table": null,
+   "default": "1MiB",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_bytes_per_op",
+   "block": "ebs",
+   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_bytes_per_op",
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "io_request_size_distribution",
+   "block": "ebs",
+   "label": "Fraction of volume requests per size bucket, by operation and direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction",
+     "io_size_bucket"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_request_size_distribution",
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_sequential_ios_per_mib",
+   "block": "ebs",
+   "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); real request counts were 1.3-6.5x this on the rig; the gp3 3000-IOPS baseline usually dominates",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "req/MiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 4,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured spread of syscall I/Os per MiB on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
+    "version": "2026-10-24"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "ebs_sequential_ios_per_mib": "compare with CloudWatch VolumeWriteOps / (VolumeWriteBytes / 2^20) of the data volume"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "peak_factor",
+   "block": "ebs",
+   "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
+    "mapping": {
+     "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_op",
+   "block": "schema",
+   "label": "S3 operation of an s3plain request row",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "PutObject",
+    "HeadObject",
+    "GetObject",
+    "CopyObject",
+    "DeleteObject",
+    "DeleteObjects",
+    "ListObjectsV2"
+   ],
+   "table": null,
+   "default": "PutObject",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_startup_kind",
+   "block": "topology_recovery",
+   "label": "Part of the s3plain startup cost: fixed per start, or per loaded directory",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "fixed",
+    "per_dir"
+   ],
+   "table": null,
+   "default": "fixed",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:138",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_meta_objects_per_part",
+   "block": "schema",
+   "label": "s3plain directory objects per part: one __meta/<dir>/prefix.path for the part and one per projection",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_meta_objects_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.projections WHERE database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "plain_meta_objects_per_part": "1 + projections of the table"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_dir_create_requests",
+   "block": "inserts",
+   "label": "Requests per directory an s3plain part creates: the prefix.path PutObject and a HeadObject of it",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_dir_create_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_dir_create_requests": "S3HeadObject per new part (1 per directory)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_rename_requests",
+   "block": "inserts",
+   "label": "PutObject per directory an s3plain rename rewrites (prefix.path); every new part is renamed from its tmp_ name",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_rename_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_rename_requests": "PutObject per new part beyond its files and the create"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_copy_on_hardlink",
+   "block": "mutations_deletes",
+   "label": "Requests per hard link on s3plain: a server-side copy (HeadObject for the size, CopyObject); reached by ATTACH/REPLACE PARTITION FROM, never by mutations (refused)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_copy_on_hardlink",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_copy_on_hardlink": "S3CopyObject per file of a cloned part"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_unlink_requests",
+   "block": "mutations_deletes",
+   "label": "Requests per file an s3plain part removal unlinks: copy aside (HeadObject, CopyObject), delete the file, delete the copy",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_unlink_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_unlink_requests": "S3CopyObject per removed file; DeleteObject twice that"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_dir_remove_requests",
+   "block": "mutations_deletes",
+   "label": "Requests per directory of an s3plain part removal: the rename to delete_tmp_ (PutObject), the prefix.path delete",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_dir_remove_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_dir_remove_requests": "per removed part directory"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_objects_per_part",
+   "block": "schema",
+   "label": "s3plain objects per part: one per part file, empty files included (s3 stores no blob for them)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_objects_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT part_type, avg(c) FROM (SELECT p.part_type, p.name, count() AS c FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name) GROUP BY part_type",
+    "mapping": {
+     "plain_objects_per_part": "avg objects per active part by part_type"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_empty_part_objects",
+   "block": "mutations_deletes",
+   "label": "Objects of the empty part that covers a dropped or expired part on s3plain (a blob per empty file)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_empty_part_objects",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_expired_part_extra_files",
+   "block": "mutations_deletes",
+   "label": "Files of an expired part besides its shape's files: partition.dat and minmax_<key>.idx of one partition key column",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_expired_part_extra_files",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_startup_requests",
+   "block": "topology_recovery",
+   "label": "Requests an s3plain server start sends besides part loads: layout listing and prefix.path reads per directory, the disk access checks",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "plain_startup_kind",
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_startup_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_startup_requests": "right after a start, minus the part loads"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_local_metadata_bytes_per_object",
+   "block": "local_disk",
+   "label": "Local metadata bytes per object on s3plain: none, the layout is held in memory",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_local_metadata_bytes_per_object",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+    "mapping": {
+     "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
     }
    },
    "status": "ok"
@@ -11022,6 +11399,477 @@
      "condemn": 0.7842,
      "manifest_delete": 0.7819,
      "blob_delete": 2.7722
+    }
+   }
+  },
+  {
+   "id": "io_bytes_per_op",
+   "kind": "table",
+   "dim": "1",
+   "value": {
+    "index": [
+     "io_op",
+     "io_direction"
+    ],
+    "values": {
+     "inserts|read": 0.000897,
+     "inserts|write": 1.038584,
+     "merges|read": 1.00566,
+     "merges|write": 1.013777,
+     "reads|read": 1.225166,
+     "reads|write": 0.001475
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": {
+     "inserts|read": 0.005858,
+     "inserts|write": 0.072581,
+     "merges|read": 0.012508,
+     "merges|write": 0.023712,
+     "reads|read": 0.284854,
+     "reads|write": 0.009057
+    },
+    "rel": 0.1
+   },
+   "domain": {
+    "fit": {
+     "columns": [
+      5,
+      21
+     ],
+     "insert_rows": [
+      80000,
+      300000
+     ],
+     "scale": 0.05,
+     "arrival": "back-to-back",
+     "types": "UInt64; Array, JSON, Nullable, Map, LowCardinality, projection, skip index"
+    },
+    "holdout": {
+     "columns": [
+      8,
+      8
+     ],
+     "insert_rows": [
+      120000,
+      120000
+     ],
+     "types": "String, Array, Nullable, LowCardinality, DateTime, Float64, Map"
+    }
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "mean of the per-record values of io-sizes.narrow-compact, .narrow-wide and .types-holdout (ebs_fit.demand_fit)",
+    "records": [
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+    ],
+    "per_key": {
+     "inserts|read": {
+      "spread": 0.0004291582428951323,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00024234768206245845,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00032129613828448184,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0003301703677841037,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.00037040059760522594,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00036539503149271763,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0004291582428951323,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 9.580364468836768e-05,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 9.378748628624176e-05,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 8.154855288742223e-05
+      }
+     },
+     "inserts|write": {
+      "spread": 0.0337907051287516,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": -0.008205264376974997,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.010710834183230045,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.010710805227931663,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.02387871041816414,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.02388006313721802,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0238737026427589,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0337907051287516,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.033678619958686706,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.03379005489883835
+      }
+     },
+     "merges|read": {
+      "spread": 0.0037539213014912143,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0037539213014912143,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.003270567542966729,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0032763074267108117,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.002483451462595765,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.0023947788336518006,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0023193823991529694,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.000742389866281945,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.0012267037054090046,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.0011340900040774926
+      }
+     },
+     "merges|write": {
+      "spread": 0.009355927401353936,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00023257614270266735,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00022316705292912964,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.00021097780633438923,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.009353544717396467,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.009348548272166246,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.009355927401353936,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.009093976817353244,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.00921388989620664,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.009083432675391911
+      }
+     },
+     "reads|read": {
+      "spread": 0.1399267891387337,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.13379340133449413,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13264604891991394,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13264604891991394,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.006686784979795135,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.006650031667348788,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.00655550770706137,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.1399267891387337,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.1395200401910881,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.13953099419870374
+      }
+     },
+     "reads|write": {
+      "spread": 0.0020285524667166023,
+      "residuals": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0020285524667166023,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.001581374351536461,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.0015864362092484323,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.000327453524810131,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00032796903681137036,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.00033900235941907125,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0007151100309679824,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0007096106636793199,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0007089623204615612
+      }
+     }
+    },
+    "holdout": {
+     "records": [
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+     ],
+     "checks": {
+      "inserts|read": {
+       "fit": 0.0008971401700599561,
+       "ok": true,
+       "slack": 0.00594803050279626,
+       "value": 0.0007250759750158224
+      },
+      "inserts|write": {
+       "fit": 1.0385843036560058,
+       "ok": true,
+       "slack": 0.1764398406231038,
+       "value": 1.0349493210920213
+      },
+      "merges|read": {
+       "fit": 1.005660228669173,
+       "ok": true,
+       "slack": 0.11307386546989973,
+       "value": 1.0043955940168432
+      },
+      "merges|write": {
+       "fit": 1.013776918222415,
+       "ok": true,
+       "slack": 0.12508954662494937,
+       "value": 1.0180322848230006
+      },
+      "reads|read": {
+       "fit": 1.2251664059829421,
+       "ok": true,
+       "slack": 0.4073702188757616,
+       "value": 1.3051539383894986
+      },
+      "reads|write": {
+       "fit": 0.001475025048520963,
+       "ok": true,
+       "slack": 0.0092046074382853,
+       "value": 0.0024766232201547185
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "io_request_size_distribution",
+   "kind": "table",
+   "dim": "1",
+   "value": {
+    "index": [
+     "io_op",
+     "io_direction",
+     "io_size_bucket"
+    ],
+    "values": {
+     "inserts|read|128KiB": 0.0,
+     "inserts|read|16KiB": 0.0,
+     "inserts|read|1MiB": 0.0,
+     "inserts|read|256KiB": 0.0,
+     "inserts|read|32KiB": 0.0,
+     "inserts|read|512KiB": 0.0,
+     "inserts|read|64KiB": 0.0,
+     "inserts|read|8KiB": 0.0,
+     "inserts|read|<=4KiB": 1.0,
+     "inserts|read|>1MiB": 0.0,
+     "inserts|write|128KiB": 0.006879,
+     "inserts|write|16KiB": 0.008361,
+     "inserts|write|1MiB": 0.104316,
+     "inserts|write|256KiB": 0.019157,
+     "inserts|write|32KiB": 0.003439,
+     "inserts|write|512KiB": 0.019897,
+     "inserts|write|64KiB": 0.018263,
+     "inserts|write|8KiB": 0.015395,
+     "inserts|write|<=4KiB": 0.804293,
+     "inserts|write|>1MiB": 0.0,
+     "merges|read|128KiB": 0.629461,
+     "merges|read|16KiB": 0.01305,
+     "merges|read|1MiB": 0.0,
+     "merges|read|256KiB": 0.0,
+     "merges|read|32KiB": 0.012698,
+     "merges|read|512KiB": 0.0,
+     "merges|read|64KiB": 0.047661,
+     "merges|read|8KiB": 0.007894,
+     "merges|read|<=4KiB": 0.289236,
+     "merges|read|>1MiB": 0.0,
+     "merges|write|128KiB": 0.004739,
+     "merges|write|16KiB": 0.019003,
+     "merges|write|1MiB": 0.248639,
+     "merges|write|256KiB": 0.015267,
+     "merges|write|32KiB": 0.012891,
+     "merges|write|512KiB": 0.016616,
+     "merges|write|64KiB": 0.002375,
+     "merges|write|8KiB": 0.016259,
+     "merges|write|<=4KiB": 0.664211,
+     "merges|write|>1MiB": 0.0,
+     "reads|read|128KiB": 0.802774,
+     "reads|read|16KiB": 0.006447,
+     "reads|read|1MiB": 0.0,
+     "reads|read|256KiB": 0.0,
+     "reads|read|32KiB": 0.00053,
+     "reads|read|512KiB": 0.0,
+     "reads|read|64KiB": 0.001404,
+     "reads|read|8KiB": 0.013239,
+     "reads|read|<=4KiB": 0.175605,
+     "reads|read|>1MiB": 0.0
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "max_tv": {
+     "inserts|read": 0.05,
+     "inserts|write": 0.280501,
+     "merges|read": 0.574494,
+     "merges|write": 0.436859,
+     "reads|read": 0.671762
+    }
+   },
+   "domain": {
+    "fit": {
+     "columns": [
+      5,
+      21
+     ],
+     "insert_rows": [
+      80000,
+      300000
+     ],
+     "scale": 0.05,
+     "arrival": "back-to-back",
+     "types": "UInt64; Array, JSON, Nullable, Map, LowCardinality, projection, skip index"
+    },
+    "holdout": {
+     "columns": [
+      8,
+      8
+     ],
+     "insert_rows": [
+      120000,
+      120000
+     ],
+     "types": "String, Array, Nullable, LowCardinality, DateTime, Float64, Map"
+    }
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "mean of the per-record request fractions (ebs_fit.pooled_distribution)",
+    "records": [
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+    ],
+    "per_key": {
+     "inserts|read": {
+      "tv": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0
+      }
+     },
+     "inserts|write": {
+      "tv": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.07873160004034215,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0733716482022282,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0733716482022282,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.11525066231523648,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.11525066231523648,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.11525066231523648,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.07988106256051809,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.07972122878764187,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.07988106256051809
+      }
+     },
+     "merges|read": {
+      "tv": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.10019424235178682,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13311194075807056,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13311194075807056,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16778464124197381,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.1636416210584302,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.15682483066058686,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.2622470658962326,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.25580506791536634,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.25758282996943327
+      }
+     },
+     "merges|write": {
+      "tv": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.08720719034802119,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.08483654512023311,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.08483654512023311,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.19342973811058917,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.19342973811058917,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.19342973811058917,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.15775512153425023,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.15851499995370313,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.15775512153425023
+      }
+     },
+     "reads|read": {
+      "tv": {
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.09943588586806616,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.16564901424363745,
+       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.16564901424363745,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16188571587162123,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.16494981070786796,
+       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.1711367370225898,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.3020152431094547,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.3108810808202954,
+       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.31000859467101305
+      }
+     }
+    },
+    "holdout": {
+     "records": [
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
+      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+     ],
+     "checks": {
+      "inserts|read": {
+       "max_tv": 0.05,
+       "ok": true,
+       "tv": 0.0
+      },
+      "inserts|write": {
+       "max_tv": 0.28050132463047295,
+       "ok": true,
+       "tv": 0.08711062179716181
+      },
+      "merges|read": {
+       "max_tv": 0.5744941317924652,
+       "ok": true,
+       "tv": 0.055718477884216605
+      },
+      "merges|write": {
+       "max_tv": 0.4368594762211783,
+       "ok": true,
+       "tv": 0.1400313446457229
+      },
+      "reads|read": {
+       "max_tv": 0.6717621616405909,
+       "ok": true,
+       "tv": 0.1432262529285004
+      }
+     }
     }
    }
   },
@@ -13139,6 +13987,361 @@
     "method": "least GetObject per table of the mutation window over the repeats (per-file attribution) / its parts",
     "spread": "a Compact part read takes up to one more GetObject (data.bin) in some repeats; the tolerance is per part"
    }
+  },
+  {
+   "id": "plain_meta_objects_per_part",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "shape"
+    ],
+    "values": {
+     "narrow": 1,
+     "wide": 1,
+     "types": 2
+    }
+   },
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "one directory per part and one per projection (the types shape has one projection)"
+   }
+  },
+  {
+   "id": "plain_dir_create_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "plain_op"
+    ],
+    "values": {
+     "PutObject": 1,
+     "HeadObject": 1,
+     "GetObject": 0,
+     "CopyObject": 0,
+     "DeleteObject": 0,
+     "DeleteObjects": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_rename_requests",
+   "kind": "scalar",
+   "dim": "count",
+   "value": 1,
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_copy_on_hardlink",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "plain_op"
+    ],
+    "values": {
+     "PutObject": 0,
+     "HeadObject": 1,
+     "GetObject": 0,
+     "CopyObject": 1,
+     "DeleteObject": 0,
+     "DeleteObjects": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "no card hard-links on s3plain (mutations are refused); the copy itself is measured in every unlink"
+   }
+  },
+  {
+   "id": "plain_unlink_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "plain_op"
+    ],
+    "values": {
+     "PutObject": 0,
+     "HeadObject": 1,
+     "GetObject": 0,
+     "CopyObject": 1,
+     "DeleteObject": 2,
+     "DeleteObjects": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_dir_remove_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "plain_op"
+    ],
+    "values": {
+     "PutObject": 1,
+     "HeadObject": 0,
+     "GetObject": 0,
+     "CopyObject": 0,
+     "DeleteObject": 1,
+     "DeleteObjects": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_empty_part_objects",
+   "kind": "scalar",
+   "dim": "count",
+   "value": 11,
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "plain storage keeps a blob for every empty file; the empty covering part has 11 files"
+   }
+  },
+  {
+   "id": "plain_objects_per_part",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "values": {
+     "narrow|compact": 11,
+     "narrow|wide": 19,
+     "wide|compact": 11,
+     "wide|wide": 89
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     400000
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k1",
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k2",
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k3",
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k1",
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k2",
+     "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k3",
+     "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k1",
+     "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k2",
+     "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k3",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "objects per active part from system.remote_data_paths; no types entry: its empty-file blobs depend on the JSON columns (6 per column with two typed paths in a Wide part)"
+   }
+  },
+  {
+   "id": "plain_expired_part_extra_files",
+   "kind": "scalar",
+   "dim": "count",
+   "value": 2,
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "partition.dat and minmax_<key>.idx (IMergeTreeDataPart.cpp:273) of one partition key column"
+   }
+  },
+  {
+   "id": "plain_startup_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "cache_enabled",
+     "plain_startup_kind",
+     "plain_op"
+    ],
+    "values": {
+     "0|fixed|PutObject": 1,
+     "0|per_dir|PutObject": 0,
+     "0|fixed|HeadObject": 1,
+     "0|per_dir|HeadObject": 0,
+     "0|fixed|GetObject": 5,
+     "0|per_dir|GetObject": 1,
+     "0|fixed|CopyObject": 1,
+     "0|per_dir|CopyObject": 0,
+     "0|fixed|DeleteObject": 2,
+     "0|per_dir|DeleteObject": 0,
+     "0|fixed|DeleteObjects": 0,
+     "0|per_dir|DeleteObjects": 0,
+     "0|fixed|ListObjectsV2": 6,
+     "0|per_dir|ListObjectsV2": 1,
+     "1|fixed|PutObject": 2,
+     "1|per_dir|PutObject": 0,
+     "1|fixed|HeadObject": 2,
+     "1|per_dir|HeadObject": 0,
+     "1|fixed|GetObject": 6,
+     "1|per_dir|GetObject": 1,
+     "1|fixed|CopyObject": 2,
+     "1|per_dir|CopyObject": 0,
+     "1|fixed|DeleteObject": 4,
+     "1|per_dir|DeleteObject": 0,
+     "1|fixed|DeleteObjects": 0,
+     "1|per_dir|DeleteObjects": 0,
+     "1|fixed|ListObjectsV2": 6,
+     "1|per_dir|ListObjectsV2": 1
+    }
+   },
+   "validity": {
+    "replicas": [
+     1,
+     3
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T142405Z/s3plain/startup/intact/k1",
+     "cost-20261024T142405Z/s3plain/startup/intact/k2",
+     "cost-20261024T142405Z/s3plain/startup/intact/k3",
+     "cost-20261024T142405Z/s3plain_cached/startup/intact/k1",
+     "cost-20261024T142405Z/s3plain_cached/startup/intact/k2",
+     "cost-20261024T142405Z/s3plain_cached/startup/intact/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "fixed: the disk access checks (a PutObject, two reads, an unlink each; one check, two with the cache), format_version.txt, the prefix.path of the table and detached directories, four listings; per part directory: one prefix.path read and one listing"
+   }
+  },
+  {
+   "id": "plain_local_metadata_bytes_per_object",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 0,
+   "validity": null,
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
+    "version": "26.8@09d0772a842"
+   },
+   "status": "ok"
   }
  ],
  "billing": {
@@ -13842,13 +15045,13 @@
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
     "cas_lease": "not_applicable",
-    "local_volumes": "not_applicable"
+    "local_volumes": "supported"
    },
    "inserts": {
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
+    "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
@@ -13863,7 +15066,7 @@
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
+    "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
@@ -13879,7 +15082,7 @@
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
-    "mutation_deletes": "not_applicable",
+    "mutation_deletes": "unsupported_cut",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
@@ -13894,7 +15097,7 @@
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
-    "mutation_deletes": "not_applicable",
+    "mutation_deletes": "unsupported_cut",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
@@ -13910,7 +15113,7 @@
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
-    "reads_cache": "not_applicable",
+    "reads_cache": "unsupported_cut",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
     "faults": "not_applicable",
@@ -13926,8 +15129,8 @@
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
-    "startup_recovery": "not_applicable",
-    "replication": "not_applicable",
+    "startup_recovery": "unsupported_cut",
+    "replication": "unsupported_cut",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
@@ -14004,7 +15207,7 @@
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
-    "replication": "not_applicable",
+    "replication": "supported",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
@@ -14137,7 +15340,7 @@
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
+    "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
@@ -14149,9 +15352,9 @@
     "local_volumes": "not_applicable"
    },
    "inserts": {
-    "objects_per_part_by_shape": "not_applicable",
-    "thresholds": "not_applicable",
-    "multipart_graph": "not_applicable",
+    "objects_per_part_by_shape": "supported",
+    "thresholds": "supported",
+    "multipart_graph": "supported",
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
@@ -14167,7 +15370,7 @@
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
+    "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
@@ -14179,26 +15382,26 @@
     "local_volumes": "not_applicable"
    },
    "mutations": {
-    "objects_per_part_by_shape": "not_applicable",
-    "thresholds": "not_applicable",
-    "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
-    "mutation_deletes": "not_applicable",
-    "reads_cache": "not_applicable",
-    "startup_recovery": "not_applicable",
-    "replication": "not_applicable",
-    "faults": "not_applicable",
-    "cas_branches": "not_applicable",
-    "cas_gc": "not_applicable",
-    "cas_lease": "not_applicable",
-    "local_volumes": "not_applicable"
+    "objects_per_part_by_shape": "not_supported",
+    "thresholds": "not_supported",
+    "multipart_graph": "not_supported",
+    "lifecycle": "not_supported",
+    "mutation_deletes": "not_supported",
+    "reads_cache": "not_supported",
+    "startup_recovery": "not_supported",
+    "replication": "not_supported",
+    "faults": "not_supported",
+    "cas_branches": "not_supported",
+    "cas_gc": "not_supported",
+    "cas_lease": "not_supported",
+    "local_volumes": "not_supported"
    },
    "deletes": {
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
-    "mutation_deletes": "not_applicable",
+    "mutation_deletes": "supported",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
@@ -14214,7 +15417,7 @@
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
-    "reads_cache": "not_applicable",
+    "reads_cache": "supported",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
     "faults": "not_applicable",
@@ -14230,7 +15433,7 @@
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
-    "startup_recovery": "not_applicable",
+    "startup_recovery": "supported",
     "replication": "not_applicable",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
@@ -14239,7 +15442,7 @@
     "local_volumes": "not_applicable"
    },
    "local_disk": {
-    "objects_per_part_by_shape": "not_applicable",
+    "objects_per_part_by_shape": "supported",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
@@ -14382,7 +15585,7 @@
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
-    "startup_recovery": "unsupported_cut",
+    "startup_recovery": "supported",
     "replication": "not_applicable",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
@@ -14438,7 +15641,481 @@
   }
  },
  "formulas": {
-  "ebs": {},
+  "ebs": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "block_capacity",
+      "op_kind": "capacity",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB",
+       "a": {
+        "kind": "input",
+        "id": "data_bytes",
+        "dim": "GiB"
+       },
+       "b": {
+        "kind": "add",
+        "dim": "1",
+        "a": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "b": {
+         "kind": "input",
+         "id": "ebs_headroom",
+         "dim": "1"
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "mul",
+          "dim": "MiB/day",
+          "a": {
+           "kind": "input",
+           "id": "ingest_rate",
+           "dim": "GiB/day"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1024,
+           "dim": "MiB/GiB"
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 86400,
+          "dim": "s/day"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "1",
+        "a": {
+         "kind": "lookup",
+         "dim": "1",
+         "table_id": "io_bytes_per_op",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "inserts",
+           "dim": "enum:io_op"
+          },
+          {
+           "kind": "const",
+           "value": "write",
+           "dim": "enum:io_direction"
+          }
+         ]
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "1",
+         "table_id": "io_bytes_per_op",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "inserts",
+           "dim": "enum:io_op"
+          },
+          {
+           "kind": "const",
+           "value": "read",
+           "dim": "enum:io_direction"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "mul",
+         "dim": "MiB/s",
+         "a": {
+          "kind": "div",
+          "dim": "MiB/s",
+          "on_zero": "unavailable",
+          "a": {
+           "kind": "mul",
+           "dim": "MiB/day",
+           "a": {
+            "kind": "input",
+            "id": "ingest_rate",
+            "dim": "GiB/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1024,
+            "dim": "MiB/GiB"
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          }
+         },
+         "b": {
+          "kind": "input",
+          "id": "peak_factor",
+          "dim": "1"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "1",
+         "a": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "io_bytes_per_op",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "inserts",
+            "dim": "enum:io_op"
+           },
+           {
+            "kind": "const",
+            "value": "write",
+            "dim": "enum:io_direction"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "io_bytes_per_op",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "inserts",
+            "dim": "enum:io_op"
+           },
+           {
+            "kind": "const",
+            "value": "read",
+            "dim": "enum:io_direction"
+           }
+          ]
+         }
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "merges": {
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "mul",
+          "dim": "MiB/day",
+          "a": {
+           "kind": "mul",
+           "dim": "GiB/day",
+           "a": {
+            "kind": "input",
+            "id": "ingest_rate",
+            "dim": "GiB/day"
+           },
+           "b": {
+            "kind": "sub",
+            "dim": "1",
+            "a": {
+             "kind": "input",
+             "id": "write_amplification_rule",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            }
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 1024,
+           "dim": "MiB/GiB"
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 86400,
+          "dim": "s/day"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "1",
+        "a": {
+         "kind": "lookup",
+         "dim": "1",
+         "table_id": "io_bytes_per_op",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "merges",
+           "dim": "enum:io_op"
+          },
+          {
+           "kind": "const",
+           "value": "write",
+           "dim": "enum:io_direction"
+          }
+         ]
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "1",
+         "table_id": "io_bytes_per_op",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "merges",
+           "dim": "enum:io_op"
+          },
+          {
+           "kind": "const",
+           "value": "read",
+           "dim": "enum:io_direction"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "mul",
+         "dim": "MiB/s",
+         "a": {
+          "kind": "div",
+          "dim": "MiB/s",
+          "on_zero": "unavailable",
+          "a": {
+           "kind": "mul",
+           "dim": "MiB/day",
+           "a": {
+            "kind": "mul",
+            "dim": "GiB/day",
+            "a": {
+             "kind": "input",
+             "id": "ingest_rate",
+             "dim": "GiB/day"
+            },
+            "b": {
+             "kind": "sub",
+             "dim": "1",
+             "a": {
+              "kind": "input",
+              "id": "write_amplification_rule",
+              "dim": "1"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+             }
+            }
+           },
+           "b": {
+            "kind": "const",
+            "value": 1024,
+            "dim": "MiB/GiB"
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          }
+         },
+         "b": {
+          "kind": "input",
+          "id": "peak_factor",
+          "dim": "1"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "1",
+         "a": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "io_bytes_per_op",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "merges",
+            "dim": "enum:io_op"
+           },
+           {
+            "kind": "const",
+            "value": "write",
+            "dim": "enum:io_direction"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "io_bytes_per_op",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "merges",
+            "dim": "enum:io_op"
+           },
+           {
+            "kind": "const",
+            "value": "read",
+            "dim": "enum:io_direction"
+           }
+          ]
+         }
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "mutations": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "deletes": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "reads": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "recovery": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "local_disk": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   }
+  },
   "s3": {
    "storage": {
     "ledger_rows": [
@@ -14788,6 +16465,69 @@
           "kind": "input",
           "id": "part_type",
           "dim": "enum:part_type"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "acquire_requests",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "s3",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "insert",
+          "dim": "enum:result_type"
+         },
+         {
+          "kind": "const",
+          "value": "receiver",
+          "dim": "enum:replication_role"
+         },
+         {
+          "kind": "const",
+          "value": "GetObject",
+          "dim": "enum:replication_op"
          }
         ]
        }
@@ -16259,42 +17999,178 @@
         ]
        }
       }
-     }
-    ],
-    "allocation": null,
-    "states": [
+     },
      {
-      "id": "not_supported",
-      "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
-      "cond": {
-       "kind": "branch",
-       "dim": "bool",
-       "cond": {
-        "op": ">",
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
         "a": {
          "kind": "input",
          "id": "missed_parts_per_restart",
          "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
         }
        },
-       "then": {
-        "kind": "const",
-        "value": 1,
-        "dim": "bool"
-       },
-       "else": {
-        "kind": "const",
-        "value": 0,
-        "dim": "bool"
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
        }
       }
      }
     ],
+    "allocation": null,
+    "states": [],
     "notes": []
    },
    "local_disk": {
@@ -16446,7 +18322,3339 @@
     ]
    }
   },
-  "s3plain": {},
+  "s3plain": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "storage",
+      "op_kind": "active",
+      "outcome_class": "all",
+      "category": "active",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB*month",
+       "a": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "input",
+         "id": "data_bytes",
+         "dim": "GiB"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "const",
+        "value": 1,
+        "dim": "month"
+       }
+      }
+     },
+     {
+      "row_type": "storage",
+      "op_kind": "outdated",
+      "outcome_class": "all",
+      "category": "outdated",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB*month",
+       "a": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "mul",
+         "dim": "GiB",
+         "a": {
+          "kind": "div",
+          "dim": "GiB/s",
+          "a": {
+           "kind": "mul",
+           "dim": "GiB/day",
+           "a": {
+            "kind": "input",
+            "id": "ingest_rate",
+            "dim": "GiB/day"
+           },
+           "b": {
+            "kind": "sub",
+            "dim": "1",
+            "a": {
+             "kind": "input",
+             "id": "write_amplification_rule",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            }
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 86400,
+           "dim": "s/day"
+          },
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "input",
+          "id": "old_parts_lifetime",
+          "dim": "s"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "const",
+        "value": 1,
+        "dim": "month"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "parts_inserted_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "b": {
+          "kind": "input",
+          "id": "large_objects_per_part",
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "parts_inserted_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_meta_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_create_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "PutObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         },
+         "b": {
+          "kind": "coef",
+          "id": "plain_rename_requests",
+          "dim": "count"
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CreateMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "parts_inserted_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "large_objects_per_part",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "multipart_parts",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_part",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "parts_inserted_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "coef",
+         "id": "insert_tx_checks",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "parts_inserted_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_meta_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_dir_create_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "HeadObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "plain_objects_per_part",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "shape",
+          "dim": "enum:shape"
+         },
+         {
+          "kind": "input",
+          "id": "part_type",
+          "dim": "enum:part_type"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": "==",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        },
+        "else": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "acquire_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3plain",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "insert",
+           "dim": "enum:result_type"
+          },
+          {
+           "kind": "const",
+           "value": "receiver",
+           "dim": "enum:replication_role"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "merges": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "merge_results_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+           "op": "==",
+           "a": {
+            "kind": "input",
+            "id": "merge_results_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": 0,
+           "dim": "count"
+          },
+          "else": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "merge_result_part_type",
+             "dim": "enum:merge_result_part_type"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "input",
+          "id": "large_objects_per_merge_result",
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "merge_results_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_create_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          },
+          "b": {
+           "kind": "coef",
+           "id": "plain_rename_requests",
+           "dim": "count"
+          }
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "merge_removals_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ]
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_unlink_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "PutObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_meta_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             }
+            ]
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_dir_remove_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "PutObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CreateMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "merge_results_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "merge_results_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "large_objects_per_merge_result",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "multipart_parts",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "merge_results_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "count",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "merge_sources_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "merge_sources_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "count",
+         "cond": {
+          "op": "==",
+          "a": {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          "b": {
+           "kind": "const",
+           "value": "1",
+           "dim": "enum:cache_enabled"
+          }
+         },
+         "then": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "merge_gets_per_source_part_cached",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "else": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "merge_gets_per_source_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "merge_results_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_meta_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_dir_create_requests",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "HeadObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "merge_removals_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "input",
+             "id": "part_type",
+             "dim": "enum:part_type"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CopyObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "CopyObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_meta_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "CopyObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "merge_removals_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_unlink_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_meta_objects_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_remove_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [
+     {
+      "id": "not_supported",
+      "reason": "removing a part file larger than 32 MiB on s3plain copies it aside by multipart copy (tmp/src-26.8/src/IO/S3/copyS3File.cpp:673), which this report has not measured",
+      "cond": {
+       "kind": "branch",
+       "dim": "bool",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "large_objects_per_part",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "bool"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "bool"
+       }
+      }
+     }
+    ],
+    "notes": []
+   },
+   "mutations": {
+    "ledger_rows": [],
+    "allocation": null,
+    "notes": [],
+    "states": [
+     {
+      "id": "not_supported",
+      "cond": true,
+      "reason": "s3_plain_rewritable cannot perform mutations (ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is possible only with enable_block_number_column and enable_block_offset_column): a plain metadata storage reports no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805); checkMutationIsPossible refuses every mutation on such a disk (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240); a lightweight DELETE runs as ALTER UPDATE _row_exists, the same check (tmp/src-26.8/src/Interpreters/InterpreterDeleteQuery.cpp:200); that is the default lightweight_delete_mode (tmp/src-26.8/src/Core/Settings.cpp:5070); a lightweight UPDATE (patch parts) needs enable_block_number_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12630); and enable_block_offset_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12635); which is off by default (tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2013)"
+     }
+    ]
+   },
+   "deletes": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "expired_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "coef",
+           "id": "plain_empty_part_objects",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "expired_parts_per_month",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "replicas",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_meta_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_dir_create_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "PutObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           },
+           "b": {
+            "kind": "coef",
+            "id": "plain_rename_requests",
+            "dim": "count"
+           }
+          }
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "expired_parts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+             "kind": "lookup",
+             "dim": "count",
+             "table_id": "plain_objects_per_part",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              },
+              {
+               "kind": "input",
+               "id": "part_type",
+               "dim": "enum:part_type"
+              }
+             ]
+            },
+            "b": {
+             "kind": "coef",
+             "id": "plain_expired_part_extra_files",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_unlink_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "PutObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_meta_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             }
+            ]
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_dir_remove_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "PutObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "plain_empty_part_objects",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "expired_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_dir_create_requests",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "expired_parts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+             "kind": "lookup",
+             "dim": "count",
+             "table_id": "plain_objects_per_part",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              },
+              {
+               "kind": "input",
+               "id": "part_type",
+               "dim": "enum:part_type"
+              }
+             ]
+            },
+            "b": {
+             "kind": "coef",
+             "id": "plain_expired_part_extra_files",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_unlink_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "HeadObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_meta_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             }
+            ]
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_dir_remove_requests",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "HeadObject",
+              "dim": "enum:plain_op"
+             }
+            ]
+           }
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "plain_empty_part_objects",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "HeadObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CopyObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ]
+           },
+           "b": {
+            "kind": "coef",
+            "id": "plain_expired_part_extra_files",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "CopyObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "CopyObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "plain_empty_part_objects",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "CopyObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "CopyObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ]
+           },
+           "b": {
+            "kind": "coef",
+            "id": "plain_expired_part_extra_files",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "DeleteObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "DeleteObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "plain_empty_part_objects",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_unlink_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "DeleteObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_dir_remove_requests",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "DeleteObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [
+     {
+      "id": "not_supported",
+      "reason": "removing a part file larger than 32 MiB on s3plain copies it aside by multipart copy (tmp/src-26.8/src/IO/S3/copyS3File.cpp:673), which this report has not measured",
+      "cond": {
+       "kind": "branch",
+       "dim": "bool",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "large_objects_per_part",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "bool"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "bool"
+       }
+      }
+     }
+    ],
+    "notes": []
+   },
+   "reads": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": "==",
+         "a": {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         "b": {
+          "kind": "const",
+          "value": "1",
+          "dim": "enum:cache_enabled"
+         }
+        },
+        "then": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "select_part_reads_per_day",
+            "dim": "count/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 30.416666666666668,
+            "dim": "day"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "cache_miss_fraction",
+           "dim": "1"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "cached_miss_gets_per_part_read",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         }
+        },
+        "else": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "select_part_reads_per_day",
+            "dim": "count/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 30.416666666666668,
+            "dim": "day"
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "coef",
+            "id": "warm_gets_per_stream_read",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "read_streams_per_part",
+            "dim": "count"
+           }
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "parts_first_read_per_month",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "replicas",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "mul",
+             "dim": "1",
+             "a": {
+              "kind": "input",
+              "id": "restarts_per_month",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "input",
+              "id": "replicas",
+              "dim": "count"
+             }
+            },
+            "b": {
+             "kind": "input",
+             "id": "active_parts",
+             "dim": "count"
+            }
+           }
+          },
+          "b": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "coef",
+             "id": "stats_gets_per_column",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "lookup",
+             "dim": "count",
+             "table_id": "shape_columns",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              }
+             ]
+            }
+           },
+           "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "sub",
+             "dim": "count",
+             "a": {
+              "kind": "coef",
+              "id": "gets_per_stream_read",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "coef",
+              "id": "warm_gets_per_stream_read",
+              "dim": "count"
+             }
+            },
+            "b": {
+             "kind": "input",
+             "id": "read_streams_per_part",
+             "dim": "count"
+            }
+           }
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": "==",
+         "a": {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         "b": {
+          "kind": "const",
+          "value": "1",
+          "dim": "enum:cache_enabled"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        },
+        "else": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "statistics_refreshes_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "active_parts",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "stats_gets_per_column",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "shape_columns",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "recovery": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_startup_requests",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "fixed",
+           "dim": "enum:plain_startup_kind"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "per_dir",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "PutObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_startup_requests",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "fixed",
+           "dim": "enum:plain_startup_kind"
+          },
+          {
+           "kind": "const",
+           "value": "HeadObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "per_dir",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "HeadObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "restarts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "active_parts",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "outdated_parts",
+           "dim": "count"
+          }
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "startup_gets_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "input",
+           "id": "shape",
+           "dim": "enum:shape"
+          }
+         ]
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "fixed",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "GetObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "active_parts",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "outdated_parts",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "plain_meta_objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             }
+            ]
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_startup_requests",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "cache_enabled",
+             "dim": "enum:cache_enabled"
+            },
+            {
+             "kind": "const",
+             "value": "per_dir",
+             "dim": "enum:plain_startup_kind"
+            },
+            {
+             "kind": "const",
+             "value": "GetObject",
+             "dim": "enum:plain_op"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CopyObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_startup_requests",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "fixed",
+           "dim": "enum:plain_startup_kind"
+          },
+          {
+           "kind": "const",
+           "value": "CopyObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "per_dir",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "CopyObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_startup_requests",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "fixed",
+           "dim": "enum:plain_startup_kind"
+          },
+          {
+           "kind": "const",
+           "value": "DeleteObject",
+           "dim": "enum:plain_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "per_dir",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "DeleteObject",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "ListObjectsV2",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "plain_startup_requests",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "fixed",
+           "dim": "enum:plain_startup_kind"
+          },
+          {
+           "kind": "const",
+           "value": "ListObjectsV2",
+           "dim": "enum:plain_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_meta_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "plain_startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "per_dir",
+            "dim": "enum:plain_startup_kind"
+           },
+           {
+            "kind": "const",
+            "value": "ListObjectsV2",
+            "dim": "enum:plain_op"
+           }
+          ]
+         }
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "local_disk": {
+    "ledger_rows": [
+     {
+      "row_type": "block_capacity",
+      "op_kind": "capacity",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "replica",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "GiB",
+       "a": {
+        "kind": "div",
+        "dim": "GiB",
+        "on_zero": "unavailable",
+        "a": {
+         "kind": "mul",
+         "dim": "B",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "active_parts",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "plain_objects_per_part",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "shape",
+             "dim": "enum:shape"
+            },
+            {
+             "kind": "const",
+             "value": "wide",
+             "dim": "enum:part_type"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "coef",
+          "id": "plain_local_metadata_bytes_per_object",
+          "dim": "B"
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 1073741824,
+         "dim": "B/GiB"
+        }
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "GiB",
+        "cond": {
+         "op": "==",
+         "a": {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         "b": {
+          "kind": "const",
+          "value": "1",
+          "dim": "enum:cache_enabled"
+         }
+        },
+        "then": {
+         "kind": "input",
+         "id": "cache_size_gib",
+         "dim": "GiB"
+        },
+        "else": {
+         "kind": "const",
+         "value": 0,
+         "dim": "GiB"
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": [],
+    "excluded": [
+     {
+      "kind": "op",
+      "id": "PutObject",
+      "reason": "object writes are priced by the inserts and merges cells"
+     },
+     {
+      "kind": "op",
+      "id": "HeadObject",
+      "reason": "directory reads are priced by the inserts and merges cells"
+     }
+    ]
+   }
+  },
   "cas": {
    "inserts": {
     "ledger_rows": [
@@ -21363,15 +26571,411 @@
     "allocation": null,
     "states": [],
     "notes": []
+   },
+   "recovery": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "startup_requests_after_restart",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "cas",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "GetObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "startup_requests_after_restart",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "cas",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "PutObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "startup_requests_after_restart",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "cas",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "HeadObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "ListObjectsV2",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "startup_requests_after_restart",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "cas",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "ListObjectsV2",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "restarts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "startup_requests_after_restart",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "cas",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "DeleteObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "cas",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "cas",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
    }
   }
  },
  "states": {
   "ebs": [],
-  "s3": [
+  "s3": [],
+  "s3plain": [
    {
     "id": "not_supported",
-    "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
+    "reason": "removing a part file larger than 32 MiB on s3plain copies it aside by multipart copy (tmp/src-26.8/src/IO/S3/copyS3File.cpp:673), which this report has not measured",
     "cond": {
      "kind": "branch",
      "dim": "bool",
@@ -21379,7 +26983,7 @@
       "op": ">",
       "a": {
        "kind": "input",
-       "id": "missed_parts_per_restart",
+       "id": "large_objects_per_part",
        "dim": "count"
       },
       "b": {
@@ -21399,10 +27003,47 @@
       "dim": "bool"
      }
     },
-    "operation": "recovery"
+    "operation": "merges"
+   },
+   {
+    "id": "not_supported",
+    "cond": true,
+    "reason": "s3_plain_rewritable cannot perform mutations (ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is possible only with enable_block_number_column and enable_block_offset_column): a plain metadata storage reports no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805); checkMutationIsPossible refuses every mutation on such a disk (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240); a lightweight DELETE runs as ALTER UPDATE _row_exists, the same check (tmp/src-26.8/src/Interpreters/InterpreterDeleteQuery.cpp:200); that is the default lightweight_delete_mode (tmp/src-26.8/src/Core/Settings.cpp:5070); a lightweight UPDATE (patch parts) needs enable_block_number_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12630); and enable_block_offset_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12635); which is off by default (tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2013)",
+    "operation": "mutations"
+   },
+   {
+    "id": "not_supported",
+    "reason": "removing a part file larger than 32 MiB on s3plain copies it aside by multipart copy (tmp/src-26.8/src/IO/S3/copyS3File.cpp:673), which this report has not measured",
+    "cond": {
+     "kind": "branch",
+     "dim": "bool",
+     "cond": {
+      "op": ">",
+      "a": {
+       "kind": "input",
+       "id": "large_objects_per_part",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "const",
+       "value": 0,
+       "dim": "count"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "bool"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "bool"
+     }
+    },
+    "operation": "deletes"
    }
   ],
-  "s3plain": [],
   "cas": [
    {
     "id": "backlog_grows",
@@ -22669,6 +28310,8 @@
    "gc_round_requests": "2026-10-24-storage-cost-cas",
    "gets_per_stream_read": "2026-10-24-storage-cost-s3",
    "insert_tx_checks": "2026-10-24-storage-cost-s3",
+   "io_bytes_per_op": "2026-10-24-storage-cost-ebs",
+   "io_request_size_distribution": "2026-10-24-storage-cost-ebs",
    "local_exec_requests": "2026-10-24-storage-cost-replication",
    "merge_effective_fan_in": "2026-10-24-storage-cost-lifecycle",
    "merge_fan_in_distribution": "2026-10-24-storage-cost-lifecycle",
@@ -22684,6 +28327,17 @@
    "mutation_objects_written": "2026-10-24-storage-cost-s3",
    "object_size_distribution": "2026-10-24-storage-cost-s3",
    "objects_per_part": "2026-10-24-storage-cost-s3",
+   "plain_copy_on_hardlink": "2026-10-24-storage-cost-s3plain",
+   "plain_dir_create_requests": "2026-10-24-storage-cost-s3plain",
+   "plain_dir_remove_requests": "2026-10-24-storage-cost-s3plain",
+   "plain_empty_part_objects": "2026-10-24-storage-cost-s3plain",
+   "plain_expired_part_extra_files": "2026-10-24-storage-cost-s3plain",
+   "plain_local_metadata_bytes_per_object": "2026-10-24-storage-cost-s3plain",
+   "plain_meta_objects_per_part": "2026-10-24-storage-cost-s3plain",
+   "plain_objects_per_part": "2026-10-24-storage-cost-s3plain",
+   "plain_rename_requests": "2026-10-24-storage-cost-s3plain",
+   "plain_startup_requests": "2026-10-24-storage-cost-s3plain",
+   "plain_unlink_requests": "2026-10-24-storage-cost-s3plain",
    "reclaim_delay_periods": "2026-10-24-storage-cost-cas",
    "retry_outcome_mix": "2026-10-24-storage-cost-replication",
    "s3_max_single_part_upload_size": "2026-10-24-storage-cost-phase0",
@@ -22706,8 +28360,17 @@
    "cas/mutations": "2026-10-24-storage-cost-cas",
    "cas/probe_cas_expect": "2026-10-24-storage-cost-phase0",
    "cas/probe_cas_gc_cohort": "2026-10-24-storage-cost-phase0",
+   "cas/recovery": "2026-10-24-storage-cost-cas",
    "cas/storage": "2026-10-24-storage-cost-cas",
+   "ebs/deletes": "2026-10-24-storage-cost-ebs",
+   "ebs/inserts": "2026-10-24-storage-cost-ebs",
+   "ebs/local_disk": "2026-10-24-storage-cost-ebs",
+   "ebs/merges": "2026-10-24-storage-cost-ebs",
+   "ebs/mutations": "2026-10-24-storage-cost-ebs",
    "ebs/probe_local_volume": "2026-10-24-storage-cost-phase0",
+   "ebs/reads": "2026-10-24-storage-cost-ebs",
+   "ebs/recovery": "2026-10-24-storage-cost-ebs",
+   "ebs/storage": "2026-10-24-storage-cost-ebs",
    "s3/deletes": "2026-10-24-storage-cost-s3",
    "s3/inserts": "2026-10-24-storage-cost-s3",
    "s3/local_disk": "2026-10-24-storage-cost-s3",
@@ -22719,7 +28382,15 @@
    "s3/probe_s3_insert": "2026-10-24-storage-cost-phase0",
    "s3/reads": "2026-10-24-storage-cost-s3",
    "s3/recovery": "2026-10-24-storage-cost-s3",
-   "s3/storage": "2026-10-24-storage-cost-s3"
+   "s3/storage": "2026-10-24-storage-cost-s3",
+   "s3plain/deletes": "2026-10-24-storage-cost-s3plain",
+   "s3plain/inserts": "2026-10-24-storage-cost-s3plain",
+   "s3plain/local_disk": "2026-10-24-storage-cost-s3plain",
+   "s3plain/merges": "2026-10-24-storage-cost-s3plain",
+   "s3plain/mutations": "2026-10-24-storage-cost-s3plain",
+   "s3plain/reads": "2026-10-24-storage-cost-s3plain",
+   "s3plain/recovery": "2026-10-24-storage-cost-s3plain",
+   "s3plain/storage": "2026-10-24-storage-cost-s3plain"
   }
  }
 }
