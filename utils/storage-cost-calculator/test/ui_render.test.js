@@ -128,7 +128,7 @@ test('test_render_cannot_reproduce_shows_mismatch_and_no_numbers', () => {
   assert.equal(out.vm.page_state, 'cannot_reproduce');
   assert.match(parts.cards, /<h2>Cannot reproduce this link<\/h2>/);
   // Said once: one sentence with the versions, then each differing entry without repeating the artifact word.
-  assert.ok(parts.cards.includes(`<p class="reason">This link was built with billing 9.9.9-gone; this page has billing ${C.manifest.billing_version}.</p>`), parts.cards);
+  assert.ok(parts.cards.includes(`<p class="reason">This link was built with billing 9.9.9-gone; this page has billing ${C.manifest.billing_version}. The link was made with contract version ${C.manifest.contract_version}.</p>`), parts.cards);
   const items = [...parts.cards.matchAll(/<ul class="mismatches">(.*?)<\/ul>/gs)][0][1];
   assert.equal(items, `<li>billing: version 9.9.9-gone in the link, ${C.manifest.billing_version} here</li>`);
   // No number anywhere: only the mismatch list and its reason name versions; every other part is digit-free.
