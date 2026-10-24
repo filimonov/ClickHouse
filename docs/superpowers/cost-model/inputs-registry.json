@@ -8538,6 +8538,33 @@
       "status": "ok"
     },
     {
+      "id": "cas_table_cleanup_period_s",
+      "block": "cas",
+      "label": "Seconds between two cleanup-thread listings of one table: idle, max_cleanup_delay_period 300 s + U(0, 10 s); under load runs every cleanup_delay_period (30 s) but the listing waits merge_tree_clear_old_temporary_directories_interval_seconds (60 s)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 305,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cas_table_cleanup_period_s": [
+          60,
+          310
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "idle value from src/Storages/MergeTree/IMergeTreeCleanupThread.cpp:134-149, MergeTreeCleanupThread.cpp:43-47, MergeTreeData.cpp:4028, MergeTreeSettings.cpp:1682,1685; the 60 s floor under load is an assumption",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
       "id": "cas_tables",
       "block": "cas",
       "label": "Tables on the CAS disk with inserts",
