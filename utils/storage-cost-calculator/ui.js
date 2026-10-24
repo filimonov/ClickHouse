@@ -485,6 +485,10 @@
       reason = `This link was built with ${versions.map((m) => `${m.artifact} ${val(m.url_value)}`).join(', ')}; `
         + `this page has ${versions.map((m) => `${m.artifact} ${val(m.loaded_value)}`).join(', ')}.`;
     } else reason = 'This link was built with a different version of this page.';
+    // The contract version finds the page that made the link (git log on model-contract.json).
+    if (problem.kind === 'cannot_reproduce' && problem.url_contract_version && !versions.some((m) => m.artifact === 'contract')) {
+      reason += ` The link was made with contract version ${problem.url_contract_version}.`;
+    }
     return {
       page_state: 'cannot_reproduce', page_reason: reason, problems: missing.map(mismatchText), evidence_statement: contract.evidence_statement,
       manifest: contract.manifest, variants: {}, cheapest: null, deltas: {}, sweep: null,

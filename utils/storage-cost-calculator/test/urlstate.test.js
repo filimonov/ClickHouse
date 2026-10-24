@@ -181,3 +181,14 @@ test('test_hidden_inputs_only_from_the_preset', () => {
   o.overrides.merge_size_ratio = 256;
   assert.match(urlstate.decode(urlstate.encode(o), c).problem.reason, /overrides: merge_size_ratio is not a user input/);
 });
+
+test('test_cannot_reproduce_names_the_link_contract_version', () => {
+  const s = fullState();
+  s.manifest.code_files = Object.assign({}, s.manifest.code_files, { 'ui.js': 'other' });
+  const r = urlstate.decode(urlstate.encode(s), contract);
+  assert.equal(r.problem.kind, 'cannot_reproduce');
+  assert.equal(r.problem.url_contract_version, contract.manifest.contract_version);
+  const ui = require('../ui.js');
+  const res = ui.cannotReproduceResult(contract, r.problem);
+  assert.match(res.page_reason, new RegExp(`The link was made with contract version ${contract.manifest.contract_version}\\.$`));
+});

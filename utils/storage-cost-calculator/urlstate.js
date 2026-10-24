@@ -114,7 +114,10 @@
     if (!isObj(state)) return { state: null, problem: formatProblem('hash payload is not an object') };
     for (const k of STATE_KEYS) if (!(k in state) || !SHAPE[k](state[k])) return { state: null, problem: formatProblem(`hash payload: missing or ill-typed "${k}"`) };
     const missing = compareManifests(state.manifest, contract.manifest);
-    if (missing.length) return { state: null, problem: { kind: 'cannot_reproduce', missing } };
+    if (missing.length) {
+      const v = state.manifest.contract_version;
+      return { state: null, problem: { kind: 'cannot_reproduce', missing, url_contract_version: typeof v === 'string' ? v : null } };
+    }
     const bad = valueProblem(state, contract);
     if (bad) return { state: null, problem: formatProblem(`hash payload: ${bad}`) };
     return { state, problem: null };
