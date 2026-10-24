@@ -141,6 +141,9 @@ class Summarize(unittest.TestCase):
         self.assertEqual((lst['list_pages'], lst['list_keys']), (2, 5))
         self.assertEqual((out['r1']['DeleteObject']['delete_calls'], out['r1']['DeleteObject']['delete_keys']), (1, 1))
         self.assertEqual((out['r1']['DeleteObjects']['delete_calls'], out['r1']['DeleteObjects']['delete_keys']), (1, 2))
+        # No parsed response (dropped or failed upstream): the keys come from the request.
+        lost = ledger.summarize([att('DeleteObjects', None, up='unknown', delete_keys=['x', 'y', 'z'])])
+        self.assertEqual(lost['r1']['DeleteObjects']['delete_keys'], 3)
         rig = out['rig']['PutObject']
         self.assertEqual((rig['injected'], rig['upstream_unknown']), (1, 1))
 

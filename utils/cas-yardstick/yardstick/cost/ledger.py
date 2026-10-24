@@ -157,7 +157,8 @@ def summarize(attempts: list) -> dict:
             c['delete_keys'] += 1
         elif a['op'] == 'DeleteObjects':
             c['delete_calls'] += 1
-            c['delete_keys'] += len(body.get('delete_results') or [])
+            # A batch whose response was lost or refused still named its keys in the request.
+            c['delete_keys'] += len(batch_keys(a))
     return out
 
 
