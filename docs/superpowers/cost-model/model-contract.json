@@ -1,24 +1,24 @@
 {
  "schema": "contract/1",
- "version": "3f57c696fe5e5ff4",
+ "version": "7c028b5f9cf209cf",
  "manifest": {
-  "code_sha256": "57709ee82f52f63de0b252a86b90d3353a0693ea4abbfab80fd4d7402bdae652",
+  "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
    "billing.js": "190a45779f3bed307410d6ffc0998593bff5c193d3090cd54caf15757d4be0fc",
    "contract.js": "ab36253ad853095547580b9c4f0918b535630b1158d58a3822102295f39eff82",
    "model.js": "f97820f06af3384888e16a24dafcc9572344feaedd32694c723d672b4557b890",
    "pipeline.js": "52da0002054b53e87d10ba4772ca04ae1c2e3f7a616091182cd45ff0ed7e94d9",
-   "presets.js": "2b389a93cc7e34340c64e6c45dc19093472e79697cd748ab6bced2952df2c325",
+   "presets.js": "37506aaaa451f5e3e9722b5ff8536bb543afd1a5a7c39c0792667bcf53b7436f",
    "ui.js": "6ef4af7239c8cea574c3387de2c2e57a170b7c78e3923562fdfd9cc921e2987c",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "3f57c696fe5e5ff4",
+  "contract_version": "7c028b5f9cf209cf",
   "registry_version": "0.3.0",
-  "registry_sha256": "561520cca723e1bba16e08dff1c4e9bea0f098d7dd397913708e285dd54e5d95",
+  "registry_sha256": "14e50be05247594ede3691114c72b80f2e024de73057e04118ff84fb828b4559",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "96fffa60e6f0ee1cf9c71d820aa5751797fce6b3b0c8922ab76a190eb4fdc1ed",
+  "coverage_sha256": "918d64ffd61169458cc85029b3af5c2dc69c0f46601c6358cc37b1c16709d4fd",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -46,9 +46,9 @@
    {
     "report": "2026-10-24-storage-cost-s3",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
-    "rig_commit": "9658a83a36ebb814f88926692642bb7dd15a8fd9",
+    "rig_commit": "7f9ef7459c81007a04953676239d6e28fc71d7f3",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "raw_sha256sums": "9a9a2fb0e9067c5cbad534ab849fc94926202fb04d56d4742c1df78ed292390a"
+    "raw_sha256sums": "0fd19f6b7aabe455cc5e4a8f8d20088b79669a9d78b654495b74fc210e6d338b"
    },
    {
     "report": "2026-10-24-storage-cost-s3plain",
@@ -58,9 +58,9 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "f29f53aff7ffd6fd8afc58d664d95dafeaa5f1658d5c75c062a2cb22494d5173"
+  "breakeven_sha256": "f08625f204c6f82c710508af3878ed76047e40250de86c83e9a9f7af488a8ad6"
  },
- "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 9 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 36 coefficient(s): 27 measured, 9 pinned to source. 34 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -6589,1321 +6589,6 @@
    "status": "ok"
   },
   {
-   "id": "large_objects_per_part",
-   "block": "inserts",
-   "label": "Part files larger than the 32 MiB first upload buffer, per inserted part (each one multipart upload)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT avg(c) FROM (SELECT name, countIf(column_data_compressed_bytes > 33554432) AS c FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' GROUP BY name)",
-    "mapping": {
-     "large_objects_per_part": "avg(c); a Compact part has one data file (data.bin)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "mutations_per_month",
-   "block": "mutations_deletes",
-   "label": "ALTER UPDATE/DELETE and lightweight DELETE statements per month",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() * 730 / 24 / 7 FROM system.mutations WHERE database = '<db>' AND table = '<table>' AND create_time >= now() - INTERVAL 7 DAY",
-    "mapping": {
-     "mutations_per_month": "count() over 7 days, scaled to a 730-hour month"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "mutated_parts_per_month",
-   "block": "mutations_deletes",
-   "label": "Parts rewritten by mutations per month",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart'",
-    "mapping": {
-     "mutated_parts_per_month": "MutatePart rows over 7 days, scaled to a month"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "mutation_kind",
-   "block": "mutations_deletes",
-   "label": "Kind of the mutations",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "update_column",
-    "delete",
-    "lightweight_delete"
-   ],
-   "table": null,
-   "default": "update_column",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT command FROM system.mutations WHERE database = '<db>' AND table = '<table>' ORDER BY create_time DESC LIMIT 20",
-    "mapping": {
-     "mutation_kind": "UPDATE of one column: update_column; DELETE WHERE: delete; DELETE FROM: lightweight_delete"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "select_part_reads_per_day",
-   "block": "reads_cache",
-   "label": "Parts read by SELECT queries per day (sum of SelectedParts)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count/day",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND has(tables, '<db>.<table>') AND event_date = yesterday()",
-    "mapping": {
-     "select_part_reads_per_day": "sum of SelectedParts over a day"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "read_streams_per_part",
-   "block": "reads_cache",
-   "label": "Column streams a query reads per part (a Nullable column is 2, length(arr) is 1)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 3,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT column, substreams FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' LIMIT 1 BY column",
-    "mapping": {
-     "read_streams_per_part": "the substreams of the columns a query reads (length(arr) reads only arr.size0)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "cache_miss_fraction",
-   "block": "reads_cache",
-   "label": "Share of part reads the filesystem cache misses (1: every read is cold)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 1,
-   "rule": null,
-   "coef": null,
-   "validity": {
-    "cache_miss_fraction": [
-     0,
-     1
-    ]
-   },
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / (sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) + sum(ProfileEvents['CachedReadBufferReadFromCacheBytes'])) FROM system.query_log WHERE type = 'QueryFinish' AND event_date = yesterday()",
-    "mapping": {
-     "cache_miss_fraction": "bytes read from S3 through the cache / all bytes the cache served"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "cache_size_gib",
-   "block": "local_disk",
-   "label": "Filesystem cache size of each replica",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "GiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT cache_name, max_size FROM system.filesystem_cache_settings",
-    "mapping": {
-     "cache_size_gib": "max_size in GiB"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "restarts_per_month",
-   "block": "topology_recovery",
-   "label": "Server restarts per replica per month (intact state)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.text_log WHERE event_date >= today() - 30 AND message LIKE 'Starting ClickHouse%'",
-    "mapping": {
-     "restarts_per_month": "server starts over 30 days"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "missed_parts_per_restart",
-   "block": "topology_recovery",
-   "label": "Parts a restarted replica fetches to catch up",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'DownloadPart'",
-    "mapping": {
-     "missed_parts_per_restart": "DownloadPart rows after a restart"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "variant_id",
-   "block": "topology_recovery",
-   "label": "Model variant a per-variant coefficient table is indexed by",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "ebs",
-    "s3",
-    "s3plain",
-    "cas"
-   ],
-   "table": null,
-   "default": "s3",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "startup_op",
-   "block": "topology_recovery",
-   "label": "S3 operation of a startup request row",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "PutObject",
-    "GetObject",
-    "DeleteObject"
-   ],
-   "table": null,
-   "default": "GetObject",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/IDisk.cpp:254",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "object_size_bucket",
-   "block": "inserts",
-   "label": "Object size bucket: small files, up to 1 MiB, up to the 32 MiB first upload buffer, beyond",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "le_4KiB",
-    "4KiB_1MiB",
-    "1MiB_32MiB",
-    "gt_32MiB"
-   ],
-   "table": null,
-   "default": "le_4KiB",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:188",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "parts_inserted_per_month",
-   "block": "inserts",
-   "label": "Parts inserted per month: insert_rate x 2 628 000 s x parts_per_insert",
-   "kind": "derivation",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": {
-    "kind": "mul",
-    "dim": "count",
-    "a": {
-     "kind": "mul",
-     "dim": "1",
-     "a": {
-      "kind": "input",
-      "id": "insert_rate",
-      "dim": "1/s"
-     },
-     "b": {
-      "kind": "const",
-      "value": 2628000,
-      "dim": "s"
-     }
-    },
-    "b": {
-     "kind": "input",
-     "id": "parts_per_insert",
-     "dim": "1"
-    }
-   },
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "merge_results_per_month",
-   "block": "merges",
-   "label": "Merge results per month: parts_inserted_per_month x (1 - 1 / merge_size_ratio) / (merge_effective_fan_in - 1)",
-   "kind": "derivation",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": {
-    "kind": "div",
-    "dim": "count",
-    "a": {
-     "kind": "mul",
-     "dim": "count",
-     "a": {
-      "kind": "input",
-      "id": "parts_inserted_per_month",
-      "dim": "count"
-     },
-     "b": {
-      "kind": "sub",
-      "dim": "1",
-      "a": {
-       "kind": "const",
-       "value": 1,
-       "dim": "1"
-      },
-      "b": {
-       "kind": "div",
-       "dim": "1",
-       "a": {
-        "kind": "const",
-        "value": 1,
-        "dim": "1"
-       },
-       "b": {
-        "kind": "input",
-        "id": "merge_size_ratio",
-        "dim": "1"
-       },
-       "on_zero": "unavailable"
-      }
-     }
-    },
-    "b": {
-     "kind": "sub",
-     "dim": "1",
-     "a": {
-      "kind": "coef",
-      "id": "merge_effective_fan_in",
-      "dim": "1"
-     },
-     "b": {
-      "kind": "const",
-      "value": 1,
-      "dim": "1"
-     }
-    },
-    "on_zero": "unavailable"
-   },
-   "coef": null,
-   "validity": {
-    "merge_size_ratio": [
-     18.21,
-     472.95
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
-    "mapping": {
-     "merge_results_per_month": "MergeParts rows per month"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "merge_sources_per_month",
-   "block": "merges",
-   "label": "Merge source parts per month: merge_results_per_month x merge_effective_fan_in",
-   "kind": "derivation",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": {
-    "kind": "mul",
-    "dim": "count",
-    "a": {
-     "kind": "input",
-     "id": "merge_results_per_month",
-     "dim": "count"
-    },
-    "b": {
-     "kind": "coef",
-     "id": "merge_effective_fan_in",
-     "dim": "1"
-    }
-   },
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(length(merged_from)) * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
-    "mapping": {
-     "merge_sources_per_month": "merged_from entries per month"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "expired_parts_per_month",
-   "block": "mutations_deletes",
-   "label": "Parts leaving retention per month at their final size: parts_inserted_per_month / merge_size_ratio",
-   "kind": "derivation",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": {
-    "kind": "div",
-    "dim": "count",
-    "a": {
-     "kind": "input",
-     "id": "parts_inserted_per_month",
-     "dim": "count"
-    },
-    "b": {
-     "kind": "input",
-     "id": "merge_size_ratio",
-     "dim": "1"
-    },
-    "on_zero": "unavailable"
-   },
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'RemovePart'",
-    "mapping": {
-     "expired_parts_per_month": "RemovePart rows of expired data per month"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "active_parts",
-   "block": "topology_recovery",
-   "label": "Active parts per replica: data_bytes x insert_rate x 86 400 s/day x parts_per_insert / (ingest_rate x merge_size_ratio)",
-   "kind": "derivation",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": {
-    "kind": "div",
-    "dim": "count",
-    "a": {
-     "kind": "mul",
-     "dim": "GiB/day",
-     "a": {
-      "kind": "mul",
-      "dim": "GiB/day",
-      "a": {
-       "kind": "mul",
-       "dim": "GiB/s",
-       "a": {
-        "kind": "input",
-        "id": "data_bytes",
-        "dim": "GiB"
-       },
-       "b": {
-        "kind": "input",
-        "id": "insert_rate",
-        "dim": "1/s"
-       }
-      },
-      "b": {
-       "kind": "const",
-       "value": 86400,
-       "dim": "s/day"
-      }
-     },
-     "b": {
-      "kind": "input",
-      "id": "parts_per_insert",
-      "dim": "1"
-     }
-    },
-    "b": {
-     "kind": "mul",
-     "dim": "GiB/day",
-     "a": {
-      "kind": "input",
-      "id": "ingest_rate",
-      "dim": "GiB/day"
-     },
-     "b": {
-      "kind": "input",
-      "id": "merge_size_ratio",
-      "dim": "1"
-     }
-    },
-    "on_zero": "unavailable"
-   },
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
-    "mapping": {
-     "active_parts": "count() of active parts"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "objects_per_part",
-   "block": "schema",
-   "label": "S3 objects per part: one per part file (9 metadata files, data files per column stream, skp_idx.packed, projection parts)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "objects_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT part_type, avg(c) FROM (SELECT part_type, name, length(arrayFilter(x -> 1, files)) AS c FROM (SELECT p.part_type, p.name, groupArray(r.local_path) AS files FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name)) GROUP BY part_type",
-    "mapping": {
-     "objects_per_part": "avg objects per active part by part_type"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "object_size_distribution",
-   "block": "schema",
-   "label": "Fraction of a part's objects per size bucket",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape",
-     "part_type",
-     "object_size_bucket"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "object_size_distribution",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT multiIf(size <= 4096, 'le_4KiB', size <= 1048576, '4KiB_1MiB', size <= 33554432, '1MiB_32MiB', 'gt_32MiB') AS bucket, count() / sum(count()) OVER () FROM system.remote_data_paths WHERE disk_name = '<disk>' GROUP BY bucket",
-    "mapping": {
-     "object_size_distribution": "fraction per bucket"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "insert_tx_checks",
-   "block": "inserts",
-   "label": "Requests an insert transaction sends per part besides its object writes",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "insert_tx_checks",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['S3HeadObject']) / sum(ProfileEvents['InsertedRows'] > 0) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND event_date = yesterday()",
-    "mapping": {
-     "insert_tx_checks": "HEAD requests per insert (0 expected)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "bytes_per_get",
-   "block": "reads_cache",
-   "label": "Bytes per GetObject of a cold read (statistics reads and column ranges together)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "B",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape"
-    ],
-    "dim": "B"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "bytes_per_get",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['ReadBufferFromS3Bytes']) / sum(ProfileEvents['S3GetObject']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
-    "mapping": {
-     "bytes_per_get": "ReadBufferFromS3Bytes / S3GetObject"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "stats_gets_per_column",
-   "block": "reads_cache",
-   "label": "GetObject per column per part read: statistics.packed is read once per column statistics file",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "stats_gets_per_column",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
-    "mapping": {
-     "stats_gets_per_column": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "gets_per_stream_read",
-   "block": "reads_cache",
-   "label": "GetObject per stream read per part: the .bin range and its marks file",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "gets_per_stream_read",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
-    "mapping": {
-     "gets_per_stream_read": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "shape_columns",
-   "block": "schema",
-   "label": "Columns of a table shape (the statistics files a part read loads)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "shape_columns",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/Statistics/Statistics.cpp:933",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.columns WHERE database = '<db>' AND table = '<table>'",
-    "mapping": {
-     "shape_columns": "count()"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "cached_miss_gets_per_part_read",
-   "block": "reads_cache",
-   "label": "GetObject per part read that misses the filesystem cache (segments)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "cached_miss_gets_per_part_read",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
-    "mapping": {
-     "cached_miss_gets_per_part_read": "with cold caches"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "cached_miss_bytes_per_part_read",
-   "block": "reads_cache",
-   "label": "Bytes downloaded per part read that misses the filesystem cache",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "B",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape"
-    ],
-    "dim": "B"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "cached_miss_bytes_per_part_read",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
-    "mapping": {
-     "cached_miss_bytes_per_part_read": "bytes from source per part read"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "cache_fill_io_per_byte",
-   "block": "local_disk",
-   "label": "Cache-volume bytes allocated per byte the cache downloads",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "cache_fill_io_per_byte",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['CachedReadBufferCacheWriteBytes']) / sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) FROM system.query_log WHERE event_date = yesterday()",
-    "mapping": {
-     "cache_fill_io_per_byte": "cache write bytes / bytes read from source"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "metadata_bytes_per_object",
-   "block": "local_disk",
-   "label": "Local metadata bytes allocated per S3 object (one small file each)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "metadata_bytes_per_object",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
-    "mapping": {
-     "metadata_bytes_per_object": "du -s --block-size=1 of the disk metadata path / objects listed by system.remote_data_paths"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "metadata_iops_per_object_write",
-   "block": "local_disk",
-   "label": "Local write calls per object written (the part's metadata files)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "req",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "metadata_iops_per_object_write",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT value FROM system.events WHERE event IN ('S3PutObject', 'WriteBufferFromFileDescriptorWrite')",
-    "mapping": {
-     "metadata_iops_per_object_write": "local write calls per S3 object write, over the same interval"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "metadata_iops_per_part_write",
-   "block": "local_disk",
-   "label": "Local write calls per part written besides its objects",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "req",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "metadata_iops_per_part_write",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
-    "mapping": {
-     "metadata_iops_per_part_write": "local write calls per new part besides the per-object ones"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "startup_gets_per_part",
-   "block": "topology_recovery",
-   "label": "GetObject per active part when a server loads its tables",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "cache_enabled",
-     "shape"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "startup_gets_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT value FROM system.events WHERE event = 'S3GetObject'",
-    "mapping": {
-     "startup_gets_per_part": "S3GetObject after a restart / active parts"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "startup_requests",
-   "block": "topology_recovery",
-   "label": "Requests a server start sends besides part loading (disk access checks, table files)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "cache_enabled",
-     "startup_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "startup_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3GetObject', 'S3DeleteObjects')",
-    "mapping": {
-     "startup_requests": "right after a start, minus the part loads"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "merge_gets_per_source_part",
-   "block": "merges",
-   "label": "GetObject per merged source part without the cache: Compact columns + 3, Wide 2 x columns + 1",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "merge_gets_per_source_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
-    "mapping": {
-     "merge_gets_per_source_part": "GETs per merged source part"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "merge_gets_per_source_part_cached",
-   "block": "merges",
-   "label": "GetObject per merged source part through the filesystem cache",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "merge_gets_per_source_part_cached",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
-    "mapping": {
-     "merge_gets_per_source_part_cached": "GETs per merged source part with the cache"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "delete_calls_per_removed_part",
-   "block": "mutations_deletes",
-   "label": "DeleteObjects calls per removed part (one batch of up to 1000 keys)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "delete_calls_per_removed_part",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:609",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT value FROM system.events WHERE event = 'S3DeleteObjects'",
-    "mapping": {
-     "delete_calls_per_removed_part": "per RemovePart row"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "empty_part_objects",
-   "block": "mutations_deletes",
-   "label": "Objects of the empty part that covers a dropped or expired part",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "empty_part_objects",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2742",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "mutation_entry_objects",
-   "block": "mutations_deletes",
-   "label": "Objects written per mutation statement besides parts (mutation_<n>.txt)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "mutation_entry_objects",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMutationEntry.cpp:73",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "mutation_objects_written",
-   "block": "mutations_deletes",
-   "label": "Objects written per mutated part (narrow shape): Compact rewrites all, Wide the changed streams and 7 metadata files",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "mutation_kind",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "mutation_objects_written",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:908",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "mutation_gets_per_part",
-   "block": "mutations_deletes",
-   "label": "GetObject per mutated part (narrow shape)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "cache_enabled",
-     "mutation_kind",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "mutation_gets_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "catchup_requests_per_missed_part",
-   "block": "topology_recovery",
-   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "variant_id"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "catchup_requests_per_missed_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-    "version": "0.3.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
    "id": "cas_key_families",
    "block": "cas",
    "label": "CAS key families: blob, blob_meta, manifest, ref_stream, ref_ckpt, ns_files, ref_catalog (foreground state); lease, gc_hb, gc, pool_meta, roots (maintenance only)",
@@ -9363,6 +8048,1744 @@
    },
    "hint": null,
    "status": "ok"
+  },
+  {
+   "id": "large_objects_per_part",
+   "block": "inserts",
+   "label": "Part files larger than the 32 MiB first upload buffer, per inserted part (each one multipart upload)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(c) FROM (SELECT name, countIf(column_data_compressed_bytes > 33554432) AS c FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' GROUP BY name)",
+    "mapping": {
+     "large_objects_per_part": "avg(c); a Compact part has one data file (data.bin)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutations_per_month",
+   "block": "mutations_deletes",
+   "label": "ALTER UPDATE/DELETE and lightweight DELETE statements per month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.mutations WHERE database = '<db>' AND table = '<table>' AND create_time >= now() - INTERVAL 7 DAY",
+    "mapping": {
+     "mutations_per_month": "count() over 7 days, scaled to a 730-hour month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutated_compact_parts_per_month",
+   "block": "mutations_deletes",
+   "label": "Compact parts rewritten by mutations per month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart' AND part_type = 'Compact'",
+    "mapping": {
+     "mutated_compact_parts_per_month": "MutatePart rows of Compact parts over 7 days, scaled to a month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutated_wide_parts_per_month",
+   "block": "mutations_deletes",
+   "label": "Wide parts rewritten by mutations per month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart' AND part_type = 'Wide'",
+    "mapping": {
+     "mutated_wide_parts_per_month": "MutatePart rows of Wide parts over 7 days, scaled to a month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutation_kind",
+   "block": "mutations_deletes",
+   "label": "Kind of the mutations",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "update_column",
+    "delete",
+    "lightweight_delete"
+   ],
+   "table": null,
+   "default": "update_column",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT command FROM system.mutations WHERE database = '<db>' AND table = '<table>' ORDER BY create_time DESC LIMIT 20",
+    "mapping": {
+     "mutation_kind": "UPDATE of one column: update_column; DELETE WHERE: delete; DELETE FROM: lightweight_delete"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "select_part_reads_per_day",
+   "block": "reads_cache",
+   "label": "Parts read by SELECT queries per day (sum of SelectedParts)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count/day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND has(tables, '<db>.<table>') AND event_date = yesterday()",
+    "mapping": {
+     "select_part_reads_per_day": "sum of SelectedParts over a day"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "read_streams_per_part",
+   "block": "reads_cache",
+   "label": "Column streams a query reads per part (a Nullable column is 2, length(arr) is 1)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT column, substreams FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' LIMIT 1 BY column",
+    "mapping": {
+     "read_streams_per_part": "the substreams of the columns a query reads (length(arr) reads only arr.size0)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "cache_miss_fraction",
+   "block": "reads_cache",
+   "label": "Share of read bytes the filesystem cache downloads from S3 (1: every read is cold); cache misses are segment downloads, so their requests scale with the missed bytes",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "validity": {
+    "cache_miss_fraction": [
+     0,
+     1
+    ]
+   },
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / (sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) + sum(ProfileEvents['CachedReadBufferReadFromCacheBytes'])) FROM system.query_log WHERE type = 'QueryFinish' AND event_date = yesterday()",
+    "mapping": {
+     "cache_miss_fraction": "bytes the cache read from S3 / all bytes it served"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "cache_size_gib",
+   "block": "local_disk",
+   "label": "Filesystem cache size of each replica",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT cache_name, max_size FROM system.filesystem_cache_settings",
+    "mapping": {
+     "cache_size_gib": "max_size in GiB"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "restarts_per_month",
+   "block": "topology_recovery",
+   "label": "Server restarts per replica per month (intact state)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.text_log WHERE event_date >= today() - 30 AND message LIKE 'Starting ClickHouse%'",
+    "mapping": {
+     "restarts_per_month": "server starts over 30 days"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "missed_parts_per_restart",
+   "block": "topology_recovery",
+   "label": "Parts a restarted replica fetches to catch up",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'DownloadPart'",
+    "mapping": {
+     "missed_parts_per_restart": "DownloadPart rows after a restart"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "variant_id",
+   "block": "topology_recovery",
+   "label": "Model variant a per-variant coefficient table is indexed by",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "ebs",
+    "s3",
+    "s3plain",
+    "cas"
+   ],
+   "table": null,
+   "default": "s3",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "startup_op",
+   "block": "topology_recovery",
+   "label": "S3 operation of a startup request row",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "PutObject",
+    "GetObject",
+    "DeleteObject"
+   ],
+   "table": null,
+   "default": "GetObject",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/IDisk.cpp:254",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "object_size_bucket",
+   "block": "inserts",
+   "label": "Object size bucket: small files, up to 1 MiB, up to the 32 MiB first upload buffer, beyond",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "le_4KiB",
+    "4KiB_1MiB",
+    "1MiB_32MiB",
+    "gt_32MiB"
+   ],
+   "table": null,
+   "default": "le_4KiB",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:188",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "large_objects_per_merge_result",
+   "block": "merges",
+   "label": "Files of a merge result larger than the 32 MiB first upload buffer (each one multipart upload)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(c) FROM (SELECT name, countIf(column_data_compressed_bytes > 33554432) AS c FROM system.parts_columns WHERE active AND level > 0 AND database = '<db>' AND table = '<table>' GROUP BY name)",
+    "mapping": {
+     "large_objects_per_merge_result": "avg(c) over merged parts"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "large_objects_per_mutated_part",
+   "block": "mutations_deletes",
+   "label": "Files a mutation writes per Wide part larger than the 32 MiB first upload buffer",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(c) FROM (SELECT name, countIf(column_data_compressed_bytes > 33554432) AS c FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' AND part_type = 'Wide' GROUP BY name)",
+    "mapping": {
+     "large_objects_per_mutated_part": "avg(c) of the rewritten columns"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "retained_mutation_entries",
+   "block": "mutations_deletes",
+   "label": "mutation_<n>.txt files a plain MergeTree keeps (at most finished_mutations_to_keep plus unfinished ones)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.mutations WHERE database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "retained_mutation_entries": "count()"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "finished_mutations_to_keep",
+   "block": "mutations_deletes",
+   "label": "Finished mutation entries a table keeps",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 100,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1769",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT value FROM system.merge_tree_settings WHERE name = 'finished_mutations_to_keep'",
+    "mapping": {
+     "finished_mutations_to_keep": "value"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "refresh_statistics_interval",
+   "block": "reads_cache",
+   "label": "Seconds between statistics refreshes of a table",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "s",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 300,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2362",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT value FROM system.merge_tree_settings WHERE name = 'refresh_statistics_interval'",
+    "mapping": {
+     "refresh_statistics_interval": "value"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "expiry_operations_per_month",
+   "block": "mutations_deletes",
+   "label": "TTL expiry merges and DROP PARTITION statements per month (each writes one empty covering part)",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "input",
+    "id": "expired_parts_per_month",
+    "dim": "count"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts' AND merge_reason = 'TTLDeleteMerge'",
+    "mapping": {
+     "expiry_operations_per_month": "TTL delete merges per month (plus DROP PARTITION statements); the default assumes one expired part per operation"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutation_entries_removed_per_month",
+   "block": "mutations_deletes",
+   "label": "mutation_<n>.txt objects removed per month: once finished_mutations_to_keep are kept, one per new mutation",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "input",
+    "id": "mutations_per_month",
+    "dim": "count"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2394",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.mutations WHERE database = '<db>' AND table = '<table>' AND create_time >= now() - INTERVAL 7 DAY",
+    "mapping": {
+     "mutation_entries_removed_per_month": "mutations created per month; equal to removals once system.mutations holds finished_mutations_to_keep finished entries"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "parts_first_read_per_month",
+   "block": "reads_cache",
+   "label": "Parts read for the first time per month: every new part (insert or merge result) once",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "add",
+    "dim": "count",
+    "a": {
+     "kind": "input",
+     "id": "parts_inserted_per_month",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "input",
+     "id": "merge_results_per_month",
+     "dim": "count"
+    }
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts')",
+    "mapping": {
+     "parts_first_read_per_month": "new and merged parts per month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "statistics_refreshes_per_month",
+   "block": "reads_cache",
+   "label": "Statistics refreshes per table per month that reload every active part: one per refresh_statistics_interval while parts change",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "count",
+    "a": {
+     "kind": "const",
+     "value": 2628000,
+     "dim": "s"
+    },
+    "b": {
+     "kind": "input",
+     "id": "refresh_statistics_interval",
+     "dim": "s"
+    },
+    "on_zero": "unavailable"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:3425",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT 2628000 / toUInt64(value) FROM system.merge_tree_settings WHERE name = 'refresh_statistics_interval'",
+    "mapping": {
+     "statistics_refreshes_per_month": "refreshes per month at the server setting, while the active part set changes within each interval"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "outdated_parts",
+   "block": "topology_recovery",
+   "label": "Outdated parts a replica holds: merge removals per second x old_parts_lifetime",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "count",
+    "a": {
+     "kind": "div",
+     "dim": "1/s",
+     "a": {
+      "kind": "input",
+      "id": "merge_removals_per_month",
+      "dim": "count"
+     },
+     "b": {
+      "kind": "const",
+      "value": 2628000,
+      "dim": "s"
+     },
+     "on_zero": "unavailable"
+    },
+    "b": {
+     "kind": "input",
+     "id": "old_parts_lifetime",
+     "dim": "s"
+    }
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.parts WHERE NOT active AND database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "outdated_parts": "count()"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "parts_inserted_per_month",
+   "block": "inserts",
+   "label": "Parts inserted per month: insert_rate x 2 628 000 s x parts_per_insert",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "count",
+    "a": {
+     "kind": "mul",
+     "dim": "1",
+     "a": {
+      "kind": "input",
+      "id": "insert_rate",
+      "dim": "1/s"
+     },
+     "b": {
+      "kind": "const",
+      "value": 2628000,
+      "dim": "s"
+     }
+    },
+    "b": {
+     "kind": "input",
+     "id": "parts_per_insert",
+     "dim": "1"
+    }
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "merge_results_per_month",
+   "block": "merges",
+   "label": "Merge results per month: parts_inserted_per_month x (1 - 1 / merge_size_ratio) / (merge_effective_fan_in - 1)",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "count",
+    "a": {
+     "kind": "mul",
+     "dim": "count",
+     "a": {
+      "kind": "input",
+      "id": "parts_inserted_per_month",
+      "dim": "count"
+     },
+     "b": {
+      "kind": "sub",
+      "dim": "1",
+      "a": {
+       "kind": "const",
+       "value": 1,
+       "dim": "1"
+      },
+      "b": {
+       "kind": "div",
+       "dim": "1",
+       "a": {
+        "kind": "const",
+        "value": 1,
+        "dim": "1"
+       },
+       "b": {
+        "kind": "input",
+        "id": "merge_size_ratio",
+        "dim": "1"
+       },
+       "on_zero": "unavailable"
+      }
+     }
+    },
+    "b": {
+     "kind": "sub",
+     "dim": "1",
+     "a": {
+      "kind": "coef",
+      "id": "merge_effective_fan_in",
+      "dim": "1"
+     },
+     "b": {
+      "kind": "const",
+      "value": 1,
+      "dim": "1"
+     }
+    },
+    "on_zero": "unavailable"
+   },
+   "coef": null,
+   "validity": {
+    "merge_size_ratio": [
+     18.21,
+     472.95
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+    "mapping": {
+     "merge_results_per_month": "MergeParts rows per month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "merge_sources_per_month",
+   "block": "merges",
+   "label": "Merge source parts per month: merge_results_per_month x merge_effective_fan_in",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "count",
+    "a": {
+     "kind": "input",
+     "id": "merge_results_per_month",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "coef",
+     "id": "merge_effective_fan_in",
+     "dim": "1"
+    }
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(length(merged_from)) * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+    "mapping": {
+     "merge_sources_per_month": "merged_from entries per month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "merge_removals_per_month",
+   "block": "merges",
+   "label": "Merged-away parts removed per month (old_parts_lifetime after their merge): merge_sources_per_month in steady state",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "input",
+    "id": "merge_sources_per_month",
+    "dim": "count"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'RemovePart'",
+    "mapping": {
+     "merge_removals_per_month": "RemovePart rows per month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "expired_parts_per_month",
+   "block": "mutations_deletes",
+   "label": "Parts leaving retention per month at their final size: parts_inserted_per_month / merge_size_ratio",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "count",
+    "a": {
+     "kind": "input",
+     "id": "parts_inserted_per_month",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "input",
+     "id": "merge_size_ratio",
+     "dim": "1"
+    },
+    "on_zero": "unavailable"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 7 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'RemovePart'",
+    "mapping": {
+     "expired_parts_per_month": "RemovePart rows of expired data per month"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "active_parts",
+   "block": "topology_recovery",
+   "label": "Active parts per replica: data_bytes x insert_rate x 86 400 s/day x parts_per_insert / (ingest_rate x merge_size_ratio)",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "count",
+    "a": {
+     "kind": "mul",
+     "dim": "GiB/day",
+     "a": {
+      "kind": "mul",
+      "dim": "GiB/day",
+      "a": {
+       "kind": "mul",
+       "dim": "GiB/s",
+       "a": {
+        "kind": "input",
+        "id": "data_bytes",
+        "dim": "GiB"
+       },
+       "b": {
+        "kind": "input",
+        "id": "insert_rate",
+        "dim": "1/s"
+       }
+      },
+      "b": {
+       "kind": "const",
+       "value": 86400,
+       "dim": "s/day"
+      }
+     },
+     "b": {
+      "kind": "input",
+      "id": "parts_per_insert",
+      "dim": "1"
+     }
+    },
+    "b": {
+     "kind": "mul",
+     "dim": "GiB/day",
+     "a": {
+      "kind": "input",
+      "id": "ingest_rate",
+      "dim": "GiB/day"
+     },
+     "b": {
+      "kind": "input",
+      "id": "merge_size_ratio",
+      "dim": "1"
+     }
+    },
+    "on_zero": "unavailable"
+   },
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "active_parts": "count() of active parts"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "objects_per_part",
+   "block": "schema",
+   "label": "S3 objects per part: one per part file (9 metadata files, data files per column stream, skp_idx.packed, projection parts)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "objects_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT part_type, avg(c) FROM (SELECT part_type, name, length(arrayFilter(x -> 1, files)) AS c FROM (SELECT p.part_type, p.name, groupArray(r.local_path) AS files FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name)) GROUP BY part_type",
+    "mapping": {
+     "objects_per_part": "avg objects per active part by part_type"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "object_size_distribution",
+   "block": "schema",
+   "label": "Fraction of a part's objects per size bucket",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type",
+     "object_size_bucket"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "object_size_distribution",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT multiIf(size <= 4096, 'le_4KiB', size <= 1048576, '4KiB_1MiB', size <= 33554432, '1MiB_32MiB', 'gt_32MiB') AS bucket, count() / sum(count()) OVER () FROM system.remote_data_paths WHERE disk_name = '<disk>' GROUP BY bucket",
+    "mapping": {
+     "object_size_distribution": "fraction per bucket"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "insert_tx_checks",
+   "block": "inserts",
+   "label": "Requests an insert transaction sends per part besides its object writes",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "insert_tx_checks",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['S3HeadObject']) / sum(ProfileEvents['InsertedRows'] > 0) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND event_date = yesterday()",
+    "mapping": {
+     "insert_tx_checks": "HEAD requests per insert (0 expected)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "bytes_per_get",
+   "block": "reads_cache",
+   "label": "Bytes per GetObject of a cold read (statistics reads and column ranges together)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "B"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "bytes_per_get",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['ReadBufferFromS3Bytes']) / sum(ProfileEvents['S3GetObject']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+    "mapping": {
+     "bytes_per_get": "ReadBufferFromS3Bytes / S3GetObject"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "stats_gets_per_column",
+   "block": "reads_cache",
+   "label": "GetObject per column per part read: statistics.packed is read once per column statistics file",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "stats_gets_per_column",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
+    "mapping": {
+     "stats_gets_per_column": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "warm_gets_per_stream_read",
+   "block": "reads_cache",
+   "label": "GetObject per stream of a part read whose marks and statistics estimates are cached: the .bin range",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "warm_gets_per_stream_read",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a repeated query>'",
+    "mapping": {
+     "warm_gets_per_stream_read": "S3GetObject = SelectedParts x streams read"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "gets_per_stream_read",
+   "block": "reads_cache",
+   "label": "GetObject per stream read per part: the .bin range and its marks file",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "gets_per_stream_read",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT ProfileEvents['S3GetObject'], ProfileEvents['SelectedParts'] FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '<a cold query>'",
+    "mapping": {
+     "gets_per_stream_read": "S3GetObject = SelectedParts x (columns + 2 x streams read)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "shape_columns",
+   "block": "schema",
+   "label": "Columns of a table shape (the statistics files a part read loads)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "shape_columns",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/experiments/cold-select.cache-off.json:29",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.columns WHERE database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "shape_columns": "count()"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "cached_miss_gets_per_part_read",
+   "block": "reads_cache",
+   "label": "GetObject per part read that misses the filesystem cache (segments)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cached_miss_gets_per_part_read",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+    "mapping": {
+     "cached_miss_gets_per_part_read": "with cold caches"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "cached_miss_bytes_per_part_read",
+   "block": "reads_cache",
+   "label": "Bytes downloaded per part read that misses the filesystem cache",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "B"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cached_miss_bytes_per_part_read",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) / sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday()",
+    "mapping": {
+     "cached_miss_bytes_per_part_read": "bytes from source per part read"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "cache_fill_io_per_byte",
+   "block": "local_disk",
+   "label": "Cache-volume bytes allocated per byte the cache downloads",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cache_fill_io_per_byte",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['CachedReadBufferCacheWriteBytes']) / sum(ProfileEvents['CachedReadBufferReadFromSourceBytes']) FROM system.query_log WHERE event_date = yesterday()",
+    "mapping": {
+     "cache_fill_io_per_byte": "cache write bytes / bytes read from source"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "metadata_bytes_per_object",
+   "block": "local_disk",
+   "label": "Local metadata bytes allocated per S3 object (one small file each)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "metadata_bytes_per_object",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+    "mapping": {
+     "metadata_bytes_per_object": "du -s --block-size=1 of the disk metadata path / objects listed by system.remote_data_paths"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "metadata_iops_per_object_write",
+   "block": "local_disk",
+   "label": "Local write calls per object written (the part's metadata files)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "req",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "metadata_iops_per_object_write",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT value FROM system.events WHERE event IN ('S3PutObject', 'WriteBufferFromFileDescriptorWrite')",
+    "mapping": {
+     "metadata_iops_per_object_write": "local write calls per S3 object write, over the same interval"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "metadata_iops_per_part_write",
+   "block": "local_disk",
+   "label": "Local write calls per part written besides its objects",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "req",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "metadata_iops_per_part_write",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
+    "mapping": {
+     "metadata_iops_per_part_write": "local write calls per new part besides the per-object ones"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "startup_gets_per_part",
+   "block": "topology_recovery",
+   "label": "GetObject per active part when a server loads its tables",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "shape"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "startup_gets_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT value FROM system.events WHERE event = 'S3GetObject'",
+    "mapping": {
+     "startup_gets_per_part": "S3GetObject after a restart / active parts"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "startup_requests",
+   "block": "topology_recovery",
+   "label": "Requests a server start sends besides part loading (disk access checks, table files)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "startup_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "startup_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3GetObject', 'S3DeleteObjects')",
+    "mapping": {
+     "startup_requests": "right after a start, minus the part loads"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "merge_gets_per_source_part",
+   "block": "merges",
+   "label": "GetObject per merged source part without the cache: Compact columns + 3, Wide 2 x columns + 1",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "merge_gets_per_source_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+    "mapping": {
+     "merge_gets_per_source_part": "GETs per merged source part"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "merge_gets_per_source_part_cached",
+   "block": "merges",
+   "label": "GetObject per merged source part through the filesystem cache",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "merge_gets_per_source_part_cached",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['S3GetObject']) / sum(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+    "mapping": {
+     "merge_gets_per_source_part_cached": "GETs per merged source part with the cache"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "delete_calls_per_removed_part",
+   "block": "mutations_deletes",
+   "label": "DeleteObjects calls per removed part (one batch of up to 1000 keys)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "delete_calls_per_removed_part",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:609",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT value FROM system.events WHERE event = 'S3DeleteObjects'",
+    "mapping": {
+     "delete_calls_per_removed_part": "per RemovePart row"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "empty_part_objects",
+   "block": "mutations_deletes",
+   "label": "Objects of the empty part that covers a dropped or expired part",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "empty_part_objects",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp:2742",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "mutation_entry_objects",
+   "block": "mutations_deletes",
+   "label": "Objects written per mutation statement besides parts (mutation_<n>.txt)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "mutation_entry_objects",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMutationEntry.cpp:73",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "mutation_objects_written",
+   "block": "mutations_deletes",
+   "label": "Objects written per mutated part (narrow shape): Compact rewrites all, Wide the changed streams and 7 metadata files",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "mutation_kind",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "mutation_objects_written",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(ProfileEvents['S3PutObject']) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart'",
+    "mapping": {
+     "mutation_objects_written": "PUTs per MutatePart row"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "mutation_gets_per_part",
+   "block": "mutations_deletes",
+   "label": "GetObject per mutated part (narrow shape)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "mutation_kind",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "mutation_gets_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(ProfileEvents['S3GetObject']) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MutatePart'",
+    "mapping": {
+     "mutation_gets_per_part": "GETs per MutatePart row"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "catchup_requests_per_missed_part",
+   "block": "topology_recovery",
+   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "variant_id"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "catchup_requests_per_missed_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok"
   }
  ],
  "sets": {},
@@ -10152,10 +10575,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide",
-     "types"
+    "insert_rows": [
+     1000,
+     600000
     ]
    },
    "tolerance": {
@@ -10167,38 +10589,44 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
    "status": "ok",
    "fit": {
-    "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide|wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
-    "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part"
+    "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide/wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
+    "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part; the types row holds for the types-fit schema only (types-holdout validates the per-stream rule, 158 objects)"
    }
   },
   {
@@ -10231,9 +10659,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide"
+    "insert_rows": [
+     20000,
+     400000
     ]
    },
    "tolerance": {
@@ -10245,30 +10673,30 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10284,10 +10712,9 @@
    "dim": "count",
    "value": 0,
    "validity": {
-    "shape": [
-     "narrow",
-     "wide",
-     "types"
+    "insert_rows": [
+     1000,
+     600000
     ]
    },
    "tolerance": {
@@ -10299,24 +10726,24 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10332,10 +10759,9 @@
    "dim": "B",
    "value": 4096,
    "validity": {
-    "shape": [
-     "narrow",
-     "wide",
-     "types"
+    "insert_rows": [
+     1000,
+     600000
     ]
    },
    "tolerance": {
@@ -10347,24 +10773,24 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10379,15 +10805,15 @@
    "id": "metadata_iops_per_object_write",
    "kind": "scalar",
    "dim": "req",
-   "value": 1.1767,
+   "value": 1.1727,
    "validity": {
-    "objects_per_part": [
-     11,
-     158
+    "insert_rows": [
+     5000,
+     600000
     ]
    },
    "tolerance": {
-    "abs": 1.068,
+    "abs": 0.939,
     "rel": 0
    },
    "evidence": {
@@ -10395,42 +10821,42 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10438,9 +10864,9 @@
    "status": "ok",
    "fit": {
     "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
-    "a": 1.1766807868425955,
-    "b": 25.979068113540777,
-    "max_abs_residual": 1.068,
+    "a": 1.1727478576382508,
+    "b": 31.757511195099173,
+    "max_abs_residual": 0.939,
     "points": 36
    },
    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
@@ -10449,15 +10875,15 @@
    "id": "metadata_iops_per_part_write",
    "kind": "scalar",
    "dim": "req",
-   "value": 25.979,
+   "value": 31.758,
    "validity": {
-    "objects_per_part": [
-     11,
-     158
+    "insert_rows": [
+     5000,
+     600000
     ]
    },
    "tolerance": {
-    "abs": 1.068,
+    "abs": 0.939,
     "rel": 0
    },
    "evidence": {
@@ -10465,42 +10891,42 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
-     "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
-     "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-fit/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k3",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k1",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k2",
+     "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k3",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k1",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k2",
+     "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10508,9 +10934,9 @@
    "status": "ok",
    "fit": {
     "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
-    "a": 1.1766807868425955,
-    "b": 25.979068113540777,
-    "max_abs_residual": 1.068,
+    "a": 1.1727478576382508,
+    "b": 31.757511195099173,
+    "max_abs_residual": 0.939,
     "points": 36
    },
    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
@@ -10521,9 +10947,9 @@
    "dim": "count",
    "value": 1,
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
@@ -10535,9 +10961,9 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10553,9 +10979,9 @@
    "dim": "count",
    "value": 2,
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
@@ -10567,9 +10993,9 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10593,9 +11019,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
@@ -10607,12 +11033,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-     "cost-20261024T075800Z/s3/cold-select/cache-off/k3",
-     "cost-20261024T075800Z/s3/cold-select/cache-off-types/k1",
-     "cost-20261024T075800Z/s3/cold-select/cache-off-types/k2",
-     "cost-20261024T075800Z/s3/cold-select/cache-off-types/k3"
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+     "cost-20261024T094831Z/s3/cold-select/cache-off/k3",
+     "cost-20261024T094831Z/s3/cold-select/cache-off-types/k1",
+     "cost-20261024T094831Z/s3/cold-select/cache-off-types/k2",
+     "cost-20261024T094831Z/s3/cold-select/cache-off-types/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10644,7 +11070,7 @@
    },
    "evidence": {
     "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/Statistics/Statistics.cpp:933",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/experiments/cold-select.cache-off.json:29",
     "version": "26.8@09d0772a842"
    },
    "status": "ok"
@@ -10663,9 +11089,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
@@ -10677,12 +11103,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10706,9 +11132,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
@@ -10720,12 +11146,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10739,15 +11165,15 @@
    "id": "cache_fill_io_per_byte",
    "kind": "scalar",
    "dim": "1",
-   "value": 1.0159,
+   "value": 1.0208,
    "validity": {
-    "shape": [
-     "wide",
-     "types"
+    "read_streams_per_part": [
+     3,
+     4
     ]
    },
    "tolerance": {
-    "abs": 0.02,
+    "abs": 0.01,
     "rel": 0
    },
    "evidence": {
@@ -10755,9 +11181,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-     "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3"
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+     "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10765,6 +11194,38 @@
    "status": "ok",
    "fit": {
     "method": "allocated bytes the warm pass adds under <replica>/caches/s3_cache / bytes it downloads"
+   }
+  },
+  {
+   "id": "warm_gets_per_stream_read",
+   "kind": "scalar",
+   "dim": "count",
+   "value": 1,
+   "validity": {
+    "read_streams_per_part": [
+     3,
+     4
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T094831Z/s3/cold-select/warm-off/k1",
+     "cost-20261024T094831Z/s3/cold-select/warm-off/k2",
+     "cost-20261024T094831Z/s3/cold-select/warm-off/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "GetObject of a repeated read with marks in the mark cache and statistics estimates on the parts: one .bin range per stream per part"
    }
   },
   {
@@ -10784,13 +11245,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide"
-    ],
-    "active_parts": [
-     2,
-     3
+    "insert_rows": [
+     1000,
+     100000
     ]
    },
    "tolerance": {
@@ -10802,12 +11259,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/startup/intact/k1",
-     "cost-20261024T075800Z/s3/startup/intact/k2",
-     "cost-20261024T075800Z/s3/startup/intact/k3",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k1",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k2",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+     "cost-20261024T094831Z/s3/startup/intact/k1",
+     "cost-20261024T094831Z/s3/startup/intact/k2",
+     "cost-20261024T094831Z/s3/startup/intact/k3",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k1",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k2",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10816,8 +11273,8 @@
    "fit": {
     "method": "per part: its 9 small files and statistics.packed once per column plus once (no cache); 9 files and statistics.packed once (cache)",
     "startup_seconds": [
-     2.09,
-     3.11
+     2.15,
+     3.18
     ]
    }
   },
@@ -10840,13 +11297,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide"
-    ],
-    "active_parts": [
-     2,
-     3
+    "insert_rows": [
+     1000,
+     100000
     ]
    },
    "tolerance": {
@@ -10858,12 +11311,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/startup/intact/k1",
-     "cost-20261024T075800Z/s3/startup/intact/k2",
-     "cost-20261024T075800Z/s3/startup/intact/k3",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k1",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k2",
-     "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+     "cost-20261024T094831Z/s3/startup/intact/k1",
+     "cost-20261024T094831Z/s3/startup/intact/k2",
+     "cost-20261024T094831Z/s3/startup/intact/k3",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k1",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k2",
+     "cost-20261024T094831Z/s3_cached/startup/intact/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -10872,8 +11325,8 @@
    "fit": {
     "method": "two disk access checks per start without the cache, three with it (a PutObject, two GetObject and a DeleteObject each) and one GetObject per table file",
     "startup_seconds": [
-     2.09,
-     3.11
+     2.15,
+     3.18
     ]
    }
   },
@@ -10894,9 +11347,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide"
+    "insert_rows": [
+     20000,
+     400000
     ]
    },
    "tolerance": {
@@ -10908,22 +11361,22 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k1",
-     "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k2",
-     "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k3",
-     "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k1",
-     "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k2",
-     "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k3",
-     "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k1",
-     "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k2",
-     "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k3"
+     "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k1",
+     "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k2",
+     "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k3",
+     "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k1",
+     "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k2",
+     "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k3",
+     "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k1",
+     "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k2",
+     "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
    "status": "ok",
    "fit": {
-    "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+    "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
     "rule": "Compact columns + 3, Wide 2 x columns + 1"
    }
   },
@@ -10944,9 +11397,9 @@
     }
    },
    "validity": {
-    "shape": [
-     "narrow",
-     "wide"
+    "insert_rows": [
+     20000,
+     400000
     ]
    },
    "tolerance": {
@@ -10958,22 +11411,22 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k1",
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k2",
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k3",
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k1",
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k2",
-     "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k3",
-     "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k1",
-     "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k2",
-     "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k3"
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k1",
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k2",
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k3",
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k1",
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k2",
+     "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k3",
+     "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k1",
+     "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k2",
+     "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
    "status": "ok",
    "fit": {
-    "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+    "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
     "rule": "Compact 3, Wide columns + 1"
    }
   },
@@ -10992,7 +11445,8 @@
     "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:599",
     "version": "26.8@09d0772a842"
    },
-   "status": "ok"
+   "status": "ok",
+   "note": "Upper bound: parts the cleanup removes in one pass can share a DeleteObjects call (mutation.wide-delete: 3 calls for 4 parts in one repeat)."
   },
   {
    "id": "empty_part_objects",
@@ -11046,17 +11500,53 @@
      "update_column|wide": 9
     }
    },
-   "validity": null,
+   "validity": {
+    "insert_rows": [
+     100000,
+     400000
+    ]
+   },
    "tolerance": {
     "abs": 0,
     "rel": 0
    },
    "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:908",
-    "version": "26.8@09d0772a842"
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k1",
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k2",
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k3",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k1",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k2",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k3",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k1",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k2",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
-   "status": "ok"
+   "status": "ok",
+   "fit": {
+    "method": "PutObject per table of the mutation window (per-file attribution) / its parts, minus the mutation_<n>.txt object"
+   }
   },
   {
    "id": "mutation_gets_per_part",
@@ -11071,29 +11561,66 @@
     "values": {
      "0|delete|compact": 27,
      "0|delete|wide": 16,
-     "0|lightweight_delete|compact": 30,
-     "0|lightweight_delete|wide": 28,
+     "0|lightweight_delete|compact": 27,
+     "0|lightweight_delete|wide": 14,
      "0|update_column|compact": 26,
      "0|update_column|wide": 7,
      "1|delete|compact": 27,
      "1|delete|wide": 10,
-     "1|lightweight_delete|compact": 29,
-     "1|lightweight_delete|wide": 5,
+     "1|lightweight_delete|compact": 27,
+     "1|lightweight_delete|wide": 3,
      "1|update_column|compact": 26,
      "1|update_column|wide": 2
     }
    },
-   "validity": null,
+   "validity": {
+    "insert_rows": [
+     100000,
+     400000
+    ]
+   },
    "tolerance": {
-    "abs": 0,
+    "abs": 1,
     "rel": 0
    },
    "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
-    "version": "26.8@09d0772a842"
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+    "version": "0.3.0",
+    "measurement_ids": [
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k1",
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k2",
+     "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k3",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
+     "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k1",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k2",
+     "cost-20261024T094831Z/s3/mutation/wide-delete/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k3",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k1",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k2",
+     "cost-20261024T094831Z/s3/mutation/lightweight-delete/k3",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k1",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k2",
+     "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
-   "status": "ok"
+   "status": "ok",
+   "fit": {
+    "method": "least GetObject per table of the mutation window over the repeats (per-file attribution) / its parts",
+    "spread": "a Compact part read takes up to one more GetObject (data.bin) in some repeats; the tolerance is per part"
+   }
   }
  ],
  "billing": {
@@ -12453,60 +12980,22 @@
            "kind": "mul",
            "dim": "GiB/day",
            "a": {
-            "kind": "mul",
-            "dim": "GiB/day",
-            "a": {
-             "kind": "input",
-             "id": "ingest_rate",
-             "dim": "GiB/day"
-            },
-            "b": {
-             "kind": "div",
-             "dim": "1",
-             "a": {
-              "kind": "coef",
-              "id": "merge_effective_fan_in",
-              "dim": "1"
-             },
-             "b": {
-              "kind": "sub",
-              "dim": "1",
-              "a": {
-               "kind": "coef",
-               "id": "merge_effective_fan_in",
-               "dim": "1"
-              },
-              "b": {
-               "kind": "const",
-               "value": 1,
-               "dim": "1"
-              }
-             },
-             "on_zero": "unavailable"
-            }
+            "kind": "input",
+            "id": "ingest_rate",
+            "dim": "GiB/day"
            },
            "b": {
             "kind": "sub",
             "dim": "1",
             "a": {
-             "kind": "const",
-             "value": 1,
+             "kind": "input",
+             "id": "write_amplification_rule",
              "dim": "1"
             },
             "b": {
-             "kind": "div",
-             "dim": "1",
-             "a": {
-              "kind": "const",
-              "value": 1,
-              "dim": "1"
-             },
-             "b": {
-              "kind": "input",
-              "id": "merge_size_ratio",
-              "dim": "1"
-             },
-             "on_zero": "unavailable"
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
             }
            }
           },
@@ -12819,27 +13308,36 @@
         }
        },
        "b": {
-        "kind": "lookup",
+        "kind": "sub",
         "dim": "count",
-        "table_id": "objects_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         },
-         {
-          "kind": "const",
-          "value": "wide",
-          "dim": "enum:part_type"
-         }
-        ]
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "objects_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "shape",
+           "dim": "enum:shape"
+          },
+          {
+           "kind": "const",
+           "value": "wide",
+           "dim": "enum:part_type"
+          }
+         ]
+        },
+        "b": {
+         "kind": "input",
+         "id": "large_objects_per_merge_result",
+         "dim": "count"
+        }
        }
       }
      },
      {
       "row_type": "request",
-      "op_kind": "GetObject",
+      "op_kind": "CreateMultipartUpload",
       "outcome_class": "ok",
       "category": null,
       "route": null,
@@ -12853,7 +13351,7 @@
         "dim": "1",
         "a": {
          "kind": "input",
-         "id": "merge_sources_per_month",
+         "id": "merge_results_per_month",
          "dim": "count"
         },
         "b": {
@@ -12863,54 +13361,181 @@
         }
        },
        "b": {
-        "kind": "branch",
-        "dim": "count",
-        "cond": {
-         "op": "==",
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
          "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "merge_results_per_month",
+          "dim": "count"
          },
          "b": {
-          "kind": "const",
-          "value": "1",
-          "dim": "enum:cache_enabled"
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
          }
         },
-        "then": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "merge_gets_per_source_part_cached",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ]
+        "b": {
+         "kind": "input",
+         "id": "large_objects_per_merge_result",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "multipart_parts",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "merge_results_per_month",
+         "dim": "count"
         },
-        "else": {
-         "kind": "lookup",
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_merge_result",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "branch",
+       "dim": "count",
+       "cond": {
+        "op": "==",
+        "a": {
+         "kind": "input",
+         "id": "merge_sources_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "merge_sources_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
          "dim": "count",
-         "table_id": "merge_gets_per_source_part",
-         "keys": [
-          {
+         "cond": {
+          "op": "==",
+          "a": {
            "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
           },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
+          "b": {
+           "kind": "const",
+           "value": "1",
+           "dim": "enum:cache_enabled"
           }
-         ]
+         },
+         "then": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "merge_gets_per_source_part_cached",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "else": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "merge_gets_per_source_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           },
+           {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+           }
+          ]
+         }
         }
        }
       }
@@ -12931,7 +13556,7 @@
         "dim": "1",
         "a": {
          "kind": "input",
-         "id": "merge_sources_per_month",
+         "id": "merge_removals_per_month",
          "dim": "count"
         },
         "b": {
@@ -12963,41 +13588,129 @@
       "scope": "variant",
       "basis": "predicted",
       "expr": {
-       "kind": "add",
+       "kind": "sub",
        "dim": "count",
        "a": {
-        "kind": "mul",
+        "kind": "add",
         "dim": "count",
         "a": {
-         "kind": "mul",
-         "dim": "1",
+         "kind": "add",
+         "dim": "count",
          "a": {
-          "kind": "input",
-          "id": "mutated_parts_per_month",
-          "dim": "count"
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "mutated_compact_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "mutation_objects_written",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "mutation_kind",
+             "dim": "enum:mutation_kind"
+            },
+            {
+             "kind": "const",
+             "value": "compact",
+             "dim": "enum:part_type"
+            }
+           ]
+          }
          },
          "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "mutated_wide_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "mutation_objects_written",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "mutation_kind",
+             "dim": "enum:mutation_kind"
+            },
+            {
+             "kind": "const",
+             "value": "wide",
+             "dim": "enum:part_type"
+            }
+           ]
+          }
          }
         },
         "b": {
-         "kind": "lookup",
+         "kind": "mul",
          "dim": "count",
-         "table_id": "mutation_objects_written",
-         "keys": [
-          {
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
            "kind": "input",
-           "id": "mutation_kind",
-           "dim": "enum:mutation_kind"
+           "id": "mutations_per_month",
+           "dim": "count"
           },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
+          "b": {
+           "kind": "branch",
+           "dim": "1",
+           "cond": {
+            "op": "==",
+            "a": {
+             "kind": "input",
+             "id": "replicas",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "count"
+            }
+           },
+           "then": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "else": {
+            "kind": "const",
+            "value": 0,
+            "dim": "1"
+           }
           }
-         ]
+         },
+         "b": {
+          "kind": "coef",
+          "id": "mutation_entry_objects",
+          "dim": "count"
+         }
         }
        },
        "b": {
@@ -13008,7 +13721,7 @@
          "dim": "1",
          "a": {
           "kind": "input",
-          "id": "mutations_per_month",
+          "id": "mutated_wide_parts_per_month",
           "dim": "count"
          },
          "b": {
@@ -13018,8 +13731,8 @@
          }
         },
         "b": {
-         "kind": "coef",
-         "id": "mutation_entry_objects",
+         "kind": "input",
+         "id": "large_objects_per_mutated_part",
          "dim": "count"
         }
        }
@@ -13027,7 +13740,7 @@
      },
      {
       "row_type": "request",
-      "op_kind": "GetObject",
+      "op_kind": "CreateMultipartUpload",
       "outcome_class": "ok",
       "category": null,
       "route": null,
@@ -13041,7 +13754,7 @@
         "dim": "1",
         "a": {
          "kind": "input",
-         "id": "mutated_parts_per_month",
+         "id": "mutated_wide_parts_per_month",
          "dim": "count"
         },
         "b": {
@@ -13051,26 +13764,175 @@
         }
        },
        "b": {
-        "kind": "lookup",
+        "kind": "input",
+        "id": "large_objects_per_mutated_part",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
         "dim": "count",
-        "table_id": "mutation_gets_per_part",
-        "keys": [
-         {
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "mutated_wide_parts_per_month",
+          "dim": "count"
          },
-         {
+         "b": {
           "kind": "input",
-          "id": "mutation_kind",
-          "dim": "enum:mutation_kind"
-         },
-         {
-          "kind": "input",
-          "id": "part_type",
-          "dim": "enum:part_type"
+          "id": "replicas",
+          "dim": "count"
          }
-        ]
+        },
+        "b": {
+         "kind": "input",
+         "id": "large_objects_per_mutated_part",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "multipart_parts",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "mutated_wide_parts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "large_objects_per_mutated_part",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "add",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "mutated_compact_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "mutation_gets_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "input",
+           "id": "mutation_kind",
+           "dim": "enum:mutation_kind"
+          },
+          {
+           "kind": "const",
+           "value": "compact",
+           "dim": "enum:part_type"
+          }
+         ]
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "mutated_wide_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "mutation_gets_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "input",
+           "id": "mutation_kind",
+           "dim": "enum:mutation_kind"
+          },
+          {
+           "kind": "const",
+           "value": "wide",
+           "dim": "enum:part_type"
+          }
+         ]
+        }
        }
       }
      },
@@ -13089,9 +13951,18 @@
         "kind": "mul",
         "dim": "1",
         "a": {
-         "kind": "input",
-         "id": "mutated_parts_per_month",
-         "dim": "count"
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "mutated_compact_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "mutated_wide_parts_per_month",
+          "dim": "count"
+         }
         },
         "b": {
          "kind": "input",
@@ -13102,6 +13973,60 @@
        "b": {
         "kind": "coef",
         "id": "delete_calls_per_removed_part",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "mutation_entries_removed_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": "==",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "coef",
+        "id": "mutation_entry_objects",
         "dim": "count"
        }
       }
@@ -13129,7 +14054,7 @@
         "dim": "1",
         "a": {
          "kind": "input",
-         "id": "expired_parts_per_month",
+         "id": "expiry_operations_per_month",
          "dim": "count"
         },
         "b": {
@@ -13160,9 +14085,18 @@
         "kind": "mul",
         "dim": "1",
         "a": {
-         "kind": "input",
-         "id": "expired_parts_per_month",
-         "dim": "count"
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "expiry_operations_per_month",
+          "dim": "count"
+         }
         },
         "b": {
          "kind": "input",
@@ -13171,18 +14105,9 @@
         }
        },
        "b": {
-        "kind": "mul",
-        "dim": "count",
-        "a": {
-         "kind": "coef",
-         "id": "delete_calls_per_removed_part",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "const",
-         "value": 2,
-         "dim": "1"
-        }
+        "kind": "coef",
+        "id": "delete_calls_per_removed_part",
+        "dim": "count"
        }
       }
      }
@@ -13202,23 +14127,9 @@
       "scope": "variant",
       "basis": "predicted",
       "expr": {
-       "kind": "mul",
+       "kind": "add",
        "dim": "count",
        "a": {
-        "kind": "mul",
-        "dim": "count",
-        "a": {
-         "kind": "input",
-         "id": "select_part_reads_per_day",
-         "dim": "count/day"
-        },
-        "b": {
-         "kind": "const",
-         "value": 30.416666666666668,
-         "dim": "day"
-        }
-       },
-       "b": {
         "kind": "branch",
         "dim": "count",
         "cond": {
@@ -13238,9 +14149,27 @@
          "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "input",
-          "id": "cache_miss_fraction",
-          "dim": "1"
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "select_part_reads_per_day",
+            "dim": "count/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 30.416666666666668,
+            "dim": "day"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "cache_miss_fraction",
+           "dim": "1"
+          }
          },
          "b": {
           "kind": "lookup",
@@ -13262,6 +14191,180 @@
           "kind": "mul",
           "dim": "count",
           "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "select_part_reads_per_day",
+            "dim": "count/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 30.416666666666668,
+            "dim": "day"
+           }
+          },
+          "b": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "coef",
+            "id": "warm_gets_per_stream_read",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "read_streams_per_part",
+            "dim": "count"
+           }
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "parts_first_read_per_month",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "replicas",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "mul",
+             "dim": "1",
+             "a": {
+              "kind": "input",
+              "id": "restarts_per_month",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "input",
+              "id": "replicas",
+              "dim": "count"
+             }
+            },
+            "b": {
+             "kind": "input",
+             "id": "active_parts",
+             "dim": "count"
+            }
+           }
+          },
+          "b": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "coef",
+             "id": "stats_gets_per_column",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "lookup",
+             "dim": "count",
+             "table_id": "shape_columns",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "shape",
+               "dim": "enum:shape"
+              }
+             ]
+            }
+           },
+           "b": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "sub",
+             "dim": "count",
+             "a": {
+              "kind": "coef",
+              "id": "gets_per_stream_read",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "coef",
+              "id": "warm_gets_per_stream_read",
+              "dim": "count"
+             }
+            },
+            "b": {
+             "kind": "input",
+             "id": "read_streams_per_part",
+             "dim": "count"
+            }
+           }
+          }
+         }
+        }
+       },
+       "b": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+         "op": "==",
+         "a": {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         "b": {
+          "kind": "const",
+          "value": "1",
+          "dim": "enum:cache_enabled"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        },
+        "else": {
+         "kind": "mul",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "statistics_refreshes_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "active_parts",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
            "kind": "coef",
            "id": "stats_gets_per_column",
            "dim": "count"
@@ -13278,130 +14381,8 @@
             }
            ]
           }
-         },
-         "b": {
-          "kind": "mul",
-          "dim": "count",
-          "a": {
-           "kind": "coef",
-           "id": "gets_per_stream_read",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "read_streams_per_part",
-           "dim": "count"
-          }
          }
         }
-       }
-      }
-     },
-     {
-      "row_type": "block_io",
-      "op_kind": "mibps",
-      "outcome_class": "all",
-      "category": null,
-      "route": null,
-      "scope": "replica",
-      "basis": "predicted",
-      "expr": {
-       "kind": "branch",
-       "dim": "MiB/s",
-       "cond": {
-        "op": "==",
-        "a": {
-         "kind": "input",
-         "id": "cache_enabled",
-         "dim": "enum:cache_enabled"
-        },
-        "b": {
-         "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
-        }
-       },
-       "then": {
-        "kind": "div",
-        "dim": "MiB/s",
-        "a": {
-         "kind": "div",
-         "dim": "MiB/s",
-         "a": {
-          "kind": "mul",
-          "dim": "B",
-          "a": {
-           "kind": "mul",
-           "dim": "B",
-           "a": {
-            "kind": "mul",
-            "dim": "1",
-            "a": {
-             "kind": "mul",
-             "dim": "count",
-             "a": {
-              "kind": "input",
-              "id": "select_part_reads_per_day",
-              "dim": "count/day"
-             },
-             "b": {
-              "kind": "const",
-              "value": 30.416666666666668,
-              "dim": "day"
-             }
-            },
-            "b": {
-             "kind": "input",
-             "id": "cache_miss_fraction",
-             "dim": "1"
-            }
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "B",
-            "table_id": "cached_miss_bytes_per_part_read",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             }
-            ]
-           }
-          },
-          "b": {
-           "kind": "coef",
-           "id": "cache_fill_io_per_byte",
-           "dim": "1"
-          }
-         },
-         "b": {
-          "kind": "mul",
-          "dim": "B*s/MiB",
-          "a": {
-           "kind": "const",
-           "value": 2628000,
-           "dim": "s"
-          },
-          "b": {
-           "kind": "const",
-           "value": 1048576,
-           "dim": "B/MiB"
-          }
-         },
-         "on_zero": "unavailable"
-        },
-        "b": {
-         "kind": "input",
-         "id": "replicas",
-         "dim": "count"
-        },
-        "on_zero": "unavailable"
-       },
-       "else": {
-        "kind": "const",
-        "value": 0,
-        "dim": "MiB/s"
        }
       }
      }
@@ -13424,11 +14405,64 @@
        "kind": "add",
        "dim": "count",
        "a": {
-        "kind": "mul",
+        "kind": "add",
         "dim": "count",
         "a": {
          "kind": "mul",
-         "dim": "1",
+         "dim": "count",
+         "a": {
+          "kind": "mul",
+          "dim": "1",
+          "a": {
+           "kind": "mul",
+           "dim": "1",
+           "a": {
+            "kind": "input",
+            "id": "restarts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "outdated_parts",
+            "dim": "count"
+           }
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "startup_gets_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "mul",
+         "dim": "count",
          "a": {
           "kind": "mul",
           "dim": "1",
@@ -13444,27 +14478,22 @@
           }
          },
          "b": {
-          "kind": "input",
-          "id": "active_parts",
-          "dim": "count"
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "startup_requests",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "GetObject",
+            "dim": "enum:startup_op"
+           }
+          ]
          }
-        },
-        "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "startup_gets_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
-          },
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          }
-         ]
         }
        },
        "b": {
@@ -13479,27 +14508,37 @@
           "dim": "count"
          },
          "b": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "branch",
+          "dim": "1",
+          "cond": {
+           "op": "==",
+           "a": {
+            "kind": "input",
+            "id": "replicas",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": 1,
+           "dim": "1"
+          },
+          "else": {
+           "kind": "const",
+           "value": 0,
+           "dim": "1"
+          }
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "startup_requests",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
-          },
-          {
-           "kind": "const",
-           "value": "GetObject",
-           "dim": "enum:startup_op"
-          }
-         ]
+         "kind": "input",
+         "id": "retained_mutation_entries",
+         "dim": "count"
         }
        }
       }
@@ -13649,29 +14688,78 @@
          "kind": "mul",
          "dim": "B",
          "a": {
-          "kind": "mul",
-          "dim": "1",
+          "kind": "add",
+          "dim": "count",
           "a": {
-           "kind": "input",
-           "id": "active_parts",
-           "dim": "count"
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+             }
+            ]
+           }
           },
           "b": {
-           "kind": "lookup",
+           "kind": "mul",
            "dim": "count",
-           "table_id": "objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
+           "a": {
+            "kind": "mul",
+            "dim": "1",
+            "a": {
+             "kind": "div",
+             "dim": "1/s",
+             "a": {
+              "kind": "input",
+              "id": "merge_removals_per_month",
+              "dim": "count"
+             },
+             "b": {
+              "kind": "const",
+              "value": 2628000,
+              "dim": "s"
+             },
+             "on_zero": "unavailable"
             },
-            {
-             "kind": "const",
-             "value": "wide",
-             "dim": "enum:part_type"
+            "b": {
+             "kind": "input",
+             "id": "old_parts_lifetime",
+             "dim": "s"
             }
-           ]
+           },
+           "b": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "objects_per_part",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "shape",
+              "dim": "enum:shape"
+             },
+             {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+             }
+            ]
+           }
           }
          },
          "b": {
@@ -13715,122 +14803,18 @@
         }
        }
       }
-     },
-     {
-      "row_type": "block_io",
-      "op_kind": "iops",
-      "outcome_class": "all",
-      "category": null,
-      "route": null,
-      "scope": "replica",
-      "basis": "predicted",
-      "expr": {
-       "kind": "div",
-       "dim": "req/s",
-       "a": {
-        "kind": "add",
-        "dim": "req",
-        "a": {
-         "kind": "mul",
-         "dim": "req",
-         "a": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "input",
-            "id": "parts_inserted_per_month",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ]
-           }
-          },
-          "b": {
-           "kind": "mul",
-           "dim": "count",
-           "a": {
-            "kind": "input",
-            "id": "merge_results_per_month",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "const",
-              "value": "wide",
-              "dim": "enum:part_type"
-             }
-            ]
-           }
-          }
-         },
-         "b": {
-          "kind": "coef",
-          "id": "metadata_iops_per_object_write",
-          "dim": "req"
-         }
-        },
-        "b": {
-         "kind": "mul",
-         "dim": "req",
-         "a": {
-          "kind": "add",
-          "dim": "count",
-          "a": {
-           "kind": "input",
-           "id": "parts_inserted_per_month",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "input",
-           "id": "merge_results_per_month",
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "coef",
-          "id": "metadata_iops_per_part_write",
-          "dim": "req"
-         }
-        }
-       },
-       "b": {
-        "kind": "const",
-        "value": 2628000,
-        "dim": "s"
-       },
-       "on_zero": "unavailable"
-      }
      }
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [],
+    "excluded": [
+     {
+      "kind": "op",
+      "id": "PutObject",
+      "reason": "object writes are priced by the inserts and merges cells"
+     }
+    ]
    }
   },
   "s3plain": {},
@@ -20070,7 +21054,8 @@
    "shape_columns": "2026-10-24-storage-cost-s3",
    "startup_gets_per_part": "2026-10-24-storage-cost-s3",
    "startup_requests": "2026-10-24-storage-cost-s3",
-   "stats_gets_per_column": "2026-10-24-storage-cost-s3"
+   "stats_gets_per_column": "2026-10-24-storage-cost-s3",
+   "warm_gets_per_stream_read": "2026-10-24-storage-cost-s3"
   },
   "cells": {
    "cas/deletes": "2026-10-24-storage-cost-cas",

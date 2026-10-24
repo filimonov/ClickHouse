@@ -18,10 +18,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide",
-        "types"
+      "insert_rows": [
+        1000,
+        600000
       ]
     },
     "tolerance": {
@@ -33,38 +32,44 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit-wide/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
     "status": "ok",
     "fit": {
-      "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide|wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
-      "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part"
+      "method": "objects listed by system.remote_data_paths per active part, equal in every repeat; wide/wide from the per-stream rule 9 + 2 x columns, confirmed by its hold-out",
+      "rule": "9 metadata files + 2 per column stream (Wide) or data.bin + data.cmrk4 (Compact) + skp_idx.packed with skip indexes + every projection part; the types row holds for the types-fit schema only (types-holdout validates the per-stream rule, 158 objects)"
     }
   },
   {
@@ -97,9 +102,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide"
+      "insert_rows": [
+        20000,
+        400000
       ]
     },
     "tolerance": {
@@ -111,30 +116,30 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -150,10 +155,9 @@
     "dim": "count",
     "value": 0,
     "validity": {
-      "shape": [
-        "narrow",
-        "wide",
-        "types"
+      "insert_rows": [
+        1000,
+        600000
       ]
     },
     "tolerance": {
@@ -165,24 +169,24 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -198,10 +202,9 @@
     "dim": "B",
     "value": 4096,
     "validity": {
-      "shape": [
-        "narrow",
-        "wide",
-        "types"
+      "insert_rows": [
+        1000,
+        600000
       ]
     },
     "tolerance": {
@@ -213,24 +216,24 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -245,15 +248,15 @@
     "id": "metadata_iops_per_object_write",
     "kind": "scalar",
     "dim": "req",
-    "value": 1.1767,
+    "value": 1.1727,
     "validity": {
-      "objects_per_part": [
-        11,
-        158
+      "insert_rows": [
+        5000,
+        600000
       ]
     },
     "tolerance": {
-      "abs": 1.068,
+      "abs": 0.939,
       "rel": 0
     },
     "evidence": {
@@ -261,42 +264,42 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -304,9 +307,9 @@
     "status": "ok",
     "fit": {
       "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
-      "a": 1.1766807868425955,
-      "b": 25.979068113540777,
-      "max_abs_residual": 1.068,
+      "a": 1.1727478576382508,
+      "b": 31.757511195099173,
+      "max_abs_residual": 0.939,
       "points": 36
     },
     "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
@@ -315,15 +318,15 @@
     "id": "metadata_iops_per_part_write",
     "kind": "scalar",
     "dim": "req",
-    "value": 25.979,
+    "value": 31.758,
     "validity": {
-      "objects_per_part": [
-        11,
-        158
+      "insert_rows": [
+        5000,
+        600000
       ]
     },
     "tolerance": {
-      "abs": 1.068,
+      "abs": 0.939,
       "rel": 0
     },
     "evidence": {
@@ -331,42 +334,42 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-compact/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/wide-wide/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/wide-wide/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/types-fit/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-fit/k3",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k1",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k2",
-        "cost-20261024T075800Z/s3/objects-per-part/types-holdout/k3",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k1",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k2",
-        "cost-20261024T075800Z/s3_cached/objects-per-part/types-holdout/k3"
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-fit/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-fit/k3",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k3",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -374,9 +377,9 @@
     "status": "ok",
     "fit": {
       "method": "least squares of write syscalls per object (proc io syscw over the window / objects) against a + b / objects_per_part",
-      "a": 1.1766807868425955,
-      "b": 25.979068113540777,
-      "max_abs_residual": 1.068,
+      "a": 1.1727478576382508,
+      "b": 31.757511195099173,
+      "max_abs_residual": 0.939,
       "points": 36
     },
     "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
@@ -387,9 +390,9 @@
     "dim": "count",
     "value": 1,
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
@@ -401,9 +404,9 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -419,9 +422,9 @@
     "dim": "count",
     "value": 2,
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
@@ -433,9 +436,9 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k3"
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -459,9 +462,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
@@ -473,12 +476,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k1",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k2",
-        "cost-20261024T075800Z/s3/cold-select/cache-off/k3",
-        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k1",
-        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k2",
-        "cost-20261024T075800Z/s3/cold-select/cache-off-types/k3"
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -510,7 +513,7 @@
     },
     "evidence": {
       "kind": "source",
-      "ref": "tmp/src-26.8/src/Storages/Statistics/Statistics.cpp:933",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3/experiments/cold-select.cache-off.json:29",
       "version": "26.8@09d0772a842"
     },
     "status": "ok"
@@ -529,9 +532,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
@@ -543,12 +546,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -572,9 +575,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
@@ -586,12 +589,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k1",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k2",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on-types/k3"
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -605,15 +608,15 @@
     "id": "cache_fill_io_per_byte",
     "kind": "scalar",
     "dim": "1",
-    "value": 1.0159,
+    "value": 1.0208,
     "validity": {
-      "shape": [
-        "wide",
-        "types"
+      "read_streams_per_part": [
+        3,
+        4
       ]
     },
     "tolerance": {
-      "abs": 0.02,
+      "abs": 0.01,
       "rel": 0
     },
     "evidence": {
@@ -621,9 +624,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k1",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k2",
-        "cost-20261024T075800Z/s3_cached/cold-select/cache-on/k3"
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -631,6 +637,38 @@
     "status": "ok",
     "fit": {
       "method": "allocated bytes the warm pass adds under <replica>/caches/s3_cache / bytes it downloads"
+    }
+  },
+  {
+    "id": "warm_gets_per_stream_read",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "validity": {
+      "read_streams_per_part": [
+        3,
+        4
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "GetObject of a repeated read with marks in the mark cache and statistics estimates on the parts: one .bin range per stream per part"
     }
   },
   {
@@ -650,13 +688,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide"
-      ],
-      "active_parts": [
-        2,
-        3
+      "insert_rows": [
+        1000,
+        100000
       ]
     },
     "tolerance": {
@@ -668,12 +702,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/startup/intact/k1",
-        "cost-20261024T075800Z/s3/startup/intact/k2",
-        "cost-20261024T075800Z/s3/startup/intact/k3",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k1",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k2",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+        "cost-20261024T094831Z/s3/startup/intact/k1",
+        "cost-20261024T094831Z/s3/startup/intact/k2",
+        "cost-20261024T094831Z/s3/startup/intact/k3",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k1",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k2",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -682,8 +716,8 @@
     "fit": {
       "method": "per part: its 9 small files and statistics.packed once per column plus once (no cache); 9 files and statistics.packed once (cache)",
       "startup_seconds": [
-        2.09,
-        3.11
+        2.15,
+        3.18
       ]
     }
   },
@@ -706,13 +740,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide"
-      ],
-      "active_parts": [
-        2,
-        3
+      "insert_rows": [
+        1000,
+        100000
       ]
     },
     "tolerance": {
@@ -724,12 +754,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/startup/intact/k1",
-        "cost-20261024T075800Z/s3/startup/intact/k2",
-        "cost-20261024T075800Z/s3/startup/intact/k3",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k1",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k2",
-        "cost-20261024T075800Z/s3_cached/startup/intact/k3"
+        "cost-20261024T094831Z/s3/startup/intact/k1",
+        "cost-20261024T094831Z/s3/startup/intact/k2",
+        "cost-20261024T094831Z/s3/startup/intact/k3",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k1",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k2",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -738,8 +768,8 @@
     "fit": {
       "method": "two disk access checks per start without the cache, three with it (a PutObject, two GetObject and a DeleteObject each) and one GetObject per table file",
       "startup_seconds": [
-        2.09,
-        3.11
+        2.15,
+        3.18
       ]
     }
   },
@@ -760,9 +790,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide"
+      "insert_rows": [
+        20000,
+        400000
       ]
     },
     "tolerance": {
@@ -774,22 +804,22 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k1",
-        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k2",
-        "cost-20261024T075800Z/s3/merge-forced/narrow-compact-sources/k3",
-        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k1",
-        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k2",
-        "cost-20261024T075800Z/s3/merge-forced/narrow-wide-sources/k3",
-        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k1",
-        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k2",
-        "cost-20261024T075800Z/s3/merge-forced/wide-compact-sources/k3"
+        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k1",
+        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k2",
+        "cost-20261024T094831Z/s3/merge-only/narrow-compact-sources/k3",
+        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k1",
+        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k2",
+        "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k3",
+        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k1",
+        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k2",
+        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
     "status": "ok",
     "fit": {
-      "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+      "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
       "rule": "Compact columns + 3, Wide 2 x columns + 1"
     }
   },
@@ -810,9 +840,9 @@
       }
     },
     "validity": {
-      "shape": [
-        "narrow",
-        "wide"
+      "insert_rows": [
+        20000,
+        400000
       ]
     },
     "tolerance": {
@@ -824,22 +854,22 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k1",
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k2",
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-compact-sources/k3",
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k1",
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k2",
-        "cost-20261024T075800Z/s3_cached/merge-forced/narrow-wide-sources/k3",
-        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k1",
-        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k2",
-        "cost-20261024T075800Z/s3_cached/merge-forced/wide-compact-sources/k3"
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k1",
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k2",
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-compact-sources/k3",
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k1",
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k2",
+        "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k3",
+        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k1",
+        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k2",
+        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
     "status": "ok",
     "fit": {
-      "method": "GetObject of one OPTIMIZE FINAL / merged source parts",
+      "method": "GetObject of one OPTIMIZE FINAL (inserts in the setup) / merged source parts",
       "rule": "Compact 3, Wide columns + 1"
     }
   },
@@ -858,7 +888,8 @@
       "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:599",
       "version": "26.8@09d0772a842"
     },
-    "status": "ok"
+    "status": "ok",
+    "note": "Upper bound: parts the cleanup removes in one pass can share a DeleteObjects call (mutation.wide-delete: 3 calls for 4 parts in one repeat)."
   },
   {
     "id": "empty_part_objects",
@@ -912,17 +943,53 @@
         "update_column|wide": 9
       }
     },
-    "validity": null,
+    "validity": {
+      "insert_rows": [
+        100000,
+        400000
+      ]
+    },
     "tolerance": {
       "abs": 0,
       "rel": 0
     },
     "evidence": {
-      "kind": "source",
-      "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:908",
-      "version": "26.8@09d0772a842"
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k1",
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k2",
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k3",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k1",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k2",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k3",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k1",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k2",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
-    "status": "ok"
+    "status": "ok",
+    "fit": {
+      "method": "PutObject per table of the mutation window (per-file attribution) / its parts, minus the mutation_<n>.txt object"
+    }
   },
   {
     "id": "mutation_gets_per_part",
@@ -937,28 +1004,65 @@
       "values": {
         "0|delete|compact": 27,
         "0|delete|wide": 16,
-        "0|lightweight_delete|compact": 30,
-        "0|lightweight_delete|wide": 28,
+        "0|lightweight_delete|compact": 27,
+        "0|lightweight_delete|wide": 14,
         "0|update_column|compact": 26,
         "0|update_column|wide": 7,
         "1|delete|compact": 27,
         "1|delete|wide": 10,
-        "1|lightweight_delete|compact": 29,
-        "1|lightweight_delete|wide": 5,
+        "1|lightweight_delete|compact": 27,
+        "1|lightweight_delete|wide": 3,
         "1|update_column|compact": 26,
         "1|update_column|wide": 2
       }
     },
-    "validity": null,
+    "validity": {
+      "insert_rows": [
+        100000,
+        400000
+      ]
+    },
     "tolerance": {
-      "abs": 0,
+      "abs": 1,
       "rel": 0
     },
     "evidence": {
-      "kind": "source",
-      "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
-      "version": "26.8@09d0772a842"
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k1",
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k2",
+        "cost-20261024T094831Z/s3/mutation/wide-update-one-column/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-update-one-column/k3",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k1",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k2",
+        "cost-20261024T094831Z/s3/mutation/wide-delete/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/wide-delete/k3",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k1",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k2",
+        "cost-20261024T094831Z/s3/mutation/lightweight-delete/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/lightweight-delete/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
-    "status": "ok"
+    "status": "ok",
+    "fit": {
+      "method": "least GetObject per table of the mutation window over the repeats (per-file attribution) / its parts",
+      "spread": "a Compact part read takes up to one more GetObject (data.bin) in some repeats; the tolerance is per part"
+    }
   }
 ]

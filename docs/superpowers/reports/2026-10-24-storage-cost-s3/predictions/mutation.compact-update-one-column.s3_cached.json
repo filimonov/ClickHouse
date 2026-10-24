@@ -67,7 +67,10 @@
     "observations": {}
   },
   "tolerance": {
-    "abs": {},
+    "abs": {
+      "GetObject": 2,
+      "DeleteObjects": 1
+    },
     "rel": {}
   },
   "source_refs": [

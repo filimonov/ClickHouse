@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "3f57c696fe5e5ff4",
+ "contract_version": "7c028b5f9cf209cf",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -26,9 +26,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3162.28958055152,
+         "value": 3162.3480536609513,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -51,9 +51,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3334.8275863555327,
+         "value": 3334.944532574396,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -76,9 +76,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3679.9035979635587,
+         "value": 3680.1374904012855,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -101,9 +101,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 4361.242401769519,
+         "value": 4361.689848172126,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -126,9 +126,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 5681.533228791531,
+         "value": 5682.428121596747,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -151,9 +151,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 8322.114882835556,
+         "value": 8323.904668445986,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -204,9 +204,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3162.28958055152,
+         "value": 3162.3480536609513,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -229,9 +229,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3334.8275863555327,
+         "value": 3334.944532574396,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -254,9 +254,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3679.9035979635587,
+         "value": 3680.1374904012855,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -279,9 +279,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 4361.242401769519,
+         "value": 4361.689848172126,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -304,9 +304,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 5681.533228791531,
+         "value": 5682.428121596747,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -329,9 +329,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 8322.114882835556,
+         "value": 8323.904668445986,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -380,9 +380,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1793.1733989817794,
+         "value": 1793.2903452006428,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -405,9 +405,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3679.9035979635587,
+         "value": 3680.1374904012855,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -430,9 +430,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 7444.550776517026,
+         "value": 7444.998222919634,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -455,9 +455,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 11188.004564775538,
+         "value": 11188.675734379449,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1000,9 +1000,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 268.18614304562306,
+         "value": 268.1896373232526,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1025,9 +1025,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 385.9482785462416,
+         "value": 385.9552671015007,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1050,9 +1050,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4725495474787,
+         "value": 621.4865266579968,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1075,9 +1075,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1092.5210915499529,
+         "value": 1092.549045770989,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1100,9 +1100,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2003.8966899892532,
+         "value": 2003.9501676294967,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1125,9 +1125,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.1693724335023,
+         "value": 3806.2763277139893,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1178,9 +1178,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 268.18614304562306,
+         "value": 268.1896373232526,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1203,9 +1203,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 385.9482785462416,
+         "value": 385.9552671015007,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1228,9 +1228,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4725495474787,
+         "value": 621.4865266579968,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1253,9 +1253,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1092.5210915499529,
+         "value": 1092.549045770989,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1278,9 +1278,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2003.8966899892532,
+         "value": 2003.9501676294967,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1303,9 +1303,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.1693724335023,
+         "value": 3806.2763277139893,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1354,9 +1354,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 308.3973547737394,
+         "value": 308.40434332899844,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1379,9 +1379,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.4725495474787,
+         "value": 621.4865266579968,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1404,9 +1404,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1247.6229390949575,
+         "value": 1247.6508933159937,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1429,9 +1429,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1863.5322144682002,
+         "value": 1863.5723226983828,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1487,9 +1487,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 439.6736631076117,
+         "value": 439.6781241288593,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1512,9 +1512,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 734.0763332267364,
+         "value": 734.0852552692317,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1537,9 +1537,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1322.8812090964425,
+         "value": 1322.898277351651,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1562,9 +1562,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2449.2914252043984,
+         "value": 2449.3255617148143,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1587,9 +1587,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 4702.111857420309,
+         "value": 4702.180130441143,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1612,9 +1612,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 9207.752721852132,
+         "value": 9207.889267893797,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1665,9 +1665,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 439.6736631076117,
+         "value": 439.6781241288593,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1690,9 +1690,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 734.0763332267364,
+         "value": 734.0852552692317,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1715,9 +1715,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1322.8812090964425,
+         "value": 1322.898277351651,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1740,9 +1740,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2449.2914252043984,
+         "value": 2449.3255617148143,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1765,9 +1765,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 4702.111857420309,
+         "value": 4702.180130441143,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1790,9 +1790,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 9207.752721852132,
+         "value": 9207.889267893797,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1841,9 +1841,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1322.8812090964425,
+         "value": 1322.898277351651,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1866,9 +1866,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2603.9180981928853,
+         "value": 2603.952234703301,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1891,9 +1891,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 5165.99187638577,
+         "value": 5166.060149406604,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1916,9 +1916,9 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 7728.065654578654,
+         "value": 7728.168064109904,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -1976,7 +1976,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2001,7 +2001,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2026,7 +2026,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2051,7 +2051,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2076,7 +2076,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2101,7 +2101,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2154,7 +2154,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2179,7 +2179,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2204,7 +2204,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2229,7 +2229,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2254,7 +2254,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2279,7 +2279,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2330,7 +2330,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2355,7 +2355,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2380,7 +2380,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -2405,7 +2405,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
