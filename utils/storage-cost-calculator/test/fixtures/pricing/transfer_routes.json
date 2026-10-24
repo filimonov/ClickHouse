@@ -31,7 +31,7 @@
     }
   ],
   "expected": {
-    "total": 2,
+    "total": 4,
     "lines": {
       "ec2_s3_same_region": {
         "quantity": 1000,
@@ -39,7 +39,7 @@
       },
       "ec2_ec2_cross_az": {
         "quantity": 200,
-        "money": 2
+        "money": 4
       },
       "internet": {
         "quantity": 50,
@@ -47,5 +47,5 @@
       }
     }
   },
-  "derivation": "binary_gb. Same-region EC2<->S3 price 0 -> 0. Cross-AZ: 200 GB * 0.01 = 2.00. Internet price is null -> line with a note and money 0. Total 2.00."
+  "derivation": "binary_gb. Same-region EC2<->S3 price 0 -> 0. Cross-AZ: 200 GB * 0.01 per GB in each direction (out and in) * 2 = 4.00. Internet price is null -> line with a note and money 0. Total 4.00."
 }

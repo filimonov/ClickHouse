@@ -124,6 +124,9 @@
     return [{ rule_id: 'storage', unit: 'GB-month', quantity: gb, money, tiers, note, source_url: st.source_url, by_category: byCat }];
   }
 
+  // `each_direction`: the provider charges the sending side and the receiving side, so each GB moved is billed twice.
+  const TRANSFER_LEGS = { both: 1, out: 1, in: 1, each_direction: 2 };
+
   function transferLines(rows, preset) {
     const acc = new Map();
     for (const r of rows) {
@@ -139,7 +142,10 @@
         if (id !== 'internet') throw new Error(`route ${id}: price_per_gb is null; only internet may be unpriced`);
         return { rule_id: id, unit: 'GB', quantity: gb, money: 0, tiers: null, note: `egress not priced: ${rule.note}`, source_url: rule.source_url };
       }
-      return { rule_id: id, unit: 'GB', quantity: gb, money: gb * rule.price_per_gb, tiers: null, note: `${rule.price_per_gb} per GB, ${rule.direction}`, source_url: rule.source_url };
+      const legs = TRANSFER_LEGS[rule.direction];
+      if (legs === undefined) throw new Error(`route ${id}: unknown direction ${JSON.stringify(rule.direction)}; expected one of ${Object.keys(TRANSFER_LEGS).join(', ')}`);
+      const note = legs === 2 ? `${rule.price_per_gb} per GB in each direction: ${gb} GB billed out and in` : `${rule.price_per_gb} per GB, ${rule.direction}`;
+      return { rule_id: id, unit: 'GB', quantity: gb, money: gb * legs * rule.price_per_gb, tiers: null, note, source_url: rule.source_url };
     });
   }
 

@@ -40,9 +40,9 @@ test('test_drill_json_and_exit_code', () => {
   assert.deepEqual([c.stage3_ledger_summary.by_row['block_io iops'].quantity, c.stage3_ledger_summary.by_row['block_io mibps'].quantity], [6000, 200]);
   const money = Object.fromEntries(c.stage4_billing_lines.map((l) => [l.rule_id, l.money]));
   assert.equal(money.storage, 23); // 1000 GB * 0.023
-  assert.equal(money.ec2_ec2_cross_az, 1); // 100 GB * 0.01
+  assert.equal(money.ec2_ec2_cross_az, 2); // 100 GB * 0.01, out and in
   assert.equal(money.block_capacity, 4); // stripe2: 2 x 25 GiB * 0.08
-  assert.ok(Math.abs(c.billing_total - 28.000019) < 1e-9);
+  assert.ok(Math.abs(c.billing_total - 29.000019) < 1e-9);
   assert.equal(c.stage5_allocation.provisioning.layout, 'stripe2');
   assert.equal(c.stage5_allocation.provisioning.monthly_cost, 4);
   assert.equal(c.evidence.inventory_initial, 'declared');
@@ -85,7 +85,7 @@ test('test_render_drill_contains_substituted_values_and_money', () => {
   assert.match(row, /PutObject ok/);
   assert.equal((row.match(/data-value="3"/g) || []).length, 3); // predicted, measured and expected
   assert.match(row, /data-exact="true"/);
-  for (const m of ['23', '1', '4', '0.000015', '28.000019']) assert.ok(html.includes(`data-value="${m}" data-kind="money"`), `money ${m}`);
+  for (const m of ['23', '2', '4', '0.000015', '29.000019']) assert.ok(html.includes(`data-value="${m}" data-kind="money"`), `money ${m}`);
   assert.ok(html.includes('stripe2: <span data-value="2">2</span> x <span data-value="25">25</span> GiB'));
   for (const n of [1, 2, 3, 4, 5]) assert.ok(html.includes(`data-stage="${n}"`));
   assert.equal(html.includes('data-exact="false"'), false);

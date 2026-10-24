@@ -37,9 +37,9 @@ test('test_card_text_for_each_state', () => {
   assert.equal(card(ok, 'cas').state_text, 'cheapest');
   assert.equal(card(ok, 'cas').total_text, '$23.01');
   assert.equal(card(ok, 'ebs').state_text, 'comparable');
-  assert.deepEqual(card(ok, 'cas').delta_texts, ['vs EBS: −$56.99', 'vs S3: −$12.41']);
+  assert.deepEqual(card(ok, 'cas').delta_texts, ['vs EBS: −$56.99', 'vs S3: −$24.58']);
   // A reference column has no delta against itself.
-  assert.deepEqual(card(ok, 'ebs').delta_texts, ['vs S3: +$44.58']);
+  assert.deepEqual(card(ok, 'ebs').delta_texts, ['vs S3: +$32.41']);
   assert.equal(cell(ok, 'storage', 'cas').text, '$23.00');
   assert.equal(cell(ok, 'storage', 'cas').clickable, true);
 
@@ -289,8 +289,8 @@ test('test_fmt_money_thousands_and_currency', () => {
   assert.equal(vm.currency, 'EUR');
   // Money is rounded only for display: the Result keeps the exact total.
   const { res } = view();
-  assert.equal(res.variants.s3.total, 35.42166666666667);
-  assert.equal(card(view().vm, 's3').total_text, '$35.42');
+  assert.equal(res.variants.s3.total, 47.58833333333334);
+  assert.equal(card(view().vm, 's3').total_text, '$47.59');
 });
 
 test('test_out_of_range_note_once_per_param', () => {

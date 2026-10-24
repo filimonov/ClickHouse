@@ -46,10 +46,10 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.equal(cas.includes('class="card-state"'), false);
   assert.ok(cas.includes('badge-ok">cheapest'));
   assert.ok(cas.includes('title="Stored data: $23.00"'), cas);
-  assert.ok(cas.includes('<li>vs EBS: −$56.99</li>') && cas.includes('<li>vs S3: −$12.41</li>'));
+  assert.ok(cas.includes('<li>vs EBS: −$56.99</li>') && cas.includes('<li>vs S3: −$24.58</li>'));
   const ebs = cardHtml(parts.cards, 'ebs');
   assert.equal(ebs.includes('comparable'), false);
-  assert.ok(ebs.includes('<li>vs S3: +$44.58</li>'));
+  assert.ok(ebs.includes('<li>vs S3: +$32.41</li>'));
   assert.equal(ebs.includes('cheapest'), false);
   // Table cell money, and the cell is a drill button.
   assert.match(parts.table, /data-variant="cas" data-operation="storage"[^>]*>\$23\.00<\/button>/);

@@ -16,13 +16,13 @@
     }
   ],
   "expected": {
-    "total": 2.147483648,
+    "total": 4.294967296,
     "lines": {
       "ec2_ec2_cross_az": {
         "quantity": 214.7483648,
-        "money": 2.147483648
+        "money": 4.294967296
       }
     }
   },
-  "derivation": "decimal: 200 GiB * 1.073741824 = 214.7483648 GB; * 0.01 = 2.147483648."
+  "derivation": "decimal: 200 GiB * 1.073741824 = 214.7483648 GB; * 0.01 per GB in each direction (out and in) * 2 = 4.294967296."
 }

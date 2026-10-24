@@ -98,7 +98,9 @@ test('test_transfer_routes', () => {
   const r = billing.bill([row('transfer', 'x', 'ok', 10, { route: 'ec2_s3_same_region' }),
     row('transfer', 'x', 'ok', 10, { route: 'ec2_ec2_cross_az' }), row('transfer', 'x', 'ok', 10, { route: 'internet' })], P());
   assert.equal(line(r, 'ec2_s3_same_region').money, 0);
-  close(line(r, 'ec2_ec2_cross_az').money, 0.1);
+  // Cross-AZ is charged on the sending and on the receiving side: 10 GB moved bill 2 x 10 GB.
+  close(line(r, 'ec2_ec2_cross_az').money, 0.2);
+  assert.match(line(r, 'ec2_ec2_cross_az').note, /each direction/);
   assert.equal(line(r, 'internet').money, 0);
   assert.match(line(r, 'internet').note, /not priced|egress/);
   assert.throws(() => billing.bill([row('transfer', 'x', 'ok', 1, { route: 'carrier_pigeon' })], P()), /carrier_pigeon/);
@@ -106,6 +108,19 @@ test('test_transfer_routes', () => {
   const noPrice = presetOf('aws-us-east-1');
   noPrice.transfer = noPrice.transfer.map((t) => (t.id === 'ec2_ec2_cross_az' ? Object.assign({}, t, { price_per_gb: null }) : t));
   assert.throws(() => billing.bill([row('transfer', 'x', 'ok', 1, { route: 'ec2_ec2_cross_az' })], noPrice), /price/);
+  const noDirection = presetOf('aws-us-east-1');
+  noDirection.transfer = noDirection.transfer.map((t) => (t.id === 'ec2_ec2_cross_az' ? Object.assign({}, t, { direction: 'sideways' }) : t));
+  assert.throws(() => billing.bill([row('transfer', 'x', 'ok', 1, { route: 'ec2_ec2_cross_az' })], noDirection), /direction/);
+});
+
+test('test_interserver_transfer_of_the_logs_preset', () => {
+  // 500 GiB/day fetched by one follower over a 2 628 000 s month, times 1.0008 framing: about $304 across AZs.
+  const gib = (500 / 86400) * 2628000 * (2 - 1) * 1.000804700184805;
+  const r = billing.bill([row('transfer', 'interserver', 'all', gib, { route: 'ec2_ec2_cross_az' })], presetOf('aws-us-east-1'));
+  assert.ok(Math.abs(line(r, 'ec2_ec2_cross_az').quantity - 15220.57) < 0.01, line(r, 'ec2_ec2_cross_az').quantity);
+  assert.ok(Math.abs(line(r, 'ec2_ec2_cross_az').money - 304.41) < 0.01, line(r, 'ec2_ec2_cross_az').money);
+  const zero = billing.bill([row('transfer', 'interserver', 'all', 0, { route: 'ec2_ec2_cross_az' })], presetOf('aws-us-east-1'));
+  assert.equal(line(zero, 'ec2_ec2_cross_az').money, 0);
 });
 
 test('test_decimal_conversion', () => {
