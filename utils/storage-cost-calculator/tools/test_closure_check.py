@@ -243,6 +243,20 @@ class AccountingReplayTest(unittest.TestCase):
         self.assertIn('UploadPart attempts', found)
         self.assertIn('byte_hours.incomplete.upper', found)
 
+    def test_raw_slice_of_a_run_wins_over_the_card_slice(self):
+        # Every run's ledger restarts its seq numbers, so a card measured in two runs keeps one slice per run.
+        with tempfile.TemporaryDirectory() as d:
+            records = [{'measurement_id': f'{run}/s3/c/x/k1', 'run_id': run, 'card': 'c'} for run in ('r-a', 'r-b', 'r-c')]
+            with open(os.path.join(d, 'measurements.jsonl'), 'w') as f:
+                f.writelines(json.dumps(r) + '\n' for r in records)
+            for sub in ('c', 'c/r-a', 'c/r-b'):
+                os.makedirs(os.path.join(d, 'raw', sub), exist_ok=True)
+                open(os.path.join(d, 'raw', sub, 'ledger.jsonl.gz'), 'w').close()
+            found = {k: str(v) for k, v in cc.raw_slices([d]).items()}
+        self.assertTrue(found['r-a/s3/c/x/k1'].endswith('raw/c/r-a/ledger.jsonl.gz'))
+        self.assertTrue(found['r-b/s3/c/x/k1'].endswith('raw/c/r-b/ledger.jsonl.gz'))
+        self.assertTrue(found['r-c/s3/c/x/k1'].endswith('raw/c/ledger.jsonl.gz'))
+
     def test_final_mode_needs_a_raw_slice_and_the_pricing_tests_are_the_checked_in_ones(self):
         m, p = example('measurement-ok.json'), example('prediction.json')
         self.assertTrue(any('raw ledger slice' in x for x in cc.accounting([m], [p], node_test_cmd=['true'], mode='final', raw={})))

@@ -339,7 +339,11 @@ def _node_fixtures(cmd, mode):
 
 
 def raw_slices(reports):
-    """measurement_id -> raw ledger slice (`raw/<card>/ledger.jsonl[.gz]`) of every report record."""
+    """measurement_id -> raw ledger slice of every report record.
+
+    `raw/<card>/<run_id>/ledger.jsonl[.gz]` wins over `raw/<card>/ledger.jsonl[.gz]`: every run's ledger restarts
+    its seq numbers, so a card measured in several runs keeps one slice per run.
+    """
     out = {}
     for r in reports:
         path = Path(r) / "measurements.jsonl"
@@ -352,10 +356,12 @@ def raw_slices(reports):
                 continue  # reported by the loader
             if not isinstance(m, dict):
                 continue
-            for name in ("ledger.jsonl", "ledger.jsonl.gz"):
-                p = Path(r) / "raw" / str(m.get("card")) / name
+            card = Path(r) / "raw" / str(m.get("card"))
+            for p in [card / str(m.get("run_id")) / n for n in ("ledger.jsonl", "ledger.jsonl.gz")] + \
+                     [card / n for n in ("ledger.jsonl", "ledger.jsonl.gz")]:
                 if p.exists():
                     out[m.get("measurement_id")] = p
+                    break
     return out
 
 
