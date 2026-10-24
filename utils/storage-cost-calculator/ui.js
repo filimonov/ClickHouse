@@ -278,14 +278,15 @@
     if (!t.rows.length) return '<section class="section"><h2>Breakdown</h2><p class="mute">No workload type has a model yet, so there is nothing to break down.</p></section>';
     const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}${c.cheapest ? ` ${badge(c.cheapest_text, 'ok')}` : ''}</th>`).join('');
     const colLabel = new Map(t.columns.map((c) => [c.variant, c.label]));
-    const body = t.rows.map((r) => `<tr data-operation="${esc(r.operation)}"><th scope="row">${esc(r.label)}</th>${r.cells.map((c) => {
+    const body = t.rows.map((r) => `<tr data-operation="${esc(r.operation)}"><th scope="row">${esc(r.label)}${r.note ? `<span class="row-note">${esc(r.note)}</span>` : ''}</th>${r.cells.map((c) => {
       known(CELL_STATES, c.state, 'cell state');
       const key = `${c.variant}.${c.operation}`;
       // data-label names the column when narrow screens stack the cells under their row.
       const lab = ` data-label="${esc(colLabel.get(c.variant))}"`;
       if (!c.clickable) return `<td class="cell-off"${lab} data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
       return `<td${lab}><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
-        + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}</td>`;
+        + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}`
+        + `${c.hint ? `<span class="zero-hint">${esc(c.hint)}</span>` : ''}</td>`;
     }).join('')}</tr>`).join('');
     return `<section class="section"><h2>Breakdown by workload type</h2><p class="mute">Select a cell to see how it is calculated.</p>`
       + `<div class="tbl"><table class="breakdown"><thead><tr><th scope="col">Workload type</th>${head}</tr></thead><tbody>${body}</tbody></table></div></section>`;
@@ -328,7 +329,13 @@
 
   function renderEvidence(vm) {
     if (vm.page_state === 'cannot_reproduce' || !vm.evidence_statement) return '';
-    return `<section class="section evidence-statement"><h2>What these numbers rest on</h2><p>${esc(vm.evidence_statement)}</p></section>`;
+    const e = vm.evidence || { reports: [], columns: [] };
+    const cols = e.columns.map((c) => `<tr data-variant="${esc(c.variant)}"><th scope="row">${esc(c.label)}</th><td>${num(c.fit_and_holdout)}</td><td>${num(c.fit_only)}</td><td>${num(c.assumption)}</td></tr>`).join('');
+    const table = cols ? `<div class="tbl"><table class="evidence-columns"><thead><tr><th scope="col">Column</th><th scope="col">Cells with fit and hold-out</th>`
+      + `<th scope="col">Fit only</th><th scope="col">Assumption only</th></tr></thead><tbody>${cols}</tbody></table></div>` : '';
+    const reports = list(e.reports.map((r) => `<li><a href="${esc(r.href)}">${esc(r.name)}</a></li>`), 'reports');
+    return `<section class="section evidence-statement"><h2>What these numbers rest on</h2><p>${esc(vm.evidence_statement)}</p>${table}`
+      + `${reports ? `<h4>Reports</h4>${reports}` : ''}</section>`;
   }
 
   // Inline SVG. Points are spaced by their order (the sweep values are geometric), heights are proportional to the

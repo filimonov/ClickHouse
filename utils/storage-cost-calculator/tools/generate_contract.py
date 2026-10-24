@@ -51,6 +51,8 @@ BLOCKS = closure_check.BLOCKS
 MAX_SETTING_INPUTS = 10
 UI_SHORT_MAX = 40
 SOURCE_PREFIX = "tmp/src-26.8/"
+MEASURED_RELEASE = re.search(r"src-(\d+\.\d+)", SOURCE_PREFIX).group(1)
+MEASURED_STORE = "RustFS"
 
 # Validates the assembled contract with the page's own loader and renders every expression with the page's renderer,
 # so the document shows exactly what "show calculation" shows.
@@ -287,7 +289,7 @@ def build(opts, mode="dev"):
     manifest["evidence"] = evidence
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
-        "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending)),
+        "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending), measured_build(evidence)),
         "registry": with_measured_by(reg["quantities"], coefficients, coef_owner, evidence), "sets": reg["sets"], "precedence": reg["precedence"],
         "coefficients": coefficients, "billing": bil,
         "variants": domain["variants"], "operations": domain["operations"], "families": domain["families"],
@@ -303,6 +305,7 @@ def build(opts, mode="dev"):
         return None, None, problems, pending, notes
     problems += rendered["problems"]
     contract["formulas"], contract["states"] = rendered["formulas"], rendered["states"]
+    contract["evidence_by_variant"] = evidence_by_variant(contract["formulas"], coefficients, cov)
     # The version names the content: two builds from the same inputs carry the same version. The break-even file
     # records this version (it is swept on the contract), so its own hash joins the manifest after the version is
     # fixed; otherwise sweeping would change the version it must name.
@@ -396,13 +399,52 @@ def coefficient_identity(coefficients, coef_owner, evidence):
             if isinstance(c, dict) and coef_owner.get(c.get("id")) in by_report}
 
 
-def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells):
+def _coef_ids(node, out):
+    if isinstance(node, dict):
+        if node.get("kind") == "coef":
+            out.add(node["id"])
+        elif node.get("kind") == "lookup":
+            out.add(node["table_id"])
+        for v in node.values():
+            _coef_ids(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _coef_ids(v, out)
+    return out
+
+
+def evidence_by_variant(formulas, coefficients, cov):
+    """Per variant, how many operation cells rest on coefficients with a done fit and hold-out, on a fit only, or on
+    assumptions alone (no measured coefficient)."""
+    measured = {c["id"] for c in coefficients if isinstance(c, dict) and (c.get("evidence") or {}).get("kind") == "measured"}
+    fit = {e["coefficient"] for e in cov["evidence"] if e["role"] == "fit" and e["status"] in ("done", "consumed")}
+    holdout = {e["coefficient"] for e in cov["evidence"] if e["role"] == "holdout" and e["status"] == "done"}
+    out = {}
+    for v in sorted(formulas):
+        counts = {"fit_and_holdout": 0, "fit_only": 0, "assumption": 0}
+        for cell in formulas[v].values():
+            if not cell.get("ledger_rows"):
+                continue
+            used = _coef_ids(cell, set()) & measured
+            if not used:
+                counts["assumption"] += 1
+            elif used <= (fit & holdout):
+                counts["fit_and_holdout"] += 1
+            else:
+                counts["fit_only"] += 1
+        out[v] = counts
+    return out
+
+
+def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, build=None):
     kinds = [(c.get("evidence") or {}).get("kind") for c in coefficients if isinstance(c, dict)]
     p1 = {f"{c['name']}.{k['case_id']}" for c in cov["cards"] for k in c["cases"] if k["priority"] == "P1"}
     closed = sorted({e["coefficient"] for e in cov["evidence"] if e["experiment_id"] in p1 and e["role"] == "holdout" and e["status"] == "done"}
                     & {e["coefficient"] for e in cov["evidence"] if e["experiment_id"] in p1 and e["role"] == "fit" and e["status"] in ("done", "consumed")})
     names = ", ".join(r.name for r in reports) or "none"
-    return (f"Built from {len(reports)} report(s): {names}. {len(coefficients)} coefficient(s): "
+    measured_on = (f"Measured on ClickHouse commit {build} (release {MEASURED_RELEASE}) against a {MEASURED_STORE} S3 store. "
+                   if build else "")
+    return (f"{measured_on}Built from {len(reports)} report(s): {names}. {len(coefficients)} coefficient(s): "
             f"{kinds.count('measured')} measured, {kinds.count('source')} pinned to source. "
             f"{len(closed)} P1 coefficient(s) have a done fit and a done hold-out. "
             f"Registry {reg['version']}, coverage {cov['version']}, billing {bil['version']}. "

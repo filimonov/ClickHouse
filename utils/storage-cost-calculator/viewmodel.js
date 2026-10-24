@@ -278,7 +278,21 @@
       || contract.families.some((f) => (((contract.applicability[v] || {})[op] || {})[f] || 'not_applicable') !== 'not_applicable'));
   }
 
-  function buildTable(result, contract, preset, pageState, problems) {
+  // Inputs that drive an operation: a $0 cell whose drivers are all zero is "no <work> in this workload", not free.
+  const OP_DRIVERS = {
+    mutations: [['mutations_per_month', 'cas_mutations_per_s', 'mutated_compact_parts_per_month', 'mutated_wide_parts_per_month'], 'ALTER UPDATE/DELETE'],
+    reads: [['select_part_reads_per_day'], 'cold reads'], recovery: [['restarts_per_month'], 'restarts'], replacement: [['replacement_rate'], 'replica replacements'],
+  };
+  function zeroHint(op, fields) {
+    const d = OP_DRIVERS[op];
+    if (!d) return null;
+    const vals = d[0].filter((id) => fields && fields[id]).map((id) => fields[id].value);
+    return vals.length && vals.every((x) => x === 0) ? `no ${d[1]} in this workload` : null;
+  }
+  // AWS prices storage per GB; no AWS page says whether that GB is 10^9 or 2^30 bytes.
+  const GIB_NOTE = 'GB = binary GiB (assumption, no AWS statement found)';
+
+  function buildTable(result, contract, preset, pageState, problems, fields) {
     const rows = [];
     for (const op of contract.operations) {
       if (!operationShown(contract, op)) continue;
@@ -289,9 +303,10 @@
         if (!c) return { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
-        return { variant: v, operation: op, text, state: 'ok', extrapolated: !!c.extrapolated, clickable: true };
+        const hint = pageState === 'ok' && c.money === 0 ? zeroHint(op, fields) : null;
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: !!c.extrapolated, clickable: true, hint };
       });
-      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells });
+      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: op === 'storage' && pageState === 'ok' ? GIB_NOTE : null });
     }
     const best = cheapestOf(result);
     return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows };
@@ -534,6 +549,18 @@
     return { blocks: [...blocks.values()].filter((b) => b.fields.length || b.block === 'prices' || b.block === 'simple'), groups, lock_order: lockOrder.slice() };
   }
 
+  // ---- evidence -----------------------------------------------------------------------------------
+
+  // The measured build, the reports behind the numbers and, per column, how its cells are backed.
+  function buildEvidence(contract) {
+    const by = contract.evidence_by_variant || null;
+    return {
+      statement: contract.evidence_statement || null, build: measuredBuild(contract),
+      reports: ((contract.manifest || {}).evidence || []).map((e) => ({ name: e.report, href: `../../docs/superpowers/reports/${e.report}/README.md` })),
+      columns: by ? contract.variants.filter((v) => by[v]).map((v) => ({ variant: v, label: variantLabel(v), fit_and_holdout: by[v].fit_and_holdout, fit_only: by[v].fit_only, assumption: by[v].assumption })) : [],
+    };
+  }
+
   // ---- info dialog --------------------------------------------------------------------------------
 
   // The ClickHouse build every report measured, short form; null when the reports disagree or name none.
@@ -712,13 +739,14 @@
     const vm = {
       page_state: pageState, page_reason: pageState === 'cannot_reproduce' ? result.page_reason || null : plainReason(result.page_reason) || null, evidence_statement: result.evidence_statement,
       currency: preset && !preset.structure_only ? preset.currency : null, theme: u.theme || null,
-      cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, problems,
+      cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, evidence: null, problems,
     };
     vm.inputs = buildInputs(contract, fields, lockOrder || [], preset, u, pageState, problems);
     vm.notes = buildNotes(result, contract, fields, pageState);
     if (pageState === 'cannot_reproduce') return vm;
     vm.cards = buildCards(result, contract, preset, pageState, vm.inputs);
-    vm.table = buildTable(result, contract, preset, pageState, problems);
+    vm.table = buildTable(result, contract, preset, pageState, problems, fields);
+    vm.evidence = buildEvidence(contract);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
     if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems);
     // A chart of money has nothing to draw without prices.
@@ -726,6 +754,6 @@
     return vm;
   }
 
-  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, TIERS, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

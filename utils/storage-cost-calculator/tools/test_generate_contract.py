@@ -109,7 +109,7 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(code, 0, log)
         hint = "; run tools/generate_contract.py generate"
         for path, old, new, expect in (
-                (self.page, '"evidence_statement":"Built', '"evidence_statement":"Edited', f"stale: {self.page} differs from a fresh render (block page){hint}"),
+                (self.page, '"evidence_statement":"Measured', '"evidence_statement":"Edited', f"stale: {self.page} differs from a fresh render (block page){hint}"),
                 (self.doc, "`parts_inserted × puts_per_compact_part`", "`2 × puts_per_compact_part`", f"stale: {self.doc} differs from a fresh render (block formulas){hint}"),
                 (self.copy, '"version": "', '"version": "x', f"stale: {self.copy} differs from a fresh render{hint}")):
             with self.subTest(path=path.name):
@@ -426,6 +426,10 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(q["ui"]["tier"], "workload")
         self.assertTrue(q["ui"]["measured_by"].startswith(("Assumed:", "Default from", "Provider rule:", "Measured:")), q["ui"])
         self.assertIn("| `workload` | `parts_inserted` |  | Parts inserted | `simple` |", self.doc.read_text())
+        # Cells without rows count nowhere; the s3 cell rests on a coefficient with a done fit and hold-out.
+        self.assertEqual(contract["evidence_by_variant"], {"ebs": {"fit_and_holdout": 0, "fit_only": 0, "assumption": 0},
+                                                           "s3": {"fit_and_holdout": 1, "fit_only": 0, "assumption": 0}})
+        self.assertTrue(contract["evidence_statement"].startswith("Measured on ClickHouse commit 78133cca87d (release 26.8) against a RustFS S3 store."))
 
 
 class RegistryUiTest(unittest.TestCase):
