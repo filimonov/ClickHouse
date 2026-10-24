@@ -1,0 +1,85 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.cache-off",
+  "policy": "s3plain",
+  "inputs": {
+    "replicas": 1,
+    "large_objects_per_part": 0,
+    "multipart_parts": 0,
+    "parts_inserted_per_month": 0,
+    "merge_results_per_month": 0,
+    "merge_sources_per_month": 0,
+    "merge_removals_per_month": 0,
+    "large_objects_per_merge_result": 0,
+    "mutations_per_month": 0,
+    "mutated_compact_parts_per_month": 0,
+    "mutated_wide_parts_per_month": 0,
+    "large_objects_per_mutated_part": 0,
+    "mutation_entries_removed_per_month": 0,
+    "mutation_kind": "update_column",
+    "expired_parts_per_month": 0,
+    "expiry_operations_per_month": 0,
+    "select_part_reads_per_day": 0.13150684931506848,
+    "read_streams_per_part": 3,
+    "parts_first_read_per_month": 4,
+    "restarts_per_month": 0,
+    "active_parts": 0,
+    "outdated_parts": 0,
+    "statistics_refreshes_per_month": 0,
+    "retained_mutation_entries": 0,
+    "missed_parts_per_restart": 0,
+    "cache_miss_fraction": 0,
+    "cache_size_gib": 0,
+    "write_amplification_rule": 1,
+    "cache_enabled": "0",
+    "shape": "wide",
+    "part_type": "wide"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": {
+          "min": 1,
+          "max": 400,
+          "basis": "assumption",
+          "reason": "read splitting; this fit measures it"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 0,
+          "basis": "assumption",
+          "reason": "none expected after startup"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 40,
+          "basis": "assumption",
+          "reason": "none expected: sizes come from the in-memory layout"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a read resolves the object key from the in-memory layout",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp",
+      "line": 359
+    },
+    {
+      "claim": "statistics are loaded per part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 997
+    },
+    {
+      "claim": "one .bin range and one marks file per stream read",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeReaderStream.cpp",
+      "line": 270
+    }
+  ],
+  "prediction_commit": "pending"
+}

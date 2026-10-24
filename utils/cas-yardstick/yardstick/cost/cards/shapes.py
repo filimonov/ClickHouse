@@ -11,6 +11,7 @@ import json
 import os
 import time
 
+from . import s3plain
 from .base import DATABASE, POLL_S
 from .lifecycle import LifecycleCard, check_observation, defaults
 from .probes import REPO, _count, _sql, compare_ledger, register, window_rows
@@ -90,7 +91,12 @@ def insert_part_type(registry: dict, table: dict, table_settings: dict, rows: in
 class S3Card(LifecycleCard):
     """A manifest card over the tables of `params.tables`; the workload runs on `params.replica`."""
 
-    policies = ('s3', 's3_cached')
+    # The s3plain report reuses these cards with unchanged manifests; its capability gate refuses some operations.
+    policies = ('s3', 's3_cached', 's3plain', 's3plain_cached')
+
+    def supports(self, policy):
+        gate = s3plain.supports(self.name, policy)
+        return gate if gate is not None else super().supports(policy)
 
     def tables(self, ctx):
         return [t['name'] for t in self.p(ctx)['tables']]
