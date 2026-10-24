@@ -1,19 +1,19 @@
 {
  "schema": "contract/1",
- "version": "b7ca0a0b153dc353",
+ "version": "67046ec5fb440e04",
  "manifest": {
-  "code_sha256": "4c618d993f06b191a3a899f58b738c5250220fcbace33d64f303512ccbd290e5",
+  "code_sha256": "24526790e64e6f47928b64c63d8a3e1a463088831f51c43bc51376aa2d75b0f6",
   "code_files": {
    "billing.js": "6264020b8a3a25b7eb96d857344cfc85408082ce202b3a1d73f47fcd549d1a1c",
    "contract.js": "1fab9f01cefb29e12234670db214089a13331c94b6868c39d0a4909dd2d2ad0f",
    "model.js": "377b8e98df76c529ff445ac3a98e632834d15f6a5e3c8978be932138fa89598a",
    "pipeline.js": "b7fd9a16b91c9f5cf6031b5cabe02db91ddce5dede9b542aa30c4ff982770b51",
-   "presets.js": "14665137db6d76576e0abecad0c5fac3bf4957c930ef222a74f91a45d0506ba0",
+   "presets.js": "dba996e4e247ce48090a6115e4b420a7247abb2f04213c40858bf19e195d7fcf",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
-   "viewmodel.js": "10023d3299c4f67ab029dbb77ce2007eafe4c90342aea0698a3038d78c7ae6a6"
+   "viewmodel.js": "ff54fdb075460b1558025c8156397e865a1754c3e4d717a6a6412b0e9a49a81f"
   },
   "code_missing": [],
-  "contract_version": "b7ca0a0b153dc353",
+  "contract_version": "67046ec5fb440e04",
   "registry_version": "0.2.0",
   "registry_sha256": "5c2b0f8999ec3001f9666e5fd48121d75c92309f525ef4d62bdffbfd55274c63",
   "coverage_version": "0.2.0",

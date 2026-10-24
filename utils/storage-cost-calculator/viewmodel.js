@@ -24,7 +24,7 @@
     not_supported: 'not supported for this workload',
     unavailable: 'not available for this workload',
     backlog_grows: 'backlog grows; steady-state monthly cost unavailable',
-    unsupported_cut: 'unsupported for this workload: a needed measurement was cut',
+    unsupported_cut: 'not modelled yet: a required measurement is missing',
   };
   const CELL_TEXT = { not_supported: 'not supported', unavailable: 'not available', backlog_grows: 'backlog grows', unsupported_cut: 'unsupported' };
   const PAGE_STATES = ['ok', 'prices_missing', 'cannot_reproduce'];
@@ -34,6 +34,12 @@
     if (state === 'ok') throw new Error('stateText: ok has no state text');
     if (!Object.prototype.hasOwnProperty.call(STATE_TEXT, state)) throw new Error(`unknown variant state ${JSON.stringify(state)}`);
     return STATE_TEXT[state];
+  }
+
+  // Short state text for table cells, chart points and deltas.
+  function cellText(state) {
+    if (!Object.prototype.hasOwnProperty.call(CELL_TEXT, state)) throw new Error(`unknown variant state ${JSON.stringify(state)}`);
+    return CELL_TEXT[state];
   }
 
   function variantLabel(v) {
@@ -72,6 +78,13 @@
     const digits = abs >= 1000 ? 0 : abs >= 1 ? 2 : 6;
     const s = nf(`q:${digits}`, { maximumFractionDigits: digits }).format(value).replace('-', '−');
     return unit && unit !== '1' && unit !== 'count' ? `${s} ${unit}` : s;
+  }
+
+  // Unit prices keep up to six decimals ($0.0004 per 1,000 requests); totals use fmtMoney.
+  function fmtPrice(value, currency) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`fmtPrice: expected a finite number, got ${JSON.stringify(value)}`);
+    if (typeof currency !== 'string' || !currency) throw new Error(`fmtPrice: price preset has no currency (${JSON.stringify(currency)})`);
+    return nf(`price:${currency}`, { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value);
   }
 
   const withExtrapolated = (text, ex) => (ex ? `${text} (${EXTRAPOLATED})` : text);
@@ -141,7 +154,7 @@
       const d = (result.deltas[v] || {})[key];
       const name = `vs ${variantLabel(ref)}`;
       if (d) out.push(withExtrapolated(`${name}: ${fmtMoney(d.value, currency, { sign: true })}`, d.extrapolated));
-      else out.push(`${name}: not comparable (${variantLabel(ref)} ${result.variants[ref].state === 'ok' ? 'has no total' : CELL_TEXT[result.variants[ref].state]})`);
+      else out.push(`${name}: not comparable (${variantLabel(ref)} ${result.variants[ref].state === 'ok' ? 'has no total' : cellText(result.variants[ref].state)})`);
     }
     return out;
   }
@@ -192,7 +205,7 @@
         const vr = result.variants[v];
         const c = vr.cells[op];
         if (!c) return { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
-        if (vr.state !== 'ok') return { variant: v, operation: op, text: CELL_TEXT[vr.state] || stateText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
+        if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op)) : fmtMoney(c.money, preset.currency);
         return { variant: v, operation: op, text: withExtrapolated(text, c.extrapolated), state: 'ok', extrapolated: !!c.extrapolated, clickable: true };
       });
@@ -211,7 +224,7 @@
     const cell = vr && vr.cells[op];
     const formula = (contract.formulas[v] || {})[op];
     if (!vr || !cell || !formula) { problems.push(`drill: ${v}.${op} has no cell`); return null; }
-    if (vr.state !== 'ok') { problems.push(`drill: ${v}.${op} cannot be opened: ${CELL_TEXT[vr.state] || vr.state}`); return null; }
+    if (vr.state !== 'ok') { problems.push(`drill: ${v}.${op} cannot be opened: ${cellText(vr.state)}`); return null; }
     const R = model();
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
     const coefById = new Map(contract.coefficients.map((c) => [c.id, c]));
@@ -329,7 +342,7 @@
       }
       const b = blocks.get(q.block);
       const f = { id: q.id, label: q.label || q.id, unit: q.unit || null, kind: q.kind, value_type: q.value_type, enum: q.enum || null, evidence_kind: q.evidence ? q.evidence.kind : null,
-        rate: typeof q.unit === 'string' && q.unit.endsWith('/day'), editable: q.kind === 'input', locked: null, derived: false, overridden: false, out_of_range: false, range: null, rule_text: null, hint: q.hint || null, value: null };
+        rate: typeof q.unit === 'string' && q.unit.endsWith('/day'), editable: q.kind === 'input', locked: null, derived: false, overridden: false, out_of_range: false, range: null, validity: null, rule_text: null, hint: q.hint || null, value: null };
       if (q.kind === 'input') {
         const fl = fields[q.id];
         if (!fl) problems.push(`input ${q.id} is missing from the resolved fields`);
@@ -341,13 +354,13 @@
       } else if (q.kind === 'derivation') {
         f.derived = true;
         f.rule_text = q.rule ? R.render(q.rule, contract.registry) : null;
-        f.range = q.validity || null;
+        f.validity = q.validity || null;
       } else if (q.kind === 'measured') {
         const c = coefById.get(q.coef);
         if (!c) problems.push(`registry ${q.id}: coefficient ${q.coef} is not in the contract`);
         else {
           f.value = c.kind === 'table' ? null : c.value;
-          f.range = c.validity || null;
+          f.validity = c.validity || null;
           if (c.kind === 'table') f.value_text = `table of ${Object.keys(c.value.values).length} entries by ${c.value.index.join(', ')}`;
         }
       }
@@ -365,8 +378,8 @@
       prices.as_of = preset.as_of || null;
       prices.note = preset.structure_only ? 'values not provided' : null;
       for (const p of presets().priceFields(preset)) {
-        prices.fields.push({ id: `price:${p.path}`, path: p.path, label: p.label, value: p.value, unit: p.unit, kind: 'price', editable, as_of: preset.as_of, source_url: p.source_url,
-          locked: null, derived: false, overridden: false, out_of_range: false, range: null, hint: null, value_text: `${p.value} ${p.unit}` });
+        prices.fields.push({ id: `price:${p.path}`, path: p.path, label: p.label, value: p.value, unit: p.unit, per: p.per, kind: 'price', editable, as_of: preset.as_of, source_url: p.source_url,
+          locked: null, derived: false, overridden: false, out_of_range: false, range: null, validity: null, hint: null, value_text: p.value === null ? 'not priced by this preset' : `${fmtPrice(p.value, preset.currency)} ${p.per}` });
       }
     }
     const groups = contract.precedence.map((g) => ({
@@ -394,14 +407,18 @@
         else notes.push({ kind: n.kind, variant: v, text: `${variantLabel(v)}: ${n.text}`, details: n.notes || null });
       }
     }
-    const value = (id) => (fields[id] ? fields[id].value : undefined);
-    const domains = [...contract.coefficients.map((c) => [`coefficient ${c.id}`, c.validity]), ...contract.registry.map((q) => [`${q.id}`, q.validity])];
-    for (const [owner, validity] of domains) {
-      for (const [param, r] of Object.entries(validity || {})) {
-        const x = value(param);
-        if (typeof x === 'number' && (x < r[0] || x > r[1])) {
-          notes.push({ kind: 'out_of_range', param, text: `${param} = ${fmtQuantity(x)} is outside the measured range [${fmtQuantity(r[0])}, ${fmtQuantity(r[1])}] of ${owner}; dependent numbers are ${EXTRAPOLATED}` });
-        }
+    // Several coefficients often share one parameter and range: one note per (param, range) names them all.
+    const byDomain = new Map();
+    for (const d of presets().validityDomains(contract)) {
+      const key = `${d.param}|${d.range[0]}|${d.range[1]}`;
+      if (!byDomain.has(key)) byDomain.set(key, { param: d.param, range: d.range, owners: [] });
+      byDomain.get(key).owners.push(d.owner);
+    }
+    for (const d of byDomain.values()) {
+      const x = fields[d.param] ? fields[d.param].value : undefined;
+      if (typeof x === 'number' && (x < d.range[0] || x > d.range[1])) {
+        notes.push({ kind: 'out_of_range', param: d.param, range: d.range, owners: d.owners,
+          text: `${d.param} = ${fmtQuantity(x)} is outside the measured range [${fmtQuantity(d.range[0])}, ${fmtQuantity(d.range[1])}] of ${d.owners.join(', ')}; dependent numbers are ${EXTRAPOLATED}` });
       }
     }
     return notes;
@@ -419,7 +436,7 @@
         const t = p.totals[v];
         const y = t.state === 'ok' && t.value !== null ? t.value : null;
         points.push({ variant: v, x: p.x, y, state: t.state, extrapolated: !!t.extrapolated && y !== null,
-          label: y === null ? `${variantLabel(v)} at ${fmtQuantity(p.x, q.unit)}: ${CELL_TEXT[t.state] || t.state}` : withExtrapolated(`${variantLabel(v)} at ${fmtQuantity(p.x, q.unit)}: ${fmtMoney(y, preset.currency)}`, t.extrapolated) });
+          label: y === null ? `${variantLabel(v)} at ${fmtQuantity(p.x, q.unit)}: ${cellText(t.state)}` : withExtrapolated(`${variantLabel(v)} at ${fmtQuantity(p.x, q.unit)}: ${fmtMoney(y, preset.currency)}`, t.extrapolated) });
       }
     }
     const breakEven = s.breakEven.map((b) => Object.assign({}, b, {
@@ -459,6 +476,6 @@
     return vm;
   }
 
-  SCC.viewmodel = { build, fmtMoney, fmtQuantity, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

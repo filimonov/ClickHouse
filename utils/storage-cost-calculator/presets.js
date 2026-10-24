@@ -7,16 +7,15 @@
   const pipeline = () => root.SCC.pipeline || require('./pipeline.js');
 
   // Scenario values are a product manager's round numbers for a plausible ClickHouse workload. Sizes are compressed
-  // on-disk bytes (`bytes_on_disk`); rates are per day as the registry stores them. Only the locked members of the
+  // on-disk bytes (`bytes_on_disk`); `ingest_rate` is per day, `insert_rate` is per second. Only the locked members of the
   // data = ingest × retention group carry a value: the third member is derived, and a value for it would be ignored.
-  // Every value lies inside the validity of the coefficients it reaches (checked by `coverageProblems`): today
-  // `insert_rows` in [1000, 100000] and `merge_size_ratio` in [6, 718], `replicas` in [1, 6], `shards` = 1.
+  // Every value lies inside every validity domain of the contract; `coverageProblems` checks it.
   // Real tables often merge into larger parts than the measured `merge_size_ratio` range; such a workload is
   // entered by the user and labelled extrapolated, not shipped as a preset.
   const SCENARIOS = {
     // Log shipping (Vector, Fluent Bit): 500 GiB/day compressed kept 30 days (15,000 GiB derived), two replicas.
-    // One 100,000-row batch per second: 500 GiB/day / 86,400 s is ~6 MiB compressed per insert, ~60 B per row,
-    // 60 MiB uncompressed (~10x compression). Shippers batch themselves, so async inserts are off. Log tables carry
+    // One 100,000-row batch per second: 500 GiB/day over 86,400 inserts is ~5.9 MiB compressed per insert, ~62 B
+    // per row; 60 MiB uncompressed is ~10x compression. Shippers batch themselves, so async inserts are off. Log tables carry
     // many columns: wide shape.
     logs: {
       label: 'Logs',
@@ -29,8 +28,8 @@
       locks: ['ingest_rate', 'retention_days'],
     },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
-    // 50 agents send 1,000-row inserts, 50 per second in total: 4.3e9 rows/day at ~5 B per row compressed
-    // (Delta/Gorilla codecs). Small inserts go through the async queue. Few columns: narrow shape.
+    // 50 agents send 1,000-row inserts, 50 per second in total: 20 GiB/day over 4,320,000 inserts is ~4.9 KiB
+    // compressed per insert, ~5 B per row (Delta/Gorilla codecs); 100 KiB uncompressed is ~20x compression. Small inserts go through the async queue. Few columns: narrow shape.
     metrics: {
       label: 'Metrics',
       description: '20 GiB/day of metrics kept 90 days on 2 replicas, 50 small async inserts per second',
@@ -42,7 +41,8 @@
       locks: ['ingest_rate', 'retention_days'],
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
-    // A loader sends 100,000-row native inserts, one every 20 s (~2.9 MiB compressed each, close to 28 GiB/day).
+    // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts
+    // a day is ~6.6 MiB compressed per insert, ~70 B per row; 100 MiB uncompressed is ~15x compression.
     analytics_batch: {
       label: 'Analytics batch',
       description: '10 TiB kept one year on 2 replicas, batch loads of 100,000 rows every 20 seconds',
@@ -54,7 +54,8 @@
       locks: ['data_bytes', 'retention_days'],
     },
     // Cold archive without replication: 50 TiB kept two years (~70 GiB/day derived) on one replica.
-    // One 100,000-row insert every 10 s (~7 MiB compressed each).
+    // One 100,000-row insert every 10 s: 51,200 GiB / 730 d = 70 GiB/day over 8,640 inserts a day is ~8.3 MiB
+    // compressed per insert; 100 MiB uncompressed is ~12x compression.
     single_replica_archive: {
       label: 'Single replica archive',
       description: '50 TiB kept two years on 1 replica, one 100,000-row insert every 10 seconds',
@@ -98,19 +99,29 @@
     return d.source === 'custom' ? `${d.label} (from ${PRICES[d.base].label}, ${p.as_of})` : `${d.label} (${p.as_of})`;
   }
 
-  // Editable price fields: [path, label, unit]. A path is `section.<id>.field` for lists keyed by id,
+  // The billing contract names transfer rules by id only; the page shows words. An unknown rule throws.
+  const TRANSFER_LABELS = {
+    ec2_s3_same_region: 'Transfer EC2 to S3 in the same region',
+    ec2_ec2_cross_az: 'Transfer EC2 to EC2 across availability zones',
+    internet: 'Transfer to the internet',
+  };
+
+  // Editable price fields: {path, label, value, per, unit}. A path is `section.<id>.field` for lists keyed by id,
   // `storage.tiers.<index>.price_per_gb_month` for tiers and `block.gp3.field` for gp3.
   function priceFields(preset) {
     if (preset.structure_only) return [];
     const out = [];
-    const cur = preset.currency;
-    for (const c of preset.request_classes) out.push({ path: `request_classes.${c.id}.price_per_1000`, label: `Requests: ${c.ops.join(', ')}`, unit: `${cur} per 1,000 requests`, value: c.price_per_1000, source_url: c.source_url });
-    preset.storage.tiers.forEach((t, i) => out.push({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, unit: `${cur} per GB-month`, value: t.price_per_gb_month, source_url: preset.storage.source_url }));
-    for (const t of preset.transfer) out.push({ path: `transfer.${t.id}.price_per_gb`, label: `Transfer ${t.id}`, unit: `${cur} per GB`, value: t.price_per_gb, source_url: t.source_url });
+    const add = (f) => out.push(Object.assign(f, { unit: `${preset.currency} ${f.per}` }));
+    for (const c of preset.request_classes) add({ path: `request_classes.${c.id}.price_per_1000`, label: `Requests: ${c.ops.join(', ')}`, per: 'per 1,000 requests', value: c.price_per_1000, source_url: c.source_url });
+    preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
+    for (const t of preset.transfer) {
+      if (!Object.prototype.hasOwnProperty.call(TRANSFER_LABELS, t.id)) throw new Error(`transfer rule ${t.id} has no label in presets.js`);
+      add({ path: `transfer.${t.id}.price_per_gb`, label: TRANSFER_LABELS[t.id], per: 'per GB', value: t.price_per_gb, source_url: t.source_url });
+    }
     const g = preset.block.gp3;
-    out.push({ path: 'block.gp3.price_per_gib_month', label: 'gp3 capacity', unit: `${cur} per GiB-month`, value: g.price_per_gib_month, source_url: g.source_url });
-    out.push({ path: 'block.gp3.iops_price', label: 'gp3 IOPS above baseline', unit: `${cur} per IOPS-month`, value: g.iops_price, source_url: g.source_url });
-    out.push({ path: 'block.gp3.mibps_price', label: 'gp3 throughput above baseline', unit: `${cur} per MiB/s-month`, value: g.mibps_price, source_url: g.source_url });
+    add({ path: 'block.gp3.price_per_gib_month', label: 'gp3 capacity', per: 'per GiB-month', value: g.price_per_gib_month, source_url: g.source_url });
+    add({ path: 'block.gp3.iops_price', label: 'gp3 IOPS above baseline', per: 'per IOPS-month', value: g.iops_price, source_url: g.source_url });
+    add({ path: 'block.gp3.mibps_price', label: 'gp3 throughput above baseline', per: 'per MiB/s-month', value: g.mibps_price, source_url: g.source_url });
     return out;
   }
 
@@ -181,6 +192,6 @@
     return problems;
   }
 
-  SCC.presets = { SCENARIOS, PRICES, priceLabel, priceFields, resolvePrice, coverageProblems, validityDomains };
+  SCC.presets = { SCENARIOS, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

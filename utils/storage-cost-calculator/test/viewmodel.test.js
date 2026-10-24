@@ -70,6 +70,7 @@ test('test_card_text_for_each_state', () => {
   }
   assert.equal(vmod.STATE_TEXT.backlog_grows, 'backlog grows; steady-state monthly cost unavailable');
   assert.equal(vmod.STATE_TEXT.not_supported, 'not supported for this workload');
+  assert.equal(vmod.STATE_TEXT.unsupported_cut, 'not modelled yet: a required measurement is missing');
   // Another column's delta against a reference that is not comparable says so instead of a number.
   const cut = view({ replacement_rate: 0.1 }).vm;
   assert.ok(card(cut, 'cas').delta_texts.includes('vs EBS: not comparable (EBS unsupported)'));
@@ -161,6 +162,7 @@ test('test_inputs_blocks_from_registry_with_hint_and_lock_state', () => {
   const s = presets.SCENARIOS.analytics_batch;
   const r0 = pipeline.resolveInputs(live, s.values, s.locks, { replicas: 9 });
   const preset = presets.resolvePrice(live, 'custom');
+  const aws0 = presets.resolvePrice(live, 'aws-us-east-1');
   const res = pipeline.run(live, r0.inputs, preset, {});
   const vm = vmod.build(res, live, r0.fields, r0.lockOrder, { pricePreset: preset, priceEditing: true });
   const blocks = vm.inputs.blocks.map((b) => b.block);
@@ -187,7 +189,13 @@ test('test_inputs_blocks_from_registry_with_hint_and_lock_state', () => {
   assert.equal(f('min_bytes_for_wide_part').editable, false);
   assert.match(f('min_bytes_for_wide_part').hint.sql, /system\.merge_tree_settings/);
   assert.equal(f('merge_effective_fan_in').value, live.coefficients.find((c) => c.id === 'merge_effective_fan_in').value);
-  assert.deepEqual(f('merge_effective_fan_in').range.insert_rows, [1000, 100000]);
+  // `range` is always [lo, hi] of the field itself; a validity map over other inputs is `validity`.
+  assert.equal(f('merge_effective_fan_in').range, null);
+  assert.deepEqual(f('merge_effective_fan_in').validity.insert_rows, [1000, 100000]);
+  assert.equal(f('replicas').validity, null);
+  assert.deepEqual(f('multipart_parts').validity.object_bytes, [0, 8405385216]);
+  assert.equal(f('multipart_parts').range, null);
+  for (const b of vm.inputs.blocks) for (const x of b.fields) assert.ok(x.range === null || (Array.isArray(x.range) && x.range.length === 2), x.id);
   const schema = vm.inputs.blocks.find((b) => b.block === 'schema');
   assert.ok(schema.hints.some((h) => /system\.merge_tree_settings/.test(h.sql) && 'min_bytes_for_wide_part' in h.mapping));
   assert.deepEqual(vm.inputs.groups[0].locked, ['data_bytes', 'retention_days']);
@@ -199,7 +207,17 @@ test('test_inputs_blocks_from_registry_with_hint_and_lock_state', () => {
   for (const p of prices.fields) {
     assert.equal(p.as_of, preset.as_of);
     assert.equal(p.editable, true);
+    // Labels are words, not billing rule ids; values are money in the preset's currency.
+    assert.equal(/[a-z0-9]_[a-z0-9]/.test(p.label), false, p.label);
+    if (p.value === null) assert.equal(p.value_text, 'not priced by this preset');
+    else assert.match(p.value_text, /^\$\d[\d,]*\.\d{2,6} per /, p.value_text);
   }
+  const price = (path) => prices.fields.find((p) => p.path === path);
+  assert.equal(price('transfer.ec2_ec2_cross_az.price_per_gb').label, 'Transfer EC2 to EC2 across availability zones');
+  assert.equal(price('request_classes.get_and_other.price_per_1000').value_text, '$0.0004 per 1,000 requests');
+  assert.equal(price('storage.tiers.0.price_per_gb_month').value_text, '$0.023 per GB-month');
+  assert.equal(price('transfer.internet.price_per_gb').value_text, 'not priced by this preset');
+  assert.throws(() => presets.priceFields(Object.assign(JSON.parse(JSON.stringify(aws0)), { transfer: [{ id: 'mystery_route', price_per_gb: 0 }] })), /transfer rule mystery_route has no label/);
   const aws = presets.resolvePrice(live, 'aws-us-east-1');
   const vmAws = vmod.build(pipeline.run(live, r0.inputs, aws, {}), live, r0.fields, r0.lockOrder, { pricePreset: aws, priceEditing: true });
   assert.ok(vmAws.inputs.blocks.find((b) => b.block === 'prices').fields.every((p) => !p.editable));
@@ -227,6 +245,11 @@ test('test_chart_marks_extrapolated_points', () => {
   assert.equal(pt('cas', 2000000).y, null);
   assert.equal(pt('cas', 2000000).label, 'CAS at 2,000,000: backlog grows');
   for (const b of ch.breakEven) assert.equal(b.text.endsWith('(extrapolated)'), b.extrapolated);
+  // A point state the view model does not know is an error, not a raw id in the label.
+  const r0 = pipeline.resolveInputs(C, {}, [], {});
+  const res = pipeline.run(C, r0.inputs, AWS, { sweep: { inputId: 'inserts_per_month', values: [1000] }, lockOrder: r0.lockOrder });
+  res.sweep.points[0].totals.cas = { value: null, state: 'mystery', extrapolated: false };
+  assert.throws(() => vmod.build(res, C, r0.fields, r0.lockOrder, { pricePreset: AWS }), /unknown variant state "mystery"/);
   // A sweep over another input than the page asked for is reported.
   const other = view({}, { run: { sweep: { inputId: 'inserts_per_month', values: [1000] } }, ui: { sweepInput: 'data_bytes' } }).vm;
   assert.match(other.problems.join('\n'), /the sweep is over inserts_per_month, the page asked for data_bytes/);
@@ -258,4 +281,20 @@ test('test_fmt_money_thousands_and_currency', () => {
   const { res } = view();
   assert.equal(res.variants.s3.total, 35.42166666666667);
   assert.equal(card(view().vm, 's3').total_text, '$35.42');
+});
+
+test('test_out_of_range_note_once_per_param', () => {
+  // insert_rows bounds three lifecycle coefficients with the same range: one note names all three.
+  const live = contract.load(LIVE_JSON);
+  const s = presets.SCENARIOS.logs;
+  const r0 = pipeline.resolveInputs(live, Object.assign({}, s.values, { insert_rows: 1000000 }), s.locks, {});
+  const preset = presets.resolvePrice(live, 'aws-us-east-1');
+  const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
+  const notes = vm.notes.filter((n) => n.kind === 'out_of_range' && n.param === 'insert_rows');
+  assert.equal(notes.length, 1, JSON.stringify(notes));
+  const owners = presets.validityDomains(live).filter((d) => d.param === 'insert_rows').map((d) => d.owner);
+  assert.ok(owners.length >= 3);
+  assert.deepEqual(notes[0].owners, owners);
+  assert.equal(notes[0].text, `insert_rows = 1,000,000 is outside the measured range [1,000, 100,000] of ${owners.join(', ')}; dependent numbers are extrapolated`);
+  assert.equal(vm.notes.filter((n) => n.kind === 'out_of_range').length, 1);
 });
