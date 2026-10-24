@@ -5,14 +5,18 @@
  "applicability": {
   "storage": {
    "objects_per_part_by_shape": "supported",
-   "cas_gc": "supported"
+   "cas_gc": "supported",
+   "lifecycle": "supported"
   },
   "inserts": {
    "objects_per_part_by_shape": "supported",
-   "cas_branches": "supported"
+   "cas_branches": "supported",
+   "multipart_graph": "unsupported_cut"
   },
   "merges": {
-   "cas_branches": "supported"
+   "cas_branches": "supported",
+   "lifecycle": "supported",
+   "thresholds": "supported"
   },
   "mutations": {
    "cas_branches": "supported"
@@ -27,7 +31,8 @@
    "startup_recovery": "unsupported_cut"
   },
   "gc": {
-   "cas_gc": "supported"
+   "cas_gc": "supported",
+   "lifecycle": "supported"
   },
   "lease": {
    "cas_lease": "supported"
@@ -4381,6 +4386,90 @@
         "dim": "count"
        },
        "dim": "1/s"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "div",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_tables",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "cas_table_cleanup_period_s",
+        "dim": "s"
+       },
+       "dim": "1/s",
+       "on_zero": "unavailable"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2628000,
+       "dim": "s"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "div",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_tables",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "cas_table_cleanup_period_s",
+        "dim": "s"
+       },
+       "dim": "1/s",
+       "on_zero": "unavailable"
       },
       "b": {
        "kind": "const",
