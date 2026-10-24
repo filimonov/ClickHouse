@@ -417,10 +417,32 @@ def reproduction(copies=(), sums=()):
 # --- driver ------------------------------------------------------------------------------------
 
 def _load(path, problems):
+    """Parsed JSON, or None after reporting the failure with its path."""
     try:
         return json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:
-        problems.append(f"{path}: {e}")
+        problems.append(f"{path}: cannot load: {e}")
+
+
+def _load_jsonl(path, problems):
+    rows = []
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError as e:
+        return problems.append(f"{path}: cannot load: {e}") or rows
+    for n, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError as e:
+            problems.append(f"{path}:{n}: bad JSON line: {e}")
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+        else:
+            problems.append(f"{path}:{n}: expected a JSON object")
+    return rows
 
 
 def main(argv=None):
@@ -436,14 +458,19 @@ def main(argv=None):
     reports = [Path(p) for p in sorted(glob.glob(args.reports)) if Path(p).is_dir()]
     if args.mode == "final" and not reports:
         problems.append(f"missing artifact: no report directory matches {args.reports}")
-    formulas = [_load(p, problems) for p in sorted(cm.glob("formulas*.json")) + [r / "formulas.json" for r in reports if (r / "formulas.json").exists()]]
+    paths = sorted(cm.glob("formulas*.json")) + [r / "formulas.json" for r in reports if (r / "formulas.json").exists()]
+    formulas = [f for f in (_load(p, problems) for p in paths) if f is not None]
     coefficients, measurements, predictions = [], [], []
     for r in reports:
         if (r / "coefficients.json").exists():
-            coefficients += _load(r / "coefficients.json", problems) or []
+            loaded = _load(r / "coefficients.json", problems)
+            if isinstance(loaded, list):
+                coefficients += loaded
+            elif loaded is not None:
+                problems.append(f"{r / 'coefficients.json'}: expected a JSON array")
         if (r / "measurements.jsonl").exists():
-            measurements += [json.loads(x) for x in (r / "measurements.jsonl").read_text().splitlines() if x.strip()]
-        predictions += [_load(p, problems) for p in sorted((r / "predictions").glob("*.json"))]
+            measurements += _load_jsonl(r / "measurements.jsonl", problems)
+        predictions += [x for x in (_load(p, problems) for p in sorted((r / "predictions").glob("*.json"))) if x is not None]
     reg = _load(cm / "inputs-registry.json", problems) if (cm / "inputs-registry.json").exists() else None
     cov = _load(cm / "coverage.json", problems) if (cm / "coverage.json").exists() else None
     bil = _load(cm / "billing-contract.json", problems) if (cm / "billing-contract.json").exists() else None

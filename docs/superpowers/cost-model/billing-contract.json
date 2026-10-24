@@ -614,7 +614,8 @@
       ],
       "multipart": {
         "abort_days_after_initiation_default": 7,
-        "residence_time_assumption": "measured_or_assumed"
+        "residence_time_assumption": "measured_or_assumed",
+        "note": "plan default; configure per bucket lifecycle rule"
       }
     },
     {

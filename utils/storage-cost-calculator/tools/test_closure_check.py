@@ -257,6 +257,27 @@ class MainTest(unittest.TestCase):
             self.assertEqual(run_main(['--mode', 'final', '--cost-model', d, '--reports', os.path.join(d, 'none-*')]), 1)
             self.assertEqual(run_main(['--mode', 'dev', '--cost-model', d, '--reports', os.path.join(d, 'none-*')]), 0)
 
+    def test_malformed_inputs_are_reported_not_raised(self):
+        with tempfile.TemporaryDirectory() as d:
+            cm, report = os.path.join(d, 'cm'), os.path.join(d, 'rep-1')
+            os.makedirs(cm)
+            os.makedirs(report)
+            with open(os.path.join(cm, 'formulas-s3.json'), 'w') as f:
+                f.write('{"schema": ')
+            with open(os.path.join(cm, 'inputs-registry.json'), 'w') as f:
+                f.write('not json')
+            with open(os.path.join(report, 'measurements.jsonl'), 'w') as f:
+                f.write(json.dumps(example('measurement-ok.json')) + '\n{broken\n[1]\n')
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                code = cc.main(['--mode', 'dev', '--cost-model', cm, '--reports', os.path.join(d, 'rep-*')])
+            self.assertEqual(code, 1)
+            text = err.getvalue()
+            self.assertIn('formulas-s3.json: cannot load', text)
+            self.assertIn('inputs-registry.json: cannot load', text)
+            self.assertIn('measurements.jsonl:2: bad JSON line', text)
+            self.assertIn('measurements.jsonl:3: expected a JSON object', text)
+
     def test_seeds_pass_dev_mode(self):
         self.assertEqual(run_main(['--mode', 'dev']), 0)
 
