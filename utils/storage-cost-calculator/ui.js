@@ -114,7 +114,7 @@
   const urlstate = lib('urlstate', './urlstate.js');
 
   // Container ids in index.html, in page order: left panel first, then the results panel.
-  const PARTS = ['presets', 'inputs', 'cards', 'table', 'drill', 'notes', 'evidence', 'chart'];
+  const PARTS = ['presets', 'inputs', 'cards', 'table', 'drill', 'notes', 'evidence', 'chart', 'modal'];
   const PAGE_STATES = ['ok', 'prices_missing', 'cannot_reproduce'];
   const VARIANT_STATES = ['ok', 'not_supported', 'unavailable', 'backlog_grows', 'unsupported_cut'];
   const CELL_STATES = [...VARIANT_STATES, 'not_applicable'];
@@ -134,6 +134,9 @@
   const link = (ref) => (/^https?:\/\//.test(ref) ? `<a href="${esc(ref)}" rel="noopener" target="_blank">${esc(ref)}</a>` : esc(ref));
 
   const rateUnit = (unit, per) => unit.replace(/\/day$/, `/${per}`);
+  // (i) button: opens the one info dialog for a registry row or coefficient (`id`), a cell or a column.
+  const infoButton = (data, label) => `<button type="button" class="info-btn" data-action="info"${Object.entries(data).map(([k, v]) => attr(`data-${k}`, v)).join('')}`
+    + ` aria-label="${esc(`About ${label}`)}" title="${esc(`About ${label}`)}">i</button>`;
 
   // ---- left panel -------------------------------------------------------------------------------
 
@@ -156,9 +159,6 @@
     if (f.derived && f.kind === 'input') tags.push(badge('derived'));
     if (f.overridden) tags.push(badge('overridden', 'accent'));
     if (f.out_of_range) tags.push(badge('outside measured range', 'warn'));
-    // A pinned value is either a rule of the provider (evidence is a provider page) or fixed in the ClickHouse source.
-    if (f.kind === 'pinned') tags.push(badge(f.evidence_kind === 'provider' ? 'provider rule' : 'fixed by ClickHouse'));
-    if (f.kind === 'measured') tags.push(badge('measured'));
     return tags.join('');
   }
 
@@ -188,6 +188,9 @@
       + `<span class="control">${num}${unit}</span>`;
   }
 
+  // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
+  const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code></span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
+
   function renderField(f, page, simple) {
     const lock = f.locked === null || f.locked === undefined || page.cannot_reproduce ? ''
       : `<button type="button" class="btn btn-small" data-action="lock" data-id="${esc(f.id)}" aria-pressed="${f.locked}"`
@@ -197,34 +200,35 @@
     const range = f.range_text || '';
     const price = f.kind === 'price' ? `<p class="field-note">as of ${esc(f.as_of || 'n/a')}${f.source_url ? ` · ${link(f.source_url)}` : ''}</p>` : '';
     return `<div class="field${f.derived ? ' is-derived' : ''}${f.overridden ? ' is-overridden' : ''}" data-field="${esc(f.id)}">`
-      + `<div class="field-head"><span class="field-label">${esc(f.label || '')}</span>${fieldTags(f)}${lock}${reset}</div>`
+      + `<div class="field-head">${fieldLabel(f)}${f.kind === 'price' ? '' : infoButton({ 'info-kind': 'input', id: f.id }, f.short || f.label || f.id)}${fieldTags(f)}${lock}${reset}</div>`
       + `<div class="field-control">${control(f, page, simple)}</div>${derived}`
       + `${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
   }
 
-  function renderHints(b) {
-    return b.hints.map((h) => {
-      const rows = Object.entries(h.mapping).map(([col, field]) => `<tr><td><code>${esc(col)}</code></td><td>${esc(field)}</td></tr>`).join('');
-      return `<details class="hint"><summary>Fill these from your cluster</summary><pre><code>${esc(h.sql)}</code></pre>`
-        + `${rows ? `<div class="tbl"><table><thead><tr><th>Column</th><th>Field</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}</details>`;
-    }).join('');
-  }
+  const PROFILE_NOTE = 'All other settings describe a typical deployment; change them under Low-level assumptions.';
 
+  // Workload knobs first, then one collapsed block per registry block with its ClickHouse settings, the prices, and
+  // the low-level assumptions at the bottom. Hidden rows (table keys, model constants) are only in the info dialog.
   function renderInputs(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
     const groups = vm.inputs.groups.map((g) => `<p class="group-note">${esc(g.label)}. Lock the two you know; the third is derived.</p>`).join('');
-    const blocks = vm.inputs.blocks.map((b) => {
-      const fields = b.fields.map((f) => renderField(f, page, !b.advanced)).join('');
-      if (!b.advanced) return `<section class="panel-block" data-block="${esc(b.block)}"><h2>${esc(b.label)}</h2>${groups}${fields}${renderHints(b)}</section>`;
-      const any = b.fields.some((f) => f.overridden) ? badge('overridden', 'accent') : '';
-      const prices = b.block === 'prices'
-        ? `${b.as_of ? `<p class="field-note">Prices as of ${esc(b.as_of)}</p>` : ''}${b.note ? `<p class="field-note">${esc(b.note)}</p>` : ''}`
-          + `${page.price_preset !== 'custom' && !b.note ? '<button type="button" class="btn btn-small" data-action="edit-prices">Edit prices</button>' : ''}`
-        : '';
-      return `<details class="block" data-block="${esc(b.block)}"${page.open_blocks.includes(b.block) ? ' open' : ''}><summary>${esc(b.label)} ${any}</summary>`
-        + `<div class="block-body">${prices}${fields || '<p class="mute">Nothing to set.</p>'}${renderHints(b)}</div></details>`;
-    }).join('');
-    return `<div class="inputs">${blocks}</div>`;
+    const of = (b, tier) => b.fields.filter((f) => f.tier === tier);
+    const workload = vm.inputs.blocks.flatMap((b) => of(b, 'workload'));
+    const head = `<section class="panel-block" data-block="simple"><h2>Inputs</h2>${groups}${workload.map((f) => renderField(f, page, true)).join('')}`
+      + `<p class="field-note profile-note">${esc(PROFILE_NOTE)}</p></section>`;
+    const details = (id, label, body, extra) => `<details class="block" data-block="${esc(id)}"${page.open_blocks.includes(id) ? ' open' : ''}>`
+      + `<summary>${esc(label)}${extra || ''}</summary><div class="block-body">${body}</div></details>`;
+    const overridden = (fs) => (fs.some((f) => f.overridden) ? ` ${badge('overridden', 'accent')}` : '');
+    const settings = vm.inputs.blocks.filter((b) => b.block !== 'prices' && of(b, 'setting').length)
+      .map((b) => details(b.block, b.label, of(b, 'setting').map((f) => renderField(f, page, false)).join(''), overridden(of(b, 'setting')))).join('');
+    const pb = vm.inputs.blocks.find((b) => b.block === 'prices');
+    const prices = pb ? details('prices', pb.label, `${pb.as_of ? `<p class="field-note">Prices as of ${esc(pb.as_of)}</p>` : ''}${pb.note ? `<p class="field-note">${esc(pb.note)}</p>` : ''}`
+      + `${page.price_preset !== 'custom' && !pb.note ? '<button type="button" class="btn btn-small" data-action="edit-prices">Edit prices</button>' : ''}`
+      + `${pb.fields.map((f) => renderField(f, page, false)).join('') || '<p class="mute">Nothing to set.</p>'}`, overridden(pb.fields)) : '';
+    const low = vm.inputs.blocks.filter((b) => b.block !== 'prices' && of(b, 'advanced').length);
+    const lowBody = low.map((b) => `<section class="low-group" data-group="${esc(b.block)}"><h3>${esc(b.label)}</h3>${of(b, 'advanced').map((f) => renderField(f, page, false)).join('')}</section>`).join('');
+    const lowLevel = low.length ? details('advanced', 'Low-level assumptions', lowBody, overridden(low.flatMap((b) => of(b, 'advanced')))) : '';
+    return `<div class="inputs">${head}${settings}${prices}${lowLevel}</div>`;
   }
 
   // ---- right panel ------------------------------------------------------------------------------
@@ -239,10 +243,11 @@
   function renderCard(c, vm) {
     known(VARIANT_STATES, c.state, 'variant state');
     if (c.cheapest && c.state !== 'ok') throw new Error(`ui: ${c.variant} is marked cheapest in state ${c.state}`);
-    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${c.cheapest ? badge('cheapest', 'ok') : ''}${extrapolatedBadge(c.extrapolated)}</header>`;
+    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${c.cheapest ? badge(c.cheapest_text, 'ok') : ''}${extrapolatedBadge(c.extrapolated)}</header>`;
     if (c.state !== 'ok') {
+      const why = `<button type="button" class="btn btn-small" data-action="info" data-info-kind="variant" data-variant="${esc(c.variant)}">Why</button>`;
       return `<article class="card is-off" data-variant="${esc(c.variant)}" data-state="${esc(c.state)}">${head}`
-        + `<p class="card-state">${esc(c.state_text)}</p>${c.reason ? `<p class="card-reason">${esc(c.reason)}</p>` : ''}</article>`;
+        + `<p class="card-state">${esc(c.state_text)}</p>${c.reason ? `<p class="card-reason">${esc(c.reason)}.</p>` : ''}${why}</article>`;
     }
     const total = c.total_text === null ? '' : `<p class="card-total" data-kind="money">${esc(c.total_text)}</p><p class="card-per">per month</p>`;
     const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}${extrapolatedBadge(d.extrapolated)}</li>`), 'card-deltas');
@@ -271,7 +276,7 @@
     if (vm.page_state === 'cannot_reproduce') return '';
     const t = vm.table;
     if (!t.rows.length) return '<section class="section"><h2>Breakdown</h2><p class="mute">No workload type has a model yet, so there is nothing to break down.</p></section>';
-    const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}${c.cheapest ? ` ${badge('cheapest', 'ok')}` : ''}</th>`).join('');
+    const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}${c.cheapest ? ` ${badge(c.cheapest_text, 'ok')}` : ''}</th>`).join('');
     const colLabel = new Map(t.columns.map((c) => [c.variant, c.label]));
     const body = t.rows.map((r) => `<tr data-operation="${esc(r.operation)}"><th scope="row">${esc(r.label)}</th>${r.cells.map((c) => {
       known(CELL_STATES, c.state, 'cell state');
@@ -289,7 +294,9 @@
   function stageLine(l) {
     const formula = l.formula ? `<div class="formula"><code>${esc(l.formula)}</code></div>` : '';
     // Ledger texts already end in "(extrapolated)"; no badge repeats it.
-    return `<li>${esc(l.text)}${formula}</li>`;
+    const info = l.id && (l.kind === 'coef' || l.kind === 'lookup' || l.kind === 'input' || l.kind === 'pinned' || l.kind === 'measured' || l.kind === 'derivation')
+      ? infoButton({ 'info-kind': 'input', id: l.id }, l.label || l.id) : '';
+    return `<li>${esc(l.text)}${info}${formula}</li>`;
   }
 
   function renderDrillPart(vm, page) {
@@ -303,6 +310,7 @@
       + `${s.note ? `<p class="mute">${esc(s.note)}</p>` : ''}${s.lines.length ? `<ul>${s.lines.map(stageLine).join('')}</ul>` : '<p class="mute">nothing in this stage</p>'}</li>`).join('')}</ol>` : '';
     const sources = list(d.sources.map((s) => `<li>${esc(s.kind)}: ${link(s.ref)}${s.version ? ` <span class="mute">${esc(s.version)}</span>` : ''}</li>`), 'sources');
     return `<section class="section drill-view" data-cell="${esc(`${d.variant}.${d.operation}`)}"><header class="drill-head"><h2>${esc(d.label)}</h2>${extrapolatedBadge(d.extrapolated)}`
+      + `<button type="button" class="btn btn-small" data-action="info" data-info-kind="cell" data-variant="${esc(d.variant)}" data-operation="${esc(d.operation)}">Why</button>`
       + '<button type="button" class="btn btn-small" data-action="close-drill">Close</button></header>'
       + `${compBar ? `<div class="bar bar-wide">${compBar}</div>` : ''}${list(comp, 'legend legend-col')}`
       + `<button type="button" class="btn" data-action="show-calc" aria-expanded="${!!page.show_calc}">${page.show_calc ? 'Hide calculation' : 'Show calculation'}</button>`
@@ -380,6 +388,25 @@
     return `<section class="section"><h2>How the totals move</h2>${pick}${body}</section>`;
   }
 
+  // Body of the one <dialog>: inputs, coefficients, cells and columns share it.
+  function renderModal(vm) {
+    const i = vm.info;
+    if (!i || vm.page_state === 'cannot_reproduce') return '';
+    const row = (k, v) => (v ? `<tr><th scope="row">${esc(k)}</th><td>${v}</td></tr>` : '');
+    const facts = [
+      row('ClickHouse name', i.name ? `<code>${esc(i.name)}</code>` : ''), row('Kind', i.kind_text ? esc(i.kind_text) : ''),
+      row('Current value', i.value_text ? esc(i.value_text) : ''),
+      row('Measured range', i.range_text ? esc(i.range_text) : ''), row('Default', i.default_text ? esc(i.default_text) : ''),
+      row('Evidence', i.measured_by ? esc(i.measured_by) : ''),
+    ].join('');
+    const map = Object.entries(i.mapping || {}).map(([col, f]) => `<tr><td><code>${esc(col)}</code></td><td>${esc(f)}</td></tr>`).join('');
+    const sql = i.sql ? `<h4>Fill from your cluster</h4><pre><code>${esc(i.sql)}</code></pre>${map ? `<div class="tbl"><table><tbody>${map}</tbody></table></div>` : ''}` : '';
+    return `<div class="modal-body" data-info="${esc(i.kind)}:${esc(i.id)}"><header class="modal-head"><h2 id="modal-title">${esc(i.title)}</h2>`
+      + '<button type="button" class="btn btn-small" data-action="close-info" aria-label="Close">Close</button></header>'
+      + `${i.description ? `<p>${esc(i.description)}</p>` : ''}${facts ? `<div class="tbl"><table class="facts"><tbody>${facts}</tbody></table></div>` : ''}`
+      + `${i.lines && i.lines.length ? `<h4>Why</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}${sql}</div>`;
+  }
+
   // Pure: view model + page chrome (selections, labels) -> HTML per container.
   function renderParts(vm, page) {
     if (!vm || typeof vm !== 'object') throw new Error('ui.render: a view model is required');
@@ -388,7 +415,7 @@
     const p = Object.assign({}, page, { cannot_reproduce: vm.page_state === 'cannot_reproduce' });
     return {
       presets: renderPresets(vm, p), inputs: renderInputs(vm, p), cards: renderCards(vm), table: renderTable(vm, p),
-      drill: renderDrillPart(vm, p), notes: renderNotes(vm, p), evidence: renderEvidence(vm), chart: renderChart(vm, p),
+      drill: renderDrillPart(vm, p), notes: renderNotes(vm, p), evidence: renderEvidence(vm), chart: renderChart(vm, p), modal: renderModal(vm),
     };
   }
 
@@ -497,7 +524,7 @@
     // Input problems are page notes; none is dropped.
     res.problems = [...(res.problems || []), ...r0.problems];
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
-      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units,
+      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units, info: u.info || null,
     });
     return { vm, page: Object.assign(chrome(contract, state, u, sweepId), { sweep_note: sweepNote }), fields: r0.fields };
   }
@@ -563,6 +590,12 @@
       case 'cell': s.openCell = `${d.variant}.${d.operation}`; break;
       case 'close-drill': s.openCell = null; break;
       case 'show-calc': u.showCalc = !u.showCalc; break;
+      case 'info': {
+        const kind = known(['input', 'cell', 'variant'], d.infoKind, 'info kind');
+        u.info = kind === 'input' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
+        break;
+      }
+      case 'close-info': u.info = null; break;
       case 'sweep': s.sweepInput = action.value; break;
       case 'start-over': return { state: defaultState(contract), ui: Object.assign(u, { showCalc: false }), problem: null };
       default: throw new Error(`ui: unknown action ${JSON.stringify(action.type)}`);
@@ -618,8 +651,28 @@
       if (themeButton) themeButton.textContent = effectiveTheme() === 'dark' ? 'Light theme' : 'Dark theme';
     };
 
+    const dialog = boxes.modal;
+    let opener = null;
+    let good = null;
+    // A state that cannot be computed never blanks the page: a link that fails on load shows the cannot-reproduce
+    // view; an action that fails returns to the last state that rendered, with the error as a note.
+    function computeSafely() {
+      try {
+        return compute(contract, state, ui, problem);
+      } catch (e) {
+        if (good) {
+          state = good.state;
+          ui = Object.assign({}, good.ui, { error: e.message });
+        } else {
+          problem = { kind: 'url_format', reason: `the state in this link cannot be computed: ${e.message}`, missing: [{ artifact: 'url_format', version: null }] };
+        }
+        return compute(contract, state, ui, problem);
+      }
+    }
+
     function paint(skip) {
-      const out = compute(contract, state, ui, problem);
+      const out = computeSafely();
+      if (!problem) good = { state, ui };
       fields = out.fields;
       const parts = renderParts(out.vm, out.page);
       const active = doc.activeElement;
@@ -631,6 +684,9 @@
         if (again && again !== active) again.focus();
       }
       doc.body.setAttribute('data-page-state', out.vm.page_state);
+      if (out.vm.info && !dialog.open) {
+        dialog.showModal();
+      } else if (!out.vm.info && dialog.open) dialog.close();
       // A link that cannot be reproduced keeps its hash, so it can be reported as received.
       if (!problem) win.history.replaceState(null, '', urlstate().encode(Object.assign({}, state, { manifest: contract.manifest })));
       labelTheme();
@@ -662,6 +718,7 @@
         labelTheme();
         return;
       }
+      if (el.dataset.action === 'info') opener = Object.assign({}, el.dataset);
       dispatch(actionOf(el));
     });
     doc.addEventListener('change', (ev) => {
@@ -686,6 +743,20 @@
       if (el.open) open.add(id); else open.delete(id);
       ui = Object.assign({}, ui, { openBlocks: [...open] });
     }, true);
+    // Esc and the Close button both end here; focus returns to the (i) button that opened the dialog.
+    dialog.addEventListener('close', () => {
+      if (ui.info) {
+        ui = Object.assign({}, ui, { info: null });
+        paint();
+      }
+      if (opener) {
+        const sel = `[data-action="info"]${Object.entries(opener).filter(([k]) => k !== 'action')
+          .map(([k, v]) => `[data-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}="${String(v).replace(/"/g, '\\"')}"]`).join('')}`;
+        const el = doc.querySelector(sel);
+        if (el) el.focus();
+        opener = null;
+      }
+    });
     if (win.matchMedia) win.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', labelTheme);
     paint();
     return { get state() { return state; }, get problem() { return problem; } };

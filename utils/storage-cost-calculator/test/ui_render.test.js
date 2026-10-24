@@ -254,6 +254,11 @@ test('test_clearing_a_custom_price_returns_to_the_preset_value', () => {
 // A document with only what mount touches: containers, delegated listeners, the hash and history.
 function fakeDocument(hash) {
   const boxes = Object.fromEntries(ui.PARTS.map((id) => [id, { id, innerHTML: '' }]));
+  const dialogListeners = {};
+  Object.assign(boxes.modal, {
+    open: false, showModal() { this.open = true; }, close() { this.open = false; (dialogListeners.close || []).forEach((fn) => fn()); },
+    addEventListener: (type, fn) => { (dialogListeners[type] = dialogListeners[type] || []).push(fn); },
+  });
   const listeners = {};
   const attrs = {};
   const replaced = [];
@@ -343,10 +348,9 @@ test('test_pinned_rule_badge_names_the_source_of_the_rule', () => {
     pin('ebs_pinned_by_provider', 'provider', 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html');
     pin('pinned_by_clickhouse', 'source', 'src/Core/Settings.cpp:1');
   });
-  const { parts } = page(base(), {}, c);
-  const field = (id) => { const at = parts.inputs.indexOf(`data-field="${id}"`); assert.ok(at >= 0, id); return parts.inputs.slice(at, parts.inputs.indexOf('data-field=', at + 1) >>> 0 || undefined); };
-  assert.ok(field('ebs_pinned_by_provider').includes('>provider rule<'), field('ebs_pinned_by_provider'));
-  assert.equal(field('ebs_pinned_by_provider').includes('fixed by ClickHouse'), false);
-  assert.ok(field('pinned_by_clickhouse').includes('>fixed by ClickHouse<'));
-  assert.equal(field('pinned_by_clickhouse').includes('provider rule'), false);
+  // Model constants are not on the form; the info dialog names where the rule comes from.
+  const modal = (id) => page(base(), { info: { kind: 'input', id } }, c).parts;
+  assert.equal(page(base(), {}, c).parts.inputs.includes('data-field="ebs_pinned_by_provider"'), false);
+  assert.match(modal('ebs_pinned_by_provider').modal, /<th scope="row">Kind<\/th><td>provider rule<\/td>/);
+  assert.match(modal('pinned_by_clickhouse').modal, /<th scope="row">Kind<\/th><td>fixed by ClickHouse<\/td>/);
 });

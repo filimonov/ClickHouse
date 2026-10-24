@@ -34,9 +34,10 @@ const cell = (vm, op, v) => vm.table.rows.find((r) => r.operation === op).cells.
 
 test('test_card_text_for_each_state', () => {
   const ok = view().vm;
-  assert.equal(card(ok, 'cas').state_text, 'cheapest');
+  assert.equal(card(ok, 'cas').state_text, 'cheapest of 4 priced');
+  assert.equal(card(ok, 'cas').cheapest_text, 'cheapest of 4 priced');
   assert.equal(card(ok, 'cas').total_text, '$23.01');
-  assert.equal(card(ok, 'ebs').state_text, 'comparable');
+  assert.equal(card(ok, 'ebs').state_text, null);
   assert.deepEqual(card(ok, 'cas').delta_texts, ['vs EBS: −$56.99', 'vs S3: −$24.58']);
   // A reference column has no delta against itself.
   assert.deepEqual(card(ok, 'ebs').delta_texts, ['vs S3: +$32.41']);
@@ -44,10 +45,10 @@ test('test_card_text_for_each_state', () => {
   assert.equal(cell(ok, 'storage', 'cas').clickable, true);
 
   const cases = [
-    ['not_supported', 's3plain', { replacement_rate: 0.1 }, /cannot replace a replica/],
-    ['unsupported_cut', 'ebs', { replacement_rate: 0.1 }, /card cut/],
-    ['backlog_grows', 'cas', { inserts_per_month: 2000000 }, /GC reclaims fewer objects/],
-    ['unsupported_cut', 'cas', { mutations_per_month: 5 }, /cut for lifecycle/],
+    ['not_supported', 's3plain', { replacement_rate: 0.1 }, /^S3 plain rewritable cannot replace a replica$/],
+    ['unsupported_cut', 'ebs', { replacement_rate: 0.1 }, /^EBS: a measurement this workload needs for replica replacement is missing$/],
+    ['backlog_grows', 'cas', { inserts_per_month: 2000000 }, /^CAS: .* cannot keep up with this workload; the backlog grows$/],
+    ['unsupported_cut', 'cas', { mutations_per_month: 5 }, /^CAS: a measurement this workload needs for .* is missing$/],
   ];
   const unavailable = load((x) => { for (const op of x.operations) for (const f of x.families) x.applicability.cas[op][f] = 'not_applicable'; });
   const all = [...cases.map(([st, v, raw, re]) => [st, v, view(raw).vm, re]), ['unavailable', 'cas', view({}, { contract: unavailable }).vm, /^No measured model for this column yet$/]];
@@ -79,7 +80,7 @@ test('test_card_text_for_each_state', () => {
   // An extrapolated total keeps its number and says "extrapolated" on the card, its deltas and its cells.
   const ex = view({ inserts_per_month: 60000 }).vm;
   // The flag is carried by `extrapolated` (the page's badge), not baked into the texts.
-  assert.equal(card(ex, 's3').state_text, 'comparable');
+  assert.equal(card(ex, 's3').state_text, null);
   assert.equal(card(ex, 's3').extrapolated, true);
   assert.ok(card(ex, 's3').total_text.startsWith('$'));
   const vsS3 = card(ex, 'cas').deltas.find((d) => d.text.startsWith('vs S3'));
@@ -88,8 +89,16 @@ test('test_card_text_for_each_state', () => {
   assert.match(cell(ex, 'inserts', 's3').text, /^\$[\d,.]+$/);
   assert.equal(cell(ex, 'inserts', 's3').extrapolated, true);
   assert.ok(ex.notes.some((n) => n.kind === 'out_of_range' && /inserts_per_month = 60,000 is outside the measured range \[0, 50,000\]/.test(n.text)));
-  // A state the view model does not know is an error, not a default text.
+  // The badge needs two priced columns, and names an extrapolated winner.
   const { res } = view();
+  const r00 = pipeline.resolveInputs(C, {}, [], {});
+  const rebuilt = (fn) => { const x = JSON.parse(JSON.stringify(res)); fn(x); return vmod.build(x, C, r00.fields, r00.lockOrder, { pricePreset: AWS }); };
+  const alone = rebuilt((x) => { for (const v of ['ebs', 's3', 's3plain']) Object.assign(x.variants[v], { state: 'unavailable', reason: `${v}.storage: missing`, total: null }); });
+  assert.equal(card(alone, 'cas').cheapest, false);
+  assert.equal(alone.table.columns.some((c) => c.cheapest), false);
+  const exWin = rebuilt((x) => { x.variants[x.cheapest].extrapolated = true; });
+  assert.equal(card(exWin, res.cheapest).cheapest_text, 'cheapest (extrapolated)');
+  // A state the view model does not know is an error, not a default text.
   const r0 = pipeline.resolveInputs(C, {}, [], {});
   const broken = JSON.parse(JSON.stringify(res));
   broken.variants.cas.state = 'mystery';
@@ -389,7 +398,7 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   assert.equal(lv.cards.find((c) => c.variant === 's3plain').state, 'ok');
   const mut = pipeline.resolveInputs(live, { ...presets.SCENARIOS.logs.values, mutations_per_month: 5 }, presets.SCENARIOS.logs.locks, {});
   const lm = vmod.build(pipeline.run(live, mut.inputs, aws, {}), live, mut.fields, mut.lockOrder, { pricePreset: aws, units: 'hour' });
-  assert.match(lm.cards.find((c) => c.variant === 's3plain').reason, /s3_plain_rewritable cannot perform mutations/);
+  assert.match(lm.cards.find((c) => c.variant === 's3plain').reason, /^S3 plain rewritable cannot run ALTER UPDATE\/DELETE; this workload runs 5 ALTER UPDATE\/DELETE per month$/);
   assert.equal(lv.cards.find((c) => c.variant === 'ebs').state, 'ok');
   // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
   // 500 GiB/day ×1/4 … ×8, shown per hour.

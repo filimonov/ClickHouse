@@ -222,3 +222,28 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
   th, td { padding: 6px; font-size: 13px; }
   .section { padding: 16px; }
 }
+
+/* (i) buttons and the one info dialog */
+.field-head .field-label:has(+ .info-btn) { margin-right: 0; }
+.info-btn {
+  margin-right: auto; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--card); color: var(--mute); font: italic 600 11px/16px Georgia, serif; cursor: pointer; flex: none;
+}
+.info-btn:hover, .info-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
+.field-label code { font-size: 13px; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+.modal {
+  width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 0; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--card); color: var(--ink); box-shadow: var(--shadow);
+}
+.modal::backdrop { background: rgba(10, 12, 16, 0.45); }
+.modal-body { padding: 16px 20px 20px; overflow-wrap: anywhere; }
+.modal-head { display: flex; align-items: center; gap: 8px; }
+.modal-head h2 { margin: 0 auto 0 0; font-size: 18px; }
+.modal .facts th { text-align: left; color: var(--mute); font-weight: 500; padding-right: 12px; vertical-align: top; white-space: nowrap; }
+.modal pre { white-space: pre-wrap; background: var(--soft); padding: 8px; border-radius: 6px; font-size: 12px; }
+.modal ul.why { padding-left: 18px; font-size: 14px; }
+.low-group h3 { font-size: 13px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 0; }
+.profile-note { margin-top: 8px; }
+.card .btn-small[data-action="info"] { margin-top: 8px; }
+.panel-inputs .field { padding: 7px 0; }

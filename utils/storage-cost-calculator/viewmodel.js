@@ -161,6 +161,51 @@
 
   // ---- cards, table ---------------------------------------------------------------------------------
 
+  // What a column cannot do, per operation, for the one-sentence card reason.
+  const OP_CANNOT = {
+    storage: 'store parts', inserts: 'insert', merges: 'merge parts', mutations: 'run ALTER UPDATE/DELETE', deletes: 'drop parts',
+    reads: 'serve reads', recovery: 'recover a restarted replica', replacement: 'replace a replica', local_disk: 'use the local disk',
+    gc: 'collect garbage', lease: 'hold the mount lease',
+  };
+  const opWord = (op) => (OPERATION_LABELS[op] || op).toLowerCase();
+  const joinWords = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+  // One plain sentence per column state; the full reason with families and source cites is in the info dialog.
+  function cardSentence(v, vr, contract, inputs) {
+    if (vr.state === 'ok') return null;
+    const label = variantLabel(v);
+    const hit = REASONS.find(([re]) => re.test(vr.reason || ''));
+    if (hit) return hit[1];
+    const ops = [...new Set(reasonSegments(vr.reason).map((s) => s.operation).filter(Boolean))].filter((op) => contract.operations.includes(op));
+    const value = (id) => {
+      const f = inputs && inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === id);
+      return f && typeof f.value === 'number' ? f.value : null;
+    };
+    switch (vr.state) {
+      case 'not_supported': {
+        if (!ops.length) return `${label} is not supported for this workload`;
+        const mut = ops.includes('mutations') ? value('mutations_per_month') : null;
+        return `${label} cannot ${joinWords(ops.map((op) => OP_CANNOT[op] || opWord(op)))}`
+          + `${mut ? `; this workload runs ${fmtQuantity(mut)} ALTER UPDATE/DELETE per month` : ''}`;
+      }
+      case 'unavailable': return ops.length ? `${label}: ${joinWords(ops.map(opWord))} not measured` : `${label}: not measured for this workload`;
+      case 'unsupported_cut': return `${label}: a measurement this workload needs for ${ops.length ? joinWords(ops.map(opWord)) : 'one operation'} is missing`;
+      case 'backlog_grows': return `${label}: ${ops.length ? joinWords(ops.map(opWord)) : 'the background work'} cannot keep up with this workload; the backlog grows`;
+      default: throw new Error(`unknown variant state ${JSON.stringify(vr.state)}`);
+    }
+  }
+
+  // A note with a number ends in "= value"; a text note stands alone.
+  const noteText = (n) => (typeof n.value === 'number' ? `${n.text} = ${fmtQuantity(n.value)}` : n.text);
+
+  // The cheapest badge needs two priced columns to compare; an extrapolated winner says so.
+  function cheapestOf(result) {
+    const priced = Object.keys(result.variants).filter((v) => result.variants[v].state === 'ok' && typeof result.variants[v].total === 'number');
+    const v = result.cheapest;
+    if (!v || priced.length < 2) return { variant: null, text: null, priced: priced.length };
+    return { variant: v, text: result.variants[v].extrapolated ? 'cheapest (extrapolated)' : `cheapest of ${priced.length} priced`, priced: priced.length };
+  }
+
   function barSegments(vr, preset) {
     if (vr.state !== 'ok' || !vr.lines || !(vr.total > 0)) return [];
     const by = new Map();
@@ -184,13 +229,15 @@
     return out;
   }
 
-  function buildCards(result, contract, preset, pageState) {
+  function buildCards(result, contract, preset, pageState, inputs) {
+    const best = cheapestOf(result);
     return contract.variants.map((v) => {
       const vr = result.variants[v];
       if (!vr) throw new Error(`result has no variant ${v}`);
-      const cheapest = result.cheapest === v;
-      if (cheapest && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
-      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: plainReason(vr.reason), extrapolated: !!vr.extrapolated, cheapest, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
+      if (result.cheapest === v && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
+      const cheapest = best.variant === v && pageState === 'ok';
+      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated, cheapest,
+        cheapest_text: cheapest ? best.text : null, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
       if (vr.state !== 'ok') {
         card.state_text = stateText(vr.state);
         return card;
@@ -201,7 +248,7 @@
         return card;
       }
       card.total_text = fmtMoney(vr.total, preset.currency);
-      card.state_text = cheapest ? 'cheapest' : 'comparable';
+      card.state_text = cheapest ? best.text : null;
       card.deltas = deltaTexts(result, v, preset.currency);
       card.delta_texts = card.deltas.map((d) => d.text);
       card.bar_segments = barSegments(vr, preset);
@@ -246,7 +293,8 @@
       });
       rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells });
     }
-    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: result.cheapest === v })), rows };
+    const best = cheapestOf(result);
+    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows };
   }
 
   // ---- drill ------------------------------------------------------------------------------------
@@ -381,6 +429,17 @@
     }).join('; ');
   }
 
+  // Form placement (registry `ui.tier`). Rows that are not inputs are model constants: the info dialog shows them.
+  const TIERS = ['workload', 'setting', 'advanced', 'hidden'];
+  function tierOf(q, problems) {
+    if (q.kind !== 'input') return 'hidden';
+    if (q.ui && TIERS.includes(q.ui.tier)) return q.ui.tier;
+    if (q.ui) throw new Error(`registry ${q.id}: unknown ui tier ${JSON.stringify(q.ui.tier)}`);
+    // A contract built before the registry had tiers: the row stays on the form, under the low-level section.
+    problems.push(`registry ${q.id} has no ui tier`);
+    return q.block === 'simple' ? 'workload' : 'advanced';
+  }
+
   function buildInputs(contract, fields, lockOrder, preset, ui, pageState, problems) {
     const R = model();
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
@@ -402,7 +461,10 @@
       const b = blocks.get(q.block);
       // A missing label is a contract defect: the page shows no raw id in its place.
       if (!q.label) problems.push(`registry ${q.id} has no label`);
-      const f = { id: q.id, label: q.label || null, unit: q.unit || null, kind: q.kind, value_type: q.value_type, enum: q.enum || null, evidence_kind: q.evidence ? q.evidence.kind : null,
+      const ui = q.ui || null;
+      const tier = tierOf(q, problems);
+      const f = { id: q.id, tier, name: ui ? ui.name : null, short: ui ? ui.short : null, form_label: (ui && (ui.name || ui.short)) || q.label || null,
+        label: q.label || null, unit: q.unit || null, kind: q.kind, value_type: q.value_type, enum: q.enum || null, evidence_kind: q.evidence ? q.evidence.kind : null,
         rate: typeof q.unit === 'string' && q.unit.endsWith('/day'), editable: q.kind === 'input', locked: null, derived: false, overridden: false, out_of_range: false, range: null, validity: null, rule_text: null, hint: q.hint || null, value: null };
       if (q.kind === 'input') {
         const fl = fields[q.id];
@@ -446,6 +508,12 @@
         else b.hints.push({ sql: q.hint.sql, mapping: Object.assign({}, q.hint.mapping || {}) });
       }
     }
+    const untiered = problems.filter((p) => / has no ui tier$/.test(p));
+    if (untiered.length > 1) {
+      const ids = untiered.map((p) => p.replace(/^registry (\S+) has no ui tier$/, '$1'));
+      for (const p of untiered) problems.splice(problems.indexOf(p), 1);
+      problems.push(`${ids.length} registry inputs have no ui tier: ${ids.join(', ')}`);
+    }
     const prices = blocks.get('prices');
     if (preset && pageState !== 'cannot_reproduce') {
       const editable = !!ui.priceEditing && preset.id === 'custom';
@@ -466,6 +534,86 @@
     return { blocks: [...blocks.values()].filter((b) => b.fields.length || b.block === 'prices' || b.block === 'simple'), groups, lock_order: lockOrder.slice() };
   }
 
+  // ---- info dialog --------------------------------------------------------------------------------
+
+  // The ClickHouse build every report measured, short form; null when the reports disagree or name none.
+  function measuredBuild(contract) {
+    const commits = new Set(((contract.manifest || {}).evidence || []).map((e) => e.commit).filter(Boolean));
+    return commits.size === 1 ? [...commits][0].slice(0, 11) : null;
+  }
+
+  // `tmp/src-26.8/src/X.cpp:12` -> `src/X.cpp:12 @ 09d0772a842`: a path the reader can open at the measured build.
+  function cite(text, commit) {
+    if (typeof text !== 'string') return text;
+    if (!commit) return text.replace(/tmp\/src-26\.8\//g, '');
+    return text.replace(/(?:tmp\/src-26\.8\/)?(src\/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)/g, `$1 @ ${commit}`);
+  }
+
+  // Reason segments of one variant: "<variant>.<operation>: text" pieces, split where a new prefix starts.
+  function reasonSegments(reason) {
+    const out = [];
+    for (const part of String(reason || '').split('; ')) {
+      const m = /^([a-z0-9_]+)\.([a-z0-9_]+): (.*)$/s.exec(part);
+      if (m) out.push({ operation: m[2], text: m[3] });
+      else if (out.length && !/^[a-z0-9_]+: /.test(part)) out[out.length - 1].text += `; ${part}`;
+      else out.push({ operation: null, text: part.replace(/^[a-z0-9_]+: /, '') });
+    }
+    return out.filter((s) => s.text);
+  }
+
+  // A pinned value is either a rule of the provider (evidence is a provider page) or fixed in the ClickHouse source.
+  function kindText(q, c) {
+    if (!q) return 'measured coefficient';
+    if (q.kind === 'pinned') return q.evidence && q.evidence.kind === 'provider' ? 'provider rule' : 'fixed by ClickHouse';
+    return { input: 'input', measured: 'measured', derivation: 'derived' }[q.kind] || q.kind;
+  }
+
+  function defaultText(q) {
+    if (q.default === null || q.default === undefined) return 'no default';
+    return typeof q.default === 'number' ? fmtQuantity(q.default, q.unit) : String(q.default);
+  }
+
+  // What the (i) dialog shows. `open` is {kind: 'input', id} (any registry row or coefficient id), {kind: 'cell',
+  // variant, operation} or {kind: 'variant', variant}.
+  function buildInfo(result, contract, inputs, open, problems) {
+    const commit = measuredBuild(contract);
+    if (open.kind === 'input') {
+      const q = contract.registry.find((x) => x.id === open.id);
+      const c = contract.coefficients.find((x) => x.id === open.id || (q && q.coef === x.id));
+      if (!q && !c) { problems.push(`info: ${open.id} is neither a registry row nor a coefficient`); return null; }
+      const f = q ? inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === q.id) : null;
+      const ui = (q && q.ui) || {};
+      const ev = (q && q.evidence) || (c && c.evidence) || {};
+      const ids = (c && c.evidence && c.evidence.measurement_ids) || [];
+      const evidence = ui.measured_by ? cite(ui.measured_by, commit)
+        : [ev.kind ? `${ev.kind}: ${cite(ev.ref, commit)}` : null, ids.length ? `${ids.length} measurement(s)` : null].filter(Boolean).join('; ');
+      const validity = c && c.validity ? Object.entries(c.validity).map(([k, r]) => `${k} from ${fmtQuantity(r[0])} to ${fmtQuantity(r[1])}`).join('; ') : null;
+      return {
+        kind: 'input', id: open.id, title: ui.short || (q && q.label) || open.id, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: kindText(q, c),
+        description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: evidence || null,
+        range_text: (f && f.range_text) || (validity ? `measured for ${validity}` : 'no measured range: the value is used as entered'),
+        value_text: f ? f.value_text : c && typeof c.value === 'number' ? fmtQuantity(c.value, c.dim) : null,
+        default_text: q ? `${defaultText(q)} (${ev.kind === 'source' ? `ClickHouse default, ${cite(ev.ref, commit)}` : cite(ev.ref, commit)})` : null,
+        sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null, lines: [],
+      };
+    }
+    const vr = result.variants[open.variant];
+    if (!vr) { problems.push(`info: no variant ${open.variant}`); return null; }
+    const segs = reasonSegments(vr.reason);
+    if (open.kind === 'variant') {
+      return { kind: 'variant', id: open.variant, title: variantLabel(open.variant), name: null, description: cardSentence(open.variant, vr, contract, inputs),
+        measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`) };
+    }
+    const op = open.operation;
+    const cell = vr.cells[op];
+    const lines = segs.filter((s) => s.operation === op).map((s) => cite(s.text, commit));
+    if (cell && cell.rows) for (const r of cell.rows) if (r.trace && r.trace.extrapolated) lines.push(`${rowLabel(r)}: extrapolated outside the measured range`);
+    for (const n of vr.notes || []) if (n.kind === 'cell' && n.operation === op) lines.push(cite(noteText(n), commit));
+    return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
+      description: vr.state === 'ok' ? (cell && cell.extrapolated ? 'Priced, extrapolated.' : 'Priced from measured coefficients.') : stateText(vr.state),
+      measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
+  }
+
   // ---- notes, chart -------------------------------------------------------------------------------
 
   function buildNotes(result, contract, fields, pageState) {
@@ -478,7 +626,7 @@
       const vr = result.variants[v];
       if (vr.state !== 'ok') continue;
       for (const n of vr.notes) {
-        if (n.kind === 'cell') notes.push({ kind: 'cell', variant: v, operation: n.operation, text: `${variantLabel(v)} ${n.operation}: ${n.text} = ${typeof n.value === 'number' ? fmtQuantity(n.value) : 'not available'}` });
+        if (n.kind === 'cell') notes.push({ kind: 'cell', variant: v, operation: n.operation, text: `${variantLabel(v)} ${n.operation}: ${cite(noteText(n), measuredBuild(contract))}` });
         else notes.push({ kind: n.kind, variant: v, text: `${variantLabel(v)}: ${n.text}`, details: n.notes || null });
       }
     }
@@ -564,19 +712,20 @@
     const vm = {
       page_state: pageState, page_reason: pageState === 'cannot_reproduce' ? result.page_reason || null : plainReason(result.page_reason) || null, evidence_statement: result.evidence_statement,
       currency: preset && !preset.structure_only ? preset.currency : null, theme: u.theme || null,
-      cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, problems,
+      cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, problems,
     };
     vm.inputs = buildInputs(contract, fields, lockOrder || [], preset, u, pageState, problems);
     vm.notes = buildNotes(result, contract, fields, pageState);
     if (pageState === 'cannot_reproduce') return vm;
-    vm.cards = buildCards(result, contract, preset, pageState);
+    vm.cards = buildCards(result, contract, preset, pageState, vm.inputs);
     vm.table = buildTable(result, contract, preset, pageState, problems);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
+    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems);
     // A chart of money has nothing to draw without prices.
     if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems, fields);
     return vm;
   }
 
-  SCC.viewmodel = { build, plainReason, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, TIERS, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);
