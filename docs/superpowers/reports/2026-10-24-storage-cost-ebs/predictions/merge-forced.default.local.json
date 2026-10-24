@@ -166,7 +166,7 @@
     {
       "claim": "OPTIMIZE FINAL merges every partition with final = true",
       "path": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp",
-      "line": 2497
+      "line": 2506
     },
     {
       "claim": "a final merge selects all parts of the partition, not through max_parts_to_merge_at_once",
@@ -200,8 +200,8 @@
     },
     {
       "claim": "a Wide part also writes columns_substreams.txt",
-      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
-      "line": 705
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
     },
     {
       "claim": "primary.cidx only when the table has a primary key",

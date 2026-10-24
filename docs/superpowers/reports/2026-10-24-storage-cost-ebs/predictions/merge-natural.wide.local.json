@@ -191,8 +191,8 @@
     },
     {
       "claim": "a Wide part also writes columns_substreams.txt",
-      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
-      "line": 705
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
     },
     {
       "claim": "primary.cidx only when the table has a primary key",

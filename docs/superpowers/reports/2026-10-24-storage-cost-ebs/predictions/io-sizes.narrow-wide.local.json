@@ -86,14 +86,19 @@
       "line": 34
     },
     {
-      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: no write request is larger",
+      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: a buffer flush writes at most that much",
       "path": "tmp/src-26.8/src/Core/Defines.h",
       "line": 22
     },
     {
-      "claim": "local reads use a buffer of max_read_buffer_size = 1 MiB",
+      "claim": "local reads use max_read_buffer_size_local_fs = 128 KiB",
       "path": "tmp/src-26.8/src/Core/Settings.cpp",
-      "line": 404
+      "line": 407
+    },
+    {
+      "claim": "it takes precedence over max_read_buffer_size for the local filesystem",
+      "path": "tmp/src-26.8/src/Interpreters/Context.cpp",
+      "line": 8979
     },
     {
       "claim": "local_filesystem_read_method is pread_threadpool: reads are pread syscalls",
