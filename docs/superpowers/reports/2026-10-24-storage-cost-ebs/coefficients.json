@@ -450,11 +450,13 @@
         "io_op"
       ],
       "values": {
-        "mutations": 13.295
+        "mutations": 13.295,
+        "deletes": 217464.4,
+        "recovery": 0.0
       }
     },
     "validity": {
-      "mutated_part_rows": [
+      "insert_rows": [
         30000,
         400000
       ]
@@ -463,7 +465,11 @@
       "abs": {
         "mutations": 19.53
       },
-      "rel": 0.15
+      "rel": 0.15,
+      "assumed_keys": [
+        "deletes",
+        "recovery"
+      ]
     },
     "domain": {
       "fit": {
@@ -482,6 +488,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
       "version": "0.2.0",
       "measurement_ids": [
+        "cost-20261024T171231Z/local/drop/partition-2/k1",
+        "cost-20261024T171231Z/local/drop/partition-2/k2",
+        "cost-20261024T171231Z/local/drop/partition-2/k3",
+        "cost-20261024T171231Z/local/drop/partition/k1",
+        "cost-20261024T171231Z/local/drop/partition/k2",
+        "cost-20261024T171231Z/local/drop/partition/k3",
         "cost-20261024T171231Z/local/mutation/compact-30k/k1",
         "cost-20261024T171231Z/local/mutation/compact-30k/k2",
         "cost-20261024T171231Z/local/mutation/compact-30k/k3",
@@ -490,14 +502,20 @@
         "cost-20261024T171231Z/local/mutation/compact-update-one-column/k3",
         "cost-20261024T171231Z/local/mutation/wide-update-one-column/k1",
         "cost-20261024T171231Z/local/mutation/wide-update-one-column/k2",
-        "cost-20261024T171231Z/local/mutation/wide-update-one-column/k3"
+        "cost-20261024T171231Z/local/mutation/wide-update-one-column/k3",
+        "cost-20261024T171231Z/local/startup/intact/k1",
+        "cost-20261024T171231Z/local/startup/intact/k2",
+        "cost-20261024T171231Z/local/startup/intact/k3",
+        "cost-20261024T171231Z/local/startup/small/k1",
+        "cost-20261024T171231Z/local/startup/small/k2",
+        "cost-20261024T171231Z/local/startup/small/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
     "status": "ok",
     "fit": {
-      "method": "mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values); reads of these operations are not modelled",
+      "method": "mutations: mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values). deletes: ASSUMPTION, the larger measured value per dropped part (217 kB fit, 126 kB hold-out: the per-part unit did not carry). recovery: ASSUMPTION 0, restart net writes below the idle baseline. Reads of these operations are not modelled",
       "records": [
         "cost-20261024T171231Z/local/drop/partition/k1",
         "cost-20261024T171231Z/local/drop/partition/k2",

@@ -16,8 +16,8 @@ EBS cells price one replica's gp3 volumes from three things:
 - **`ebs_sequential_ios_per_mib`** (pinned, AWS rule): 4 I/Os per MiB. This is a lower bound. Measured request
   counts were 3–25× higher on this rig, depending on the schema. The gp3 baseline of 3000 IOPS usually dominates.
 - **`peak_factor`** (assumed input, default 1): the rig cannot measure it; see [Peak factor](#peak).
-- **`op_write_bytes`** (measured): write bytes per mutated row; deletes and restarts are below the rig's
-  resolution and cut; reads by assumption. See [Mutations, deletes, recovery and reads](#ops).
+- **`op_write_bytes`**: write bytes per mutated row (measured); drops (217 kB per part) and restarts (0) by
+  assumption; reads by assumption. See [Mutations, deletes, recovery and reads](#ops).
 
 | Item | Value |
 |---|---|
@@ -205,26 +205,28 @@ so `op_write_bytes` is the window's net r1 write bytes (idle rate × wall time s
 
 | Operation | Unit | Fit | Hold-out |
 |---|---|---|---|
-| `deletes` | B per dropped part | 2.174e+05 ± 80.6 | 1.251e+05, 1.251e+05, 1.251e+05 (not modelled, cut, ± 3.28e+04) |
+| `deletes` | B per dropped part | 2.174e+05 ± 80.6 | 1.251e+05, 1.251e+05, 1.251e+05 (fails; priced by assumption at 217 kB per part, ± 3.28e+04) |
 | `mutations` | B per source row | 13.29 ± 9.77 | 26.61, 26.62, 26.62 (pass, ± 21.5) |
-| `recovery` | B per restart | -3.628e+04 ± 642 | -1.028e+05, -4.001e+04, -3.64e+04 (not modelled, cut, ± 6.73e+03) |
+| `recovery` | B per restart | -3.628e+04 ± 642 | -1.028e+05, -4.001e+04, -3.64e+04 (priced 0 by assumption, ± 6.73e+03) |
 
-Only mutations are modelled (`op_write_bytes[mutations]`, fit and passed hold-out). Drops and restarts are not:
+Mutations are measured: `op_write_bytes[mutations]`, with a fit and a passed hold-out. Drops and restarts are priced
+by explicit assumption rows (owner ruling), with both measurements kept as evidence:
 
-- **Drops:** net writes are steady within each case, but per dropped part the fit gives 219 kB and the hold-out
-  126 kB. The unit (per part) does not carry from one partition layout to another, and two cases do not fix a better
-  one.
-- **Restarts:** net writes are negative after the idle rate × wall time. The server writes less while down and
-  starting than at idle, so restart demand is below the rig's resolution. Their coefficients `drop_write_bytes_per_part` and
-`restart_write_bytes` are `unsupported`, the `deletes` and `recovery` cells are `unsupported_cut`, and the edges are
-`cut`. A non-zero `expired_parts_per_month` or `restarts_per_month` makes the EBS column `unsupported_cut` (not $0);
-zero prices nothing. Reads issued by mutations (the source part) are not modelled. Replica fetches are not measured
-on `local`.
+- **Drops:** 217 kB written per dropped part, the larger measured value. Net writes are steady within each case,
+  but per dropped part the fit gives 217 kB and the hold-out 126 kB, so the per-part unit does not carry between
+  partition layouts. The row is an upper-bound assumption, pending a Tier 2 model keyed on part size. The hold-out
+  edge is `consumed`.
+- **Restarts:** priced 0. Net writes are negative after the idle rate × wall time: a restart writes less than an
+  idle server, so its demand is below the rig's resolution. This is an assumption.
+
+Both cells carry a note saying so. Reads issued by these operations (a mutation reads its source part) are not
+modelled. Replica fetches are not measured on `local`.
 
 `mutations` = (mutated Compact + Wide parts per month) × `mutated_part_rows` × `op_write_bytes[mutations]`, one
 replica's mean rate × `peak_factor`, IOPS at the floor.
 
-`reads` is a derivation (an assumption, by owner ruling): every part read is a full scan of an average part,
+`reads` is a derivation (an assumption, by owner ruling), listed under the `lifecycle` family because its one
+coefficient, the scan rate, is measured by the `io-sizes` card: every part read is a full scan of an average part,
 `select_part_reads_per_day` × `data_bytes` / `active_parts` × `io_bytes_per_op[reads, read]` (the measured full-scan
 rate), priced as IOPS at the floor. Page-cache hits are not modelled; EBS reads are priced as IOPS only (owner
 decision). The s3 report's `bytes_per_get[shape]` was not used: it has no `narrow` key, the default shape.

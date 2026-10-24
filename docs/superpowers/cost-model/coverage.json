@@ -17047,7 +17047,7 @@
       "status": "done"
     },
     {
-      "coefficient": "drop_write_bytes_per_part",
+      "coefficient": "op_write_bytes",
       "experiment_id": "drop.partition",
       "policy": "local",
       "span": {
@@ -17063,10 +17063,10 @@
         "cost-20261024T171231Z/local/drop/partition/k2",
         "cost-20261024T171231Z/local/drop/partition/k3"
       ],
-      "status": "cut"
+      "status": "done"
     },
     {
-      "coefficient": "drop_write_bytes_per_part",
+      "coefficient": "op_write_bytes",
       "experiment_id": "drop.partition-2",
       "policy": "local",
       "span": {
@@ -17082,10 +17082,10 @@
         "cost-20261024T171231Z/local/drop/partition-2/k2",
         "cost-20261024T171231Z/local/drop/partition-2/k3"
       ],
-      "status": "cut"
+      "status": "consumed"
     },
     {
-      "coefficient": "restart_write_bytes",
+      "coefficient": "op_write_bytes",
       "experiment_id": "startup.intact",
       "policy": "local",
       "span": {
@@ -17101,10 +17101,10 @@
         "cost-20261024T171231Z/local/startup/intact/k2",
         "cost-20261024T171231Z/local/startup/intact/k3"
       ],
-      "status": "cut"
+      "status": "done"
     },
     {
-      "coefficient": "restart_write_bytes",
+      "coefficient": "op_write_bytes",
       "experiment_id": "startup.small",
       "policy": "local",
       "span": {
@@ -17120,7 +17120,7 @@
         "cost-20261024T171231Z/local/startup/small/k2",
         "cost-20261024T171231Z/local/startup/small/k3"
       ],
-      "status": "cut"
+      "status": "done"
     },
     {
       "coefficient": "peak_factor",

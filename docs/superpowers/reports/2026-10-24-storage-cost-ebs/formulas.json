@@ -617,30 +617,24 @@
               "dim": "MiB/s",
               "on_zero": "unavailable",
               "a": {
-                "kind": "branch",
+                "kind": "mul",
                 "dim": "B",
-                "cond": {
-                  "op": ">",
-                  "a": {
-                    "kind": "input",
-                    "id": "expired_parts_per_month",
-                    "dim": "count"
-                  },
-                  "b": {
-                    "kind": "const",
-                    "value": 0,
-                    "dim": "count"
-                  }
+                "a": {
+                  "kind": "input",
+                  "id": "expired_parts_per_month",
+                  "dim": "count"
                 },
-                "then": {
-                  "kind": "const",
-                  "value": "unavailable",
-                  "dim": "B"
-                },
-                "else": {
-                  "kind": "const",
-                  "value": 0,
-                  "dim": "B"
+                "b": {
+                  "kind": "lookup",
+                  "dim": "B",
+                  "table_id": "op_write_bytes",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "deletes",
+                      "dim": "enum:io_op"
+                    }
+                  ]
                 }
               },
               "b": {
@@ -675,30 +669,24 @@
                 "dim": "MiB/s",
                 "on_zero": "unavailable",
                 "a": {
-                  "kind": "branch",
+                  "kind": "mul",
                   "dim": "B",
-                  "cond": {
-                    "op": ">",
-                    "a": {
-                      "kind": "input",
-                      "id": "expired_parts_per_month",
-                      "dim": "count"
-                    },
-                    "b": {
-                      "kind": "const",
-                      "value": 0,
-                      "dim": "count"
-                    }
+                  "a": {
+                    "kind": "input",
+                    "id": "expired_parts_per_month",
+                    "dim": "count"
                   },
-                  "then": {
-                    "kind": "const",
-                    "value": "unavailable",
-                    "dim": "B"
-                  },
-                  "else": {
-                    "kind": "const",
-                    "value": 0,
-                    "dim": "B"
+                  "b": {
+                    "kind": "lookup",
+                    "dim": "B",
+                    "table_id": "op_write_bytes",
+                    "keys": [
+                      {
+                        "kind": "const",
+                        "value": "deletes",
+                        "dim": "enum:io_op"
+                      }
+                    ]
                   }
                 },
                 "b": {
@@ -723,7 +711,13 @@
       ],
       "allocation": null,
       "states": [],
-      "notes": []
+      "notes": [
+        {
+          "kind": "const",
+          "value": "Drops: assumption, 217 kB written per dropped part (the larger measured value; the per-part unit did not carry between the fit and hold-out layouts, 126 kB); an upper bound pending a model keyed on part size",
+          "dim": "enum:note"
+        }
+      ]
     },
     "reads": {
       "ledger_rows": [
@@ -947,30 +941,24 @@
               "dim": "MiB/s",
               "on_zero": "unavailable",
               "a": {
-                "kind": "branch",
+                "kind": "mul",
                 "dim": "B",
-                "cond": {
-                  "op": ">",
-                  "a": {
-                    "kind": "input",
-                    "id": "restarts_per_month",
-                    "dim": "count"
-                  },
-                  "b": {
-                    "kind": "const",
-                    "value": 0,
-                    "dim": "count"
-                  }
+                "a": {
+                  "kind": "input",
+                  "id": "restarts_per_month",
+                  "dim": "count"
                 },
-                "then": {
-                  "kind": "const",
-                  "value": "unavailable",
-                  "dim": "B"
-                },
-                "else": {
-                  "kind": "const",
-                  "value": 0,
-                  "dim": "B"
+                "b": {
+                  "kind": "lookup",
+                  "dim": "B",
+                  "table_id": "op_write_bytes",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "recovery",
+                      "dim": "enum:io_op"
+                    }
+                  ]
                 }
               },
               "b": {
@@ -1005,30 +993,24 @@
                 "dim": "MiB/s",
                 "on_zero": "unavailable",
                 "a": {
-                  "kind": "branch",
+                  "kind": "mul",
                   "dim": "B",
-                  "cond": {
-                    "op": ">",
-                    "a": {
-                      "kind": "input",
-                      "id": "restarts_per_month",
-                      "dim": "count"
-                    },
-                    "b": {
-                      "kind": "const",
-                      "value": 0,
-                      "dim": "count"
-                    }
+                  "a": {
+                    "kind": "input",
+                    "id": "restarts_per_month",
+                    "dim": "count"
                   },
-                  "then": {
-                    "kind": "const",
-                    "value": "unavailable",
-                    "dim": "B"
-                  },
-                  "else": {
-                    "kind": "const",
-                    "value": 0,
-                    "dim": "B"
+                  "b": {
+                    "kind": "lookup",
+                    "dim": "B",
+                    "table_id": "op_write_bytes",
+                    "keys": [
+                      {
+                        "kind": "const",
+                        "value": "recovery",
+                        "dim": "enum:io_op"
+                      }
+                    ]
                   }
                 },
                 "b": {
@@ -1053,7 +1035,13 @@
       ],
       "allocation": null,
       "states": [],
-      "notes": []
+      "notes": [
+        {
+          "kind": "const",
+          "value": "Restarts: writes below the idle baseline on the rig; priced 0 (assumption)",
+          "dim": "enum:note"
+        }
+      ]
     },
     "local_disk": {
       "ledger_rows": [],
@@ -1076,13 +1064,13 @@
       "mutation_deletes": "supported"
     },
     "deletes": {
-      "mutation_deletes": "unsupported_cut"
+      "mutation_deletes": "supported"
     },
     "reads": {
-      "reads_cache": "supported"
+      "lifecycle": "supported"
     },
     "recovery": {
-      "startup_recovery": "unsupported_cut"
+      "startup_recovery": "supported"
     }
   }
 }

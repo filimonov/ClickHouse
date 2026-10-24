@@ -10825,7 +10825,7 @@
     {
       "id": "op_write_bytes",
       "block": "ebs",
-      "label": "Volume write bytes per source row of a mutated part; the mutation's reads are not modelled",
+      "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the larger measured value, 217 kB; the per-part unit did not carry, 126 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
       "kind": "measured",
       "scope": "volume",
       "unit": "B",
@@ -10841,7 +10841,7 @@
       "rule": null,
       "coef": "op_write_bytes",
       "validity": {
-        "mutated_part_rows": [
+        "insert_rows": [
           30000,
           400000
         ]
@@ -10858,50 +10858,6 @@
         }
       },
       "status": "ok"
-    },
-    {
-      "id": "drop_write_bytes_per_part",
-      "block": "ebs",
-      "label": "Volume write bytes per dropped part: not modelled (per-part writes did not carry to the hold-out layout)",
-      "kind": "measured",
-      "scope": "volume",
-      "unit": "B",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": null,
-      "rule": null,
-      "coef": "drop_write_bytes_per_part",
-      "validity": null,
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); drop.partition 219 kB per dropped part, drop.partition-2 126 kB: the per-part unit fails the hold-out",
-        "version": "0.2.0"
-      },
-      "hint": null,
-      "status": "unsupported"
-    },
-    {
-      "id": "restart_write_bytes",
-      "block": "ebs",
-      "label": "Volume write bytes per restart: below the rig resolution, not modelled",
-      "kind": "measured",
-      "scope": "volume",
-      "unit": "B",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": null,
-      "rule": null,
-      "coef": "restart_write_bytes",
-      "validity": null,
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); startup.intact / startup.small net writes were negative after the idle baseline",
-        "version": "0.2.0"
-      },
-      "hint": null,
-      "status": "unsupported"
     },
     {
       "id": "io_request_size_distribution",
