@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # Storage cost calculator — s3 disk operation graphs (R2) {#s3}
 
-Every request count of the `s3` disk reconciles on the pinned binary: 48 cases on `s3` and `s3_cached`, K=3, four
+Every request count of the `s3` disk reconciles on the pinned binary: 48 cases on `s3` and `s3_cached`, K=3, 6
 report runs, each alone on the host. 239 records are ok; the 25 `FAILED` records belong to the
 consumed hold-outs and validations (§Review). All 14 remaining hold-out cases land on their committed predictions. Mutation
 counts vary between repeats (§Mutation); every other count is identical in all repeats.
@@ -19,10 +19,10 @@ The variant's eight cells are in `formulas.json`, their coefficients in `coeffic
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case but five, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3`, `cost-20261024T123052Z` for the 1000-row validations and `cost-20261024T132311Z` for the small-part cases; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 239 records |
+| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case not named next, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3`, `cost-20261024T123052Z` for the 1000-row validations, `cost-20261024T132311Z` and `cost-20261024T133108Z` for the small-part cases; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 239 records |
 | Consumed hold-outs | `drop.partition-3` (falsified count), `mutation.update-mixed` and `mutation.update-mixed-2` (exact counts missed by the repeat spread), `mutation.update-mixed-3` (its band was a stochastic tolerance, which the mutation card did not apply; the card now refuses a manifest mode it does not run), `mutation.compact-small` and `mutation.compact-30k` (falsified forms of the granule rule). All their records stay in `measurements.jsonl`, 25 of them `FAILED` |
 | Invalid runs | `cost-20261024T073405Z`, `cost-20261024T074526Z`, `cost-20261024T075016Z`, `cost-20261024T075431Z`, `cost-20261024T075800Z`, `cost-20261024T083200Z`, `cost-20261024T084830Z` overlapped CAS or EBS runs on the same host and RustFS. No number of this report comes from them |
-| Predictions | fit predictions `80cd02f1c27` were written after exploratory runs; hold-outs `80cd02f1c27`, `202d45aadbc`, `5519040a680`, `09e9319a11f`, `b04768eaa9e`, each before the first run of its case. The invalid runs executed most hold-outs before the report run; no predicted count changed after that (later commits only added registry inputs and the commit ids), so the report run tests each committed count |
+| Predictions | fit predictions `80cd02f1c27` were written after exploratory runs. Hold-outs `80cd02f1c27`, `202d45aadbc`, `5519040a680`, `09e9319a11f`, `b04768eaa9e`, `3bd897814b9`, `67cae996c5f`, `ffeb16cdbbf`, `330cbb640bd`, `6d4548a13cf`, each before the first run of its case. The invalid runs executed the first hold-outs before the report run; no predicted count changed after that (later commits only added registry inputs and the commit ids), so the report run tests each committed count |
 | Withdrawn hold-outs | the `bytes_per_get` band of `cold-select.cache-off-types` and the `cache_fill_io_per_byte` check of `cold-select.cache-on-types` failed in an invalid run and were revised; both cases are fits now, `cold-select.cache-off-types-2` and `cold-select.cache-on-types-2` are the hold-outs |
 | Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
 | Cuts | `detach-attach.default` and `cache-eviction.2x` (P2): cut by owner directive D14, no manifest |
@@ -121,18 +121,25 @@ sources (`merge-forced.default`) and 16 for 2 are 8 per 5-column Compact source.
   (`Storages/StorageMergeTree.cpp:2394`, `:2415`). A replicated table keeps its entries in Keeper
   (`Storages/StorageReplicatedMergeTree.cpp:9034`): no object.
 - **Afterwards:** the source part is outdated; with `old_parts_lifetime = 1` in the cards its unshared objects go in
-  one `DeleteObjects` per part inside the window. Parts the cleanup removes in the same pass can share a call: 3
-  calls for 4 parts in one repeat of `mutation.wide-delete`, 5 for 6 in `mutation.update-mixed`. One call per removed
-  part is the upper bound the cells price.
+  one `DeleteObjects` per part inside the window. Two parts' keys can share one call: one repeat of
+  `mutation.wide-delete` sent 3 calls for 4 parts, one of them with 30 keys (a Compact part's 11 plus a Wide part's
+  19), and `mutation.update-mixed` 5 for 6. Measured, not pinned in the source: the cleanup removes parts one by one
+  (`Storages/MergeTree/MergeTreeData.cpp:4421`), and `IO/S3Defines.h:52` only caps a call at 1000 keys. One call per
+  removed part is the upper bound the cells price.
 - **Reads per part** (`mutation_gets_per_part`, narrow shape, the least over the repeats): delete compact: 3, delete wide: 16, lightweight_delete compact: 3, lightweight_delete wide: 14, update_column compact: 2, update_column wide: 7, delete compact: 3 (cache), delete wide: 10 (cache), lightweight_delete compact: 3 (cache), lightweight_delete wide: 3 (cache), update_column compact: 2 (cache), update_column wide: 2 (cache). For a
-  Compact part the table holds the reads besides `data.bin`. A mutation reads `data.bin` with one `GetObject` plus two
-  seeks per granule (`Storages/MergeTree/MergeTreeReaderCompact.cpp:219`), a trailing granule counting when at least
-  half full, at least one pair: `mutation_compact_gets_per_full_granule` = 2, so 1 + 2 × max(1, round(rows /
-  `index_granularity`)). The first form, full granules only, was falsified by its hold-out `mutation.compact-30k` (4
+  Compact part the table holds every read except the per-granule seeks: the first `data.bin` `GetObject`, the marks
+  and the rest. Each granule then costs two `data.bin` seeks, one per substream read
+  (`Storages/MergeTree/MergeTreeReaderCompact.cpp:219`): `mutation_compact_gets_per_full_granule` = 2 per granule. The
+  writer makes a trailing remainder under half a granule part of the previous granule
+  (`Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp:519`), so a part has max(1, round(rows /
+  `index_granularity`)) granules. The first form, full granules only, was falsified by its hold-out `mutation.compact-30k` (4
   pairs at 3.66 granules, consumed). The rounded form fits 1000, 10 000, 30 000 and 100 000 rows (1, 1, 4 and 12
   pairs); its hold-outs `mutation.compact-20k` and `mutation.compact-45k` (5.49 granules: 5 pairs), predicted before
-  their run, land exactly (12 and 24 `GetObject` for two parts). A Wide part reads one `.bin` range per stream whatever its size. A Compact part read takes one more `GetObject`
-  of `data.bin` in some repeats: the table's tolerance is 1 per part. The exact hold-outs `mutation.update-mixed` and
+  their run, land exactly (12 and 24 `GetObject` for two parts). A Wide part reads one `.bin` range per stream whatever its size. Some repeats send one more
+  `data.bin` `GetObject` per Compact part: a seek inside an open ranged GET aborts that request
+  (`IO/ReadBufferFromS3.cpp:419`, `:474`), so the ledger records it as a `dropped` attempt with upstream outcome
+  `unknown`. It is still a billed request (21 of the 62 `GetObject` of one `mutation.lightweight-delete` repeat). The
+  table's tolerance of 1 per part is this measured spread. The exact hold-outs `mutation.update-mixed` and
   `mutation.update-mixed-2` missed by that spread (82 `GetObject` against 80 in one of six records) and are consumed;
   `mutation.update-mixed-3` stated the spread as a stochastic tolerance, which the deterministic card ignores (3 of
   its 6 records fail an exact DeleteObjects check while inside the band): consumed. The hold-out
@@ -302,18 +309,24 @@ Every assertion held in every ok record (part types from the registry predicate,
 
 Source-derived (`source`) counts are exact on the deterministic cards listed as fit; they need no hold-out. Every measured coefficient has a fit edge and a distinct hold-out edge in `coverage.json`, both `done`, per policy.
 
+The granule and merge coefficients state their validity in `insert_rows`. Their formula inputs, `mutated_part_rows`
+and `merge_result_rows`, derive from `part_rows` = `insert_rows` / `parts_per_insert`, so the measured insert sizes
+bound them.
+
 ## Formulas and applicability {#formulas}
 
 `formulas.json` (owner `s3`, variant `s3`) prices eight cells per month; `cache_enabled` branches reads, merges,
 mutation reads, startup and local capacity (`*_cached` policies measured the `cache_enabled = 1` branch).
-Applicability lists the families whose cards back each cell's coefficients:
+Applicability lists, per cell, exactly the families whose rules or coefficients the cell's rows use, as for
+`inserts`: `objects_per_part_by_shape` (`objects_per_part`), `thresholds` (a part type predicate), `multipart_graph`
+(`multipart_parts`), and the family of each measured table:
 
 | Cell | Families | Rows |
 |---|---|---|
 | `storage` | `lifecycle` | active `data_bytes` × replicas; outdated: merged-away bytes, ingest × (`write_amplification_rule` − 1), held for `old_parts_lifetime` |
 | `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject` |
-| `merges` | `lifecycle` | result writes with multipart rows, source `GetObject` (cache branch), one `DeleteObjects` per removed source |
-| `mutations` | `mutation_deletes` | writes per Compact and Wide part with multipart rows, `mutation_<n>.txt` writes and removals (plain `MergeTree` only), `GetObject` per part, `DeleteObjects` |
+| `merges` | `lifecycle`, `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | result writes with multipart rows, source `GetObject` (cache branch), one `DeleteObjects` per removed source |
+| `mutations` | `mutation_deletes`, `multipart_graph` | writes per Compact and Wide part with multipart rows, `mutation_<n>.txt` writes and removals (plain `MergeTree` only), `GetObject` per part, `DeleteObjects` |
 | `deletes` | `mutation_deletes` | one empty part per expiry operation, one `DeleteObjects` per expired part and per empty part |
 | `reads` | `reads_cache` | warm stream reads, first reads of new parts and after restarts, statistics refreshes (no cache); cached misses (cache) |
 | `recovery` | `startup_recovery` | access checks, part and history loads per restart; `not_supported` while `missed_parts_per_restart` > 0 |
@@ -321,17 +334,17 @@ Applicability lists the families whose cards back each cell's coefficients:
 
 The follower `GetObject` row of `inserts` uses `objects_per_part` (the phase-0 replicated fetch read every object of
 the part once) until the replication report's `acquire_requests[s3][insert]` replaces it. Catch-up after a restart
-belongs to the replication report (`pending_owner: replication` in the cell's state and note): catch-up `GetObject` =
-`missed_parts_per_restart` × `catchup_requests_per_missed_part[s3]`, and `startup_requests_after_restart[s3]` replaces
-the startup rows. Until that report publishes both, the `recovery` cell is `not_supported` for workloads with missed
-parts: the contract loader rejects a reference to a coefficient no report carries.
+belongs to the replication report (`pending_owner: replication` in the cell's state): catch-up `GetObject` and
+`PutObject` = `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3]`, and
+`startup_requests_after_restart[s3]` replaces the startup rows. They are not wired into this cell yet, so the
+`recovery` cell is `not_supported` for workloads with missed parts.
 
 ## Assumptions {#assumptions}
 
 Each is `evidence.kind: assumed` in the registry or stated in a prediction:
 
-- **Merge results are Wide** (`objects_per_part[shape][wide]`) and sources have the inserted part type. Reason:
-  results past 10 MiB are Wide by the predicate; small merges of Compact parts carry few bytes.
+- **A merge result's part type** is the part type predicate at the merge result size (`merge_result_part_type`),
+  and sources have the inserted part type.
 - **Each replica merges locally** (`merges` × `replicas`). Reason: `acquisition_rule` defaults to local execution;
   the fetch share belongs to the replication report.
 - **Every new part is read once** (`parts_first_read_per_month` = inserted parts + merge results), and a restart

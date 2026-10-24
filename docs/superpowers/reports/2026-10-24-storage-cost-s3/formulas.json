@@ -1828,7 +1828,7 @@
    "states": [
     {
      "id": "not_supported",
-     "reason": "pending_owner: replication. Catch-up after a restart is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; the replication report has not published them yet",
+     "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
      "cond": {
       "kind": "branch",
       "dim": "bool",
@@ -2019,10 +2019,14 @@
    "multipart_graph": "supported"
   },
   "merges": {
-   "lifecycle": "supported"
+   "lifecycle": "supported",
+   "objects_per_part_by_shape": "supported",
+   "thresholds": "supported",
+   "multipart_graph": "supported"
   },
   "mutations": {
-   "mutation_deletes": "supported"
+   "mutation_deletes": "supported",
+   "multipart_graph": "supported"
   },
   "deletes": {
    "mutation_deletes": "supported"

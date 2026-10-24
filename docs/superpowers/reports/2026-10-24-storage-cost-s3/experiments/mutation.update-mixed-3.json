@@ -8,7 +8,7 @@
     "s3_cached"
   ],
   "replicas": 1,
-  "mode": "stochastic",
+  "mode": "deterministic",
   "controls": {
     "merges": "stop",
     "gc": "off",
@@ -78,5 +78,5 @@
   "scale": 1.0,
   "repeats": 3,
   "timeout_s": 600,
-  "description": "Hold-out with bands: ALTER TABLE ... UPDATE u2 = u2 + 5 WHERE 1 on a Compact table of three parts and a Wide table of two. Stochastic: a Compact part read can take one more GetObject, and cleanup can batch two removed parts into one DeleteObjects call."
+  "description": "Hold-out with bands: ALTER TABLE ... UPDATE u2 = u2 + 5 WHERE 1 on a Compact table of three parts and a Wide table of two. Stochastic: a Compact part read can take one more GetObject, and cleanup can batch two removed parts into one DeleteObjects call. Ran deterministic: the mutation card checks counts exactly."
 }

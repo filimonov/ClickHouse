@@ -260,3 +260,17 @@ class ModeTest(unittest.TestCase):
         other = dict(m, mode='stochastic' if card.mode == 'deterministic' else 'deterministic')
         with self.assertRaisesRegex(ValueError, 'mode'):
             card.setup(ctx_for(other, FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})))
+
+
+class ManifestModeTest(unittest.TestCase):
+    def test_every_s3_manifest_names_its_cards_mode(self):
+        import glob
+        import json
+        import os
+        names = sorted(glob.glob(os.path.join(os.path.dirname(manifest.__code__.co_filename), '..', '..', '..', 'docs',
+                                              'superpowers', 'reports', '2026-10-24-storage-cost-s3', 'experiments', '*.json')))
+        self.assertTrue(names)
+        for name in names:
+            with open(name) as f:
+                m = json.load(f)
+            self.assertEqual(m['mode'], CARDS[m['card']].mode, os.path.basename(name))
