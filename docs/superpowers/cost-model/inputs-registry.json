@@ -9703,7 +9703,7 @@
     {
       "id": "catchup_requests_per_missed_part",
       "block": "topology_recovery",
-      "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+      "label": "Requests per part a restarted replica fetches to catch up, both replicas, per S3 operation",
       "kind": "measured",
       "scope": "cluster",
       "unit": "count",
@@ -9711,7 +9711,8 @@
       "enum": null,
       "table": {
         "index": [
-          "variant_id"
+          "variant_id",
+          "replication_op"
         ],
         "dim": "count"
       },
@@ -9722,6 +9723,501 @@
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+        "mapping": {
+          "catchup_requests_per_missed_part": "S3 requests after the restart minus startup, per DownloadPart row"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "result_type",
+      "block": "replication",
+      "label": "Result type of a replicated part: inserted, merged or mutated",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "insert",
+        "merge",
+        "mutation"
+      ],
+      "table": null,
+      "default": "insert",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/PartLog.cpp:67",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "replication_role",
+      "block": "replication",
+      "label": "Side of a part fetch a request belongs to: the replica serving it or the one fetching",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "sender",
+        "receiver"
+      ],
+      "table": null,
+      "default": "sender",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:469",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "replication_op",
+      "block": "replication",
+      "label": "S3 operation of a replication, recovery or retry request row",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "PutObject",
+        "GetObject",
+        "HeadObject",
+        "DeleteObject",
+        "DeleteObjects",
+        "ListObjectsV2",
+        "CreateMultipartUpload",
+        "UploadPart",
+        "CompleteMultipartUpload",
+        "AbortMultipartUpload"
+      ],
+      "table": null,
+      "default": "PutObject",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp:567",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "fault_class",
+      "block": "replication",
+      "label": "Failed store request class: a 5XX answer the store never saw, or a response lost after the store accepted the request",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "status_5xx",
+        "lost_response"
+      ],
+      "table": null,
+      "default": "status_5xx",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:116",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "attempt_kind",
+      "block": "replication",
+      "label": "Which attempts a retry row counts: every attempt, or only the attempts the store saw (billable)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "attempts",
+        "store_reached"
+      ],
+      "table": null,
+      "default": "attempts",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3/Client.cpp:852",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "acquire_requests",
+      "block": "replication",
+      "label": "Requests per part a follower fetches, by result type and side (sender reads, receiver writes and load reads)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "result_type",
+          "replication_role",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "acquire_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+        "mapping": {
+          "acquire_requests": "S3 requests of each replica while its DownloadPart rows accrue, per DownloadPart row"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "acquire_bytes",
+      "block": "replication",
+      "label": "Interserver bytes the sender ships per byte on disk of a fetched part",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "result_type"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "acquire_bytes",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(size_in_bytes) FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
+        "mapping": {
+          "acquire_bytes": "interserver bytes sent / DownloadPart size_in_bytes"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "local_exec_requests",
+      "block": "replication",
+      "label": "Requests a follower sends per merge or mutation result it executes itself",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "result_type",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "local_exec_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+        "mapping": {
+          "local_exec_requests": "S3 requests per MergeParts or MutatePart row on a follower"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "fetch_fraction",
+      "block": "replication",
+      "label": "Share of follower acquisitions that are fetches, per result type, with default settings",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "result_type"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "fetch_fraction",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+        "mapping": {
+          "fetch_fraction": "DownloadPart / (DownloadPart + MergeParts or MutatePart) of the result type on followers"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "zero_copy_requests",
+      "block": "replication",
+      "label": "Requests per part a follower fetches with zero-copy replication (s3), by result type and side",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "result_type",
+          "replication_role",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "zero_copy_requests",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+        "mapping": {
+          "zero_copy_requests": "S3 requests per DownloadPart row with allow_remote_fs_zero_copy_replication = 1"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "startup_requests_after_restart",
+      "block": "topology_recovery",
+      "label": "Requests a restarted replica sends before its first catch-up fetch",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "startup_requests_after_restart",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+        "mapping": {
+          "startup_requests_after_restart": "S3 requests between the server start and the first DownloadPart"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "replacement_requests_per_part",
+      "block": "topology_recovery",
+      "label": "Requests per part when a new replica joins a populated table (cut: replacement.default is a P2 case)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": 0,
+      "rule": null,
+      "coef": "replacement_requests_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
+        "mapping": {
+          "replacement_requests_per_part": "not measured: the replacement card is cut"
+        }
+      },
+      "status": "unsupported"
+    },
+    {
+      "id": "retry_outcome_mix",
+      "block": "reliability",
+      "label": "Extra request attempts per failed attempt, and how many of them reach the store, per fault class",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id",
+          "fault_class",
+          "replication_op",
+          "attempt_kind"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "retry_outcome_mix",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3WriteRequestsErrors', 'S3WriteRequestRetryableErrors', 'S3WriteRequestAttempts')",
+        "mapping": {
+          "retry_outcome_mix": "S3WriteRequestAttempts - S3WriteRequestsCount per S3WriteRequestsErrors"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "failed_upload_residue",
+      "block": "reliability",
+      "label": "Incomplete multipart bytes left after a failed upload the server aborts itself",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id"
+        ],
+        "dim": "B"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "failed_upload_residue",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('S3AbortMultipartUpload', 'S3CreateMultipartUpload')",
+        "mapping": {
+          "failed_upload_residue": "S3CreateMultipartUpload - S3CompleteMultipartUpload - S3AbortMultipartUpload uploads stay open"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "fetch_retry_rate",
+      "block": "reliability",
+      "label": "Fetch attempts per fetched part when the interserver connection drops (cut: fault-fetch is a P2 case)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "variant_id"
+        ],
+        "dim": "1"
+      },
+      "default": 0,
+      "rule": null,
+      "coef": "fetch_retry_rate",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
+        "mapping": {
+          "fetch_retry_rate": "not measured: the fault-fetch case is cut"
+        }
+      },
+      "status": "unsupported"
+    },
+    {
+      "id": "replacement_rate",
+      "block": "topology_recovery",
+      "label": "Replica replacements per month (a new replica fetches every part)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "user input; non-zero needs replacement_requests_per_part, which is unsupported (cut)",
         "version": "0.3.0"
       },
       "hint": null,
