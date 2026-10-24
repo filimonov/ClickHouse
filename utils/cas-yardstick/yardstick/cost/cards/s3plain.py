@@ -28,7 +28,12 @@ GATES = {
              'a merge result is renamed from its temporary directory'),
         _ref('Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp',
              239, 'createWriteBuf', 'a rename rewrites `prefix.path` of every directory of the subtree')]},
-    'mutations': {'supported': False, 'refs': [
+    # The refusal covers the mutation kinds the cost model prices (mutation_kind). A lightweight UPDATE writes patch
+    # parts and is not refused once both block columns are enabled; no cell prices it on any variant.
+    'mutations': {'supported': False,
+                  'scope': 'ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is '
+                           'possible only with enable_block_number_column and enable_block_offset_column',
+                  'refs': [
         _ref('Disks/DiskObjectStorage/DiskObjectStorage.cpp', 805, 'isPlain()',
              'a plain metadata storage reports no hard links'),
         _ref('Storages/MergeTree/MergeTreeData.cpp', 6240, 'supportsHardLinks',
@@ -39,6 +44,8 @@ GATES = {
              'that is the default lightweight_delete_mode'),
         _ref('Storages/MergeTree/MergeTreeData.cpp', 12630, 'enable_block_number_column',
              'a lightweight UPDATE (patch parts) needs enable_block_number_column'),
+        _ref('Storages/MergeTree/MergeTreeData.cpp', 12635, 'enable_block_offset_column',
+             'and enable_block_offset_column'),
         _ref('Storages/MergeTree/MergeTreeSettings.cpp', 2013, 'enable_block_number_column, false',
              'which is off by default')]},
     'deletes': {'supported': True, 'refs': [
@@ -68,7 +75,8 @@ def reason(op: str) -> str:
     if gate['supported']:
         raise ValueError(f'{op} is supported on s3plain')
     cites = '; '.join(f'{r["claim"]} ({r["path"]}:{r["line"]})' for r in gate['refs'])
-    return f'UNSUPPORTED: s3_plain_rewritable cannot perform {op}: {cites}'
+    scope = f' ({gate["scope"]})' if gate.get('scope') else ''
+    return f'UNSUPPORTED: s3_plain_rewritable cannot perform {op}{scope}: {cites}'
 
 
 def supports(card_name: str, policy: str) -> tuple | None:
