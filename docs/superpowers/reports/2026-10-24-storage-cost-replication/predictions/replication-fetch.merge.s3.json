@@ -12,7 +12,12 @@
   "expected": {
     "foreground": {
       "r1": {
-        "GetObject": 43,
+        "GetObject": {
+          "min": 43,
+          "max": 44,
+          "basis": "assumption",
+          "reason": "the sender may reissue one read of a large file it closed early: 1 of 3 repeats in cost-20261024T115147Z (ledger seq 8999, 9000)"
+        },
         "PutObject": 11
       },
       "r2": {
@@ -83,5 +88,5 @@
       "line": 2955
     }
   ],
-  "prediction_commit": "2c006846dbc"
+  "prediction_commit": "pending"
 }

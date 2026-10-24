@@ -287,6 +287,12 @@ class FaultsTest(unittest.TestCase):
             CARDS['faults'].measured(ctx)
         self.assertEqual((proxy.rules, proxy.cleared), ([], 1))
 
+    def test_residue_assertion_reads_the_lower_bound_and_records_the_upper(self):
+        from types import SimpleNamespace as N
+        part = {('b', 'k', 'u', 1): {'size': 32 << 20}}
+        bounds = N(lower=N(incomplete={}), upper=N(incomplete=part))
+        self.assertEqual(faults.residue_bounds(bounds), {'lower': 0, 'upper': 32 << 20})
+
     def test_retry_view_chains_a_failed_attempt_with_its_retry(self):
         def attempt(seq, outcome, up):
             return {'seq': seq, 'caller': 'r1', 'op': 'PutObject', 'store_id': 's', 'bucket': 'b', 'key': 'k',

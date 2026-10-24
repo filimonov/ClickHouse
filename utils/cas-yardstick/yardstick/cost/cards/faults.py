@@ -19,6 +19,16 @@ ABORT_WAIT_S = 30  # the server's own abort of a failed upload may land after th
 POLL_S = 0.5
 
 
+def residue_bounds(bounds) -> dict:
+    """Incomplete multipart bytes of the replay's lower and upper inventories.
+
+    An upload part whose response overlaps its upload's abort in time may have landed before or after it: the lower
+    bound retires it, the upper keeps it. Residue is asserted on the lower bound; the upper is recorded.
+    """
+    return {name: sum(p['size'] for p in inv.incomplete.values())
+            for name, inv in (('lower', bounds.lower), ('upper', bounds.upper))}
+
+
 def retry_view(rows: list) -> dict:
     """Failed attempts, retry chains and the outcome of each chain's last attempt, from window rows of one caller.
 
@@ -77,10 +87,9 @@ class Faults(LifecycleCard):
         # The server aborts in the failed write buffer's cancel path; wait for that abort to reach the ledger.
         st, t0 = self.state(ctx), time.monotonic()
         while True:
-            bounds = ctx.replay()
-            st['incomplete_after'] = max(sum(p['size'] for p in inv.incomplete.values())
-                                         for inv in (bounds.lower, bounds.upper))
-            if st['incomplete_after'] == 0 or time.monotonic() - t0 >= ABORT_WAIT_S:
+            st['residue'] = residue_bounds(ctx.replay())
+            st['incomplete_after'] = st['residue']['lower']
+            if st['residue']['upper'] == 0 or time.monotonic() - t0 >= ABORT_WAIT_S:
                 break
             time.sleep(POLL_S)
         st['abort_wait_s'] = time.monotonic() - t0
@@ -99,6 +108,7 @@ class Faults(LifecycleCard):
                 'aborts': [{'upstream': r['upstream']['outcome'], 'downstream': r['downstream']['outcome']} for r in aborts],
                 'part2_attempts': len(part2),
                 'incomplete_after_window': st['incomplete_after'], 'abort_wait_s': st['abort_wait_s'],
+                'incomplete_after_window_upper': st['residue']['upper'],
                 'insert_failed': bool(draft['observations'].get('expected_exceptions'))}
 
     def assertions(self, ctx, draft):
