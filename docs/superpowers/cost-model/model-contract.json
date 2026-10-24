@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "2a812e5a86648f62",
+ "version": "c562605f3d1d735a",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "2a812e5a86648f62",
+  "contract_version": "c562605f3d1d735a",
   "registry_version": "0.3.0",
-  "registry_sha256": "0f8983051607765559ab28d6a6a9598b01414ff4e3cf47e3077de6ceee4a89df",
+  "registry_sha256": "65ef930dd93df5904e984024c56b9fa203088b0f20f5f3dee5a67945a03f54f0",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "e02cf3e77d81c5d6dfc6958871cb4f360a047f603f9656bbcfcbca8c053f467e",
+  "coverage_sha256": "1c4833b22a9f292ef43245cdadee2c0b9e60a97f9ebd6b54eac47cb100d3ef7c",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -79,9 +79,9 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "9f98f6e793ced8f46148039040660e131ff5670c28cae32776b2bcfd104fa297"
+  "breakeven_sha256": "75724999ee987bcc78d5a28cf694162b7774b78935571cd77afe63d469a65742"
  },
- "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 60 coefficient(s): 42 measured, 18 pinned to source. 57 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 60 coefficient(s): 42 measured, 18 pinned to source. 57 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -10906,7 +10906,7 @@
   {
    "id": "op_write_bytes",
    "block": "ebs",
-   "label": "Volume write bytes per source row of a mutated part; the mutation's reads are not modelled",
+   "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the larger measured value, 217 kB; the per-part unit did not carry, 126 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
    "kind": "measured",
    "scope": "volume",
    "unit": "B",
@@ -10922,7 +10922,7 @@
    "rule": null,
    "coef": "op_write_bytes",
    "validity": {
-    "mutated_part_rows": [
+    "insert_rows": [
      30000,
      400000
     ]
@@ -10939,50 +10939,6 @@
     }
    },
    "status": "ok"
-  },
-  {
-   "id": "drop_write_bytes_per_part",
-   "block": "ebs",
-   "label": "Volume write bytes per dropped part: not modelled (per-part writes did not carry to the hold-out layout)",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "drop_write_bytes_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); drop.partition 219 kB per dropped part, drop.partition-2 126 kB: the per-part unit fails the hold-out",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "unsupported"
-  },
-  {
-   "id": "restart_write_bytes",
-   "block": "ebs",
-   "label": "Volume write bytes per restart: below the rig resolution, not modelled",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "restart_write_bytes",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); startup.intact / startup.small net writes were negative after the idle baseline",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "unsupported"
   },
   {
    "id": "io_request_size_distribution",
@@ -11990,11 +11946,13 @@
      "io_op"
     ],
     "values": {
-     "mutations": 13.295
+     "mutations": 13.295,
+     "deletes": 217464.4,
+     "recovery": 0.0
     }
    },
    "validity": {
-    "mutated_part_rows": [
+    "insert_rows": [
      30000,
      400000
     ]
@@ -12003,7 +11961,11 @@
     "abs": {
      "mutations": 19.53
     },
-    "rel": 0.15
+    "rel": 0.15,
+    "assumed_keys": [
+     "deletes",
+     "recovery"
+    ]
    },
    "domain": {
     "fit": {
@@ -12022,6 +11984,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
     "version": "0.2.0",
     "measurement_ids": [
+     "cost-20261024T171231Z/local/drop/partition-2/k1",
+     "cost-20261024T171231Z/local/drop/partition-2/k2",
+     "cost-20261024T171231Z/local/drop/partition-2/k3",
+     "cost-20261024T171231Z/local/drop/partition/k1",
+     "cost-20261024T171231Z/local/drop/partition/k2",
+     "cost-20261024T171231Z/local/drop/partition/k3",
      "cost-20261024T171231Z/local/mutation/compact-30k/k1",
      "cost-20261024T171231Z/local/mutation/compact-30k/k2",
      "cost-20261024T171231Z/local/mutation/compact-30k/k3",
@@ -12030,14 +11998,20 @@
      "cost-20261024T171231Z/local/mutation/compact-update-one-column/k3",
      "cost-20261024T171231Z/local/mutation/wide-update-one-column/k1",
      "cost-20261024T171231Z/local/mutation/wide-update-one-column/k2",
-     "cost-20261024T171231Z/local/mutation/wide-update-one-column/k3"
+     "cost-20261024T171231Z/local/mutation/wide-update-one-column/k3",
+     "cost-20261024T171231Z/local/startup/intact/k1",
+     "cost-20261024T171231Z/local/startup/intact/k2",
+     "cost-20261024T171231Z/local/startup/intact/k3",
+     "cost-20261024T171231Z/local/startup/small/k1",
+     "cost-20261024T171231Z/local/startup/small/k2",
+     "cost-20261024T171231Z/local/startup/small/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
    "status": "ok",
    "fit": {
-    "method": "mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values); reads of these operations are not modelled",
+    "method": "mutations: mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values). deletes: ASSUMPTION, the larger measured value per dropped part (217 kB fit, 126 kB hold-out: the per-part unit did not carry). recovery: ASSUMPTION 0, restart net writes below the idle baseline. Reads of these operations are not modelled",
     "records": [
      "cost-20261024T171231Z/local/drop/partition/k1",
      "cost-20261024T171231Z/local/drop/partition/k2",
@@ -15383,7 +15357,7 @@
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
-    "mutation_deletes": "unsupported_cut",
+    "mutation_deletes": "supported",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
@@ -15397,9 +15371,9 @@
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
-    "lifecycle": "not_applicable",
+    "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
-    "reads_cache": "supported",
+    "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
     "faults": "not_applicable",
@@ -15415,7 +15389,7 @@
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
-    "startup_recovery": "unsupported_cut",
+    "startup_recovery": "supported",
     "replication": "not_applicable",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
@@ -16542,30 +16516,24 @@
         "dim": "MiB/s",
         "on_zero": "unavailable",
         "a": {
-         "kind": "branch",
+         "kind": "mul",
          "dim": "B",
-         "cond": {
-          "op": ">",
-          "a": {
-           "kind": "input",
-           "id": "expired_parts_per_month",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "const",
-           "value": 0,
-           "dim": "count"
-          }
+         "a": {
+          "kind": "input",
+          "id": "expired_parts_per_month",
+          "dim": "count"
          },
-         "then": {
-          "kind": "const",
-          "value": "unavailable",
-          "dim": "B"
-         },
-         "else": {
-          "kind": "const",
-          "value": 0,
-          "dim": "B"
+         "b": {
+          "kind": "lookup",
+          "dim": "B",
+          "table_id": "op_write_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "deletes",
+            "dim": "enum:io_op"
+           }
+          ]
          }
         },
         "b": {
@@ -16600,30 +16568,24 @@
          "dim": "MiB/s",
          "on_zero": "unavailable",
          "a": {
-          "kind": "branch",
+          "kind": "mul",
           "dim": "B",
-          "cond": {
-           "op": ">",
-           "a": {
-            "kind": "input",
-            "id": "expired_parts_per_month",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 0,
-            "dim": "count"
-           }
+          "a": {
+           "kind": "input",
+           "id": "expired_parts_per_month",
+           "dim": "count"
           },
-          "then": {
-           "kind": "const",
-           "value": "unavailable",
-           "dim": "B"
-          },
-          "else": {
-           "kind": "const",
-           "value": 0,
-           "dim": "B"
+          "b": {
+           "kind": "lookup",
+           "dim": "B",
+           "table_id": "op_write_bytes",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "deletes",
+             "dim": "enum:io_op"
+            }
+           ]
           }
          },
          "b": {
@@ -16648,7 +16610,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "Drops: assumption, 217 kB written per dropped part (the larger measured value; the per-part unit did not carry between the fit and hold-out layouts, 126 kB); an upper bound pending a model keyed on part size",
+      "dim": "enum:note"
+     }
+    ]
    },
    "reads": {
     "ledger_rows": [
@@ -16872,30 +16840,24 @@
         "dim": "MiB/s",
         "on_zero": "unavailable",
         "a": {
-         "kind": "branch",
+         "kind": "mul",
          "dim": "B",
-         "cond": {
-          "op": ">",
-          "a": {
-           "kind": "input",
-           "id": "restarts_per_month",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "const",
-           "value": 0,
-           "dim": "count"
-          }
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
          },
-         "then": {
-          "kind": "const",
-          "value": "unavailable",
-          "dim": "B"
-         },
-         "else": {
-          "kind": "const",
-          "value": 0,
-          "dim": "B"
+         "b": {
+          "kind": "lookup",
+          "dim": "B",
+          "table_id": "op_write_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "recovery",
+            "dim": "enum:io_op"
+           }
+          ]
          }
         },
         "b": {
@@ -16930,30 +16892,24 @@
          "dim": "MiB/s",
          "on_zero": "unavailable",
          "a": {
-          "kind": "branch",
+          "kind": "mul",
           "dim": "B",
-          "cond": {
-           "op": ">",
-           "a": {
-            "kind": "input",
-            "id": "restarts_per_month",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 0,
-            "dim": "count"
-           }
+          "a": {
+           "kind": "input",
+           "id": "restarts_per_month",
+           "dim": "count"
           },
-          "then": {
-           "kind": "const",
-           "value": "unavailable",
-           "dim": "B"
-          },
-          "else": {
-           "kind": "const",
-           "value": 0,
-           "dim": "B"
+          "b": {
+           "kind": "lookup",
+           "dim": "B",
+           "table_id": "op_write_bytes",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "recovery",
+             "dim": "enum:io_op"
+            }
+           ]
           }
          },
          "b": {
@@ -16978,7 +16934,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "Restarts: writes below the idle baseline on the rig; priced 0 (assumption)",
+      "dim": "enum:note"
+     }
+    ]
    },
    "local_disk": {
     "ledger_rows": [],
