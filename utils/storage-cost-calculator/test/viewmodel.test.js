@@ -139,7 +139,7 @@ test('test_drill_has_five_stages_with_branch_and_allocation', () => {
   assert.equal(ledger.lines[0].basis, 'predicted');
   assert.equal(ledger.lines[0].text, 'request PutObject all: 2,000 (predicted)');
   assert.equal(billingStage.lines[0].rule_id, 'put_copy_post_list');
-  assert.equal(billingStage.lines[0].text, 'put_copy_post_list: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)');
+  assert.equal(billingStage.lines[0].text, 'PUT, COPY, POST and LIST requests: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)');
   assert.equal(allocation.lines[0].basis, 'quantity');
   assert.deepEqual(d.composition.map((x) => [x.rule_id, x.op_kind, x.unit_class, x.fraction]), [['put_copy_post_list', 'PutObject', 'put', 1]]);
   assert.ok(d.sources.some((s) => s.kind === 'measured' && s.ref === 'fixture:puts_per_insert_cas'));
@@ -153,7 +153,7 @@ test('test_drill_has_five_stages_with_branch_and_allocation', () => {
   const st = sp.stages[4].lines.find((l) => l.rule_id === 'storage');
   assert.equal(st.basis, 'allocation.shares');
   assert.ok(Math.abs(st.fraction - 0.25) < 1e-12);
-  assert.match(st.text, /^storage: 25% of \$23\.00 by allocation\.shares = \$5\.75$/);
+  assert.match(st.text, /^S3 storage: 25% of \$23\.00 by allocation\.shares = \$5\.75$/);
   // EBS block lines carry the allocator's layout and the instance class.
   const ebs = view({}, { ui: { openCell: { variant: 'ebs', operation: 'storage' } } }).vm.drill;
   assert.ok(ebs.stages[4].lines.some((l) => l.kind === 'allocation' && /single: 1 x \(1000 GiB, 3000 IOPS, 125 MiB\/s\)/.test(l.text)));
@@ -328,6 +328,7 @@ test('test_field_display_values_ranges_and_steps', () => {
   assert.equal(f(day, 'replicas').fixed, false);
   assert.equal(f(day, 'replicas').range_text, 'measured for 1 to 6');
   assert.equal(f(day, 'shards').fixed, true);
+  assert.equal(f(day, 'shards').range_text, 'measured at 1 only');
   assert.equal(f(day, 'data_bytes').step, 'any');
   const fan = f(day, 'merge_effective_fan_in');
   assert.match(fan.range_text, /measured for .*1,000 to 100,000/);
@@ -368,7 +369,8 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   assert.equal(f('data_bytes').derived_text, 'Derived from ingest rate × retention');
   assert.equal(lv.cards[0].reason, 'No measured model for this column yet');
   // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
-  assert.deepEqual(f('ingest_rate').slider, { min: 0.0416667, max: 682.667 });
+  // 500 GiB/day ×1/4 … ×8, shown per hour.
+  assert.deepEqual(f('ingest_rate').slider, { min: 5.20833, max: 166.667 });
   assert.deepEqual(f('replicas').slider, { min: 1, max: 6 });
   assert.equal(f('shards').slider, null);
   // Drill composition and card bars carry words, not rule ids.

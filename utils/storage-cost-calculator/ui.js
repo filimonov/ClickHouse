@@ -53,8 +53,9 @@
     }
     const lines = c.stage4_billing_lines;
     if (!lines) return '<section class="stage" data-stage="4"><h4>4. Billing</h4><p class="mute">not billed: a row is unavailable</p></section>';
-    const share = (l) => (typeof l.share === 'number' && l.share < 1 ? ` (${fmt(100 * l.share)}% of ${money(l.aggregate_money)})` : '');
-    const body = lines.map((l) => `<tr data-rule="${esc(l.rule_id)}"><td>${esc(l.rule_id)}</td><td>${num(l.quantity)} ${esc(l.unit)}</td><td>${money(l.money)}${share(l)}</td><td>${esc(l.note || '')}</td></tr>`).join('');
+    // The percentage text comes with the line (tools/drill.mjs); the id stays in data-rule only.
+    const share = (l) => (typeof l.share === 'number' && l.share < 1 ? ` (${esc(l.share_text)} of ${money(l.aggregate_money)})` : '');
+    const body = lines.map((l) => `<tr data-rule="${esc(l.rule_id)}"><td>${esc(l.label)}</td><td>${num(l.quantity)} ${esc(l.unit)}</td><td>${money(l.money)}${share(l)}</td><td>${esc(l.note || '')}</td></tr>`).join('');
     return `<section class="stage" data-stage="4"><h4>4. Billing lines</h4>${table(['rule', 'quantity', 'money', 'note'], body)}<p>Total ${money(c.billing_total)}</p></section>`;
   }
 
@@ -69,7 +70,7 @@
     const a = c.stage5_allocation;
     if (!a || !group) return '<section class="stage" data-stage="5"><h4>5. Allocation</h4><p class="mute">nothing billed</p></section>';
     const cellKeys = group.cells || [];
-    const body = (group.allocation || []).map((x) => `<tr data-alloc="${esc(x.rule_id)}"><td>${esc(x.rule_id)}</td><td>${money(x.money)}</td><td>${esc(x.basis)}</td>`
+    const body = (group.allocation || []).map((x) => `<tr data-alloc="${esc(x.rule_id)}"><td>${esc(x.label)}</td><td>${money(x.money)}</td><td>${esc(x.basis)}</td>`
       + cellKeys.map((k) => `<td>${x.shares[k] ? money(x.shares[k].money) : '<span class="mute">-</span>'}</td>`).join('') + '</tr>').join('');
     return `<section class="stage" data-stage="5"><h4>5. Allocation across ${esc(cellKeys.join(', '))}</h4>`
       + `${table(['rule', 'billed once', 'basis', ...cellKeys], body)}${a.provisioning ? provisioning(a.provisioning) : ''}</section>`;
@@ -342,11 +343,14 @@
       const dots = pts.filter((p) => p.y !== null).map((p) => `<circle class="pt v-${esc(s.variant)}${p.extrapolated ? ' is-extrapolated' : ''}" cx="${px(p.x)}" cy="${py(p.y)}" r="4"><title>${esc(p.label)}</title></circle>`).join('');
       return `<g data-variant="${esc(s.variant)}">${lines}${dots}</g>`;
     }).join('');
+    const now = ch.current_x !== null && xs.includes(ch.current_x)
+      ? `<line class="current" x1="${px(ch.current_x)}" y1="${pad.t}" x2="${px(ch.current_x)}" y2="${H - pad.b}"><title>${esc(ch.current_text)}</title></line>`
+        + `<text class="current-label" x="${px(ch.current_x) + 6}" y="${pad.t + 14}">${esc(ch.current_text)}</text>` : '';
     const ticks = ch.x_ticks.map((t, i) => `<text class="tick tick-x${i % 2 ? ' tick-odd' : ''}" x="${px(t.x)}" y="${H - pad.b + 18}" text-anchor="middle">${esc(t.text)}</text>`).join('');
     const grid = ch.y_ticks.map((t) => `<line class="grid" x1="${pad.l}" y1="${py(t.value)}" x2="${W - pad.r}" y2="${py(t.value)}"/>`
       + `<text class="tick" x="${pad.l - 8}" y="${py(t.value) + 4}" text-anchor="end">${esc(t.text)}</text>`).join('');
     return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${ch.labels.y} against ${ch.labels.x}`)}">`
-      + `${grid}<line class="axis" x1="${pad.l}" y1="${H - pad.b}" x2="${W - pad.r}" y2="${H - pad.b}"/>${series}${ticks}`
+      + `${grid}${now}<line class="axis" x1="${pad.l}" y1="${H - pad.b}" x2="${W - pad.r}" y2="${H - pad.b}"/>${series}${ticks}`
       + `<text class="axis-label" x="${W / 2}" y="${H - 4}" text-anchor="middle">${esc(ch.labels.x)}</text></svg>`;
   }
 
@@ -357,7 +361,7 @@
     const ch = vm.chart;
     let body;
     if (vm.page_state === 'prices_missing') body = '<p class="mute">The chart compares money; this price preset has no prices.</p>';
-    else if (!ch) body = '<p class="mute">Choose an input to vary.</p>';
+    else if (!ch) body = `<p class="mute">${esc(page.sweep_note || 'Choose an input to vary.')}</p>`;
     else if (!ch.points.some((p) => p.y !== null)) body = '<p class="mute">No column has a monthly total over this range, so there is nothing to draw.</p>';
     else {
       const legend = ch.labels.series.map((s) => `<li><span class="dot v-${esc(s.variant)}"></span>${esc(s.label)}</li>`).join('');
@@ -407,8 +411,8 @@
     return { variant: key.slice(0, i), operation: key.slice(i + 1) };
   };
 
-  // Only inputs with a shared ladder are swept, so the chart agrees with the break-even document.
-  const isSweepable = (q) => q.kind === 'input' && q.value_type === 'number' && Object.prototype.hasOwnProperty.call(presetsLib().LADDERS, q.id);
+  // Only the shared sweep inputs are offered, so the chart agrees with the break-even document.
+  const isSweepable = (q) => q.kind === 'input' && q.value_type === 'number' && Object.prototype.hasOwnProperty.call(presetsLib().SWEEP_INPUTS, q.id);
 
   function sweepInputOf(contract, state) {
     if (state.sweepInput) return state.sweepInput;
@@ -478,10 +482,11 @@
     const r0 = pipeline().resolveInputs(contract, state.inputs, state.locks, state.overrides);
     const sweepId = sweepInputOf(contract, state);
     const opts = { lockOrder: r0.lockOrder };
+    let sweepNote = null;
     if (sweepId) {
-      const ladder = presetsLib().LADDERS[sweepId];
-      if (!ladder) throw new Error(`ui: ${sweepId} has no sweep ladder in presets.js`);
-      opts.sweep = { inputId: sweepId, values: ladder.slice() };
+      const ladder = presetsLib().ladderFor(sweepId, r0.inputs.get(sweepId), r0.fields[sweepId] ? r0.fields[sweepId].validity : null);
+      if (ladder) opts.sweep = { inputId: sweepId, values: ladder };
+      else sweepNote = 'The chart scales the current value, so it needs a value above zero.';
     }
     const res = pipeline().run(contract, r0.inputs, preset, opts);
     // Input problems are page notes; none is dropped.
@@ -489,7 +494,7 @@
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
       pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units,
     });
-    return { vm, page: chrome(contract, state, u, sweepId), fields: r0.fields };
+    return { vm, page: Object.assign(chrome(contract, state, u, sweepId), { sweep_note: sweepNote }), fields: r0.fields };
   }
 
   function parseInput(q, raw, units) {

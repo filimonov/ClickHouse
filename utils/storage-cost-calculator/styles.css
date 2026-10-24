@@ -162,6 +162,8 @@ thead th { font-size: 13px; color: var(--mute); font-weight: 600; }
 .chart-svg { width: 100%; height: auto; display: block; margin-top: 8px; }
 .chart-svg .axis { stroke: var(--mute); }
 .chart-svg .grid { stroke: var(--line); stroke-dasharray: 3 3; }
+.chart-svg .current { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.chart-svg .current-label { fill: var(--accent); font-size: 12px; font-weight: 600; }
 .chart-svg .tick, .chart-svg .axis-label { fill: var(--mute); font-size: 12px; }
 .chart-svg .line { fill: none; stroke-width: 2; }
 .chart-svg .pt { stroke-width: 2; }
@@ -207,7 +209,7 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
   .breakdown td > .cell-btn { margin: 0; text-align: right; }
   .breakdown th[scope="row"] { position: static; box-shadow: none; }
   /* The SVG scales to about half its 640-unit width here: larger units keep the ticks readable. */
-  .chart-svg .tick, .chart-svg .axis-label { font-size: 22px; }
+  .chart-svg .tick, .chart-svg .axis-label, .chart-svg .current-label { font-size: 22px; }
   /* Every other x label: nine ladder labels do not fit side by side at this size. */
   .chart-svg .tick-odd { display: none; }
   .chart-svg .pt { r: 7; }

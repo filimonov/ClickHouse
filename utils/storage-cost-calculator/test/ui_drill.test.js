@@ -146,7 +146,7 @@ test('test_render_escapes_injected_strings', () => {
       stage1_inputs: { inputs: { [evil]: evil }, coefs: {}, observations: { k: evil } },
       stage2_rows: [{ row: evil, branch_taken: [evil], predicted: evil, measured: 1, expected: null, exact: evil }],
       stage3_ledger_summary: { by_row_type: { [evil]: { rows: 1, quantity: 1 } }, states: [{ id: evil, active: true, reason: evil }] },
-      stage4_billing_lines: [{ rule_id: evil, unit: evil, quantity: 1, money: 1, note: evil }], billing_total: 1,
+      stage4_billing_lines: [{ rule_id: evil, label: evil, unit: evil, quantity: 1, money: 1, share: 0.5, share_text: evil, aggregate_money: 2, note: evil }], billing_total: 1,
       stage5_allocation: { layout: evil, volumes: 1, size_gib: 1, iops: 1, mibps: 1, monthly_cost: 1, alternatives: [{ layout: evil, volumes: 1, size_gib: 1, iops: 1, mibps: 1, monthly_cost: 1 }] },
     } },
   });

@@ -49,15 +49,21 @@ test('test_breakeven_entry_for_unavailable_totals_records_states', async () => {
 });
 
 test('test_live_contract_breakeven_shape', async () => {
-  const { buildBreakeven, LADDERS, PRICE_PRESET } = await import('../tools/sweeps.mjs');
+  const { buildBreakeven, scenarioLadders, PRICE_PRESET } = await import('../tools/sweeps.mjs');
   const c = contractLoader.load(JSON.parse(fs.readFileSync(path.join(ROOT, 'model-contract.json'), 'utf8')));
-  const all = buildBreakeven({ pipeline, presets }, c, presets.SCENARIOS, LADDERS, PRICE_PRESET);
+  const inputs = Object.keys(presets.SWEEP_INPUTS);
+  const all = buildBreakeven({ pipeline, presets }, c, presets.SCENARIOS, scenarioLadders, PRICE_PRESET, inputs);
   assert.deepEqual(Object.keys(all), Object.keys(presets.SCENARIOS));
-  assert.deepEqual(Object.keys(LADDERS), ['data_bytes', 'ingest_rate', 'replicas']);
+  assert.deepEqual(inputs, ['data_bytes', 'ingest_rate', 'replicas']);
   for (const [sid, sc] of Object.entries(all)) {
-    for (const [input, ladder] of Object.entries(LADDERS)) {
+    const base = pipeline.resolveInputs(c, presets.SCENARIOS[sid].values, presets.SCENARIOS[sid].locks, {});
+    for (const input of inputs) {
       const e = sc.sweeps[input];
       assert.ok(e, `${sid} x ${input}`);
+      // Each scenario is swept around its own value with the page's function.
+      const ladder = presets.ladderFor(input, base.inputs.get(input), base.fields[input].validity);
+      assert.deepEqual(e.values, ladder);
+      assert.ok(ladder.includes(base.inputs.get(input)), `${sid} x ${input}: the scenario value is a point`);
       assert.deepEqual(e.points.map((p) => p.x), ladder);
       for (const p of e.points) {
         for (const v of c.variants) {
@@ -75,11 +81,18 @@ test('test_live_contract_breakeven_shape', async () => {
   }
 });
 
-test('test_ladders_are_geometric', async () => {
-  const { LADDERS } = await import('../tools/sweeps.mjs');
-  for (const [id, xs] of Object.entries(LADDERS)) {
-    for (let i = 2; i < xs.length; i++) close(xs[i] / xs[i - 1], xs[1] / xs[0], id);
-  }
+test('test_ladder_for_scales_clamps_and_rounds', () => {
+  // ×1/4 … ×8 of the current value, geometric.
+  assert.deepEqual(presets.ladderFor('data_bytes', 1000, null), [250, 500, 1000, 2000, 4000, 8000]);
+  // Clamped to the validity; the current value stays a point even when it lies outside.
+  assert.deepEqual(presets.ladderFor('data_bytes', 1000, [400, 3000]), [400, 500, 1000, 2000, 3000]);
+  assert.deepEqual(presets.ladderFor('data_bytes', 5000, [400, 3000]), [1250, 2500, 3000, 5000]);
+  // Counts are whole numbers.
+  assert.deepEqual(presets.ladderFor('replicas', 2, [1, 6]), [1, 2, 4, 6]);
+  assert.deepEqual(presets.ladderFor('replicas', 3, null), [1, 2, 3, 6, 12, 24]);
+  // Nothing to scale.
+  assert.equal(presets.ladderFor('data_bytes', 0, null), null);
+  assert.throws(() => presets.ladderFor('retention_days', 30, null), /retention_days is not a sweep input/);
 });
 
 test('test_cli_writes_breakeven_file', () => {

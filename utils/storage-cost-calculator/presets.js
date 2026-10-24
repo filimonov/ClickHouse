@@ -78,17 +78,42 @@
     },
   };
 
-  // Sweep ladders, shared by the page's chart and tools/sweeps.mjs, so both report the same break-even intervals.
-  // Geometric, so a crossing is bracketed at any scale; count inputs get whole numbers.
-  //  data_bytes  64 GiB x 4^k, k = 0..8       64 GiB .. 4 PiB
-  //  ingest_rate 1 GiB/day x 4^k, k = 0..7    1 .. 16,384 GiB/day
-  //  replicas    1 x 2^k, k = 0..3            1, 2, 4, 8 (8 lies outside the measured replicas validity [1, 6])
-  const geometric = (start, ratio, n) => Array.from({ length: n }, (_, k) => start * ratio ** k);
-  const LADDERS = {
-    data_bytes: geometric(64, 4, 9),
-    ingest_rate: geometric(1, 4, 8),
-    replicas: geometric(1, 2, 4),
-  };
+  // Inputs the chart and tools/sweeps.mjs sweep. Both call ladderFor, so page and document report the same intervals.
+  const SWEEP_INPUTS = { data_bytes: { integer: false }, ingest_rate: { integer: false }, replicas: { integer: true } };
+  // ×¼ … ×8 of the current value: the workload sits near the left third of the chart instead of at one end of a
+  // fixed 64 GiB … 4 PiB span. Geometric, so a crossing is bracketed at any scale.
+  const LADDER_FACTORS = [0.25, 0.5, 1, 2, 4, 8];
+
+  // The x values to sweep `inputId` over around `current`, clamped to `validity` ([lo, hi] or null). The current value
+  // itself is always a point, even outside the validity, so the chart marks where the workload is. Counts are whole
+  // numbers. Returns null when there is no positive current value to scale.
+  function ladderFor(inputId, current, validity) {
+    const spec = SWEEP_INPUTS[inputId];
+    if (!spec) throw new Error(`${inputId} is not a sweep input; expected one of ${Object.keys(SWEEP_INPUTS).join(', ')}`);
+    if (typeof current !== 'number' || !Number.isFinite(current) || current <= 0) return null;
+    let xs = LADDER_FACTORS.map((f) => current * f);
+    if (validity) xs = xs.map((x) => Math.min(validity[1], Math.max(validity[0], x)));
+    if (spec.integer) xs = xs.map((x) => Math.max(1, Math.round(x)));
+    return [...new Set([...xs, current])].sort((a, b) => a - b);
+  }
+
+  // Words for a billing rule id of a preset; an unknown rule throws.
+  // AWS names its request classes by their leading operations; the full op list stays in the billing contract.
+  const REQUEST_LABELS = { put_copy_post_list: 'PUT, COPY, POST and LIST requests', get_and_other: 'GET and other requests', delete_cancel: 'DELETE and cancel requests' };
+  const BLOCK_LABELS = { block_capacity: 'gp3 capacity', block_iops: 'gp3 IOPS above baseline', block_mibps: 'gp3 throughput above baseline' };
+  function ruleLabel(ruleId, preset) {
+    if (ruleId === 'storage') return 'S3 storage';
+    if (BLOCK_LABELS[ruleId]) return BLOCK_LABELS[ruleId];
+    if ((preset.transfer || []).some((t) => t.id === ruleId)) {
+      if (!TRANSFER_LABELS[ruleId]) throw new Error(`transfer rule ${ruleId} has no label in presets.js`);
+      return TRANSFER_LABELS[ruleId];
+    }
+    if ((preset.request_classes || []).some((c) => c.id === ruleId)) {
+      if (!REQUEST_LABELS[ruleId]) throw new Error(`request class ${ruleId} has no label in presets.js`);
+      return REQUEST_LABELS[ruleId];
+    }
+    throw new Error(`billing rule ${ruleId} is not a rule of price preset ${preset.id}`);
+  }
 
   // Price preset ids are the billing contract's. `contract` presets are taken from the contract as they are;
   // `custom` is an editable copy of `base`.
@@ -127,7 +152,7 @@
     if (preset.structure_only) return [];
     const out = [];
     const add = (f) => out.push(Object.assign(f, { unit: `${preset.currency} ${f.per}` }));
-    for (const c of preset.request_classes) add({ path: `request_classes.${c.id}.price_per_1000`, label: `Requests: ${c.ops.join(', ')}`, per: 'per 1,000 requests', value: c.price_per_1000, source_url: c.source_url });
+    for (const c of preset.request_classes) add({ path: `request_classes.${c.id}.price_per_1000`, label: ruleLabel(c.id, preset), per: 'per 1,000 requests', value: c.price_per_1000, source_url: c.source_url });
     preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
     for (const t of preset.transfer) {
       if (!Object.prototype.hasOwnProperty.call(TRANSFER_LABELS, t.id)) throw new Error(`transfer rule ${t.id} has no label in presets.js`);
@@ -207,6 +232,6 @@
     return problems;
   }
 
-  SCC.presets = { SCENARIOS, LADDERS, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
+  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

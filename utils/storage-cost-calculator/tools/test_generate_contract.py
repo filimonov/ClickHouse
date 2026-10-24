@@ -131,7 +131,7 @@ class GenerateTest(unittest.TestCase):
     def write_breakeven(self, version, crossing):
         state = lambda *xs: {v: list(xs) for v in ("ebs", "s3")}
         doc = {"schema": "breakeven/1", "contract_version": version, "price_preset": "aws-us-east-1",
-               "ladders": {"data_bytes": [64, 256]},
+               "ladder_rule": "×1/4 … ×8 of each scenario's value",
                "scenarios": {"logs": {"label": "Logs", "sweeps": {
                    "data_bytes": {"values": [64, 256], "points": [], "states": state("ok"), "crossing": crossing, "problems": []},
                    "replicas": {"values": [1, 2], "points": [], "states": state("unavailable"), "crossing": None, "problems": []}}}}}
@@ -154,8 +154,9 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(contract["manifest"]["breakeven_sha256"], hashlib.sha256((self.cm / "breakeven.json").read_bytes()).hexdigest())
         doc = self.doc.read_text()
         self.assertIn("### Scenario `logs` {#breakeven-logs}", doc)
-        self.assertIn("| `data_bytes` | `ebs`, `s3` | `ebs` / `s3` between 64 and 256 (extrapolated) | `ebs`: ok; `s3`: ok |", doc)
-        self.assertIn("| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable |", doc)
+        self.assertIn("Ladders: ×1/4 … ×8 of each scenario's value.", doc)
+        self.assertIn("| `data_bytes` | 64, 256 | `ebs`, `s3` | `ebs` / `s3` between 64 and 256 (extrapolated) | `ebs`: ok; `s3`: ok |", doc)
+        self.assertIn("| `replicas` | 1, 2 | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable |", doc)
         code, log = self.run_gc("check", mode="final")
         self.assertNotIn("breakeven", log, log)
 

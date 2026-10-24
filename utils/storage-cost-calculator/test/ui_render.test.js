@@ -60,7 +60,7 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.ok(stage(1).includes('<li>inserts_per_month = 1,000'), stage(1));
   assert.ok(stage(2).includes(esc('request PutObject all: inserts_per_month > 500: true, then taken')), stage(2));
   assert.ok(stage(3).includes('<li>request PutObject all: 2,000 (predicted)'), stage(3));
-  assert.ok(stage(4).includes('<li>put_copy_post_list: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)'), stage(4));
+  assert.ok(stage(4).includes('<li>PUT, COPY, POST and LIST requests: 2,000 requests = $0.01 (share 100% of 2,000 requests = $0.01)'), stage(4));
   const alloc = vm.drill.stages[4].lines;
   assert.ok(alloc.length > 0);
   for (const l of alloc) assert.ok(stage(5).includes(`<li>${esc(l.text)}`), l.text);
@@ -70,7 +70,7 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.deepEqual([...html.matchAll(/<div data-part="(\w+)">/g)].map((m) => m[1]), ui.PARTS);
   // Simple inputs: a slider and an editable number per numeric input, the derived member greyed with its rule.
   // Sliders span the view model's bounds: the sweep ladder for data_bytes; no ladder and no range means no slider.
-  assert.match(parts.inputs, /type="range" min="64" max="4194304" step="any" data-action="slider" data-id="data_bytes" value="1000"/);
+  assert.match(parts.inputs, /type="range" min="250" max="8000" step="any" data-action="slider" data-id="data_bytes" value="1000"/);
   assert.equal(/type="range"[^>]*data-id="inserts_per_month"/.test(parts.inputs), false);
   assert.match(parts.inputs, /type="number" step="1" data-action="input" data-id="inserts_per_month" value="1000"/);
   assert.match(parts.inputs, /class="field is-derived" data-field="data_bytes"/);
@@ -297,12 +297,38 @@ test('test_mount_delegated_click_opens_cell_and_rewrites_hash', () => {
 
 test('test_page_and_breakeven_document_sweep_the_same_ladder', async () => {
   const presets = require('../presets.js');
-  const { LADDERS } = await import('../tools/sweeps.mjs');
-  assert.equal(LADDERS, presets.LADDERS);
-  const { vm, page: chrome } = page(base({ sweepInput: 'ingest_rate' }));
-  assert.deepEqual([...new Set(vm.chart.points.map((p) => p.x))], presets.LADDERS.ingest_rate);
-  // Only laddered inputs are offered for the chart.
-  assert.deepEqual(chrome.sweep_inputs.map((s) => s.id), Object.keys(presets.LADDERS).filter((id) => C.registry.some((q) => q.id === id)));
-  for (const xs of Object.values(presets.LADDERS)) assert.ok(xs.every((x) => x > 0));
-  assert.ok(presets.LADDERS.replicas.every(Number.isInteger));
+  const { buildBreakeven, scenarioLadders } = await import('../tools/sweeps.mjs');
+  const { vm, page: chrome, parts, fields } = page(base({ sweepInput: 'ingest_rate' }));
+  // The page sweeps ×1/4 … ×8 around the current value with the same function as the document.
+  const want = presets.ladderFor('ingest_rate', fields.ingest_rate.value, fields.ingest_rate.validity);
+  assert.deepEqual([...new Set(vm.chart.points.map((p) => p.x))], want);
+  const doc = buildBreakeven({ pipeline: require('../pipeline.js') }, C, { custom: presets.SCENARIOS.custom }, scenarioLadders, 'aws-us-east-1', ['ingest_rate']);
+  assert.deepEqual(doc.custom.sweeps.ingest_rate.values, want);
+  assert.deepEqual(doc.custom.sweeps.ingest_rate.crossing, vm.chart.breakEven.length ? vm.chart.breakEven.map(({ a, b, x_between, extrapolated }) => ({ a, b, x_between, extrapolated })) : null);
+  // The current value is marked on the chart.
+  assert.equal(vm.chart.current_x, 40);
+  assert.match(parts.chart, /<line class="current"[^>]*><title>Current: 40 GiB\/day<\/title><\/line>/);
+  // Only the shared sweep inputs are offered.
+  assert.deepEqual(chrome.sweep_inputs.map((s) => s.id), Object.keys(presets.SWEEP_INPUTS).filter((id) => C.registry.some((q) => q.id === id)));
+  // A zero value cannot be scaled: no chart, and the page says why.
+  const zero = page(base({ sweepInput: 'data_bytes', overrides: { data_bytes: 0 } }));
+  assert.equal(zero.vm.chart, null);
+  assert.match(zero.parts.chart, /needs a value above zero/);
+});
+
+test('test_billing_rows_show_labels_and_given_percentages', () => {
+  const presets = require('../presets.js');
+  const aws = presets.resolvePrice(C, 'aws-us-east-1');
+  assert.equal(presets.ruleLabel('storage', aws), 'S3 storage');
+  assert.equal(presets.ruleLabel('put_copy_post_list', aws), 'PUT, COPY, POST and LIST requests');
+  assert.equal(presets.ruleLabel('ec2_ec2_cross_az', aws), 'Transfer EC2 to EC2 across availability zones');
+  assert.throws(() => presets.ruleLabel('mystery', aws), /not a rule of price preset aws-us-east-1/);
+  // Phase-0 drill: the label in the cell, the id only in data-rule, the percentage as given (no arithmetic).
+  const html = ui.renderDrillHtml({ probe: 'p', cells: { k: {
+    stage1_inputs: {}, stage2_rows: [], stage3_ledger_summary: {},
+    stage4_billing_lines: [{ rule_id: 'storage', label: 'S3 storage', unit: 'GB-month', quantity: 250, money: 5.75, share: 0.25, share_text: '25.0%', aggregate_money: 23, note: '' }],
+    billing_total: 5.75 } } });
+  assert.match(html, /<tr data-rule="storage"><td>S3 storage<\/td>/);
+  assert.ok(html.includes('(25.0% of <span data-value="23" data-kind="money">$23</span>)'), html);
+  assert.equal(/<td>storage<\/td>/.test(html), false);
 });

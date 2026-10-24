@@ -15,22 +15,36 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// The page's chart sweeps the same ladders (presets.js), so its break-even intervals match this document.
-const { LADDERS } = require('../presets.js');
+// The page's chart builds its ladder with the same presets.ladderFor, so its break-even intervals match this document.
+const { SWEEP_INPUTS, LADDER_FACTORS, ladderFor } = require('../presets.js');
+const LADDER_RULE = `×${LADDER_FACTORS.map((f) => (f < 1 ? `1/${1 / f}` : String(f))).join(', ×')} of each scenario's value, `
+  + 'clamped to the input\'s measured range; whole numbers for counts; the scenario value is always a point';
+
+// Per scenario and input: presets.ladderFor around the scenario's resolved value.
+function scenarioLadders(inputId, base) {
+  const f = base.fields[inputId];
+  return ladderFor(inputId, base.inputs.get(inputId), f ? f.validity : null);
+}
 const PRICE_PRESET = 'aws-us-east-1';
 
 function uniq(list) {
   return [...new Set(list)];
 }
 
-// One entry per scenario x input. `scenarios`: {id: {label, values, locks}}; `ladders`: {inputId: [x...]}.
-function buildBreakeven(code, contract, scenarios, ladders, pricePreset) {
+// One entry per scenario x input. `scenarios`: {id: {label, values, locks}}; `ladders`: {inputId: [x...]} for fixed
+// values, or (inputId, resolvedBase) -> [x...] | null with `inputs` naming the inputs. A null ladder is recorded, not swept.
+function buildBreakeven(code, contract, scenarios, ladders, pricePreset, inputs) {
   const { pipeline } = code;
   const out = {};
   for (const [sid, sc] of Object.entries(scenarios)) {
     const base = pipeline.resolveInputs(contract, sc.values, sc.locks, {});
     const sweeps = {};
-    for (const [inputId, values] of Object.entries(ladders)) {
+    for (const inputId of typeof ladders === 'function' ? inputs : Object.keys(ladders)) {
+      const values = typeof ladders === 'function' ? ladders(inputId, base) : ladders[inputId];
+      if (!values) {
+        sweeps[inputId] = { values: null, points: [], states: {}, crossing: null, problems: [`${inputId} has no positive value to scale`] };
+        continue;
+      }
       const s = pipeline.sweep(contract, base.inputs, pricePreset, inputId, values, { lockOrder: base.lockOrder });
       const states = {};
       for (const v of contract.variants) states[v] = uniq(s.points.map((p) => p.totals[v].state));
@@ -65,11 +79,11 @@ function main(argv) {
     schema: 'breakeven/1',
     contract_version: raw.version,
     price_preset: PRICE_PRESET,
-    ladders: LADDERS,
-    scenarios: buildBreakeven(code, contract, code.presets.SCENARIOS, LADDERS, PRICE_PRESET),
+    ladder_rule: LADDER_RULE,
+    scenarios: buildBreakeven(code, contract, code.presets.SCENARIOS, scenarioLadders, PRICE_PRESET, Object.keys(SWEEP_INPUTS)),
   };
   fs.writeFileSync(opt.out, JSON.stringify(doc, null, 1) + '\n');
 }
 
-export { buildBreakeven, LADDERS, PRICE_PRESET };
+export { buildBreakeven, scenarioLadders, LADDER_RULE, PRICE_PRESET };
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2));

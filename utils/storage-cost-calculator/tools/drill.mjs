@@ -13,6 +13,8 @@ const require = createRequire(import.meta.url);
 const model = require('../model.js');
 const contract = require('../contract.js');
 const billing = require('../billing.js');
+const presets = require('../presets.js');
+const viewmodel = require('../viewmodel.js');
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EPS = 1e-9;
@@ -496,11 +498,15 @@ function main(argv) {
     reconcile(rec.measurement_id, rec, prediction, evaluated, problems);
     const g = billGroup(rec.measurement_id, evaluated, preset, problems);
     const groupKey = prefix ? prefix.replace(/\/$/, '') : rec.variant;
-    groups[groupKey] = { measurement_id: rec.measurement_id, cells: evaluated.map((x) => x.key), lines: g.lines, total: g.total, provisioning: g.provisioning, allocation: g.allocation };
+    const allocation = g.allocation.map((a) => Object.assign({}, a, { label: presets.ruleLabel(a.rule_id, preset) }));
+    groups[groupKey] = { measurement_id: rec.measurement_id, cells: evaluated.map((x) => x.key), lines: g.lines, total: g.total, provisioning: g.provisioning, allocation };
     const pick = (m) => Object.fromEntries([...m].map(([k, v]) => [k, v && typeof v === 'object' && 'value' in v ? v.value : v]));
     for (const x of evaluated) {
       const unavailable = x.unavailable.length > 0;
-      const mine = unavailable || !g.lines ? null : g.byCell[x.key].lines;
+      // Words and percentage text for the page renderer, which does no arithmetic on displayed numbers.
+      const mine = unavailable || !g.lines ? null : g.byCell[x.key].lines.map((l) => Object.assign({}, l, {
+        label: presets.ruleLabel(l.rule_id, preset), share_text: typeof l.share === 'number' ? `${viewmodel.fmtQuantity(100 * l.share)}%` : null,
+      }));
       cells[x.key] = {
         group: groupKey, measurement_id: rec.measurement_id, state: unavailable ? 'unavailable' : 'ok', unavailable_reasons: x.unavailable,
         stage1_inputs: { inputs: pick(ctx.inputs), coefs: pick(ctx.coefs), observations: rec.observations || {}, prediction_parameters: ignored },

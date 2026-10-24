@@ -499,12 +499,11 @@ def breakeven_block(doc):
            "A crossing is a sign change of the difference of two totals between consecutive ladder values, so the "
            "break-even lies inside the interval, not at a point. A variant that is not `ok` at a value has no total there "
            "and no crossing is drawn through it.", ""]
-    ladders = "; ".join(f"`{k}`: {', '.join(f'{x:g}' if x < 1e6 else f'{int(x)}' for x in v)}" for k, v in doc["ladders"].items())
-    out += [f"Ladders: {ladders}.", ""]
+    out += [f"Ladders: {doc['ladder_rule']}.", ""]
     for sid, sc in doc["scenarios"].items():
         out += [f"### Scenario `{sid}` {{#breakeven-{_anchor(sid)}}}", "",
                 f"{_cell_text(sc['label'])}.", "",
-                "| Input | Variants compared | Crossing | States |", "|---|---|---|---|"]
+                "| Input | Values | Variants compared | Crossing | States |", "|---|---|---|---|---|"]
         for inp, e in sc["sweeps"].items():
             priced = [v for v, st in e["states"].items() if "ok" in st]
             compared = ", ".join(_code(v) for v in priced) if len(priced) >= 2 else "none, fewer than two variants have a total"
@@ -514,7 +513,8 @@ def breakeven_block(doc):
                 crossing = "; ".join(f"{_code(c['a'])} / {_code(c['b'])} between {_num(c['x_between'][0])} and {_num(c['x_between'][1])}"
                                      + (" (extrapolated)" if c["extrapolated"] else "") for c in e["crossing"])
             states = "; ".join(f"{_code(v)}: {' / '.join(st)}" for v, st in e["states"].items())
-            out.append(f"| {_code(inp)} | {compared} | {crossing} | {states} |")
+            values = ", ".join(_num(x) for x in e["values"]) if e["values"] else "none, no positive value to scale"
+            out.append(f"| {_code(inp)} | {values} | {compared} | {crossing} | {states} |")
         out.append("")
     return "\n".join(out).rstrip("\n")
 

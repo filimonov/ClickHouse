@@ -1,55 +1,24 @@
 {
  "schema": "breakeven/1",
- "contract_version": "d5c179abe16d03df",
+ "contract_version": "8e78e80f16b8408f",
  "price_preset": "aws-us-east-1",
- "ladders": {
-  "data_bytes": [
-   64,
-   256,
-   1024,
-   4096,
-   16384,
-   65536,
-   262144,
-   1048576,
-   4194304
-  ],
-  "ingest_rate": [
-   1,
-   4,
-   16,
-   64,
-   256,
-   1024,
-   4096,
-   16384
-  ],
-  "replicas": [
-   1,
-   2,
-   4,
-   8
-  ]
- },
+ "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
   "logs": {
    "label": "Logs",
    "sweeps": {
     "data_bytes": {
      "values": [
-      64,
-      256,
-      1024,
-      4096,
-      16384,
-      65536,
-      262144,
-      1048576,
-      4194304
+      3750,
+      7500,
+      15000,
+      30000,
+      60000,
+      120000
      ],
      "points": [
       {
-       "x": 64,
+       "x": 3750,
        "totals": {
         "ebs": {
          "value": null,
@@ -74,7 +43,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 7500,
        "totals": {
         "ebs": {
          "value": null,
@@ -99,7 +68,7 @@
        }
       },
       {
-       "x": 1024,
+       "x": 15000,
        "totals": {
         "ebs": {
          "value": null,
@@ -124,7 +93,7 @@
        }
       },
       {
-       "x": 4096,
+       "x": 30000,
        "totals": {
         "ebs": {
          "value": null,
@@ -149,7 +118,7 @@
        }
       },
       {
-       "x": 16384,
+       "x": 60000,
        "totals": {
         "ebs": {
          "value": null,
@@ -174,82 +143,7 @@
        }
       },
       {
-       "x": 65536,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 262144,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 1048576,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4194304,
+       "x": 120000,
        "totals": {
         "ebs": {
          "value": null,
@@ -293,18 +187,16 @@
     },
     "ingest_rate": {
      "values": [
-      1,
-      4,
-      16,
-      64,
-      256,
-      1024,
-      4096,
-      16384
+      125,
+      250,
+      500,
+      1000,
+      2000,
+      4000
      ],
      "points": [
       {
-       "x": 1,
+       "x": 125,
        "totals": {
         "ebs": {
          "value": null,
@@ -329,7 +221,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 250,
        "totals": {
         "ebs": {
          "value": null,
@@ -354,7 +246,7 @@
        }
       },
       {
-       "x": 16,
+       "x": 500,
        "totals": {
         "ebs": {
          "value": null,
@@ -379,7 +271,7 @@
        }
       },
       {
-       "x": 64,
+       "x": 1000,
        "totals": {
         "ebs": {
          "value": null,
@@ -404,7 +296,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 2000,
        "totals": {
         "ebs": {
          "value": null,
@@ -429,57 +321,7 @@
        }
       },
       {
-       "x": 1024,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4096,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 16384,
+       "x": 4000,
        "totals": {
         "ebs": {
          "value": null,
@@ -526,7 +368,7 @@
       1,
       2,
       4,
-      8
+      6
      ],
      "points": [
       {
@@ -605,7 +447,7 @@
        }
       },
       {
-       "x": 8,
+       "x": 6,
        "totals": {
         "ebs": {
          "value": null,
@@ -654,19 +496,16 @@
    "sweeps": {
     "data_bytes": {
      "values": [
-      64,
-      256,
-      1024,
-      4096,
-      16384,
-      65536,
-      262144,
-      1048576,
-      4194304
+      450,
+      900,
+      1800,
+      3600,
+      7200,
+      14400
      ],
      "points": [
       {
-       "x": 64,
+       "x": 450,
        "totals": {
         "ebs": {
          "value": null,
@@ -691,7 +530,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 900,
        "totals": {
         "ebs": {
          "value": null,
@@ -716,7 +555,7 @@
        }
       },
       {
-       "x": 1024,
+       "x": 1800,
        "totals": {
         "ebs": {
          "value": null,
@@ -741,7 +580,7 @@
        }
       },
       {
-       "x": 4096,
+       "x": 3600,
        "totals": {
         "ebs": {
          "value": null,
@@ -766,7 +605,7 @@
        }
       },
       {
-       "x": 16384,
+       "x": 7200,
        "totals": {
         "ebs": {
          "value": null,
@@ -791,82 +630,7 @@
        }
       },
       {
-       "x": 65536,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 262144,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 1048576,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4194304,
+       "x": 14400,
        "totals": {
         "ebs": {
          "value": null,
@@ -910,18 +674,16 @@
     },
     "ingest_rate": {
      "values": [
-      1,
-      4,
-      16,
-      64,
-      256,
-      1024,
-      4096,
-      16384
+      5,
+      10,
+      20,
+      40,
+      80,
+      160
      ],
      "points": [
       {
-       "x": 1,
+       "x": 5,
        "totals": {
         "ebs": {
          "value": null,
@@ -946,7 +708,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 10,
        "totals": {
         "ebs": {
          "value": null,
@@ -971,7 +733,7 @@
        }
       },
       {
-       "x": 16,
+       "x": 20,
        "totals": {
         "ebs": {
          "value": null,
@@ -996,7 +758,7 @@
        }
       },
       {
-       "x": 64,
+       "x": 40,
        "totals": {
         "ebs": {
          "value": null,
@@ -1021,7 +783,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 80,
        "totals": {
         "ebs": {
          "value": null,
@@ -1046,57 +808,7 @@
        }
       },
       {
-       "x": 1024,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4096,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 16384,
+       "x": 160,
        "totals": {
         "ebs": {
          "value": null,
@@ -1143,7 +855,7 @@
       1,
       2,
       4,
-      8
+      6
      ],
      "points": [
       {
@@ -1222,7 +934,7 @@
        }
       },
       {
-       "x": 8,
+       "x": 6,
        "totals": {
         "ebs": {
          "value": null,
@@ -1271,19 +983,16 @@
    "sweeps": {
     "data_bytes": {
      "values": [
-      64,
-      256,
-      1024,
-      4096,
-      16384,
-      65536,
-      262144,
-      1048576,
-      4194304
+      2560,
+      5120,
+      10240,
+      20480,
+      40960,
+      81920
      ],
      "points": [
       {
-       "x": 64,
+       "x": 2560,
        "totals": {
         "ebs": {
          "value": null,
@@ -1308,7 +1017,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 5120,
        "totals": {
         "ebs": {
          "value": null,
@@ -1333,7 +1042,7 @@
        }
       },
       {
-       "x": 1024,
+       "x": 10240,
        "totals": {
         "ebs": {
          "value": null,
@@ -1358,7 +1067,7 @@
        }
       },
       {
-       "x": 4096,
+       "x": 20480,
        "totals": {
         "ebs": {
          "value": null,
@@ -1383,7 +1092,7 @@
        }
       },
       {
-       "x": 16384,
+       "x": 40960,
        "totals": {
         "ebs": {
          "value": null,
@@ -1408,82 +1117,7 @@
        }
       },
       {
-       "x": 65536,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 262144,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 1048576,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4194304,
+       "x": 81920,
        "totals": {
         "ebs": {
          "value": null,
@@ -1527,18 +1161,16 @@
     },
     "ingest_rate": {
      "values": [
-      1,
-      4,
-      16,
-      64,
-      256,
-      1024,
-      4096,
-      16384
+      7.013698630136986,
+      14.027397260273972,
+      28.054794520547944,
+      56.10958904109589,
+      112.21917808219177,
+      224.43835616438355
      ],
      "points": [
       {
-       "x": 1,
+       "x": 7.013698630136986,
        "totals": {
         "ebs": {
          "value": null,
@@ -1563,7 +1195,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 14.027397260273972,
        "totals": {
         "ebs": {
          "value": null,
@@ -1588,7 +1220,7 @@
        }
       },
       {
-       "x": 16,
+       "x": 28.054794520547944,
        "totals": {
         "ebs": {
          "value": null,
@@ -1613,7 +1245,7 @@
        }
       },
       {
-       "x": 64,
+       "x": 56.10958904109589,
        "totals": {
         "ebs": {
          "value": null,
@@ -1638,7 +1270,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 112.21917808219177,
        "totals": {
         "ebs": {
          "value": null,
@@ -1663,57 +1295,7 @@
        }
       },
       {
-       "x": 1024,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4096,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 16384,
+       "x": 224.43835616438355,
        "totals": {
         "ebs": {
          "value": null,
@@ -1760,7 +1342,7 @@
       1,
       2,
       4,
-      8
+      6
      ],
      "points": [
       {
@@ -1839,7 +1421,7 @@
        }
       },
       {
-       "x": 8,
+       "x": 6,
        "totals": {
         "ebs": {
          "value": null,
@@ -1888,19 +1470,16 @@
    "sweeps": {
     "data_bytes": {
      "values": [
-      64,
-      256,
-      1024,
-      4096,
-      16384,
-      65536,
-      262144,
-      1048576,
-      4194304
+      12800,
+      25600,
+      51200,
+      102400,
+      204800,
+      409600
      ],
      "points": [
       {
-       "x": 64,
+       "x": 12800,
        "totals": {
         "ebs": {
          "value": null,
@@ -1925,7 +1504,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 25600,
        "totals": {
         "ebs": {
          "value": null,
@@ -1950,7 +1529,7 @@
        }
       },
       {
-       "x": 1024,
+       "x": 51200,
        "totals": {
         "ebs": {
          "value": null,
@@ -1975,7 +1554,7 @@
        }
       },
       {
-       "x": 4096,
+       "x": 102400,
        "totals": {
         "ebs": {
          "value": null,
@@ -2000,7 +1579,7 @@
        }
       },
       {
-       "x": 16384,
+       "x": 204800,
        "totals": {
         "ebs": {
          "value": null,
@@ -2025,82 +1604,7 @@
        }
       },
       {
-       "x": 65536,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 262144,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 1048576,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4194304,
+       "x": 409600,
        "totals": {
         "ebs": {
          "value": null,
@@ -2144,18 +1648,16 @@
     },
     "ingest_rate": {
      "values": [
-      1,
-      4,
-      16,
-      64,
-      256,
-      1024,
-      4096,
-      16384
+      17.534246575342465,
+      35.06849315068493,
+      70.13698630136986,
+      140.27397260273972,
+      280.54794520547944,
+      561.0958904109589
      ],
      "points": [
       {
-       "x": 1,
+       "x": 17.534246575342465,
        "totals": {
         "ebs": {
          "value": null,
@@ -2180,7 +1682,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 35.06849315068493,
        "totals": {
         "ebs": {
          "value": null,
@@ -2205,7 +1707,7 @@
        }
       },
       {
-       "x": 16,
+       "x": 70.13698630136986,
        "totals": {
         "ebs": {
          "value": null,
@@ -2230,7 +1732,7 @@
        }
       },
       {
-       "x": 64,
+       "x": 140.27397260273972,
        "totals": {
         "ebs": {
          "value": null,
@@ -2255,7 +1757,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 280.54794520547944,
        "totals": {
         "ebs": {
          "value": null,
@@ -2280,57 +1782,7 @@
        }
       },
       {
-       "x": 1024,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4096,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 16384,
+       "x": 561.0958904109589,
        "totals": {
         "ebs": {
          "value": null,
@@ -2377,7 +1829,7 @@
       1,
       2,
       4,
-      8
+      6
      ],
      "points": [
       {
@@ -2456,7 +1908,7 @@
        }
       },
       {
-       "x": 8,
+       "x": 6,
        "totals": {
         "ebs": {
          "value": null,
@@ -2505,19 +1957,16 @@
    "sweeps": {
     "data_bytes": {
      "values": [
-      64,
-      256,
-      1024,
-      4096,
-      16384,
-      65536,
-      262144,
-      1048576,
-      4194304
+      5000,
+      10000,
+      20000,
+      40000,
+      80000,
+      160000
      ],
      "points": [
       {
-       "x": 64,
+       "x": 5000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2542,7 +1991,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 10000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2567,7 +2016,7 @@
        }
       },
       {
-       "x": 1024,
+       "x": 20000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2592,7 +2041,7 @@
        }
       },
       {
-       "x": 4096,
+       "x": 40000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2617,7 +2066,7 @@
        }
       },
       {
-       "x": 16384,
+       "x": 80000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2642,82 +2091,7 @@
        }
       },
       {
-       "x": 65536,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 262144,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 1048576,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4194304,
+       "x": 160000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2761,18 +2135,16 @@
     },
     "ingest_rate": {
      "values": [
-      1,
-      4,
-      16,
-      64,
-      256,
-      1024,
-      4096,
-      16384
+      125,
+      250,
+      500,
+      1000,
+      2000,
+      4000
      ],
      "points": [
       {
-       "x": 1,
+       "x": 125,
        "totals": {
         "ebs": {
          "value": null,
@@ -2797,7 +2169,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 250,
        "totals": {
         "ebs": {
          "value": null,
@@ -2822,7 +2194,7 @@
        }
       },
       {
-       "x": 16,
+       "x": 500,
        "totals": {
         "ebs": {
          "value": null,
@@ -2847,7 +2219,7 @@
        }
       },
       {
-       "x": 64,
+       "x": 1000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2872,7 +2244,7 @@
        }
       },
       {
-       "x": 256,
+       "x": 2000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2897,57 +2269,7 @@
        }
       },
       {
-       "x": 1024,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 4096,
-       "totals": {
-        "ebs": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "s3plain": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        },
-        "cas": {
-         "value": null,
-         "state": "unavailable",
-         "extrapolated": false
-        }
-       }
-      },
-      {
-       "x": 16384,
+       "x": 4000,
        "totals": {
         "ebs": {
          "value": null,
@@ -2993,8 +2315,8 @@
      "values": [
       1,
       2,
-      4,
-      8
+      3,
+      6
      ],
      "points": [
       {
@@ -3048,7 +2370,7 @@
        }
       },
       {
-       "x": 4,
+       "x": 3,
        "totals": {
         "ebs": {
          "value": null,
@@ -3073,7 +2395,7 @@
        }
       },
       {
-       "x": 8,
+       "x": 6,
        "totals": {
         "ebs": {
          "value": null,

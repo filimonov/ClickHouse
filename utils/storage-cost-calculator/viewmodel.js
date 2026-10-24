@@ -322,7 +322,8 @@
       const cur = preset.currency;
       billingLines = cell.lines.map((l) => ({
         rule_id: l.rule_id, scope: l.scope, unit: l.unit, quantity: l.quantity, money: l.money, share: l.share, aggregate_quantity: l.aggregate_quantity, aggregate_money: l.aggregate_money, note: l.note,
-        text: `${l.rule_id}: ${fmtQuantity(l.quantity, l.unit)} = ${fmtMoney(l.money, cur)} (share ${fmtQuantity(l.share * 100)}% of ${fmtQuantity(l.aggregate_quantity, l.unit)} = ${fmtMoney(l.aggregate_money, cur)})`,
+        label: presets().ruleLabel(l.rule_id, preset), share_text: `${fmtQuantity(l.share * 100)}%`,
+        text: `${presets().ruleLabel(l.rule_id, preset)}: ${fmtQuantity(l.quantity, l.unit)} = ${fmtMoney(l.money, cur)} (share ${fmtQuantity(l.share * 100)}% of ${fmtQuantity(l.aggregate_quantity, l.unit)} = ${fmtMoney(l.aggregate_money, cur)})`,
       }));
       for (const l of cell.lines) {
         const src = (vr.lines || []).find((x) => x.rule_id === l.rule_id && x.scope === l.scope);
@@ -331,7 +332,8 @@
       allocationLines = (vr.allocation || []).filter((a) => a.shares[op] && a.shares[op].fraction > 0).map((a) => {
         const s = a.shares[op];
         return { rule_id: a.rule_id, scope: a.scope, basis: a.basis, weight: s.weight, fraction: s.fraction, money: s.money,
-          text: `${a.rule_id}: ${fmtQuantity(s.fraction * 100)}% of ${fmtMoney(a.money, cur)} by ${a.basis} = ${fmtMoney(s.money, cur)}` };
+          label: presets().ruleLabel(a.rule_id, preset),
+          text: `${presets().ruleLabel(a.rule_id, preset)}: ${fmtQuantity(s.fraction * 100)}% of ${fmtMoney(a.money, cur)} by ${a.basis} = ${fmtMoney(s.money, cur)}` };
       });
       if (vr.provisioning && cell.rows.some((r) => r.row_type === 'block_io' || r.row_type === 'block_capacity')) {
         for (const n of vr.notes.filter((x) => x.kind === 'allocation' || x.kind === 'instance_class')) allocationLines.push({ kind: n.kind, text: n.text });
@@ -369,6 +371,7 @@
 
   // "measured for 1 to 6" for an input's own range; a validity map names each parameter by its registry label.
   function rangeText(f, byId) {
+    if (f.display_range && f.display_range[0] === f.display_range[1]) return `measured at ${fmtQuantity(f.display_range[0], f.display_unit)} only`;
     if (f.display_range) return `measured for ${fmtQuantity(f.display_range[0])} to ${fmtQuantity(f.display_range[1], f.display_unit)}`;
     if (!f.validity) return null;
     return Object.entries(f.validity).map(([p, r]) => {
@@ -428,7 +431,7 @@
       if (f.rule_text) f.derived_text = `Derived from ${worded(f.rule_text)}`;
       if (f.kind === 'derivation') f.value_text = f.derived_text;
       // Slider bounds in the shown unit: the measured range, else the sweep ladder's span, else no slider.
-      const ladder = presets().LADDERS[q.id];
+      const ladder = presets().SWEEP_INPUTS[q.id] ? presets().ladderFor(q.id, f.value, f.range) : null;
       f.slider = f.display_range && f.display_range[1] > f.display_range[0] ? { min: f.display_range[0], max: f.display_range[1] }
         : ladder ? { min: roundDisplay(shown(q, ladder[0])), max: roundDisplay(shown(q, ladder[ladder.length - 1])) } : null;
       // Counts move in whole steps; a range of one value is fixed, not a control.
@@ -508,7 +511,7 @@
     return Array.from({ length: n + 1 }, (_, i) => ({ value: i * step, text: whole ? whole.format(i * step) : fmtMoney(i * step, currency) }));
   }
 
-  function buildChart(result, contract, preset, ui, problems) {
+  function buildChart(result, contract, preset, ui, problems, fields) {
     const s = result.sweep;
     if (!s) return null;
     if (ui.sweepInput && ui.sweepInput !== s.input) problems.push(`chart: the sweep is over ${s.input}, the page asked for ${ui.sweepInput}`);
@@ -527,7 +530,11 @@
       text: withExtrapolated(`${variantLabel(b.a)} and ${variantLabel(b.b)} cross between ${fmtQuantity(b.x_between[0], q.unit)} and ${fmtQuantity(b.x_between[1], q.unit)}`, b.extrapolated),
     }));
     return {
-      input: s.input, points, breakEven, y_ticks: yTicks(points, preset.currency), x_ticks: [...new Set(points.map((p) => p.x))].map((x) => ({ x, text: fmtQuantity(x) })),
+      input: s.input, points, breakEven,
+      // Where the workload is now: the ladder always contains it, so the page can mark it.
+      current_x: fields[s.input] && typeof fields[s.input].value === 'number' ? fields[s.input].value : null,
+      current_text: fields[s.input] && typeof fields[s.input].value === 'number' ? `Current: ${fmtQuantity(fields[s.input].value, q.unit)}` : null,
+      y_ticks: yTicks(points, preset.currency), x_ticks: [...new Set(points.map((p) => p.x))].map((x) => ({ x, text: fmtQuantity(x) })),
       labels: { x: `${q.label || q.id}${q.unit ? ` (${q.unit})` : ''}`, y: `Monthly total (${preset.currency})`, series: contract.variants.map((v) => ({ variant: v, label: variantLabel(v) })) },
       extrapolated_points: points.filter((p) => p.extrapolated).map((p) => ({ variant: p.variant, x: p.x })),
     };
@@ -556,7 +563,7 @@
     vm.table = buildTable(result, contract, preset, pageState, problems);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
     // A chart of money has nothing to draw without prices.
-    if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems);
+    if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems, fields);
     return vm;
   }
 
