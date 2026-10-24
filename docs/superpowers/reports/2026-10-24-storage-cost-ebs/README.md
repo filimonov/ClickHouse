@@ -17,7 +17,7 @@ EBS cells price one replica's gp3 volumes from three things:
   counts were 1.3–6.5× higher on this rig, depending on the schema and operation. The gp3 baseline of 3000 IOPS usually dominates.
 - **`peak_factor`** (assumed input, default 1): the rig cannot measure it; see [Peak factor](#peak).
 
-The mutations, deletes, reads and recovery cells stay empty until Task 7 runs their cards on `local`.
+The mutations, deletes, reads and recovery cells are cut; see [Cut operations](#cut).
 
 | Item | Value |
 |---|---|
@@ -191,18 +191,20 @@ EBS a merge does not fail when it lacks throughput; it runs longer, within the p
 needs a paced natural-merge case, and Tier 1 has none: the paced `amplification-run.2h` is cut by D14. Both
 measurements stay in coverage: the fit edge is `done`, the hold-out edge `consumed`.
 
-## Pending operations {#pending}
+## Cut operations {#cut}
 
-These cells exist with no rows and `applicability: supported`, so the final closure fails until they are measured.
-Their `io_bytes_per_op` edges are `planned`, each naming the owning card:
+The `mutations`, `deletes`, `reads` and `recovery` cells are `unsupported_cut`, and their planned `io_bytes_per_op`
+edges are `cut`, by owner ruling: Task 7 found that the ops cards run untraced, and the measured path (one flocked run
+of the ops cards on `local` with predictions) did not fit the 18:30 cap. The reads derivation from the s3 report
+(`bytes_per_get[shape]` × GETs) was not used either: `bytes_per_get` has no `narrow` key, so the default shape would
+make the column unavailable. The cells have no rows, so the page prices nothing for these operations on EBS and shows
+them as not modelled.
 
-| Operation | Card on `local` (owner) |
+| Operation | Card that would measure it on `local` |
 |---|---|
-| `mutations`, `deletes` | `mutation.compact-update-one-column`, `mutation.wide-delete`, `mutation.lightweight-delete`, `drop.partition` (Task 2) |
-| `reads` | `cold-select.cache-off` (Task 2). `io-sizes` measures full-scan bytes and sizes here, but the reads cell needs Task 2's read-volume input |
-| `recovery` | `startup.intact` (Task 2), `replication.replication-fetch` (Task 5) |
-
-Task 7 runs them. The cards were not committed when this report's live runs started.
+| `mutations`, `deletes` | `mutation.compact-update-one-column`, `mutation.wide-delete`, `mutation.lightweight-delete`, `drop.partition` |
+| `reads` | `cold-select.cache-off`, or the s3 read plan once `bytes_per_get` covers every shape |
+| `recovery` | `startup.intact`, `replication.replication-fetch` |
 
 `storage` lists `local_volumes` as supported, because the page evaluates only operations with a listed family. Its
 one row reads inputs only (`data_bytes`, the assumed `ebs_headroom`), so no coefficient backs it. The support closure

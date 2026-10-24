@@ -488,17 +488,17 @@
       "lifecycle": "supported"
     },
     "mutations": {
-      "mutation_deletes": "supported"
+      "mutation_deletes": "unsupported_cut"
     },
     "deletes": {
-      "mutation_deletes": "supported"
+      "mutation_deletes": "unsupported_cut"
     },
     "reads": {
-      "reads_cache": "supported"
+      "reads_cache": "unsupported_cut"
     },
     "recovery": {
-      "startup_recovery": "supported",
-      "replication": "supported"
+      "startup_recovery": "unsupported_cut",
+      "replication": "unsupported_cut"
     }
   }
 }
