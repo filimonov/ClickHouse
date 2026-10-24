@@ -348,6 +348,48 @@ class CardsTest(unittest.TestCase):
             self.assertTrue(card.state(ctx)['quiesced'])
             self.assertEqual(card.state(ctx)['quiet_cutoff'], 1030.0)
 
+    def test_completion_waits_again_when_an_active_part_has_no_part_log_row(self):
+        # The final active parts include all_1_9_1, which no part_log row explains: a merge ended after the flush.
+        m = manifest('merge-natural.default')
+        m['params']['quiet_s'], m['params']['quiesce_timeout_s'] = 10, 100
+        card = CARDS['merge-natural']
+        accepted = iter([1010.0, 1030.0])
+        actives = iter([[{'name': 'all_1_9_1', 'rows': 600, 'active': 1}], [{'name': 'all_1_6_2', 'rows': 600, 'active': 1}]])
+        calls = {'wait': 0}
+
+        def wait_quiet(self, ctx, deadline=None):
+            calls['wait'] += 1
+            self.state(ctx)['quiesced'] = True
+            return next(accepted)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lifecycle.NaturalMergeCard, 'wait_quiet', wait_quiet), \
+                mock.patch.object(lifecycle.ManifestCard, 'complete', lambda self, ctx, timeout_s=300: None), \
+                mock.patch.object(lifecycle.LifecycleCard, 'part_log', lambda self, ctx: PART_LOG), \
+                mock.patch.object(lifecycle.LifecycleCard, 'parts', lambda self, ctx: next(actives)), \
+                mock.patch.object(lifecycle.LifecycleCard, 'collect_layout', lambda self, ctx: None):
+            ctx = ctx_for(m, FakeCluster(n=1), tmp, os.path.join(tmp, 'l'))
+            card.complete(ctx, timeout_s=1)
+        self.assertEqual(calls['wait'], 2)
+        self.assertTrue(card.state(ctx)['quiesced'])
+        self.assertEqual(card.state(ctx)['active_rows'], [600])
+
+    def test_no_workload_request_after_the_observation_cutoff(self):
+        m = manifest('merge-natural.default')
+        card = CARDS['merge-natural']
+        rows = [{'kind': 'mark', 'seq': 1, 'label': 'w', 't_us': 1}]
+        for seq, t in ((2, 900), (3, 1100), (4, 5000)):
+            rows.append({'kind': 'attempt', 'seq': seq, 'caller': 'r1', 'op': 'PutObject', 'key': 'k', 't_start_us': t,
+                         'req_payload_bytes': 1, 'upstream': {'outcome': 'ok'}, 'response_body': {}})
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = os.path.join(tmp, 'ledger.jsonl')
+            with open(ledger, 'w') as f:
+                f.write(jsonl(rows))
+            ctx = ctx_for(m, FakeCluster(n=1), tmp, ledger)
+            card.state(ctx)['cutoff_us'] = 1000
+            self.assertEqual(card.after_cutoff(ctx, {'window': {'t_end_us': 2000}}), [3])
+            card.state(ctx)['cutoff_us'] = 1200
+            self.assertEqual(card.after_cutoff(ctx, {'window': {'t_end_us': 2000}}), [])
+
     def test_layout_accumulates_across_snapshots(self):
         # A long run snapshots the layout before old_parts_lifetime can remove a merged-away part's files.
         m = manifest('merge-natural.default')

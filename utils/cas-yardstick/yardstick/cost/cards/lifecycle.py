@@ -430,26 +430,48 @@ class NaturalMergeCard(LifecycleCard):
         return accepted
 
     def complete(self, ctx, timeout_s=300):
+        """Wait for quiet, then fix the observation cutoff: the part log and active parts read after it agree.
+
+        Any merge that touches storage after the cutoff either restarts the wait (it ended inside the quiet period,
+        it is running, or its result is an active part no part-log row explains) or, if it starts later still,
+        fails the assertion `window.no_workload_after_cutoff`: every observation then covers every request.
+        """
         p, st = self.p(ctx), self.state(ctx)
         deadline = time.time() + p['quiesce_timeout_s']
+        actives = []
         while True:
             accepted = self.wait_quiet(ctx, deadline)
+            cutoff = time.time()
             super().complete(ctx, timeout_s)
             st['part_log'] = self.part_log(ctx)
+            actives = [r for r in self.parts(ctx) if r['active']]
             if accepted is None:
                 break
-            # The part log read after the flush is the observation cutoff: a merge that ended inside the quiet
-            # period (between the last flush and the last active poll) or is running now restarts the wait.
             last = max((int(r['t_us']) / 1e6 for r in st['part_log'] if r['event_type'] == 'MergeParts'), default=0.0)
-            if last <= accepted - p['quiet_s'] and not _count(self.replica_client(ctx),
-                                                                f'SELECT count() FROM system.merges WHERE {self.where()}'):
+            explained = {r['part_name'] for r in st['part_log']}
+            running = _count(self.replica_client(ctx), f'SELECT count() FROM system.merges WHERE {self.where()}')
+            if last <= accepted - p['quiet_s'] and not running and all(a['name'] in explained for a in actives):
                 st['quiet_cutoff'] = accepted
+                st['cutoff_us'] = int(cutoff * 1e6)
                 break
             st['quiesced'] = False
             if time.time() >= deadline:
                 break
-        st['active_rows'] = [r['rows'] for r in self.parts(ctx) if r['active']]
+        st['active_rows'] = [r['rows'] for r in actives]
         self.collect_layout(ctx)
+
+    def after_cutoff(self, ctx, draft) -> list:
+        """Seqs of workload attempts that started after the observation cutoff, inside the window."""
+        cutoff = self.state(ctx).get('cutoff_us')
+        if cutoff is None:
+            return []
+        end, replica = draft['window']['t_end_us'], self.p(ctx)['replica']
+        return [r['seq'] for r in window_rows(ctx) if r['caller'] == replica and cutoff < r['t_start_us'] < end]
+
+    def assertions(self, ctx, draft):
+        out = super().assertions(ctx, draft)
+        out['window.no_workload_after_cutoff'] = ([], self.after_cutoff(ctx, draft))
+        return out
 
     def observe(self, ctx, draft):
         st = self.state(ctx)

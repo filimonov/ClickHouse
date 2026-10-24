@@ -113,14 +113,19 @@ rows; 4 192 704 rows give exactly 33 554 432 bytes.
   `INSERT SELECT` stays synchronous (`executeQuery.cpp:2894`, native protocol `TCPHandler.cpp:1500`). Data over the
   size limit falls back to a synchronous insert: inline data whose raw bytes exceed `async_insert_max_data_size`
   (`AsynchronousInsertQueue.cpp:501`, `:528`), native data whose decoded block bytes reach it
-  (`TCPHandler.cpp:1414`–`:1435`, `Squashing.cpp:395`). Registry input `insert_protocol` picks the measure. Every
-  insert of the lifecycle cards except `async-inserts.*` is an `INSERT SELECT`.
+  (`TCPHandler.cpp:1414`–`:1435`, `Squashing.cpp:395`). Registry input `insert_protocol` picks the measure. A
+  native INSERT over the limit is forwarded as one combined block of its first limit's worth, then the rest; the
+  registry formula does not cover that case. Every insert of the lifecycle cards except `async-inserts.*` is an
+  `INSERT SELECT`.
 - **Async flush.** Inserts with the same user, roles, query shape, settings and data kind share a buffer
-  (`AsynchronousInsertQueue.cpp:587`). It is flushed into one part per partition when the serialized sizes of its
-  whole entries reach `async_insert_max_data_size` (10 MiB), when `async_insert_max_query_number` (450) entries
-  accumulate with deduplication on, or at its deadline (`:663`, `:680`). Deduplication is on by default:
-  `deduplicate_insert = enable` (`Settings.cpp:2357`) supersedes `async_insert_deduplicate`
-  (`DeduplicateInsert.cpp:26`). The deadline is
+  (`AsynchronousInsertQueue.cpp:587`). It is flushed into one part per partition when its whole entries' sizes
+  reach `async_insert_max_data_size` (10 MiB): decoded `Block::bytes` for a native entry, the raw data length for
+  an inline one (`AsynchronousInsertQueue.h:131`–`:138`). It also flushes when `async_insert_max_query_number`
+  (450) entries accumulate with deduplication on, or at its deadline (`AsynchronousInsertQueue.cpp:663`, `:680`).
+  Deduplication is on by default: `deduplicate_insert = enable` (`Settings.cpp:2357`) supersedes the legacy flags;
+  with `backward_compatible_choice` the queue reads `async_insert_deduplicate` when the query setting made the
+  INSERT async and `insert_deduplicate` when only the table setting did (`DeduplicateInsert.cpp:26`–`:41`,
+  `TCPHandler.cpp:1495`–`:1498`). The deadline is
   the buffer's first insert plus an adaptive timeout between `async_insert_busy_timeout_min_ms` (50) and `_max_ms`
   (200) that grows while inserts are frequent (`:623`, `:739`–`:774`; `Settings.cpp:7249`, `:7252`). With
   `wait_for_async_insert = 1` (`:7228`) a client waits for its flush, so only concurrent clients share one.
@@ -274,8 +279,10 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
   every run restarts ledger seq numbers (`fd444e9f3a8`). The estimate's sample card `merge-natural` moved from
   `samples.py` to the lifecycle card of that name; the phase-0 sample manifest has no `params.replica` and no
   prediction, so a re-run of it fails closed.
-- **Review fixes** (see [Review](#review)): the quiet period and the outdated classification changed the cards, so
-  the report run is the fourth full run.
+- **Review fixes** (see [Review](#review)): the quiet period, the observation cutoff and the outdated
+  classification changed the cards, so the report run is the fifth full run. A natural-merge pass now ends on a
+  cutoff that the part log and the active parts read after it agree with, and asserts that no workload request
+  starts after it inside the window (`window.no_workload_after_cutoff`).
 
 ## Gaps and limitations {#gaps}
 
@@ -337,6 +344,19 @@ cards were re-run again.
 | 11 | a merge can slip past the last flush | Fixed test-first (`test_completion_waits_again_when_the_final_part_log_shows_a_later_merge`): the part log read after the final flush is the cutoff, a later merge or a running one restarts the wait |
 | 12 | long runs lose part-to-object mappings | Fixed test-first (`test_layout_accumulates_across_snapshots`, `test_long_runs_snapshot_the_layout_while_inserting`): snapshots every 60 s accumulate |
 | new | the 2 h prediction mixes fits | Fixed: every field recomputed from the report run's six fit records with the registry formula |
+
+Round 3 (`tmp/codex_lifecycle_prompt_r3.txt`, `tmp/codex_lifecycle_r3.log`) closed round-2 findings 2, 3, 7, 12
+and the 2 h prediction, kept 1, 4, 5, 11 open and found one MINOR. It confirmed the re-run replays, the fit
+reproduces (6.2845998), every 2 h prediction field reproduces, and no hold-out expected value changed after its
+prediction commit.
+
+| Finding | Round 3 | Disposition |
+|---|---|---|
+| 1 | the hint's creation-date shortcut | Fixed: removed; the hint says to check for non-adaptive marks files |
+| 4 | native async overflow forwards one combined block | Domain: stated as not covered in the `parts_per_insert` label and the README |
+| 5 | backward-compatible dedup with table-only async reads `insert_deduplicate` | Fixed: `async_insert_source` and `insert_deduplicate`; test |
+| 11 | a merge can start after the final flush | Fixed test-first (`test_completion_waits_again_when_an_active_part_has_no_part_log_row`, `test_no_workload_request_after_the_observation_cutoff`): active parts must be explained by the part log, and a request after the cutoff fails the pass |
+| new MINOR | "serialized sizes" of native entries | Fixed: decoded `Block::bytes` for native, raw length for inline |
 
 ## How to re-run {#rerun}
 

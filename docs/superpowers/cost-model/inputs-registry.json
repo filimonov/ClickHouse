@@ -882,7 +882,7 @@
       "hint": {
         "sql": "SELECT name, value FROM system.merge_tree_settings WHERE name IN ('index_granularity_bytes', 'enable_mixed_granularity_parts')",
         "mapping": {
-          "adaptive_granularity": "1 when index_granularity_bytes != 0 and either enable_mixed_granularity_parts = 1 or the table has no non-adaptive part (all parts of a table created since 19.6 are adaptive); table SETTINGS override both"
+          "adaptive_granularity": "1 when index_granularity_bytes != 0 and either enable_mixed_granularity_parts = 1 or the table has no non-adaptive part left (check the marks files: .mrk is non-adaptive); table SETTINGS override both settings"
         }
       },
       "status": "ok"
@@ -2091,6 +2091,63 @@
       "status": "ok"
     },
     {
+      "id": "insert_deduplicate",
+      "block": "inserts",
+      "label": "Legacy synchronous insert deduplication (1 = on); with deduplicate_insert = backward_compatible_choice it also decides for an INSERT made async by the table setting alone",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:2379",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'insert_deduplicate'",
+        "mapping": {
+          "insert_deduplicate": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_source",
+      "block": "inserts",
+      "label": "What makes an INSERT async: the query setting async_insert, or only the table's async_insert setting (the query setting 0)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "query",
+        "table"
+      ],
+      "table": null,
+      "default": "query",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Server/TCPHandler.cpp:1497",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.settings WHERE name = 'async_insert'",
+        "mapping": {
+          "async_insert_source": "query when the profile or query sets async_insert = 1, table when only MergeTree SETTINGS async_insert = 1 does"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "async_insert_dedup_effective",
       "block": "inserts",
       "label": "Deduplication on for async inserts (1) or off (0)",
@@ -2144,9 +2201,31 @@
             "dim": "count"
           },
           "else": {
-            "kind": "input",
-            "id": "async_insert_deduplicate",
-            "dim": "count"
+            "kind": "branch",
+            "dim": "count",
+            "cond": {
+              "op": "==",
+              "a": {
+                "kind": "input",
+                "id": "async_insert_source",
+                "dim": "enum:async_insert_source"
+              },
+              "b": {
+                "kind": "const",
+                "value": "table",
+                "dim": "enum:async_insert_source"
+              }
+            },
+            "then": {
+              "kind": "input",
+              "id": "insert_deduplicate",
+              "dim": "count"
+            },
+            "else": {
+              "kind": "input",
+              "id": "async_insert_deduplicate",
+              "dim": "count"
+            }
           }
         }
       },
@@ -2160,7 +2239,7 @@
       "hint": {
         "sql": "SELECT name, value FROM system.settings WHERE name IN ('deduplicate_insert', 'async_insert_deduplicate')",
         "mapping": {
-          "async_insert_dedup_effective": "1 for enable; async_insert_deduplicate for backward_compatible_choice"
+          "async_insert_dedup_effective": "1 for enable; for backward_compatible_choice async_insert_deduplicate, or insert_deduplicate when only the table makes the INSERT async"
         }
       },
       "status": "ok"
@@ -2481,7 +2560,7 @@
     {
       "id": "parts_per_insert",
       "block": "inserts",
-      "label": "Parts one INSERT creates, per partition: synchronously one per squashed block (whole source blocks joined until either minimum is reached; strict limits off); an async INSERT with data below the size limit (decoded bytes < limit for native, raw bytes <= limit for inline), a share of a flush of inserts_per_async_flush inserts. INSERT SELECT is always synchronous.",
+      "label": "Parts one INSERT creates, per partition: synchronously one per squashed block (whole source blocks joined until either minimum is reached; strict limits off); an async INSERT with data below the size limit (decoded bytes < limit for native, raw bytes <= limit for inline), a share of a flush of inserts_per_async_flush inserts. INSERT SELECT is always synchronous. Not covered: a native async INSERT over the limit, which the server forwards as one combined block of the first limit's worth before the rest.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -3748,16 +3827,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_effective_fan_in",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          806.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5786,16 +5856,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_fan_in_distribution",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          806.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5864,16 +5925,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_result_size_distribution",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          806.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",

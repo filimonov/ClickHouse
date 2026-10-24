@@ -86,6 +86,9 @@ test('round 2: clamped first buffer, native admission, client blocks, disabled m
   assert.equal(evaluate('inserts_per_async_flush', many), 450);
   assert.equal(evaluate('inserts_per_async_flush', { ...many, deduplicate_insert: 'disable' }), 1000);
   assert.equal(evaluate('inserts_per_async_flush', { ...many, deduplicate_insert: 'backward_compatible_choice' }), 1000);
+  // Round 3: with backward-compatible dedup, a table-only async enablement reads insert_deduplicate (on by default).
+  assert.equal(evaluate('inserts_per_async_flush', { ...many, deduplicate_insert: 'backward_compatible_choice',
+                                                     async_insert_source: 'table' }), 450);
 });
 
 test('parts_per_insert: whole source blocks per squashed part; INSERT SELECT is never async', () => {
