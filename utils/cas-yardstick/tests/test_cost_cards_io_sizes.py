@@ -129,6 +129,15 @@ class IdleCardTest(unittest.TestCase):
         self.assertEqual(out['inserts.ebs_ios_per_mib.write'], (4 + 1) / (1_049_576 / MIB))
         self.assertEqual(out['inserts.max_request_bucket.write'], 1048576)
 
+    def test_virtual_and_system_files_are_not_volume_io(self):
+        card = io_sizes.IoSizes()
+        ctx = SimpleNamespace(local_dirs=['/p/local/r1'], cluster=SimpleNamespace(run_dir=lambda i: f'/p/r{i}'))
+        cls = card.path_class(ctx)
+        self.assertEqual([cls(p) for p in ('/p/local/r1/store/x.bin', '/p/r1/keeper/log/c.bin', '/p/r1/data/system/x.bin',
+                                           '/p/r1/server.log', '/proc/self/stat', '/sys/fs/cgroup/cpu.max',
+                                           '/etc/localtime', '/p/r10/data/x')],
+                         ['table', 'keeper', 'server', 'server', None, None, None, None])
+
     def test_manifest_without_trace_is_refused(self):
         m = manifest('io-sizes.narrow-compact')
         m['params']['trace'] = False

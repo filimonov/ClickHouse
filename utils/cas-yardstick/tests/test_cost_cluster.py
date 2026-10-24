@@ -323,14 +323,14 @@ while True:
                 self.assertIn('not answering', done.stderr)
                 with open(child_pid_file) as f:
                     child = int(f.read())
-                for _ in range(50):  # a killed orphan is a zombie until its new parent reaps it
+                # A killed orphan is a zombie until its new parent reaps it: dead, though its pid still exists.
+                def running(pid):
                     try:
-                        os.kill(child, 0)
-                    except ProcessLookupError:
-                        break
-                    time.sleep(0.1)
-                else:
-                    self.fail(f'traced server {child} survived the start timeout')
+                        with open(f'/proc/{pid}/stat') as f:
+                            return f.read().rsplit(')', 1)[1].split()[0] != 'Z'
+                    except FileNotFoundError:
+                        return False
+                self.assertFalse(running(child), f'traced server {child} survived the start timeout')
             finally:
                 if child is not None:
                     try:

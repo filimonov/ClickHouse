@@ -36,12 +36,13 @@ kill_group() {
 }
 
 # The tracer exits on TERM while a server that ignores TERM lives on, so liveness is the group's, not the pid's.
+# A killed orphan stays a zombie until its new parent reaps it; a zombie is not alive.
 group_alive() {
     local pgid=$1 pid=$2
     if [ -n "$pgid" ]; then
-        kill -0 -- "-$pgid" 2>/dev/null
+        ps -e -o pgid=,stat= | awk -v g="$pgid" '$1 == g && $2 !~ /^Z/ { found = 1 } END { exit !found }'
     else
-        kill -0 "$pid" 2>/dev/null
+        ps -o stat= -p "$pid" 2>/dev/null | grep -qv '^Z'
     fi
 }
 

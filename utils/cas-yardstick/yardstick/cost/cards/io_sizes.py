@@ -177,9 +177,19 @@ class IoSizes(LifecycleCard):
         return {'unit_count': max(n, 1), 'effective_counts': {'inserts': n, 'rows': n * p['rows']}, 'observations': {}}
 
     def path_class(self, ctx):
+        """`table` (the local disk), `keeper` (excluded) or `server` (r1's own files); None for anything off the
+        volume: `/proc`, `/sys`, `/etc`, the binary."""
         table = ctx.local_dirs[0].rstrip('/') + '/'
-        keeper = ctx.cluster.run_dir(1).rstrip('/') + '/keeper/'
-        return lambda path: 'table' if path.startswith(table) else 'keeper' if path.startswith(keeper) else 'server'
+        run = ctx.cluster.run_dir(1).rstrip('/') + '/'
+        keeper = run + 'keeper/'
+
+        def cls(path):
+            if path.startswith(table):
+                return 'table'
+            if path.startswith(keeper):
+                return 'keeper'
+            return 'server' if path.startswith(run) else None
+        return cls
 
     def observe(self, ctx, draft):
         p, phases = self.p(ctx), self.state(ctx)['phases']
