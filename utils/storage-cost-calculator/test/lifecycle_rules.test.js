@@ -60,6 +60,34 @@ test('multipart: exactly the first buffer is one PutObject; the strict size spli
   assert.equal(evaluate('multipart_upload', { object_bytes: 20 * MIB, strict_upload_part_size: 16 * MIB }), 1);
 });
 
+test('round 2: clamped first buffer, native admission, client blocks, disabled minimums, dedup cap', () => {
+  // A first buffer clamped to 16 MiB makes a 20 MiB object multipart although it is below the single-PUT limit.
+  const clamped = { object_bytes: 20 * MIB, multipart_first_part_bytes: 16 * MIB };
+  assert.equal(evaluate('multipart_upload', clamped), 1);
+  assert.equal(evaluate('multipart_parts', clamped), 2);
+  // Native INSERTs measure decoded block bytes and fall back to sync once they reach the limit (>=).
+  const native = { insert_kind: 'data', insert_protocol: 'native', insert_rows: 1000, insert_clients: 16,
+                   insert_rate: 20 };
+  assert.equal(evaluate('parts_per_insert', { ...native, insert_bytes_uncompressed: 10 * MIB }), 1);
+  assert.equal(evaluate('parts_per_insert', { ...native, insert_bytes_uncompressed: 10 * MIB - 1 }), 0.5);
+  // Inline data at exactly the limit is still queued (<=).
+  assert.equal(evaluate('parts_per_insert', { ...native, insert_protocol: 'inline', insert_payload_bytes: 10 * MIB,
+                                             insert_bytes_uncompressed: 40000 }), 1);
+  // A synchronous client block larger than the minimum is one part.
+  assert.equal(evaluate('parts_per_insert', { insert_kind: 'data', async_insert: '0', insert_rows: 2000000,
+                                             insert_bytes_uncompressed: 16000000, insert_data_block_rows: 2000000 }), 1);
+  // Disabled minimums: every source block is its own part.
+  assert.equal(evaluate('parts_per_insert', { insert_kind: 'select', insert_rows: 200000, insert_bytes_uncompressed: 1600000,
+                                             min_insert_block_size_rows: 0, min_insert_block_size_bytes: 0 }), 4);
+  assert.equal(evaluate('parts_per_insert', { insert_kind: 'select', insert_rows: 2621122, insert_bytes_uncompressed: 2621122 * 40,
+                                             min_insert_block_size_bytes: 0 }), 3);
+  // deduplicate_insert = enable (the default) caps a flush at async_insert_max_query_number entries.
+  const many = { insert_rate: 10000, insert_clients: 1000, insert_payload_bytes: 1000, insert_protocol: 'inline' };
+  assert.equal(evaluate('inserts_per_async_flush', many), 450);
+  assert.equal(evaluate('inserts_per_async_flush', { ...many, deduplicate_insert: 'disable' }), 1000);
+  assert.equal(evaluate('inserts_per_async_flush', { ...many, deduplicate_insert: 'backward_compatible_choice' }), 1000);
+});
+
 test('parts_per_insert: whole source blocks per squashed part; INSERT SELECT is never async', () => {
   const select = { insert_kind: 'select', insert_rows: 111195300, insert_bytes_uncompressed: 111195300 * 40 };
   assert.equal(evaluate('parts_per_insert', select), 100);
@@ -72,12 +100,17 @@ test('parts_per_insert: whole source blocks per squashed part; INSERT SELECT is 
 });
 
 test('async flush: first insert plus the timeout window, whole entries, one per waiting client', () => {
-  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 3000 }), 5);
-  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 6 * MIB }), 2);
-  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 1, insert_payload_bytes: 3000 }), 1);
-  assert.equal(evaluate('parts_per_insert', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 3000 }), 0.2);
+  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 3000,
+                                                     insert_protocol: 'inline' }), 5);
+  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 6 * MIB,
+                                                     insert_protocol: 'inline' }), 2);
+  assert.equal(evaluate('inserts_per_async_flush', { insert_rate: 20, insert_clients: 1, insert_payload_bytes: 3000,
+                                                     insert_protocol: 'inline' }), 1);
+  assert.equal(evaluate('parts_per_insert', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 3000,
+                                             insert_protocol: 'inline' }), 0.2);
   assert.equal(evaluate('parts_per_insert', { insert_rate: 20, insert_clients: 16, insert_payload_bytes: 11 * MIB,
-                                             insert_rows: 1000, insert_bytes_uncompressed: 40000 }), 1);
+                                             insert_protocol: 'inline', insert_rows: 1000,
+                                             insert_bytes_uncompressed: 40000 }), 1);
 });
 
 test('write amplification: continuous ladder, capped at 12 levels', () => {

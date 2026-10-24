@@ -23,6 +23,8 @@ GRANULE_ROWS = 8192
 FRAME_BYTES = 25
 MIN_COMPRESS_BLOCK = 65536
 LARGE_PUT_BYTES = MIB  # part files below this are never near a multipart boundary
+# Layout snapshots well inside old_parts_lifetime (480 s), so a merged-away part's files are listed before removal.
+LAYOUT_EVERY_S = 60
 # Merge histograms: fan-in and result size in inserted-part units. Fixed here so fit and hold-out bin alike.
 FAN_IN_BUCKETS = (('2', 2, 2), ('3', 3, 3), ('4', 4, 4), ('5', 5, 5), ('6', 6, 6), ('7-8', 7, 8), ('9-12', 9, 12),
                   ('13-20', 13, 20), ('21+', 21, math.inf))
@@ -303,13 +305,15 @@ class LifecycleCard(ManifestCard):
         Called before the teardown: a merged-away part stays on disk for old_parts_lifetime, so its files are listed.
         """
         disk = ctx.policy.removesuffix('_cached')
-        out: dict = {}
+        # Snapshots accumulate: a part removed after an earlier snapshot keeps the files that snapshot listed.
+        out = self.state(ctx).setdefault('remote_paths', {})
         if disk != 'local':
             rows = self.rows_json(ctx, f"SELECT local_path, remote_path FROM system.remote_data_paths "
                                        f"WHERE disk_name = '{disk}'")
             for r in rows:
-                out.setdefault(r['local_path'].rstrip('/').split('/')[-2], []).append(r['remote_path'])
-        self.state(ctx)['remote_paths'] = out
+                paths = out.setdefault(r['local_path'].rstrip('/').split('/')[-2], [])
+                if r['remote_path'] not in paths:
+                    paths.append(r['remote_path'])
 
     def reclassify(self, ctx, bounds) -> None:
         """Objects of merged-away parts are `outdated` from their merge on (design §4.3): retained, not active."""
@@ -396,18 +400,22 @@ class NaturalMergeCard(LifecycleCard):
 
     mode = 'stochastic'
 
-    def wait_quiet(self, ctx) -> None:
-        """Wait until no merge has run for `quiet_s`, at most `quiesce_timeout_s`; `quiesced` says which ended it.
+    def wait_quiet(self, ctx, deadline=None):
+        """Wait until no merge has run for `quiet_s`; return the wall time it was accepted, None on timeout.
 
-        Wall-clock time, so the part log's merge end times compare with the polls.
+        Wall-clock time, so the part log's merge end times compare with the polls. `quiesced` says which ended it.
         """
         client, p = self.replica_client(ctx), self.p(ctx)
         active = f'SELECT count() FROM system.merges WHERE {self.where()}'
         finished = (f'SELECT toUnixTimestamp64Micro(max(event_time_microseconds)) FROM system.part_log '
                     f"WHERE {self.where()} AND event_type = 'MergeParts'")
-        start = quiet_since = time.time()
-        quiesced = False
-        while time.time() - start < p['quiesce_timeout_s']:
+        start = quiet_since = last_layout = time.time()
+        deadline = deadline or start + p['quiesce_timeout_s']
+        accepted = None
+        while time.time() < deadline:
+            if time.time() - last_layout >= LAYOUT_EVERY_S:
+                self.collect_layout(ctx)
+                last_layout = time.time()
             if _count(client, active):
                 quiet_since = time.time()
             elif time.time() - quiet_since >= p['quiet_s']:
@@ -415,16 +423,32 @@ class NaturalMergeCard(LifecycleCard):
                 client.query('SYSTEM FLUSH LOGS')
                 quiet_since = max(quiet_since, _count(client, finished) / 1e6)
                 if time.time() - quiet_since >= p['quiet_s'] and not _count(client, active):
-                    quiesced = True
+                    accepted = time.time()
                     break
             time.sleep(POLL_S)
-        self.state(ctx)['quiesced'] = quiesced
+        self.state(ctx)['quiesced'] = accepted is not None
+        return accepted
 
     def complete(self, ctx, timeout_s=300):
-        self.wait_quiet(ctx)
-        super().complete(ctx, timeout_s)
-        self.state(ctx)['part_log'] = self.part_log(ctx)
-        self.state(ctx)['active_rows'] = [r['rows'] for r in self.parts(ctx) if r['active']]
+        p, st = self.p(ctx), self.state(ctx)
+        deadline = time.time() + p['quiesce_timeout_s']
+        while True:
+            accepted = self.wait_quiet(ctx, deadline)
+            super().complete(ctx, timeout_s)
+            st['part_log'] = self.part_log(ctx)
+            if accepted is None:
+                break
+            # The part log read after the flush is the observation cutoff: a merge that ended inside the quiet
+            # period (between the last flush and the last active poll) or is running now restarts the wait.
+            last = max((int(r['t_us']) / 1e6 for r in st['part_log'] if r['event_type'] == 'MergeParts'), default=0.0)
+            if last <= accepted - p['quiet_s'] and not _count(self.replica_client(ctx),
+                                                                f'SELECT count() FROM system.merges WHERE {self.where()}'):
+                st['quiet_cutoff'] = accepted
+                break
+            st['quiesced'] = False
+            if time.time() >= deadline:
+                break
+        st['active_rows'] = [r['rows'] for r in self.parts(ctx) if r['active']]
         self.collect_layout(ctx)
 
     def observe(self, ctx, draft):
@@ -452,10 +476,13 @@ class AmplificationRun(NaturalMergeCard):
 
     def measured(self, ctx):
         n, interval = self.inserts(ctx), self.p(ctx)['interval_s']
-        t0 = time.monotonic()
+        t0 = last_layout = time.monotonic()
         for i in range(n):
             time.sleep(max(0.0, t0 + i * interval - time.monotonic()))  # pacing is the workload, not a wait
             self.insert(ctx, i)
+            if time.monotonic() - last_layout >= LAYOUT_EVERY_S:
+                self.collect_layout(ctx)
+                last_layout = time.monotonic()
         return {'unit_count': n, 'effective_counts': {'inserts': n, 'rows': n * self.p(ctx)['rows']}, 'observations': {}}
 
 

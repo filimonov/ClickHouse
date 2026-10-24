@@ -882,7 +882,7 @@
       "hint": {
         "sql": "SELECT name, value FROM system.merge_tree_settings WHERE name IN ('index_granularity_bytes', 'enable_mixed_granularity_parts')",
         "mapping": {
-          "adaptive_granularity": "1 when index_granularity_bytes != 0 (table SETTINGS override)"
+          "adaptive_granularity": "1 when index_granularity_bytes != 0 and either enable_mixed_granularity_parts = 1 or the table has no non-adaptive part (all parts of a table created since 19.6 are adaptive); table SETTINGS override both"
         }
       },
       "status": "ok"
@@ -1455,7 +1455,7 @@
     {
       "id": "multipart_upload",
       "block": "inserts",
-      "label": "The object goes up as a multipart upload (1) or one PutObject (0): multipart above max_single_part_upload_size, or with a strict size above that size",
+      "label": "The object goes up as a multipart upload (1) or one PutObject (0): multipart when it exceeds the first buffer (the strict size, else the clamped first buffer) or max_single_part_upload_size",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
@@ -1474,9 +1474,42 @@
             "dim": "B"
           },
           "b": {
-            "kind": "input",
-            "id": "max_single_part_upload_size",
-            "dim": "B"
+            "kind": "min",
+            "dim": "B",
+            "args": [
+              {
+                "kind": "branch",
+                "dim": "B",
+                "cond": {
+                  "op": ">",
+                  "a": {
+                    "kind": "input",
+                    "id": "strict_upload_part_size",
+                    "dim": "B"
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 0,
+                    "dim": "B"
+                  }
+                },
+                "then": {
+                  "kind": "input",
+                  "id": "strict_upload_part_size",
+                  "dim": "B"
+                },
+                "else": {
+                  "kind": "input",
+                  "id": "multipart_first_part_bytes",
+                  "dim": "B"
+                }
+              },
+              {
+                "kind": "input",
+                "id": "max_single_part_upload_size",
+                "dim": "B"
+              }
+            ]
           }
         },
         "then": {
@@ -1485,53 +1518,9 @@
           "dim": "count"
         },
         "else": {
-          "kind": "branch",
-          "dim": "count",
-          "cond": {
-            "op": ">",
-            "a": {
-              "kind": "input",
-              "id": "strict_upload_part_size",
-              "dim": "B"
-            },
-            "b": {
-              "kind": "const",
-              "value": 0,
-              "dim": "B"
-            }
-          },
-          "then": {
-            "kind": "branch",
-            "dim": "count",
-            "cond": {
-              "op": "<=",
-              "a": {
-                "kind": "input",
-                "id": "object_bytes",
-                "dim": "B"
-              },
-              "b": {
-                "kind": "input",
-                "id": "strict_upload_part_size",
-                "dim": "B"
-              }
-            },
-            "then": {
-              "kind": "const",
-              "value": 0,
-              "dim": "count"
-            },
-            "else": {
-              "kind": "const",
-              "value": 1,
-              "dim": "count"
-            }
-          },
-          "else": {
-            "kind": "const",
-            "value": 0,
-            "dim": "count"
-          }
+          "kind": "const",
+          "value": 0,
+          "dim": "count"
         }
       },
       "coef": null,
@@ -1715,9 +1704,36 @@
       "status": "ok"
     },
     {
+      "id": "insert_data_block_rows",
+      "block": "inserts",
+      "label": "Rows per block an INSERT with data delivers: formatted input is parsed into max_insert_block_size rows; a native client sends its own blocks",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048449,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:178",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name = 'max_insert_block_size'",
+        "mapping": {
+          "insert_data_block_rows": "max_insert_block_size, or the block size of the inserting client (clickhouse-client uses max_insert_block_size too)"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "insert_source_block_rows",
       "block": "inserts",
-      "label": "Rows per block entering the insert squash: max_block_size for INSERT SELECT, max_insert_block_size for data",
+      "label": "Rows per block entering the insert squash: max_block_size for INSERT SELECT, insert_data_block_rows for data",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
@@ -1748,7 +1764,7 @@
         },
         "else": {
           "kind": "input",
-          "id": "max_insert_block_size",
+          "id": "insert_data_block_rows",
           "dim": "count"
         }
       },
@@ -1768,9 +1784,39 @@
       "status": "ok"
     },
     {
+      "id": "insert_protocol",
+      "block": "inserts",
+      "label": "How an INSERT with data arrives: native protocol blocks or inline (HTTP body, query text); the async queue measures native data as decoded block bytes and inline data as raw bytes",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "native",
+        "inline"
+      ],
+      "table": null,
+      "default": "native",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Server/TCPHandler.cpp:1414",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT interface, count() FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date = today() GROUP BY interface",
+        "mapping": {
+          "insert_protocol": "native for interface 1 (TCP), inline for 2 (HTTP)"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "insert_payload_bytes",
       "block": "inserts",
-      "label": "Bytes of an INSERT's data as sent (the async buffer counts these, not table bytes)",
+      "label": "Raw bytes of an inline INSERT's data (the async buffer counts these for inline inserts, not table bytes)",
       "kind": "input",
       "scope": "cluster",
       "unit": "B",
@@ -1814,9 +1860,9 @@
         "version": "0.2.0"
       },
       "hint": {
-        "sql": "SELECT max(c) FROM (SELECT toStartOfSecond(event_time) AS s, count() AS c FROM system.query_log WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date = today() GROUP BY s)",
+        "sql": "SELECT max(CurrentMetric_PendingAsyncInsert) FROM system.metric_log WHERE event_date = today()",
         "mapping": {
-          "insert_clients": "concurrent INSERT queries per second, a lower bound"
+          "insert_clients": "the most async inserts waiting at once (all tables), or the application's insert concurrency"
         }
       },
       "status": "ok"
@@ -1989,7 +2035,7 @@
     {
       "id": "async_insert_deduplicate",
       "block": "inserts",
-      "label": "Async insert deduplication (0 = off); when on, async_insert_max_query_number inserts also flush a buffer",
+      "label": "Legacy async insert deduplication (0 = off); consulted only when deduplicate_insert = backward_compatible_choice",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "count",
@@ -2009,6 +2055,112 @@
         "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_deduplicate'",
         "mapping": {
           "async_insert_deduplicate": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "deduplicate_insert",
+      "block": "inserts",
+      "label": "Insert deduplication mode; supersedes async_insert_deduplicate. When deduplication is on, async_insert_max_query_number inserts flush a buffer",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "enable",
+        "disable",
+        "backward_compatible_choice"
+      ],
+      "table": null,
+      "default": "enable",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:2357",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.settings WHERE name = 'deduplicate_insert'",
+        "mapping": {
+          "deduplicate_insert": "value in the inserting user's profile"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_dedup_effective",
+      "block": "inserts",
+      "label": "Deduplication on for async inserts (1) or off (0)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "deduplicate_insert",
+            "dim": "enum:deduplicate_insert"
+          },
+          "b": {
+            "kind": "const",
+            "value": "enable",
+            "dim": "enum:deduplicate_insert"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "else": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "deduplicate_insert",
+              "dim": "enum:deduplicate_insert"
+            },
+            "b": {
+              "kind": "const",
+              "value": "disable",
+              "dim": "enum:deduplicate_insert"
+            }
+          },
+          "then": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+          },
+          "else": {
+            "kind": "input",
+            "id": "async_insert_deduplicate",
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/DeduplicateInsert.cpp:26",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('deduplicate_insert', 'async_insert_deduplicate')",
+        "mapping": {
+          "async_insert_dedup_effective": "1 for enable; async_insert_deduplicate for backward_compatible_choice"
         }
       },
       "status": "ok"
@@ -2153,7 +2305,7 @@
     {
       "id": "inserts_per_async_flush",
       "block": "inserts",
-      "label": "Async inserts sharing one flush, an upper-bound estimate: the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / payload) entries, at most one per waiting client, at most async_insert_max_query_number with deduplication. The adaptive timeout can flush sooner.",
+      "label": "Async inserts sharing one flush, an estimate for evenly spaced arrivals: the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / entry bytes) entries (decoded bytes for native, raw for inline), at most one per waiting client, at most async_insert_max_query_number with deduplication on (the default). Bursts share more, a shorter adaptive timeout less.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -2220,9 +2372,31 @@
                     "dim": "B"
                   },
                   "b": {
-                    "kind": "input",
-                    "id": "insert_payload_bytes",
-                    "dim": "B"
+                    "kind": "branch",
+                    "dim": "B",
+                    "cond": {
+                      "op": "==",
+                      "a": {
+                        "kind": "input",
+                        "id": "insert_protocol",
+                        "dim": "enum:insert_protocol"
+                      },
+                      "b": {
+                        "kind": "const",
+                        "value": "native",
+                        "dim": "enum:insert_protocol"
+                      }
+                    },
+                    "then": {
+                      "kind": "input",
+                      "id": "insert_bytes_uncompressed",
+                      "dim": "B"
+                    },
+                    "else": {
+                      "kind": "input",
+                      "id": "insert_payload_bytes",
+                      "dim": "B"
+                    }
                   }
                 },
                 "step": {
@@ -2265,7 +2439,7 @@
                   "op": "==",
                   "a": {
                     "kind": "input",
-                    "id": "async_insert_deduplicate",
+                    "id": "async_insert_dedup_effective",
                     "dim": "count"
                   },
                   "b": {
@@ -2307,7 +2481,7 @@
     {
       "id": "parts_per_insert",
       "block": "inserts",
-      "label": "Parts one INSERT creates, per partition: synchronously one per squashed block (whole source blocks joined until either minimum is reached; strict limits off); an async INSERT with data, at most async_insert_max_data_size bytes, a share of a flush of inserts_per_async_flush inserts. INSERT SELECT is always synchronous.",
+      "label": "Parts one INSERT creates, per partition: synchronously one per squashed block (whole source blocks joined until either minimum is reached; strict limits off); an async INSERT with data below the size limit (decoded bytes < limit for native, raw bytes <= limit for inline), a share of a flush of inserts_per_async_flush inserts. INSERT SELECT is always synchronous.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -2361,141 +2535,135 @@
                     "dim": "count"
                   },
                   "b": {
-                    "kind": "min",
+                    "kind": "branch",
                     "dim": "count",
-                    "args": [
-                      {
-                        "kind": "ceil_to",
-                        "dim": "count",
-                        "x": {
-                          "kind": "input",
-                          "id": "min_insert_block_size_rows",
-                          "dim": "count"
-                        },
-                        "step": {
-                          "kind": "input",
-                          "id": "insert_source_block_rows",
-                          "dim": "count"
-                        }
-                      },
-                      {
-                        "kind": "ceil_to",
-                        "dim": "count",
-                        "x": {
-                          "kind": "div",
-                          "dim": "count",
-                          "on_zero": "unavailable",
-                          "a": {
-                            "kind": "input",
-                            "id": "min_insert_block_size_bytes",
-                            "dim": "B"
-                          },
-                          "b": {
-                            "kind": "div",
-                            "dim": "B/count",
-                            "on_zero": "unavailable",
-                            "a": {
-                              "kind": "input",
-                              "id": "insert_bytes_uncompressed",
-                              "dim": "B"
-                            },
-                            "b": {
-                              "kind": "input",
-                              "id": "insert_rows",
-                              "dim": "count"
-                            }
-                          }
-                        },
-                        "step": {
-                          "kind": "input",
-                          "id": "insert_source_block_rows",
-                          "dim": "count"
-                        }
-                      }
-                    ]
-                  }
-                },
-                "step": {
-                  "kind": "const",
-                  "value": 1,
-                  "dim": "1"
-                }
-              }
-            ]
-          },
-          "else": {
-            "kind": "branch",
-            "dim": "1",
-            "cond": {
-              "op": "==",
-              "a": {
-                "kind": "input",
-                "id": "async_insert",
-                "dim": "enum:async_insert"
-              },
-              "b": {
-                "kind": "const",
-                "value": "1",
-                "dim": "enum:async_insert"
-              }
-            },
-            "then": {
-              "kind": "branch",
-              "dim": "1",
-              "cond": {
-                "op": "<=",
-                "a": {
-                  "kind": "input",
-                  "id": "insert_payload_bytes",
-                  "dim": "B"
-                },
-                "b": {
-                  "kind": "input",
-                  "id": "async_insert_max_data_size",
-                  "dim": "B"
-                }
-              },
-              "then": {
-                "kind": "div",
-                "dim": "1",
-                "on_zero": "unavailable",
-                "a": {
-                  "kind": "const",
-                  "value": 1,
-                  "dim": "1"
-                },
-                "b": {
-                  "kind": "input",
-                  "id": "inserts_per_async_flush",
-                  "dim": "1"
-                }
-              },
-              "else": {
-                "kind": "max",
-                "dim": "1",
-                "args": [
-                  {
-                    "kind": "const",
-                    "value": 1,
-                    "dim": "1"
-                  },
-                  {
-                    "kind": "ceil_to",
-                    "dim": "1",
-                    "x": {
-                      "kind": "div",
-                      "dim": "1",
-                      "on_zero": "unavailable",
+                    "cond": {
+                      "op": "<",
                       "a": {
-                        "kind": "input",
-                        "id": "insert_rows",
-                        "dim": "count"
-                      },
-                      "b": {
                         "kind": "min",
                         "dim": "count",
                         "args": [
                           {
+                            "kind": "branch",
+                            "dim": "count",
+                            "cond": {
+                              "op": ">",
+                              "a": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_rows",
+                                "dim": "count"
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 0,
+                                "dim": "count"
+                              }
+                            },
+                            "then": {
+                              "kind": "ceil_to",
+                              "dim": "count",
+                              "x": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_rows",
+                                "dim": "count"
+                              },
+                              "step": {
+                                "kind": "input",
+                                "id": "insert_source_block_rows",
+                                "dim": "count"
+                              }
+                            },
+                            "else": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          },
+                          {
+                            "kind": "branch",
+                            "dim": "count",
+                            "cond": {
+                              "op": ">",
+                              "a": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_bytes",
+                                "dim": "B"
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 0,
+                                "dim": "B"
+                              }
+                            },
+                            "then": {
+                              "kind": "ceil_to",
+                              "dim": "count",
+                              "x": {
+                                "kind": "div",
+                                "dim": "count",
+                                "on_zero": "unavailable",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "min_insert_block_size_bytes",
+                                  "dim": "B"
+                                },
+                                "b": {
+                                  "kind": "div",
+                                  "dim": "B/count",
+                                  "on_zero": "unavailable",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "insert_bytes_uncompressed",
+                                    "dim": "B"
+                                  },
+                                  "b": {
+                                    "kind": "input",
+                                    "id": "insert_rows",
+                                    "dim": "count"
+                                  }
+                                }
+                              },
+                              "step": {
+                                "kind": "input",
+                                "id": "insert_source_block_rows",
+                                "dim": "count"
+                              }
+                            },
+                            "else": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          }
+                        ]
+                      },
+                      "b": {
+                        "kind": "const",
+                        "value": 1000000000000000.0,
+                        "dim": "count"
+                      }
+                    },
+                    "then": {
+                      "kind": "min",
+                      "dim": "count",
+                      "args": [
+                        {
+                          "kind": "branch",
+                          "dim": "count",
+                          "cond": {
+                            "op": ">",
+                            "a": {
+                              "kind": "input",
+                              "id": "min_insert_block_size_rows",
+                              "dim": "count"
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 0,
+                              "dim": "count"
+                            }
+                          },
+                          "then": {
                             "kind": "ceil_to",
                             "dim": "count",
                             "x": {
@@ -2509,7 +2677,29 @@
                               "dim": "count"
                             }
                           },
-                          {
+                          "else": {
+                            "kind": "const",
+                            "value": 1000000000000000.0,
+                            "dim": "count"
+                          }
+                        },
+                        {
+                          "kind": "branch",
+                          "dim": "count",
+                          "cond": {
+                            "op": ">",
+                            "a": {
+                              "kind": "input",
+                              "id": "min_insert_block_size_bytes",
+                              "dim": "B"
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 0,
+                              "dim": "B"
+                            }
+                          },
+                          "then": {
                             "kind": "ceil_to",
                             "dim": "count",
                             "x": {
@@ -2542,17 +2732,611 @@
                               "id": "insert_source_block_rows",
                               "dim": "count"
                             }
+                          },
+                          "else": {
+                            "kind": "const",
+                            "value": 1000000000000000.0,
+                            "dim": "count"
                           }
-                        ]
-                      }
+                        }
+                      ]
                     },
-                    "step": {
+                    "else": {
+                      "kind": "input",
+                      "id": "insert_source_block_rows",
+                      "dim": "count"
+                    }
+                  }
+                },
+                "step": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              }
+            ]
+          },
+          "else": {
+            "kind": "branch",
+            "dim": "1",
+            "cond": {
+              "op": "==",
+              "a": {
+                "kind": "input",
+                "id": "async_insert",
+                "dim": "enum:async_insert"
+              },
+              "b": {
+                "kind": "const",
+                "value": "1",
+                "dim": "enum:async_insert"
+              }
+            },
+            "then": {
+              "kind": "branch",
+              "dim": "1",
+              "cond": {
+                "op": "==",
+                "a": {
+                  "kind": "input",
+                  "id": "insert_protocol",
+                  "dim": "enum:insert_protocol"
+                },
+                "b": {
+                  "kind": "const",
+                  "value": "native",
+                  "dim": "enum:insert_protocol"
+                }
+              },
+              "then": {
+                "kind": "branch",
+                "dim": "1",
+                "cond": {
+                  "op": "<",
+                  "a": {
+                    "kind": "input",
+                    "id": "insert_bytes_uncompressed",
+                    "dim": "B"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "async_insert_max_data_size",
+                    "dim": "B"
+                  }
+                },
+                "then": {
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "inserts_per_async_flush",
+                    "dim": "1"
+                  }
+                },
+                "else": {
+                  "kind": "max",
+                  "dim": "1",
+                  "args": [
+                    {
                       "kind": "const",
                       "value": 1,
                       "dim": "1"
+                    },
+                    {
+                      "kind": "ceil_to",
+                      "dim": "1",
+                      "x": {
+                        "kind": "div",
+                        "dim": "1",
+                        "on_zero": "unavailable",
+                        "a": {
+                          "kind": "input",
+                          "id": "insert_rows",
+                          "dim": "count"
+                        },
+                        "b": {
+                          "kind": "branch",
+                          "dim": "count",
+                          "cond": {
+                            "op": "<",
+                            "a": {
+                              "kind": "min",
+                              "dim": "count",
+                              "args": [
+                                {
+                                  "kind": "branch",
+                                  "dim": "count",
+                                  "cond": {
+                                    "op": ">",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_rows",
+                                      "dim": "count"
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 0,
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "then": {
+                                    "kind": "ceil_to",
+                                    "dim": "count",
+                                    "x": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_rows",
+                                      "dim": "count"
+                                    },
+                                    "step": {
+                                      "kind": "input",
+                                      "id": "insert_source_block_rows",
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "else": {
+                                    "kind": "const",
+                                    "value": 1000000000000000.0,
+                                    "dim": "count"
+                                  }
+                                },
+                                {
+                                  "kind": "branch",
+                                  "dim": "count",
+                                  "cond": {
+                                    "op": ">",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_bytes",
+                                      "dim": "B"
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 0,
+                                      "dim": "B"
+                                    }
+                                  },
+                                  "then": {
+                                    "kind": "ceil_to",
+                                    "dim": "count",
+                                    "x": {
+                                      "kind": "div",
+                                      "dim": "count",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "input",
+                                        "id": "min_insert_block_size_bytes",
+                                        "dim": "B"
+                                      },
+                                      "b": {
+                                        "kind": "div",
+                                        "dim": "B/count",
+                                        "on_zero": "unavailable",
+                                        "a": {
+                                          "kind": "input",
+                                          "id": "insert_bytes_uncompressed",
+                                          "dim": "B"
+                                        },
+                                        "b": {
+                                          "kind": "input",
+                                          "id": "insert_rows",
+                                          "dim": "count"
+                                        }
+                                      }
+                                    },
+                                    "step": {
+                                      "kind": "input",
+                                      "id": "insert_source_block_rows",
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "else": {
+                                    "kind": "const",
+                                    "value": 1000000000000000.0,
+                                    "dim": "count"
+                                  }
+                                }
+                              ]
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          },
+                          "then": {
+                            "kind": "min",
+                            "dim": "count",
+                            "args": [
+                              {
+                                "kind": "branch",
+                                "dim": "count",
+                                "cond": {
+                                  "op": ">",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_rows",
+                                    "dim": "count"
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 0,
+                                    "dim": "count"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "ceil_to",
+                                  "dim": "count",
+                                  "x": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_rows",
+                                    "dim": "count"
+                                  },
+                                  "step": {
+                                    "kind": "input",
+                                    "id": "insert_source_block_rows",
+                                    "dim": "count"
+                                  }
+                                },
+                                "else": {
+                                  "kind": "const",
+                                  "value": 1000000000000000.0,
+                                  "dim": "count"
+                                }
+                              },
+                              {
+                                "kind": "branch",
+                                "dim": "count",
+                                "cond": {
+                                  "op": ">",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_bytes",
+                                    "dim": "B"
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 0,
+                                    "dim": "B"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "ceil_to",
+                                  "dim": "count",
+                                  "x": {
+                                    "kind": "div",
+                                    "dim": "count",
+                                    "on_zero": "unavailable",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_bytes",
+                                      "dim": "B"
+                                    },
+                                    "b": {
+                                      "kind": "div",
+                                      "dim": "B/count",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "input",
+                                        "id": "insert_bytes_uncompressed",
+                                        "dim": "B"
+                                      },
+                                      "b": {
+                                        "kind": "input",
+                                        "id": "insert_rows",
+                                        "dim": "count"
+                                      }
+                                    }
+                                  },
+                                  "step": {
+                                    "kind": "input",
+                                    "id": "insert_source_block_rows",
+                                    "dim": "count"
+                                  }
+                                },
+                                "else": {
+                                  "kind": "const",
+                                  "value": 1000000000000000.0,
+                                  "dim": "count"
+                                }
+                              }
+                            ]
+                          },
+                          "else": {
+                            "kind": "input",
+                            "id": "insert_source_block_rows",
+                            "dim": "count"
+                          }
+                        }
+                      },
+                      "step": {
+                        "kind": "const",
+                        "value": 1,
+                        "dim": "1"
+                      }
                     }
+                  ]
+                }
+              },
+              "else": {
+                "kind": "branch",
+                "dim": "1",
+                "cond": {
+                  "op": "<=",
+                  "a": {
+                    "kind": "input",
+                    "id": "insert_payload_bytes",
+                    "dim": "B"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "async_insert_max_data_size",
+                    "dim": "B"
                   }
-                ]
+                },
+                "then": {
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "inserts_per_async_flush",
+                    "dim": "1"
+                  }
+                },
+                "else": {
+                  "kind": "max",
+                  "dim": "1",
+                  "args": [
+                    {
+                      "kind": "const",
+                      "value": 1,
+                      "dim": "1"
+                    },
+                    {
+                      "kind": "ceil_to",
+                      "dim": "1",
+                      "x": {
+                        "kind": "div",
+                        "dim": "1",
+                        "on_zero": "unavailable",
+                        "a": {
+                          "kind": "input",
+                          "id": "insert_rows",
+                          "dim": "count"
+                        },
+                        "b": {
+                          "kind": "branch",
+                          "dim": "count",
+                          "cond": {
+                            "op": "<",
+                            "a": {
+                              "kind": "min",
+                              "dim": "count",
+                              "args": [
+                                {
+                                  "kind": "branch",
+                                  "dim": "count",
+                                  "cond": {
+                                    "op": ">",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_rows",
+                                      "dim": "count"
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 0,
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "then": {
+                                    "kind": "ceil_to",
+                                    "dim": "count",
+                                    "x": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_rows",
+                                      "dim": "count"
+                                    },
+                                    "step": {
+                                      "kind": "input",
+                                      "id": "insert_source_block_rows",
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "else": {
+                                    "kind": "const",
+                                    "value": 1000000000000000.0,
+                                    "dim": "count"
+                                  }
+                                },
+                                {
+                                  "kind": "branch",
+                                  "dim": "count",
+                                  "cond": {
+                                    "op": ">",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_bytes",
+                                      "dim": "B"
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 0,
+                                      "dim": "B"
+                                    }
+                                  },
+                                  "then": {
+                                    "kind": "ceil_to",
+                                    "dim": "count",
+                                    "x": {
+                                      "kind": "div",
+                                      "dim": "count",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "input",
+                                        "id": "min_insert_block_size_bytes",
+                                        "dim": "B"
+                                      },
+                                      "b": {
+                                        "kind": "div",
+                                        "dim": "B/count",
+                                        "on_zero": "unavailable",
+                                        "a": {
+                                          "kind": "input",
+                                          "id": "insert_bytes_uncompressed",
+                                          "dim": "B"
+                                        },
+                                        "b": {
+                                          "kind": "input",
+                                          "id": "insert_rows",
+                                          "dim": "count"
+                                        }
+                                      }
+                                    },
+                                    "step": {
+                                      "kind": "input",
+                                      "id": "insert_source_block_rows",
+                                      "dim": "count"
+                                    }
+                                  },
+                                  "else": {
+                                    "kind": "const",
+                                    "value": 1000000000000000.0,
+                                    "dim": "count"
+                                  }
+                                }
+                              ]
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          },
+                          "then": {
+                            "kind": "min",
+                            "dim": "count",
+                            "args": [
+                              {
+                                "kind": "branch",
+                                "dim": "count",
+                                "cond": {
+                                  "op": ">",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_rows",
+                                    "dim": "count"
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 0,
+                                    "dim": "count"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "ceil_to",
+                                  "dim": "count",
+                                  "x": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_rows",
+                                    "dim": "count"
+                                  },
+                                  "step": {
+                                    "kind": "input",
+                                    "id": "insert_source_block_rows",
+                                    "dim": "count"
+                                  }
+                                },
+                                "else": {
+                                  "kind": "const",
+                                  "value": 1000000000000000.0,
+                                  "dim": "count"
+                                }
+                              },
+                              {
+                                "kind": "branch",
+                                "dim": "count",
+                                "cond": {
+                                  "op": ">",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_bytes",
+                                    "dim": "B"
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 0,
+                                    "dim": "B"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "ceil_to",
+                                  "dim": "count",
+                                  "x": {
+                                    "kind": "div",
+                                    "dim": "count",
+                                    "on_zero": "unavailable",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "min_insert_block_size_bytes",
+                                      "dim": "B"
+                                    },
+                                    "b": {
+                                      "kind": "div",
+                                      "dim": "B/count",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "input",
+                                        "id": "insert_bytes_uncompressed",
+                                        "dim": "B"
+                                      },
+                                      "b": {
+                                        "kind": "input",
+                                        "id": "insert_rows",
+                                        "dim": "count"
+                                      }
+                                    }
+                                  },
+                                  "step": {
+                                    "kind": "input",
+                                    "id": "insert_source_block_rows",
+                                    "dim": "count"
+                                  }
+                                },
+                                "else": {
+                                  "kind": "const",
+                                  "value": 1000000000000000.0,
+                                  "dim": "count"
+                                }
+                              }
+                            ]
+                          },
+                          "else": {
+                            "kind": "input",
+                            "id": "insert_source_block_rows",
+                            "dim": "count"
+                          }
+                        }
+                      },
+                      "step": {
+                        "kind": "const",
+                        "value": 1,
+                        "dim": "1"
+                      }
+                    }
+                  ]
+                }
               }
             },
             "else": {
@@ -2577,58 +3361,217 @@
                       "dim": "count"
                     },
                     "b": {
-                      "kind": "min",
+                      "kind": "branch",
                       "dim": "count",
-                      "args": [
-                        {
-                          "kind": "ceil_to",
+                      "cond": {
+                        "op": "<",
+                        "a": {
+                          "kind": "min",
                           "dim": "count",
-                          "x": {
-                            "kind": "input",
-                            "id": "min_insert_block_size_rows",
-                            "dim": "count"
-                          },
-                          "step": {
-                            "kind": "input",
-                            "id": "insert_source_block_rows",
-                            "dim": "count"
-                          }
-                        },
-                        {
-                          "kind": "ceil_to",
-                          "dim": "count",
-                          "x": {
-                            "kind": "div",
-                            "dim": "count",
-                            "on_zero": "unavailable",
-                            "a": {
-                              "kind": "input",
-                              "id": "min_insert_block_size_bytes",
-                              "dim": "B"
-                            },
-                            "b": {
-                              "kind": "div",
-                              "dim": "B/count",
-                              "on_zero": "unavailable",
-                              "a": {
-                                "kind": "input",
-                                "id": "insert_bytes_uncompressed",
-                                "dim": "B"
+                          "args": [
+                            {
+                              "kind": "branch",
+                              "dim": "count",
+                              "cond": {
+                                "op": ">",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "min_insert_block_size_rows",
+                                  "dim": "count"
+                                },
+                                "b": {
+                                  "kind": "const",
+                                  "value": 0,
+                                  "dim": "count"
+                                }
                               },
-                              "b": {
-                                "kind": "input",
-                                "id": "insert_rows",
+                              "then": {
+                                "kind": "ceil_to",
+                                "dim": "count",
+                                "x": {
+                                  "kind": "input",
+                                  "id": "min_insert_block_size_rows",
+                                  "dim": "count"
+                                },
+                                "step": {
+                                  "kind": "input",
+                                  "id": "insert_source_block_rows",
+                                  "dim": "count"
+                                }
+                              },
+                              "else": {
+                                "kind": "const",
+                                "value": 1000000000000000.0,
+                                "dim": "count"
+                              }
+                            },
+                            {
+                              "kind": "branch",
+                              "dim": "count",
+                              "cond": {
+                                "op": ">",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "min_insert_block_size_bytes",
+                                  "dim": "B"
+                                },
+                                "b": {
+                                  "kind": "const",
+                                  "value": 0,
+                                  "dim": "B"
+                                }
+                              },
+                              "then": {
+                                "kind": "ceil_to",
+                                "dim": "count",
+                                "x": {
+                                  "kind": "div",
+                                  "dim": "count",
+                                  "on_zero": "unavailable",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "min_insert_block_size_bytes",
+                                    "dim": "B"
+                                  },
+                                  "b": {
+                                    "kind": "div",
+                                    "dim": "B/count",
+                                    "on_zero": "unavailable",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "insert_bytes_uncompressed",
+                                      "dim": "B"
+                                    },
+                                    "b": {
+                                      "kind": "input",
+                                      "id": "insert_rows",
+                                      "dim": "count"
+                                    }
+                                  }
+                                },
+                                "step": {
+                                  "kind": "input",
+                                  "id": "insert_source_block_rows",
+                                  "dim": "count"
+                                }
+                              },
+                              "else": {
+                                "kind": "const",
+                                "value": 1000000000000000.0,
                                 "dim": "count"
                               }
                             }
-                          },
-                          "step": {
-                            "kind": "input",
-                            "id": "insert_source_block_rows",
-                            "dim": "count"
-                          }
+                          ]
+                        },
+                        "b": {
+                          "kind": "const",
+                          "value": 1000000000000000.0,
+                          "dim": "count"
                         }
-                      ]
+                      },
+                      "then": {
+                        "kind": "min",
+                        "dim": "count",
+                        "args": [
+                          {
+                            "kind": "branch",
+                            "dim": "count",
+                            "cond": {
+                              "op": ">",
+                              "a": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_rows",
+                                "dim": "count"
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 0,
+                                "dim": "count"
+                              }
+                            },
+                            "then": {
+                              "kind": "ceil_to",
+                              "dim": "count",
+                              "x": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_rows",
+                                "dim": "count"
+                              },
+                              "step": {
+                                "kind": "input",
+                                "id": "insert_source_block_rows",
+                                "dim": "count"
+                              }
+                            },
+                            "else": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          },
+                          {
+                            "kind": "branch",
+                            "dim": "count",
+                            "cond": {
+                              "op": ">",
+                              "a": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_bytes",
+                                "dim": "B"
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 0,
+                                "dim": "B"
+                              }
+                            },
+                            "then": {
+                              "kind": "ceil_to",
+                              "dim": "count",
+                              "x": {
+                                "kind": "div",
+                                "dim": "count",
+                                "on_zero": "unavailable",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "min_insert_block_size_bytes",
+                                  "dim": "B"
+                                },
+                                "b": {
+                                  "kind": "div",
+                                  "dim": "B/count",
+                                  "on_zero": "unavailable",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "insert_bytes_uncompressed",
+                                    "dim": "B"
+                                  },
+                                  "b": {
+                                    "kind": "input",
+                                    "id": "insert_rows",
+                                    "dim": "count"
+                                  }
+                                }
+                              },
+                              "step": {
+                                "kind": "input",
+                                "id": "insert_source_block_rows",
+                                "dim": "count"
+                              }
+                            },
+                            "else": {
+                              "kind": "const",
+                              "value": 1000000000000000.0,
+                              "dim": "count"
+                            }
+                          }
+                        ]
+                      },
+                      "else": {
+                        "kind": "input",
+                        "id": "insert_source_block_rows",
+                        "dim": "count"
+                      }
                     }
                   },
                   "step": {
@@ -2805,16 +3748,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_effective_fan_in",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          718.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -4843,16 +5777,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_fan_in_distribution",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          718.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -4921,16 +5846,7 @@
       "default": null,
       "rule": null,
       "coef": "merge_result_size_distribution",
-      "validity": {
-        "merge_size_ratio": [
-          6.0,
-          718.0
-        ],
-        "insert_rows": [
-          1000,
-          100000
-        ]
-      },
+      "validity": null,
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -4947,7 +5863,7 @@
     {
       "id": "acquisition_rule",
       "block": "replication",
-      "label": "Fetch vs local execution of a replicated merge, in order: skip when the part or a covering one is already here; fetch when always_fetch_merged_part; wait (no fetch check) for a TTL-recompress merge another replica was assigned, until try_fetch_recompressed_part_timeout; fetch when execute_merges_on_single_replica_time_threshold > 0, the entry is younger than it and another replica is picked; fetch when a source or patch part is missing or covered; wait while a source part has newer metadata; fetch when the entry is at least prefer_fetch_merged_part_time_threshold old, the sources hold at least prefer_fetch_merged_part_size_threshold bytes on disk and a replica has the result; with zero-copy, fetch or wait on the covering part and the exclusive lock; else merge locally. A mutation: fetch when always_fetch_mutated_part, the source is missing or covered, or the entry is that old and 1.1 x the source bytes on disk (expired TTL parts excluded) reach the size threshold with a replica holding the result; the single-replica branch never fires (merge entries only); zero-copy as for merges; else mutate locally, keeping the source part type.",
+      "label": "Fetch vs local execution of a replicated merge, in order: skip when the part or a covering one is already here; fetch when always_fetch_merged_part; try to fetch a TTL-recompress merge another replica was assigned, quietly retrying while no replica has it, until try_fetch_recompressed_part_timeout; fetch when execute_merges_on_single_replica_time_threshold > 0, the entry is younger than it and another replica is picked; fetch when a source or patch part is missing or covered; while a source part has newer metadata, try to fetch, quietly retrying; fetch when the entry is at least prefer_fetch_merged_part_time_threshold old, the sources hold at least prefer_fetch_merged_part_size_threshold bytes on disk and a replica has the result; with zero-copy, fetch or wait on the covering part and the exclusive lock; else merge locally. A mutation: fetch when always_fetch_mutated_part, the source is missing or covered, or the entry is that old and 1.1 x the source bytes on disk (expired TTL parts excluded) reach the size threshold with a replica holding the result; the single-replica branch never fires (merge entries only); zero-copy as for merges; else mutate locally, keeping the source part type.",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",

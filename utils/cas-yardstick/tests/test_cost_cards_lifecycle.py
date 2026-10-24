@@ -321,6 +321,57 @@ class CardsTest(unittest.TestCase):
             card.wait_quiet(ctx)
             self.assertFalse(card.state(ctx)['quiesced'])
 
+    def test_completion_waits_again_when_the_final_part_log_shows_a_later_merge(self):
+        # The quiet period was accepted at t, but the part log read afterwards holds a merge that ended after
+        # t - quiet_s (it ran between the last flush and the last active poll): completion must wait again.
+        m = manifest('merge-natural.default')
+        m['params']['quiet_s'], m['params']['quiesce_timeout_s'] = 10, 100
+        card = CARDS['merge-natural']
+        accepted = iter([1010.0, 1030.0])
+        late = [dict(PART_LOG[-1], t_us=int(1005e6))]
+        logs = iter([PART_LOG[:-1] + late, PART_LOG[:-1] + late])
+        calls = {'wait': 0}
+
+        def wait_quiet(self, ctx, deadline=None):
+            calls['wait'] += 1
+            self.state(ctx)['quiesced'] = True
+            return next(accepted)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lifecycle.NaturalMergeCard, 'wait_quiet', wait_quiet), \
+                mock.patch.object(lifecycle.ManifestCard, 'complete', lambda self, ctx, timeout_s=300: None), \
+                mock.patch.object(lifecycle.LifecycleCard, 'part_log', lambda self, ctx: next(logs)), \
+                mock.patch.object(lifecycle.LifecycleCard, 'parts', lambda self, ctx: []), \
+                mock.patch.object(lifecycle.LifecycleCard, 'collect_layout', lambda self, ctx: None):
+            ctx = ctx_for(m, FakeCluster(n=1), tmp, os.path.join(tmp, 'l'))
+            card.complete(ctx, timeout_s=1)
+            self.assertEqual(calls['wait'], 2)
+            self.assertTrue(card.state(ctx)['quiesced'])
+            self.assertEqual(card.state(ctx)['quiet_cutoff'], 1030.0)
+
+    def test_layout_accumulates_across_snapshots(self):
+        # A long run snapshots the layout before old_parts_lifetime can remove a merged-away part's files.
+        m = manifest('merge-natural.default')
+        card = CARDS['merge-natural']
+        first = jsonl([{'local_path': 'store/a/b/all_1_1_0/data.bin', 'remote_path': 'p/k1'}])
+        second = jsonl([{'local_path': 'store/a/b/all_1_2_1/data.bin', 'remote_path': 'p/k2'}])
+        with tempfile.TemporaryDirectory() as tmp:
+            cluster = FakeCluster(n=1, answers={'FROM system.remote_data_paths': first})
+            ctx = ctx_for(m, cluster, tmp, os.path.join(tmp, 'l'))
+            card.collect_layout(ctx)
+            cluster.clients[0].answers = {'FROM system.remote_data_paths': second}
+            card.collect_layout(ctx)
+            self.assertEqual(card.state(ctx)['remote_paths'], {'all_1_1_0': ['p/k1'], 'all_1_2_1': ['p/k2']})
+
+    def test_long_runs_snapshot_the_layout_while_inserting(self):
+        m = manifest('merge-natural.default')
+        m['params'].update(inserts=3, interval_s=0)
+        card = CARDS['amplification-run']
+        snapshots = []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(lifecycle, 'LAYOUT_EVERY_S', 0), \
+                mock.patch.object(lifecycle.LifecycleCard, 'collect_layout', lambda self, ctx: snapshots.append(1)):
+            card.measured(ctx_for(m, FakeCluster(n=1), tmp, os.path.join(tmp, 'l')))
+        self.assertEqual(len(snapshots), 3)
+
     def test_merged_away_parts_become_outdated_at_their_merge(self):
         card = CARDS['merge-natural']
         m = manifest('merge-natural.default')

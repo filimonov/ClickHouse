@@ -40,7 +40,8 @@ bytes, and when a replica fetches a result instead of producing it. Each rule ci
   (`src/Storages/MergeTree/MergeTreeData.cpp:6399`, `:6402`). Defaults: 10 485 760 bytes outside ClickHouse Cloud
   (`MergeTreeSettings.cpp:37`), 0 rows (`:85`), level 0 (`:82`).
 - **Overrides.** Every part is Wide/Full without adaptive granularity (`MergeTreeData.cpp:6394`;
-  `index_granularity_bytes` != 0 and mixed granularity allowed, `:11680`) and when a column uses
+  adaptive needs `index_granularity_bytes` != 0 and either `enable_mixed_granularity_parts` or no non-adaptive part,
+  `:11680`–`:11681`) and when a column uses
   `CODEC(Quantize('pq', ...))` (`:6428`). Registry: `part_type` branches on `adaptive_granularity` and
   `quantize_pq_codec` before the predicate.
 - **Insert.** The size is the block in memory, `Block::bytes` (`MergeTreeDataWriter.cpp:848`, `:915`): 8 bytes per
@@ -78,11 +79,12 @@ set, every buffer is that size (`BufferAllocationPolicy.cpp:98`); with the defau
 
 The upload becomes multipart when a second buffer is detached (`WriteBufferFromS3.cpp:154`) or, at finalize, when
 the only buffer holds more than `max_single_part_upload_size` (`:178`–`:198`). One buffer of at most that size is a
-single `PutObject` (`:180`). The one-buffer multipart case needs a first buffer or strict size above
-`max_single_part_upload_size`, which the defaults never give. So by default an object of exactly 32 MiB is one
-`PutObject`, and 32 MiB + 8 bytes is `CreateMultipartUpload`, `UploadPart` of 32 MiB and 8 bytes,
-`CompleteMultipartUpload`. Registry: `multipart_sizing_rule`, `multipart_parts` (with the strict branch; no growth
-step, so valid below 499 later parts) and `multipart_upload`.
+single `PutObject` (`:180`). So an object is multipart exactly when it exceeds the smaller of the first buffer (the
+strict size, else the clamped first buffer) and `max_single_part_upload_size`. A first buffer clamped below
+32 MiB (`max_upload_part_size` < 32 MiB) or a strict size makes smaller objects multipart; the defaults give neither.
+By default an object of exactly 32 MiB is one `PutObject`, and 32 MiB + 8 bytes is `CreateMultipartUpload`,
+`UploadPart` of 32 MiB and 8 bytes, `CompleteMultipartUpload`. Registry: `multipart_sizing_rule`, `multipart_parts`
+(with the strict branch; no growth step, so valid below 499 later parts) and `multipart_upload`.
 
 The cards size one file exactly: a `CODEC(NONE)` `UInt64` column of a Wide part. A block is cut before a granule
 once it holds `min_compress_block_size` = 65 536 bytes (`MergeTreeDataPartWriterWide.cpp:473`,
@@ -99,26 +101,35 @@ rows; 4 192 704 rows give exactly 33 554 432 bytes.
   `InterpreterInsertQuery.cpp:504`). With `use_strict_insert_block_limits` (off, `Settings.cpp:162`) max limits
   would split blocks; the rule does not cover that. An `INSERT SELECT` reads source blocks of `max_block_size`
   (65 409, `src/Core/Defines.h:33`, `Settings.cpp:155`) because `optimize_trivial_insert_select` is off
-  (`Settings.cpp:5609`), so its parts hold 17 source blocks, 1 111 953 rows. Formatted data arrives in blocks of
-  `max_insert_block_size` = 1 048 449 rows (`Settings.cpp:178`). Registry: `parts_per_insert` = ceil(rows / emitted
-  rows) per partition, emitted rows = the smaller of `min_insert_block_size_rows` and the byte minimum in rows, each
-  rounded up to whole source blocks (`insert_source_block_rows`).
+  (`Settings.cpp:5609`), so its parts hold 17 source blocks, 1 111 953 rows. Formatted data is parsed into blocks
+  of `max_insert_block_size` = 1 048 449 rows (`Settings.cpp:178`); a native client sends its own blocks
+  (`TCPHandler.cpp:1473`), which may be larger. Registry: `parts_per_insert` = ceil(rows / emitted rows) per
+  partition, emitted rows = the smaller of the enabled minimums (`min_insert_block_size_rows`, the byte minimum in
+  rows), each rounded up to whole source blocks (`insert_source_block_rows`: `max_block_size` for `INSERT SELECT`,
+  the input `insert_data_block_rows` for data); with both minimums 0 every source block is a part
+  (`Squashing.cpp:397`).
 - **Async eligibility.** `async_insert` is on by default in this build (`Settings.cpp:7225`); a table's own
   `async_insert` setting also enables it (`MergeTreeData.cpp:9993`). Only an INSERT with data goes to the queue:
-  `INSERT SELECT` stays synchronous (`executeQuery.cpp:2894`, native protocol `TCPHandler.cpp:1500`), and data
-  larger than `async_insert_max_data_size` falls back to a synchronous insert (`AsynchronousInsertQueue.cpp:501`,
-  `:528`). Every insert of the lifecycle cards except `async-inserts.*` is an `INSERT SELECT`.
+  `INSERT SELECT` stays synchronous (`executeQuery.cpp:2894`, native protocol `TCPHandler.cpp:1500`). Data over the
+  size limit falls back to a synchronous insert: inline data whose raw bytes exceed `async_insert_max_data_size`
+  (`AsynchronousInsertQueue.cpp:501`, `:528`), native data whose decoded block bytes reach it
+  (`TCPHandler.cpp:1414`–`:1435`, `Squashing.cpp:395`). Registry input `insert_protocol` picks the measure. Every
+  insert of the lifecycle cards except `async-inserts.*` is an `INSERT SELECT`.
 - **Async flush.** Inserts with the same user, roles, query shape, settings and data kind share a buffer
   (`AsynchronousInsertQueue.cpp:587`). It is flushed into one part per partition when the serialized sizes of its
   whole entries reach `async_insert_max_data_size` (10 MiB), when `async_insert_max_query_number` (450) entries
-  accumulate with deduplication on (off, `Settings.cpp:2393`), or at its deadline (`:663`, `:680`). The deadline is
+  accumulate with deduplication on, or at its deadline (`:663`, `:680`). Deduplication is on by default:
+  `deduplicate_insert = enable` (`Settings.cpp:2357`) supersedes `async_insert_deduplicate`
+  (`DeduplicateInsert.cpp:26`). The deadline is
   the buffer's first insert plus an adaptive timeout between `async_insert_busy_timeout_min_ms` (50) and `_max_ms`
   (200) that grows while inserts are frequent (`:623`, `:739`–`:774`; `Settings.cpp:7249`, `:7252`). With
   `wait_for_async_insert = 1` (`:7228`) a client waits for its flush, so only concurrent clients share one.
-- **Async estimate.** Registry `inserts_per_async_flush` is an upper-bound estimate (evidence `assumed`), not a
-  source derivation: max(1, min(1 + rate × timeout_max, ceil(buffer / payload), clients when waiting, 450 with
-  deduplication)). The first insert opens the buffer and every insert before the longest deadline joins it; a
-  shorter adaptive timeout flushes sooner. `async-inserts.steady` measured 4.8–5.0 inserts per flush against 5.
+- **Async estimate.** Registry `inserts_per_async_flush` is an estimate for evenly spaced arrivals (evidence
+  `assumed`), not a source derivation: max(1, min(1 + rate × timeout_max, ceil(buffer / entry bytes), clients when
+  waiting, 450 with deduplication)). The first insert opens the buffer and every insert before the longest deadline
+  joins it. Bursts share more (`async-inserts.bursty`: 100 concurrent inserts over about 1.9 flushes, where the
+  mean rate of 50/s gives 11), a shorter adaptive timeout less. `async-inserts.steady` measured 4.8–5.0 inserts per
+  flush against 5. `insert_clients` counts clients waiting at once (`PendingAsyncInsert`), not query starts.
 
 ### Merges and outdated parts {#merges}
 
@@ -148,21 +159,25 @@ A replica skips a merge or mutation entry when it already has the part or a cove
 (`StorageReplicatedMergeTree.cpp:2695`). Otherwise a merge entry goes, in order (`MergeFromLogEntryTask.cpp`):
 
 1. **Fetch** when `always_fetch_merged_part` is set (`:101`).
-2. **Wait** for a TTL-recompress merge assigned to another replica, until `try_fetch_recompressed_part_timeout`
-   (`:111`).
+2. **Try to fetch** a TTL-recompress merge assigned to another replica, quietly retrying while no replica has it,
+   until `try_fetch_recompressed_part_timeout` (`:111`).
 3. **Fetch** when `execute_merges_on_single_replica_time_threshold` > 0, the entry is younger than it, and the
    picker names another replica (`:130`; `ReplicatedMergeTreeMergeStrategyPicker.cpp:59`–`:63`, merge entries only).
    `remote_fs_execute_merges_on_single_replica_time_threshold` only decides whether the picker refreshes its state
    (`:105`–`:119`), not this choice.
 4. **Fetch** when a source part is missing or covered by another part (`:155`, `:166`), or a patch part is missing
    (`:201`).
-5. **Wait** while a source part has newer metadata than the table (`:187`).
+5. **Try to fetch**, quietly retrying, while a source part has newer metadata than the table (`:187`).
 6. **Fetch** when the entry is at least `prefer_fetch_merged_part_time_threshold` (3600 s) old (inclusive), its
    sources hold at least `prefer_fetch_merged_part_size_threshold` (10 GiB) on disk, and a replica has the result
    (`:224`, `:233`).
 7. With zero-copy (`allow_remote_fs_zero_copy_replication`, off), **fetch** when a replica has a covering part, and
-   **wait** or **fetch** when another replica holds the exclusive lock (`:296`–`:349`).
+   **try to fetch** when another replica holds the exclusive lock (`:296`–`:349`).
 8. Else **merge locally**.
+
+Every branch that does not merge returns an unsuccessful preparation, and the task then calls `executeFetch`
+(`ReplicatedMergeMutateTaskBase.cpp:207`–`:208`); `need_to_check_missing_part_in_fetch = false` only makes a missing
+result a quiet retry instead of an error.
 
 A mutation entry (`MutateFromLogEntryTask.cpp`): fetch when `always_fetch_mutated_part` (`:85`), when the source is
 missing or covered (`:105`, `:122`), or when the entry is at least the time threshold old and the estimated result
