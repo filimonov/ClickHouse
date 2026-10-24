@@ -1,0 +1,42 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "gc-idle.populated",
+  "card": "gc-idle",
+  "case_id": "populated",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "measure",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "min_bytes_for_wide_part": 0
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.cas_gc_interval_sec": "10"
+    }
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns_n": 100,
+    "rows": 1000,
+    "parts": 49,
+    "intervals": 3,
+    "gc_interval_s": 10,
+    "slack_s": 5,
+    "order_by": "k",
+    "expected_rows": 49000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "A pool of about 10 000 objects (49 Wide parts of 100 CODEC(NONE) columns, 1 000 rows), one manual GC round folds them, then 3 scheduled intervals of 10 s with no change."
+}

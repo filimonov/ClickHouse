@@ -1,0 +1,37 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "lease.idle-20min",
+  "card": "lease",
+  "case_id": "idle-20min",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64",
+    "order_by": "k",
+    "rows": 0,
+    "inserts": 0,
+    "idle_s": 1200,
+    "expected_rows": 0
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 1800,
+  "description": "An empty table on a mounted pool with GC off for 20 minutes: only the mount lease renewer writes."
+}

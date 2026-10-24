@@ -1,0 +1,59 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-scale.objects-100k",
+  "policy": "cas",
+  "inputs": {
+    "parts": 493,
+    "role": "fit",
+    "rule": "as the 1k/10k fit; snapshots (1479 log records) may replace log reads, so the fold count is bounded, not exact"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "objects": 100081,
+      "fold_round_requests": {
+        "min": 521,
+        "max": 2000
+      },
+      "deferred_round_requests": 18,
+      "round_outcomes": [
+        "Success",
+        "Deferred"
+      ]
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "SYSTEM CAS GC RUN runs one synchronous round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 336
+    },
+    {
+      "claim": "a round with no changed shard and no due graduation is Deferred: no fold",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 303
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "a _snap snapshot is published after more than 256 log records or 1 MiB of tail",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h",
+      "line": 296
+    }
+  ],
+  "prediction_commit": "pending"
+}

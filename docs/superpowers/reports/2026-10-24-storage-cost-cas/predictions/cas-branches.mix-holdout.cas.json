@@ -1,0 +1,148 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cas-branches.mix-holdout",
+  "policy": "cas",
+  "inputs": {
+    "part_type": "Wide",
+    "role": "holdout",
+    "basis": "derived from the fit rule (one blob per .bin and .cmrk2 substream file, the rest inline); assumption: no two substream files of the part have equal bytes",
+    "fit_cases": [
+      "cas-branches.fresh",
+      "cas-branches.adoption",
+      "cas-branches.staging-peak"
+    ]
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "HeadObject": 16,
+        "PutObject": 39,
+        "GetObject": 8
+      }
+    },
+    "observations": {
+      "branch_population": {
+        "fresh": 16,
+        "hash_hit": 0,
+        "adoption": 0,
+        "inline": 9,
+        "resurrect": 0
+      },
+      "blob_files": {
+        "all_1_1_0": [
+          "a.bin",
+          "a.cmrk2",
+          "a.size0.bin",
+          "a.size0.cmrk2",
+          "k.bin",
+          "k.cmrk2",
+          "l.bin",
+          "l.cmrk2",
+          "l.dict.bin",
+          "l.dict.cmrk2",
+          "n.bin",
+          "n.cmrk2",
+          "n.null.bin",
+          "n.null.cmrk2",
+          "s.bin",
+          "s.cmrk2"
+        ]
+      },
+      "inline_files": {
+        "all_1_1_0": [
+          "checksums.txt",
+          "columns.txt",
+          "columns_substreams.txt",
+          "count.txt",
+          "default_compression_codec.txt",
+          "metadata_version.txt",
+          "primary.cidx",
+          "serialization.json",
+          "statistics.packed"
+        ]
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "an absent body is published: one PUT (multipart above the first buffer)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 490
+    },
+    {
+      "claim": "after an absent HEAD the .meta marker is created (one conditional PUT), no GET",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 349
+    },
+    {
+      "claim": "blob_put with publication_reason absent marks a fresh blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 528
+    },
+    {
+      "claim": "the manifest body is one create-if-absent PUT, with no preliminary HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 646
+    },
+    {
+      "claim": "promote reads the manifest body once (one GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 823
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "commitRefChunk: the append, then the _ckpt contribution",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3340
+    },
+    {
+      "claim": "publishing a ckpt contribution reads _ckpt (GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 187
+    },
+    {
+      "claim": "then replaces it with If-Match (PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 195
+    },
+    {
+      "claim": "a mutable ref-table runtime admission reads the pool catalog (GET cas/ref_catalog)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 640
+    },
+    {
+      "claim": ".bin, .mrk/.mrk2/.mrk3, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed stay blobs; every other part file (data.cmrk4, primary.cidx, checksums.txt, ...) is an inline candidate",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 77
+    },
+    {
+      "claim": "an inline candidate of at most INLINE_CAP (1 MiB) rides inside the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 1010
+    },
+    {
+      "claim": "system.remote_data_paths shows an inline entry with an empty remote path",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2003
+    },
+    {
+      "claim": "duplicate refs of one transaction collapse to one upload task",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 302
+    }
+  ],
+  "prediction_commit": "pending"
+}

@@ -1,0 +1,204 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cas-branches.adoption",
+  "policy": "cas",
+  "inputs": {
+    "branch_checks": {
+      "adopted_columns": {
+        "source_part": "all_1_1_0",
+        "columns": [
+          "k",
+          "u2",
+          "u3",
+          "u4"
+        ]
+      }
+    },
+    "part_type": "Wide",
+    "mutation_table_file_requests": {
+      "HeadObject": 3,
+      "PutObject": 2,
+      "GetObject": 3,
+      "DeleteObject": 1
+    },
+    "note": "u1 is CODEC(NONE): its rewritten marks equal the old ones (a hash hit); the mutation reads u1.bin with one ranged GET (2.4 MB) and the source manifest once (assumption: one GET per column file at this size)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "HeadObject": 15,
+        "PutObject": 38,
+        "GetObject": 19,
+        "DeleteObject": 1
+      }
+    },
+    "observations": {
+      "branch_population": {
+        "fresh": 11,
+        "hash_hit": 1,
+        "adoption": 8,
+        "inline": 18,
+        "resurrect": 0
+      },
+      "blob_files": {
+        "all_1_1_0": [
+          "k.bin",
+          "k.cmrk2",
+          "u1.bin",
+          "u1.cmrk2",
+          "u2.bin",
+          "u2.cmrk2",
+          "u3.bin",
+          "u3.cmrk2",
+          "u4.bin",
+          "u4.cmrk2"
+        ],
+        "all_1_1_0_2": [
+          "k.bin",
+          "k.cmrk2",
+          "u1.bin",
+          "u1.cmrk2",
+          "u2.bin",
+          "u2.cmrk2",
+          "u3.bin",
+          "u3.cmrk2",
+          "u4.bin",
+          "u4.cmrk2"
+        ]
+      },
+      "foreground_by_family": {
+        "blob": {
+          "GetObject": 1,
+          "HeadObject": 12,
+          "PutObject": 11
+        },
+        "blob_meta": {
+          "GetObject": 1,
+          "PutObject": 11
+        },
+        "manifest": {
+          "GetObject": 3,
+          "PutObject": 2
+        },
+        "ns_files": {
+          "DeleteObject": 1,
+          "GetObject": 1,
+          "HeadObject": 3,
+          "PutObject": 2
+        },
+        "ref_catalog": {
+          "GetObject": 6
+        },
+        "ref_ckpt": {
+          "GetObject": 7,
+          "PutObject": 6
+        },
+        "ref_stream": {
+          "PutObject": 6
+        }
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "an absent body is published: one PUT (multipart above the first buffer)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 490
+    },
+    {
+      "claim": "after an absent HEAD the .meta marker is created (one conditional PUT), no GET",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 349
+    },
+    {
+      "claim": "blob_put with publication_reason absent marks a fresh blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 528
+    },
+    {
+      "claim": "the manifest body is one create-if-absent PUT, with no preliminary HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 646
+    },
+    {
+      "claim": "promote reads the manifest body once (one GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 823
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "commitRefChunk: the append, then the _ckpt contribution",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3340
+    },
+    {
+      "claim": "publishing a ckpt contribution reads _ckpt (GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 187
+    },
+    {
+      "claim": "then replaces it with If-Match (PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 195
+    },
+    {
+      "claim": "a mutable ref-table runtime admission reads the pool catalog (GET cas/ref_catalog)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 640
+    },
+    {
+      "claim": ".bin, .mrk/.mrk2/.mrk3, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed stay blobs; every other part file (data.cmrk4, primary.cidx, checksums.txt, ...) is an inline candidate",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 77
+    },
+    {
+      "claim": "an inline candidate of at most INLINE_CAP (1 MiB) rides inside the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 1010
+    },
+    {
+      "claim": "system.remote_data_paths shows an inline entry with an empty remote path",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2003
+    },
+    {
+      "claim": "a hardlinked (carried-forward) entry records a dependency with no HEAD, GET or PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 553
+    },
+    {
+      "claim": "a trusted-manifest leaf emits blob_reuse_adopt, outcome adopt, reason manifest-trust, at promote",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 944
+    },
+    {
+      "claim": "a present body: its .meta is read (one GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 419
+    },
+    {
+      "claim": "a present Clean body is adopted: blob_reuse_adopt, outcome observed, no body PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 443
+    },
+    {
+      "claim": "table-level verbatim files (mutation_N.txt, format_version.txt) live under the life's _files/",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 255
+    }
+  ],
+  "prediction_commit": "pending"
+}

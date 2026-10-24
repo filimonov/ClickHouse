@@ -1,0 +1,41 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "cas-branches.adoption",
+  "card": "cas-branches",
+  "case_id": "adoption",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, u1 UInt64 CODEC(NONE), u2 UInt64, u3 UInt64, u4 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, k * 7 AS u1, intDiv(k, 3) AS u2, k % 1000 AS u3, sipHash64(k, {seed}) AS u4 FROM numbers({rows})",
+    "rows": 300000,
+    "inserts": 1,
+    "steps": [
+      "ALTER TABLE {table} UPDATE u1 = u1 + 1 WHERE 1 SETTINGS mutations_sync = 2"
+    ],
+    "parts_new": "all"
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "One Wide part (5 columns, 300 000 rows, 12 MB uncompressed), then ALTER TABLE UPDATE u1 = u1 + 1 WHERE 1: the mutated part adopts the 4 unchanged columns by hash."
+}

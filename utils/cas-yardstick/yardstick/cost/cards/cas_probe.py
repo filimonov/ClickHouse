@@ -23,23 +23,32 @@ from .probes import CREATE_OPS, ManifestCard, _count, category, integrated, wind
 # matches. `payload` marks the families a dropped table turns into garbage; the rest are control state.
 # `maintenance` marks control state that no foreground write touches (CasLayout.h, same directory):
 # `gc/server-roots/<srid>/{owner,epoch,mount}` is the per-server lease subtree (CasLayout.h:419-449), renewed by the
-# mount runtime every `mount_renew_period` (Pool/CasMountRuntime.h:70); `gc/state`, `gc/maintenance_state`, `gc/hb`
-# and `gc/gen/...` are GC authority, cursor, heartbeat and per-round artifacts (CasLayout.h:332-390); `_pool_meta` is
-# the pool-level
-# metadata object probed at pool bootstrap and read-modify-written by the reader floor (CasLayout.h:466,
-# Pool/CasPool.cpp:123, Pool/CasPoolMeta.cpp:116).
+# mount runtime every `mount_renew_period` (Pool/CasMountRuntime.h:70); `gc/hb` is the GC heartbeat the scheduler's
+# own worker pulses (CasLayout.h:344, Gc/CasGcScheduler.cpp:499), a family of its own so heartbeat rows and round
+# rows stay disjoint by key; `gc/state`, `gc/maintenance_state` and `gc/gen/...` are GC authority, cursor and
+# per-round artifacts (CasLayout.h:332-390); `_pool_meta` is the pool-level metadata object probed at pool bootstrap
+# and read-modify-written by the reader floor (CasLayout.h:466, Pool/CasPool.cpp:123, Pool/CasPoolMeta.cpp:116);
+# `roots/` holds the loose mountpoint objects mirrored at their ClickHouse path, such as the server's startup access
+# check, and the mount-safety empty-root listing (CasLayout.h:317-329, :397, :453): no table write lands there.
 CAS_FAMILIES = [
     {'name': 'blob_meta', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+\.meta$', 'category': 'metadata',
      'payload': False},
     {'name': 'blob', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+$', 'category': 'active', 'payload': True},
     {'name': 'manifest', 'regex': r'/cas/manifests/.+/[0-9a-f]+-[0-9a-f]+/\d{6}(\.[a-z0-9]+)?$', 'category': 'active',
      'payload': True},
-    {'name': 'refs', 'regex': r'/cas/(ns/(stream|state)/|ref_catalog$)', 'category': 'metadata', 'payload': False},
+    # The ref layer by object kind (CasLayout.h:133-201, :246-268, :471-476): the immutable stream of one namespace
+    # life (`_log` transactions and `_snap` snapshots), its mutable `_ckpt`, the life's verbatim table files under
+    # `_files/`, and the pool-wide namespace catalog.
+    {'name': 'ref_stream', 'regex': r'/cas/ns/stream/', 'category': 'metadata', 'payload': False},
+    {'name': 'ref_ckpt', 'regex': r'/cas/ns/state/[^/]+/_ckpt', 'category': 'metadata', 'payload': False},
+    {'name': 'ns_files', 'regex': r'/cas/ns/state/[^/]+/_files/', 'category': 'metadata', 'payload': False},
+    {'name': 'ref_catalog', 'regex': r'/cas/ref_catalog$', 'category': 'metadata', 'payload': False},
     {'name': 'lease', 'regex': r'/gc/server-roots/', 'category': 'metadata', 'payload': False, 'maintenance': True},
-    {'name': 'gc', 'regex': r'/gc/(state|maintenance_state|hb)$|/gc/gen/', 'category': 'metadata', 'payload': False,
+    {'name': 'gc_hb', 'regex': r'/gc/hb$', 'category': 'metadata', 'payload': False, 'maintenance': True},
+    {'name': 'gc', 'regex': r'/gc/(state|maintenance_state)$|/gc/gen/', 'category': 'metadata', 'payload': False,
      'maintenance': True},
     {'name': 'pool_meta', 'regex': r'/_pool_meta$', 'category': 'metadata', 'payload': False, 'maintenance': True},
-    {'name': 'roots', 'regex': r'/roots/', 'category': 'metadata', 'payload': False},
+    {'name': 'roots', 'regex': r'/roots/', 'category': 'metadata', 'payload': False, 'maintenance': True},
 ]
 GC_ROUNDS_SQL = ("SELECT toUnixTimestamp64Micro(minIf(event_time_microseconds, event_type = 'Start')), "
                  "toUnixTimestamp64Micro(maxIf(event_time_microseconds, event_type = 'Finish')), "
@@ -225,8 +234,11 @@ class CasExpect(ManifestCard):
         for ops in integrated(draft).values():
             for op, c in ops.items():
                 counted[op] = counted.get(op, 0) + c['attempts']
-        expect = [r['seq'] for r in rows if r.get('expect_negotiated')]
+        negotiated = [r for r in rows if r.get('expect_negotiated')]
+        expect = [r['seq'] for r in negotiated]
         return {**super().observe(ctx, draft),
+                'expect_negotiated_ops': sorted({r['op'] for r in negotiated}),
+                'plain_put_rows': sum(1 for r in rows if r['op'] == 'PutObject' and not r.get('expect_negotiated')),
                 'request_attribution': {'method': 'control_families',
                                         'rounds': {r: len(v) for r, v in self.state(ctx)['gc_rounds'].items()}},
                 'expect_negotiated_rows': len(expect), 'expect_negotiated_seqs_distinct': len(set(expect)),
@@ -238,7 +250,11 @@ class CasExpect(ManifestCard):
         obs = draft['observations']
         want = self.predicted(ctx)['inputs']['expect_negotiated_rows_min']
         out[f'expect_negotiated_rows>={want}'] = (True, obs['expect_negotiated_rows'] >= want)
-        # One negotiated PUT is one attempt: the interim `100 Continue` never adds a row or an attempt.
-        out['expect_attempts_counted_once'] = (obs['window_rows_by_op'], obs['window_attempts_by_op'])
+        # Only conditional PUTs negotiate (PocoHTTPClient.cpp:665), and a negotiated PUT is one attempt: the interim
+        # `100 Continue` adds no row. The classified PutObject attempts (foreground plus maintenance) less the plain
+        # PUT rows bound the negotiated rows from above; a negotiated row the classification lost breaks the bound.
+        out['expect_negotiated_ops'] = (True, set(obs['expect_negotiated_ops']) <= {'PutObject'})
+        room = obs['window_attempts_by_op'].get('PutObject', 0) - obs['plain_put_rows']
+        out['expect_rows_within_put_attempts'] = (True, obs['expect_negotiated_rows'] <= room)
         out['no_gc_rounds'] = (0, sum(obs['request_attribution']['rounds'].values()))
         return out

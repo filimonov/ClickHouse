@@ -377,7 +377,8 @@ class CasGcCohortTest(unittest.TestCase):
             led.add('HeadObject', f'{CAS_P}/blobs/ch128/aa/aa33')
             self.assertEqual(cas_probe.cohort(led.rows[1:]), {('b', BLOB), ('b', MANIFEST_KEY)})
             names = [L.family_of(cas_probe.CAS_FAMILIES, k)['name'] for k in CONTROL]
-            self.assertEqual(names, ['blob_meta', 'refs', 'refs', 'refs', 'gc', 'gc', 'gc', 'lease', 'pool_meta', 'roots'])
+            self.assertEqual(names, ['blob_meta', 'ref_stream', 'ref_ckpt', 'ref_catalog', 'gc', 'gc_hb', 'gc', 'lease', 'pool_meta',
+                                     'roots'])
             # The pass prefix holds the policy name `cas`; anchored regexes never take it for a layout key.
             self.assertIsNone(L.family_of(cas_probe.CAS_FAMILIES, 'run/cas/probe_cas_gc_cohort/gate/k1/r1/x'))
 
@@ -439,19 +440,20 @@ class CasGcCohortTest(unittest.TestCase):
         control = [f'{base}/gc/server-roots/yardstick-r1/mount', f'{base}/gc/server-roots/yardstick-r2/epoch',
                    f'{base}/gc/server-roots/yardstick-r1/store/9a7/mount', f'{base}/gc/hb', f'{base}/gc/state',
                    f'{base}/gc/maintenance_state', f'{base}/gc/gen/1/attempt/1/blob_target/0/0',
-                   f'{base}/gc/gen/0/attempt/0/fold_seal', f'{base}/_pool_meta']
+                   f'{base}/gc/gen/0/attempt/0/fold_seal', f'{base}/_pool_meta',
+                   f'{base}/roots/yardstick-r1/clickhouse_access_check_b75a1931-bc70-4380-b7df-86fd56f821a4']
         payload = [f'{base}/blobs/ch128/72/7293cdc82844686a6a356fb83506d0f6',
                    f'{base}/blobs/ch128/72/7293cdc82844686a6a356fb83506d0f6.meta',
                    f'{base}/cas/manifests/yardstick-r1/store/9a7/9a738b50-4881-4eed-8d2f-ab13dd48ea80@cas@/'
-                   '0000000000000001-0000000000000001/000001.zst', f'{base}/cas/ref_catalog',
-                   f'{base}/roots/yardstick-r1/clickhouse_access_check_b75a1931-bc70-4380-b7df-86fd56f821a4']
+                   '0000000000000001-0000000000000001/000001.zst', f'{base}/cas/ref_catalog']
         rows = [{'caller': 'r1', 't_start_us': 5, 'op': 'GetObject', 'key': k} for k in control + payload]
         rows += [{'caller': 'r1', 't_start_us': 5, 'op': 'DeleteObjects', 'key': '', 'delete_keys': control[:2]},
                  {'caller': 'r1', 't_start_us': 5, 'op': 'DeleteObjects', 'key': '', 'delete_keys': control[:1] + payload[:1]}]
         out = cas_probe.attribute(rows, {'r1': []}, cas_probe.CAS_FAMILIES)
         self.assertEqual([r['key'] for r in out['maintenance']], control + [''])
         self.assertEqual([r['key'] for r in out['foreground']], payload + [''])
-        self.assertEqual([f['name'] for f in cas_probe.CAS_FAMILIES if f.get('maintenance')], ['lease', 'gc', 'pool_meta'])
+        self.assertEqual([f['name'] for f in cas_probe.CAS_FAMILIES if f.get('maintenance')],
+                         ['lease', 'gc_hb', 'gc', 'pool_meta', 'roots'])
 
     def test_classify_without_collected_rounds_fails(self):
         card = CARDS['probe_cas_gc_cohort']
@@ -501,7 +503,7 @@ class CasGcCohortTest(unittest.TestCase):
 class CasExpectTest(unittest.TestCase):
     """The `Expect: 100-continue` probe: a low `expect_continue_min_bytes` makes CAS conditional PUTs negotiate."""
 
-    def run_probe(self, tmp, expect=True, duplicate=False, gc_log=False):
+    def run_probe(self, tmp, expect=True, duplicate=False, gc_log=False, drop_negotiated=False):
         card = CARDS['probe_cas_expect']
         led = Ledger(os.path.join(tmp, 'ledger'))
         led.add('PutObject', BLOB, req_payload_bytes=1000)
@@ -515,6 +517,8 @@ class CasExpectTest(unittest.TestCase):
         split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
         if duplicate:
             split['foreground'].append(led.rows[2])
+        if drop_negotiated:  # a negotiated row the counts lost: more negotiated rows than PUT attempts
+            split['foreground'] = [r for r in split['foreground'] if not r.get('expect_negotiated')]
         end = led.rows[-1]['seq'] + 1
         draft = {'ledger': {'foreground': L.summarize(split['foreground']), 'maintenance': L.summarize(split['maintenance'])},
                  'window': {'crossing': [], 'start_seq': 1, 'end_seq': end, 't_start_us': led.rows[0]['t_us'],
@@ -546,7 +550,16 @@ class CasExpectTest(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as tmp2:
                     _, ctx2, bad = self.run_probe(tmp2, expect=False, duplicate=True)
                     self.assertEqual(failing(card.assertions(ctx2, bad)),
-                                     ['expect_attempts_counted_once', 'expect_negotiated_rows>=1', 'ledger.r1.PutObject'])
+                                     ['expect_negotiated_rows>=1', 'ledger.r1.PutObject'])
+                with tempfile.TemporaryDirectory() as tmp3:
+                    _, ctx3, lost = self.run_probe(tmp3, drop_negotiated=True)
+                    self.assertIn('expect_rows_within_put_attempts', failing(card.assertions(ctx3, lost)))
+
+    def test_negotiated_row_on_another_op_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft = self.run_probe(tmp)
+            draft['observations']['expect_negotiated_ops'] = ['GetObject', 'PutObject']
+            self.assertIn('expect_negotiated_ops', failing(card.assertions(ctx, draft)))
 
     def test_gc_rounds_in_the_log_fail_the_gc_off_card(self):
         with tempfile.TemporaryDirectory() as tmp:

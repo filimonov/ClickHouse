@@ -1,0 +1,72 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-under-load.default",
+  "policy": "cas",
+  "inputs": {
+    "role": "validation",
+    "run_in": "Task 7",
+    "compare": "reclaimed_bytes vs retired_bytes over the window"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "retired_objects": {
+        "min": 1
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "cas_gc_interval_sec: seconds between GC rounds",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    },
+    {
+      "claim": "the scheduler loop waits a full interval after each round returns, so a round starts interval seconds after the previous one finished",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 349
+    },
+    {
+      "claim": "a condemned blob graduates to delete_pending in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 65
+    },
+    {
+      "claim": "a delete_pending blob is deleted with an exact-token delete in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 66
+    },
+    {
+      "claim": "cas_gc_log Finish rows carry the per-round counters",
+      "path": "tmp/src-26.8/src/Interpreters/ContentAddressedGarbageCollectionLog.cpp",
+      "line": 48
+    },
+    {
+      "claim": "blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "gc/hb is the advisory GC heartbeat",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 344
+    },
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    }
+  ],
+  "prediction_commit": "pending"
+}

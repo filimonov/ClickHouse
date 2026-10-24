@@ -1,0 +1,40 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "gc-scale.objects-10k",
+  "card": "gc-scale",
+  "case_id": "objects-10k",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "measure",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "min_bytes_for_wide_part": 0
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.cas_gc_interval_sec": "10"
+    }
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns_n": 100,
+    "rows": 1000,
+    "parts": 49,
+    "manual_rounds": 2,
+    "order_by": "k",
+    "expected_rows": 49000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 1800,
+  "description": "A pool of about 10k objects (49 Wide parts of 100 CODEC(NONE) columns, 1 000 rows) under SYSTEM CAS GC STOP, then two manual rounds: the first folds every new edge, the second has nothing new."
+}

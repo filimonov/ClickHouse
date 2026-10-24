@@ -1,0 +1,114 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cas-drop.table-sync",
+  "policy": "cas",
+  "inputs": {
+    "drop_requests": {
+      "GetObject": 9,
+      "PutObject": 7,
+      "HeadObject": 1,
+      "DeleteObject": 1,
+      "ListObjectsV2": 2
+    },
+    "basis": "drop_requests: measured shape from smoke run cost-20261024T073204Z (gc-lifecycle.drop) with GC off here, so no request falls inside a round"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "HeadObject": 6,
+        "PutObject": 52,
+        "GetObject": 45,
+        "DeleteObject": 1,
+        "ListObjectsV2": 2
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "an absent body is published: one PUT (multipart above the first buffer)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 490
+    },
+    {
+      "claim": "after an absent HEAD the .meta marker is created (one conditional PUT), no GET",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 349
+    },
+    {
+      "claim": "blob_put with publication_reason absent marks a fresh blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 528
+    },
+    {
+      "claim": "the manifest body is one create-if-absent PUT, with no preliminary HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 646
+    },
+    {
+      "claim": "promote reads the manifest body once (one GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 823
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "commitRefChunk: the append, then the _ckpt contribution",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3340
+    },
+    {
+      "claim": "publishing a ckpt contribution reads _ckpt (GET)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 187
+    },
+    {
+      "claim": "then replaces it with If-Match (PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 195
+    },
+    {
+      "claim": "a mutable ref-table runtime admission reads the pool catalog (GET cas/ref_catalog)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 640
+    },
+    {
+      "claim": ".bin, .mrk/.mrk2/.mrk3, .cmrk/.cmrk2/.cmrk3, primary.idx and data.packed stay blobs; every other part file (data.cmrk4, primary.cidx, checksums.txt, ...) is an inline candidate",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 77
+    },
+    {
+      "claim": "an inline candidate of at most INLINE_CAP (1 MiB) rides inside the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 1010
+    },
+    {
+      "claim": "system.remote_data_paths shows an inline entry with an empty remote path",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2003
+    },
+    {
+      "claim": "table-level verbatim files (mutation_N.txt, format_version.txt) live under the life's _files/",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 255
+    },
+    {
+      "claim": "the whole-pool namespace catalog cas/ref_catalog",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 473
+    }
+  ],
+  "prediction_commit": "pending"
+}

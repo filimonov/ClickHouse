@@ -1,0 +1,55 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "lease.idle-20min",
+  "policy": "cas",
+  "inputs": {
+    "idle_s": 1200,
+    "role": "holdout",
+    "rule": "one conditional PUT per mount_renew_period (10 s) from the last committed attempt start: rate = 1 / (10 s + attempt latency)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "lease_ops": [
+        "PutObject"
+      ],
+      "lease_renewals": {
+        "min": 119,
+        "max": 121
+      },
+      "lease_requests_per_s": {
+        "min": 0.095,
+        "max": 0.1005
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "cas_mount_renew_period_ms defaults to 10 000 ms",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 74
+    },
+    {
+      "claim": "the next renewal is due renew_period after the last committed attempt start",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp",
+      "line": 690
+    },
+    {
+      "claim": "one renewal is one conditional replace (PUT If-Match) of the mount object",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.cpp",
+      "line": 1623
+    },
+    {
+      "claim": "gc/server-roots/<srid>/mount is the mount lease",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 446
+    }
+  ],
+  "prediction_commit": "pending"
+}

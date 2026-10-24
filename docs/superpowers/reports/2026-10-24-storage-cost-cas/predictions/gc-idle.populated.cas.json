@@ -1,0 +1,93 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-idle.populated",
+  "policy": "cas",
+  "inputs": {
+    "heartbeat_rule": "2 requests per pulse every interval / 4 = 2.5 s, plus one pulse per round on acquiring the lease: 0.8 + 2 * rounds / window per s",
+    "scheduler_rule": "Start of round n+1 = Finish of round n + interval (10 s)",
+    "idle_round_by_family": {
+      "batch": {
+        "ListObjectsV2": 3
+      },
+      "gc": {
+        "GetObject": 8,
+        "PutObject": 1
+      },
+      "lease": {
+        "GetObject": 1
+      },
+      "ref_catalog": {
+        "GetObject": 3
+      }
+    }
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "objects": 9949,
+      "round_starts": {
+        "min": 3,
+        "max": 4
+      },
+      "requests_per_idle_round": 16,
+      "heartbeat_requests_per_s": {
+        "min": 0.85,
+        "max": 1.1
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the heartbeat worker pulses every max(50 ms, interval / 4)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 81
+    },
+    {
+      "claim": "only the leader pulses",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 495
+    },
+    {
+      "claim": "a round that acquires the lease pulses once more",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 182
+    },
+    {
+      "claim": "one pulse is a GET of gc/hb and one conditional PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp",
+      "line": 5076
+    },
+    {
+      "claim": "the scheduler loop waits a full interval after each round returns, so a round starts interval seconds after the previous one finished",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 349
+    },
+    {
+      "claim": "a round with no changed shard and no due graduation is Deferred: no fold",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 303
+    },
+    {
+      "claim": "cas_gc_interval_sec: seconds between GC rounds",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    },
+    {
+      "claim": "gc/hb is the advisory GC heartbeat",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 344
+    },
+    {
+      "claim": "gc/server-roots/<srid>/mount is the mount lease",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 446
+    }
+  ],
+  "prediction_commit": "pending"
+}
