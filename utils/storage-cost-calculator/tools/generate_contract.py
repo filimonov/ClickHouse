@@ -355,7 +355,7 @@ def cite(text, commit):
     """`tmp/src-26.8/src/X.cpp:12` -> `src/X.cpp:12 @ <commit>`: the reader can open the file at the measured build."""
     if not commit:
         return text.replace(SOURCE_PREFIX, "")
-    return re.sub(r"(?:tmp/src-26\.8/)?(src/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)", rf"\1 @ {commit}", text)
+    return re.sub(r"(?:tmp/src-26\.8/)?(src/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)(?![\d-]| @ )", rf"\1 @ {commit}", text)
 
 
 def measured_build(evidence):

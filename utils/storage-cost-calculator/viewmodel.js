@@ -546,7 +546,7 @@
   function cite(text, commit) {
     if (typeof text !== 'string') return text;
     if (!commit) return text.replace(/tmp\/src-26\.8\//g, '');
-    return text.replace(/(?:tmp\/src-26\.8\/)?(src\/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)/g, `$1 @ ${commit}`);
+    return text.replace(/(?:tmp\/src-26\.8\/)?(src\/[A-Za-z0-9_./-]+:\d+(?:-\d+)?)(?![\d-]| @ )/g, `$1 @ ${commit}`);
   }
 
   // Reason segments of one variant: "<variant>.<operation>: text" pieces, split where a new prefix starts.

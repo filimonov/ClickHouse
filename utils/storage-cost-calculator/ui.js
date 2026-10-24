@@ -211,7 +211,7 @@
   // the low-level assumptions at the bottom. Hidden rows (table keys, model constants) are only in the info dialog.
   function renderInputs(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
-    const groups = vm.inputs.groups.map((g) => `<p class="group-note">${esc(g.label)}. Lock the two you know; the third is derived.</p>`).join('');
+    const groups = vm.inputs.groups.map((g) => `<p class="group-note">${esc(g.label)}. Lock two; the third is derived.</p>`).join('');
     const of = (b, tier) => b.fields.filter((f) => f.tier === tier);
     const workload = vm.inputs.blocks.flatMap((b) => of(b, 'workload'));
     const head = `<section class="panel-block" data-block="simple"><h2>Inputs</h2>${groups}${workload.map((f) => renderField(f, page, true)).join('')}`

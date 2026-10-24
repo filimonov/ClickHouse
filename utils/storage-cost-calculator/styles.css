@@ -245,5 +245,24 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .modal ul.why { padding-left: 18px; font-size: 14px; }
 .low-group h3 { font-size: 13px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 0; }
 .profile-note { margin-top: 8px; }
-.card .btn-small[data-action="info"] { margin-top: 8px; }
-.panel-inputs .field { padding: 7px 0; }
+.card .btn-small[data-action="info"] { margin-top: 8px; align-self: flex-start; width: auto; }
+/* Compact form: label and control share a row, the slider and notes span below. */
+.panel-inputs .field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 46%); column-gap: 10px; row-gap: 2px; align-items: center; padding: 6px 0; }
+.panel-inputs .field-head { margin: 0; grid-column: 1; grid-row: 1; }
+.panel-inputs .field-control { display: contents; }
+.panel-inputs .field-control > :not(input[type="range"]) { grid-column: 2; grid-row: 1; }
+.panel-inputs .field-control > input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+.panel-inputs .field > .field-note { grid-column: 1 / -1; margin: 0; }
+.panel-inputs .field-control > input[type="range"] { height: 14px; margin: 0; }
+.panel-inputs .field-control .control input[type="number"] { min-width: 64px; }
+/* Closed blocks sit two to a row; an open block takes the full width. */
+.panel-inputs .inputs { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel-inputs .inputs > .panel-block { flex: 1 1 100%; margin-bottom: 2px; }
+.panel-inputs .inputs > .block { flex: 1 1 calc(50% - 3px); min-width: 0; margin: 0; }
+.panel-inputs .inputs > .block[open], .panel-inputs .inputs > .block[data-block="advanced"] { flex-basis: 100%; }
+.panel-inputs .block > summary { padding: 8px 12px; font-size: 14px; }
+.panel-inputs .field-head { gap: 2px 4px; }
+.panel-inputs .field-head .field-label { overflow-wrap: normal; }
+.panel-inputs .control select.unit { max-width: 84px; }
+.panel-inputs .field-head .badge, .panel-inputs .field-head .btn-small { font-size: 11px; padding: 0 6px; line-height: 18px; }
+.panel-inputs .group-note { margin: 4px 0; padding: 4px 8px; }

@@ -450,6 +450,7 @@ class RegistryUiTest(unittest.TestCase):
     def test_cite_names_the_measured_build(self):
         self.assertEqual(gc.cite("see tmp/src-26.8/src/Core/Settings.cpp:178 and src/A.cpp:1-3", "09d0772a842"),
                          "see src/Core/Settings.cpp:178 @ 09d0772a842 and src/A.cpp:1-3 @ 09d0772a842")
+        self.assertEqual(gc.cite("src/A.cpp:12 @ 09d0772a842", "09d0772a842"), "src/A.cpp:12 @ 09d0772a842")
 
 
 if __name__ == "__main__":

@@ -113,4 +113,6 @@ test('test_cites_point_at_the_measured_build', () => {
   const vm = require('../viewmodel.js');
   assert.equal(vm.cite('see tmp/src-26.8/src/Core/Settings.cpp:178', '09d0772a842'), 'see src/Core/Settings.cpp:178 @ 09d0772a842');
   assert.equal(vm.cite('tmp/src-26.8/src/A.cpp:1-3', null), 'src/A.cpp:1-3');
+  // Already cited text is left as it is.
+  assert.equal(vm.cite('src/A.cpp:12 @ 09d0772a842', '09d0772a842'), 'src/A.cpp:12 @ 09d0772a842');
 });
