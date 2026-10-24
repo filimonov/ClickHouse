@@ -564,6 +564,9 @@
     return { input: inputId, points, breakEven };
   }
 
-  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep });
+  // The evaluation context of `inputs`: pinned constants and registry derivations included (presets.coverageReport).
+  const evaluationInputs = (contract, inputs) => buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), unsupportedRefs(contract)).inputs;
+
+  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -44,8 +44,9 @@
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
-      // 1,000-row inserts lie below the measured mutation part sizes; the page shows the dependent EBS numbers as extrapolated.
-      expected_extrapolated: { ebs: ['op_write_bytes'] },
+      // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
+      // replica fetch transfer was measured at (acquire_bytes); the page shows the dependent numbers as extrapolated.
+      expected_extrapolated: { ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'], cas: ['acquire_bytes'] },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
     // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts
@@ -256,7 +257,10 @@
   function coverageReport(contract, scenario) {
     const problems = [];
     const declared = [];
+    const info = [];
     const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
+    // Validity may sit on a derived quantity (part_rows): check against what the pipeline evaluates, not raw inputs.
+    const evaluated = pipeline().evaluationInputs(contract, res.inputs);
     problems.push(...res.problems);
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
     for (const id of scenario.locks) if (!byId.has(id)) problems.push(`lock ${id} is not a registry id`);
@@ -274,10 +278,12 @@
       const id = d.id;
       // A registry row that mirrors a coefficient follows that coefficient's reach.
       if (coefIds.has(id) && skipped.has(id)) continue;
-      if (!res.inputs.has(d.param)) { problems.push(`${d.owner}: validity parameter ${d.param} has no value to check`); continue; }
-      const v = res.inputs.get(d.param);
+      if (!evaluated.has(d.param)) { problems.push(`${d.owner}: validity parameter ${d.param} has no value to check`); continue; }
+      const v = evaluated.get(d.param);
       if (typeof v === 'number' && v >= d.range[0] && v <= d.range[1]) continue;
       const text = `${d.owner}: ${d.param} = ${JSON.stringify(v)} is outside [${d.range[0]}, ${d.range[1]}]`;
+      // A formula derived from the source is exact outside the range it was verified at: information, not a gap.
+      if (d.basis === 'derived') { info.push(`${text} (derived formula, verified range only)`); continue; }
       const variants = coefIds.has(id) ? contract.variants.filter((x) => reachedBy.get(x).has(id)) : [];
       if (variants.length && variants.every((x) => (expected[x] || []).includes(id))) {
         for (const x of variants) seenOut.add(`${x}:${id}`);
@@ -296,7 +302,7 @@
       else problems.push(`lookup miss ${m}: the table has no entry for this key`);
     }
     for (const m of allowed) if (!misses.includes(m)) problems.push(`declared lookup miss ${m} does not occur`);
-    return { problems, declared };
+    return { problems, declared, info };
   }
 
   // Lookup keys the scenario reaches that a table does not hold: "<variant>.<operation>: <key>" per miss.

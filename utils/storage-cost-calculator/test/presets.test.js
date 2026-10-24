@@ -147,3 +147,27 @@ test('test_coverage_fails_on_a_lookup_miss_unless_declared', () => {
     pl.run = real;
   }
 });
+
+test('test_coverage_checks_derived_quantities_and_reports_derived_formulas_as_information', () => {
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'model-contract.json'), 'utf8'));
+  const c = contract.load(raw);
+  // part_rows is a registry derivation; a range on it is checked against the evaluated value.
+  const q = c.registry.find((x) => x.kind === 'derivation' && x.rule);
+  assert.ok(q, 'the live registry has a derivation');
+  const withRange = JSON.parse(JSON.stringify(raw));
+  const k = withRange.coefficients.find((x) => x.kind !== 'table' && typeof x.value === 'number');
+  withRange.formulas.ebs.storage.ledger_rows[0].expr = { kind: 'mul', dim: withRange.formulas.ebs.storage.ledger_rows[0].expr.dim,
+    a: withRange.formulas.ebs.storage.ledger_rows[0].expr, b: { kind: 'coef', id: k.id, dim: k.dim } };
+  for (const basis of ['fitted', 'derived']) {
+    const x = JSON.parse(JSON.stringify(withRange));
+    const kk = x.coefficients.find((y) => y.id === k.id);
+    delete kk.validity;
+    kk.verified_range = { [q.id]: [-2, -1] };
+    kk.basis = basis;
+    const r = presets.coverageReport(contract.load(x), { values: {}, locks: [] });
+    const hit = (list) => list.some((t) => t.startsWith(`coefficient ${k.id}: ${q.id} = `));
+    assert.equal(r.problems.some((t) => /has no value to check/.test(t) && t.includes(q.id)), false, 'a derived quantity has a value');
+    assert.equal(hit(r.problems), basis === 'fitted', `${basis}: problem`);
+    assert.equal(hit(r.info), basis === 'derived', `${basis}: information`);
+  }
+});
