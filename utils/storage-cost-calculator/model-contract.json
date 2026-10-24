@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "60725a0afee41488",
+ "version": "41a77f922bb1fec7",
  "manifest": {
   "code_sha256": "e29c1bfa4ce2c0212b98ba35c9636270512297d1c486b4116cc11b07c00a1903",
   "code_files": {
@@ -14,20 +14,20 @@
    "viewmodel.js": "23ea3fb2148c0ee7e1dd73f9deed90cee2d2e778118ec1c8614ed4547c7ef37f"
   },
   "code_missing": [],
-  "contract_version": "60725a0afee41488",
+  "contract_version": "41a77f922bb1fec7",
   "registry_version": "0.3.0",
   "registry_sha256": "340db1dfa01aa209bbdb768fa3973d758f843fe8886a9bdccb8abe762549137c",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "ceea9e40bdc9c47d3f4d6421c42690cd3a5204e5637d92b8da8727f893d57d5a",
+  "coverage_sha256": "9824676734f96a4db3e7b347a11047de8dde9147a6908005c4d998d8862e8b2c",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
    {
     "report": "2026-10-24-storage-cost-cas",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
-    "rig_commit": "4e79697268e92993159b79bccdbd22bcb6b7a1a5",
+    "rig_commit": "e2b8b757a14f1074c717355d4639963dc15495a2",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "raw_sha256sums": "8b8748059c120a82859ee548b217684b5adf685180e36d0e06d00623e3ab0340"
+    "raw_sha256sums": "560fc9370abbed22485e74d608bcf03c9ce9aa2d4b71873b4db483c1c83013d6"
    },
    {
     "report": "2026-10-24-storage-cost-lifecycle",
@@ -49,11 +49,18 @@
     "rig_commit": "9658a83a36ebb814f88926692642bb7dd15a8fd9",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "9a9a2fb0e9067c5cbad534ab849fc94926202fb04d56d4742c1df78ed292390a"
+   },
+   {
+    "report": "2026-10-24-storage-cost-s3plain",
+    "commit": "pending",
+    "rig_commit": "pending",
+    "binary_sha256": "pending",
+    "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "b636947715b4a5ee63017e266c6ea0ad43b80e6a6685010ed87a1531b2fbe000"
+  "breakeven_sha256": "3815a2d7ef8c4c5a0d91bc12fe53fb501622726a205cee91703ec3cb1376f5c5"
  },
- "evidence_statement": "Built from 4 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 10 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 10 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -9421,12 +9428,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k3",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k3"
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k1",
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k2",
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k3",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k1",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k2",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -9434,12 +9441,12 @@
    "status": "ok",
    "rule": "distinct blob uploads per part: Compact 1 (data.bin; data.cmrk4 and primary.cidx are inline); Wide 2 per substream (.bin and .cmrk2), files with equal bytes collapsing into one upload; a String column has 2 substreams (.bin, .size.bin), Nullable 2, Array 2, LowCardinality 2",
    "holdout_measurements": [
-    "cost-20261024T082909Z/cas/cas-branches/inline/k1",
-    "cost-20261024T082909Z/cas/cas-branches/inline/k2",
-    "cost-20261024T082909Z/cas/cas-branches/inline/k3",
-    "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k1",
-    "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k2",
-    "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k3"
+    "cost-20261024T101628Z/cas/cas-branches/inline/k1",
+    "cost-20261024T101628Z/cas/cas-branches/inline/k2",
+    "cost-20261024T101628Z/cas/cas-branches/inline/k3",
+    "cost-20261024T101628Z/cas/cas-branches/mix-holdout-2/k1",
+    "cost-20261024T101628Z/cas/cas-branches/mix-holdout-2/k2",
+    "cost-20261024T101628Z/cas/cas-branches/mix-holdout-2/k3"
    ]
   },
   {
@@ -9485,18 +9492,18 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
-     "cost-20261024T082909Z/cas/cas-branches/fresh/k3",
-     "cost-20261024T082909Z/cas/cas-branches/hash-hit/k1",
-     "cost-20261024T082909Z/cas/cas-branches/hash-hit/k2",
-     "cost-20261024T082909Z/cas/cas-branches/hash-hit/k3",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
-     "cost-20261024T082909Z/cas/cas-branches/adoption/k3",
-     "cost-20261024T082909Z/cas/cas-branches/staging-peak/k1",
-     "cost-20261024T082909Z/cas/cas-branches/staging-peak/k2",
-     "cost-20261024T082909Z/cas/cas-branches/staging-peak/k3"
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k1",
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k2",
+     "cost-20261024T101628Z/cas/cas-branches/fresh/k3",
+     "cost-20261024T101628Z/cas/cas-branches/hash-hit/k1",
+     "cost-20261024T101628Z/cas/cas-branches/hash-hit/k2",
+     "cost-20261024T101628Z/cas/cas-branches/hash-hit/k3",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k1",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k2",
+     "cost-20261024T101628Z/cas/cas-branches/adoption/k3",
+     "cost-20261024T101628Z/cas/cas-branches/staging-peak/k1",
+     "cost-20261024T101628Z/cas/cas-branches/staging-peak/k2",
+     "cost-20261024T101628Z/cas/cas-branches/staging-peak/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -9554,12 +9561,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k1",
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k2",
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k3",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k1",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k2",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -9568,12 +9575,12 @@
    "fit": {
     "method": "per op and key family of the first (fold) and second (Deferred) manual round on a populated pool; the fold reads one manifest per new part and one ref log record per transaction (3 per inserted part); heartbeat rows (gc_hb) excluded",
     "residuals": {
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1": 0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2": 0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3": 0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1": 0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2": 0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3": 0
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k1": 0,
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k2": 0,
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k3": 0,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k1": 0,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k2": 0,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k3": 0
     }
    },
    "unsupported_terms": {
@@ -9590,9 +9597,9 @@
      "gc_round_term"
     ],
     "values": {
-     "fold_base": 260.4,
-     "fold_per_part": 2.924,
-     "deferred_round": 26.5
+     "fold_base": 268.6,
+     "fold_per_part": 3.614,
+     "deferred_round": 26.7
     }
    },
    "validity": {
@@ -9602,7 +9609,7 @@
     ]
    },
    "tolerance": {
-    "abs": 17.8,
+    "abs": 33.7,
     "rel": 0
    },
    "evidence": {
@@ -9610,12 +9617,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k1",
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k2",
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k3",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k1",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k2",
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -9624,17 +9631,17 @@
    "fit": {
     "method": "least squares of the fold round duration_ms (system.cas_gc_log Finish) on the pool parts; the tolerance covers the hold-out residuals too",
     "residuals": {
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1": 12.0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2": -10.0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3": -2.0,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1": 2.3,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2": -1.7,
-     "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3": -0.7
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k1": -4.7,
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k2": 5.3,
+     "cost-20261024T101628Z/cas/gc-scale/objects-1k/k3": -0.7,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k1": 1.3,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k2": 32.3,
+     "cost-20261024T101628Z/cas/gc-scale/objects-10k/k3": -33.7
     },
     "holdout_residuals": {
-     "cost-20261024T082909Z/cas/gc-scale/objects-3k/k1": 14.8,
-     "cost-20261024T082909Z/cas/gc-scale/objects-3k/k2": 17.8,
-     "cost-20261024T082909Z/cas/gc-scale/objects-3k/k3": 10.8
+     "cost-20261024T101628Z/cas/gc-scale/objects-3k/k1": 6.2,
+     "cost-20261024T101628Z/cas/gc-scale/objects-3k/k2": 14.2,
+     "cost-20261024T101628Z/cas/gc-scale/objects-3k/k3": -0.8
     }
    }
   },
@@ -9647,9 +9654,9 @@
      "gc_stage"
     ],
     "values": {
-     "condemn": 0.8558,
-     "manifest_delete": 0.8532,
-     "blob_delete": 2.822
+     "condemn": 0.8473,
+     "manifest_delete": 0.8448,
+     "blob_delete": 2.8199
     }
    },
    "validity": {
@@ -9667,9 +9674,9 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
-     "cost-20261024T082909Z/cas/gc-lifecycle/drop/k1",
-     "cost-20261024T082909Z/cas/gc-lifecycle/drop/k2",
-     "cost-20261024T082909Z/cas/gc-lifecycle/drop/k3"
+     "cost-20261024T101628Z/cas/gc-lifecycle/drop/k1",
+     "cost-20261024T101628Z/cas/gc-lifecycle/drop/k2",
+     "cost-20261024T101628Z/cas/gc-lifecycle/drop/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -9683,62 +9690,62 @@
    "rule": "seconds from retirement to a stage = value x (cas_gc_interval_s + round duration); the value is (rounds to the stage - phase of the retire in its interval), phase in [0, 1): the tolerance is that phase",
    "fit_seconds_at_10s": {
     "condemn": [
-     8.644668,
-     8.834646
+     8.891396,
+     8.95256
     ],
     "manifest_delete": [
-     8.616741,
-     8.809454
+     8.864291,
+     8.928745
     ],
     "blob_delete": [
-     28.859274,
-     28.934649
+     28.983832,
+     31.065293
     ]
    },
    "spread": {
     "condemn": [
-     0.8486,
-     0.8658
+     0.8136,
+     0.8669
     ],
     "manifest_delete": [
-     0.8459,
-     0.8634
+     0.8111,
+     0.8642
     ],
     "blob_delete": [
-     2.7976,
-     2.8354
+     2.7941,
+     2.8399
     ]
    },
    "holdout_periods": {
-    "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k1": {
-     "condemn": 0.9652,
-     "manifest_delete": 0.9648,
-     "blob_delete": 2.9642
+    "cost-20261024T101628Z/cas/gc-lifecycle/drop-60s-12/k1": {
+     "condemn": 0.9661,
+     "manifest_delete": 0.9657,
+     "blob_delete": 2.9677
     },
-    "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k2": {
-     "condemn": 0.9687,
-     "manifest_delete": 0.9682,
-     "blob_delete": 2.9624
+    "cost-20261024T101628Z/cas/gc-lifecycle/drop-60s-12/k2": {
+     "condemn": 0.9912,
+     "manifest_delete": 0.9899,
+     "blob_delete": 2.977
     },
-    "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k3": {
-     "condemn": 0.9838,
-     "manifest_delete": 0.9831,
-     "blob_delete": 2.9736
+    "cost-20261024T101628Z/cas/gc-lifecycle/drop-60s-12/k3": {
+     "condemn": 0.9638,
+     "manifest_delete": 0.9634,
+     "blob_delete": 2.9672
     },
-    "cost-20261024T082909Z/cas/gc-lifecycle/merge/k1": {
-     "condemn": 0.7942,
-     "manifest_delete": 0.792,
-     "blob_delete": 2.7831
+    "cost-20261024T101628Z/cas/gc-lifecycle/merge/k1": {
+     "condemn": 0.8183,
+     "manifest_delete": 0.8143,
+     "blob_delete": 2.7561
     },
-    "cost-20261024T082909Z/cas/gc-lifecycle/merge/k2": {
-     "condemn": 0.8636,
-     "manifest_delete": 0.8539,
-     "blob_delete": 2.8577
+    "cost-20261024T101628Z/cas/gc-lifecycle/merge/k2": {
+     "condemn": 0.8924,
+     "manifest_delete": 0.8899,
+     "blob_delete": 2.8444
     },
-    "cost-20261024T082909Z/cas/gc-lifecycle/merge/k3": {
-     "condemn": 0.76,
-     "manifest_delete": 0.7576,
-     "blob_delete": 2.7689
+    "cost-20261024T101628Z/cas/gc-lifecycle/merge/k3": {
+     "condemn": 0.7802,
+     "manifest_delete": 0.778,
+     "blob_delete": 2.7815
     }
    }
   },
