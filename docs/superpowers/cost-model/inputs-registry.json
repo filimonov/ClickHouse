@@ -7934,39 +7934,6 @@
       "status": "ok"
     },
     {
-      "id": "replacement_requests_per_part",
-      "block": "topology_recovery",
-      "label": "Requests per part when a new replica joins a populated table (cut: replacement.default is a P2 case)",
-      "kind": "measured",
-      "scope": "cluster",
-      "unit": "count",
-      "value_type": "table",
-      "enum": null,
-      "table": {
-        "index": [
-          "variant_id",
-          "replication_op"
-        ],
-        "dim": "count"
-      },
-      "default": 0,
-      "rule": null,
-      "coef": "replacement_requests_per_part",
-      "validity": null,
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-        "version": "0.3.0"
-      },
-      "hint": {
-        "sql": "SELECT event_type, count() FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart', 'DownloadPart') GROUP BY event_type",
-        "mapping": {
-          "replacement_requests_per_part": "not measured: the replacement card is cut"
-        }
-      },
-      "status": "unsupported"
-    },
-    {
       "id": "retry_outcome_mix",
       "block": "reliability",
       "label": "Extra request attempts per failed attempt, and how many of them reach the store, per fault class",
@@ -8031,60 +7998,6 @@
           "failed_upload_residue": "S3CreateMultipartUpload - S3CompleteMultipartUpload - S3AbortMultipartUpload uploads stay open"
         }
       },
-      "status": "ok"
-    },
-    {
-      "id": "fetch_retry_rate",
-      "block": "reliability",
-      "label": "Fetch attempts per fetched part when the interserver connection drops (cut: fault-fetch is a P2 case)",
-      "kind": "measured",
-      "scope": "cluster",
-      "unit": "1",
-      "value_type": "table",
-      "enum": null,
-      "table": {
-        "index": [
-          "variant_id"
-        ],
-        "dim": "1"
-      },
-      "default": 0,
-      "rule": null,
-      "coef": "fetch_retry_rate",
-      "validity": null,
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-        "version": "0.3.0"
-      },
-      "hint": {
-        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartFetches', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMerges', 'ReplicatedPartMutations', 'S3GetObject', 'S3PutObject')",
-        "mapping": {
-          "fetch_retry_rate": "not measured: the fault-fetch case is cut"
-        }
-      },
-      "status": "unsupported"
-    },
-    {
-      "id": "replacement_rate",
-      "block": "topology_recovery",
-      "label": "Replica replacements per month (a new replica fetches every part)",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "count",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 0,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "user input; non-zero needs replacement_requests_per_part, which is unsupported (cut)",
-        "version": "0.3.0"
-      },
-      "hint": null,
       "status": "ok"
     },
     {
