@@ -1,0 +1,38 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "amplification-run.2h",
+  "card": "amplification-run",
+  "case_id": "2h",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "quiet_s": 60,
+    "quiesce_timeout_s": 900,
+    "rows": 1000,
+    "inserts": 7200,
+    "interval_s": 1
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 9000,
+  "description": "Validation of the amplification rule: one 1000-row insert per second for 2 hours with natural merges, then a wait until no merge has run for 60 s."
+}

@@ -1,0 +1,181 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "amplification-run.2h",
+  "policy": "s3",
+  "inputs": {
+    "parts_per_insert": 1,
+    "inserted_part_type": "Compact",
+    "rows_per_insert": 1000,
+    "columns": 5,
+    "predicted_merges_for_allowance": 1386,
+    "fit_run": "cost-20261024T044126Z",
+    "fit_measurement_ids": [
+      "cost-20261024T044126Z/s3/merge-natural/default/k1",
+      "cost-20261024T044126Z/s3/merge-natural/default/k2",
+      "cost-20261024T044126Z/s3/merge-natural/default/k3",
+      "cost-20261024T044126Z/s3/small-inserts/default/k1",
+      "cost-20261024T044126Z/s3/small-inserts/default/k2",
+      "cost-20261024T044126Z/s3/small-inserts/default/k3"
+    ],
+    "merge_effective_fan_in": 6.1912,
+    "fit_residuals": {
+      "cost-20261024T044126Z/s3/merge-natural/default/k1": 0.1867,
+      "cost-20261024T044126Z/s3/merge-natural/default/k2": 0.1867,
+      "cost-20261024T044126Z/s3/merge-natural/default/k3": 0.1867,
+      "cost-20261024T044126Z/s3/small-inserts/default/k1": -0.1339,
+      "cost-20261024T044126Z/s3/small-inserts/default/k2": -0.1355,
+      "cost-20261024T044126Z/s3/small-inserts/default/k3": -0.0928
+    },
+    "pooled_fan_in_distribution": {
+      "13-20": 0.0,
+      "2": 0.0,
+      "21+": 0.0,
+      "3": 0.0,
+      "4": 0.0,
+      "5": 0.0009,
+      "6": 0.8802,
+      "7-8": 0.1164,
+      "9-12": 0.0026
+    },
+    "pooled_result_size_distribution": {
+      "129-256": 0.0136,
+      "17-32": 0.0943,
+      "2-4": 0.0,
+      "257-512": 0.0042,
+      "33-64": 0.0212,
+      "5-8": 0.8267,
+      "513+": 0.0025,
+      "65-128": 0.034,
+      "9-16": 0.0034
+    },
+    "fit_max_tv": {
+      "fan_in_distribution": 0.0713,
+      "result_size_distribution": 0.0926
+    },
+    "tolerance_rules": {
+      "amplification_bytes": "abs = largest |fit residual| + half the largest K=3 range of a fit case; rel = 0",
+      "distributions": "max_tv = 2 x largest TV of a fit record to the pooled fit distribution + 1 / predicted merges, predicted merges = floor((inserts - 1) / (f - 1))",
+      "fan_in_mean": "the fit records' per-record mean range, widened by one part each side",
+      "result_size_distribution": "pooled fit distribution restricted to sizes up to the insert count and renormalised"
+    }
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 79200,
+          "max": 215981,
+          "basis": "derived",
+          "reason": "7200 inserted Compact parts of 11 objects, then at most 7199 merges of at most 19 objects"
+        }
+      }
+    },
+    "observations": {
+      "quiesced": true,
+      "inserted_parts": 7200,
+      "inserted_rows": 7200000,
+      "merges": {
+        "basis": "derived",
+        "reason": "every merge takes at least two parts, and the selector merges a pile of equal parts",
+        "min": 1,
+        "max": 7199
+      },
+      "fan_in_min": {
+        "basis": "derived",
+        "reason": "at least two parts per merge",
+        "min": 2
+      },
+      "fan_in_max": {
+        "basis": "derived",
+        "reason": "max_parts_to_merge_at_once",
+        "max": 100
+      },
+      "fan_in_distribution": {
+        "reference": {
+          "13-20": 0.0,
+          "2": 0.0,
+          "21+": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0009,
+          "6": 0.8802,
+          "7-8": 0.1164,
+          "9-12": 0.0026
+        },
+        "max_tv": 0.1433
+      },
+      "result_size_distribution": {
+        "reference": {
+          "129-256": 0.0136,
+          "17-32": 0.0943,
+          "2-4": 0.0,
+          "257-512": 0.0042,
+          "33-64": 0.0212,
+          "5-8": 0.8267,
+          "513+": 0.0025,
+          "65-128": 0.034,
+          "9-16": 0.0034
+        },
+        "max_tv": 0.1859
+      },
+      "fan_in_mean": {
+        "min": 5.0558,
+        "max": 7.3636,
+        "basis": "fit",
+        "reason": "fit per-record mean range widened by one part"
+      },
+      "amplification_bytes": {
+        "model": "rewrite_levels",
+        "fan_in": 6.1912,
+        "abs": 0.3474,
+        "rel": 0
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {
+      "amplification_bytes": 0.3474
+    },
+    "rel": {
+      "amplification_bytes": 0
+    }
+  },
+  "source_refs": [
+    {
+      "claim": "a natural merge takes at least two parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.cpp",
+      "line": 283
+    },
+    {
+      "claim": "and at most max_parts_to_merge_at_once = 100",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 636
+    },
+    {
+      "claim": "an insert below min_insert_block_size_rows is one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "a Compact inserted part is 11 objects; a merge result at most one object per file of a Wide part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "otherwise the part is Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6404
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

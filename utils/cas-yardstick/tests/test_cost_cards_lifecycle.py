@@ -23,8 +23,8 @@ MIB = 1 << 20
 CARD_NAMES = ('boundaries', 'small-inserts', 'merge-natural', 'merge-forced', 'async-inserts', 'amplification-run')
 CASES = {'boundaries': {'compact-below-bytes', 'wide-equal-bytes', 'wide-above-bytes', 'merge-cross', 'level-cross',
                         'multipart-below', 'multipart-equal', 'multipart-above', 'insert-split'},
-         'small-inserts': {'default'}, 'merge-natural': {'default'}, 'merge-forced': {'default'},
-         'async-inserts': {'steady', 'bursty'}}
+         'small-inserts': {'default'}, 'merge-natural': {'default', 'wide'}, 'merge-forced': {'default'},
+         'async-inserts': {'steady', 'bursty'}, 'amplification-run': {'2h'}}
 
 
 def manifest(experiment_id):
@@ -98,6 +98,12 @@ class ManifestsTest(unittest.TestCase):
                     self.assertTrue(ref['path'].startswith('tmp/src-26.8/'), ref)
                     with open(os.path.join(probes.REPO, ref['path'])) as f:
                         self.assertLessEqual(ref['line'], sum(1 for _ in f), ref)
+
+    def test_hold_out_amplification_check_reads_the_committed_fit(self):
+        pred = probes.prediction('merge-natural.wide', 's3', R)
+        want = pred['expected']['observations']['amplification_bytes']
+        self.assertEqual((want['model'], want['fan_in']), ('rewrite_levels', pred['inputs']['merge_effective_fan_in']))
+        self.assertEqual(len(pred['inputs']['fit_measurement_ids']), 6)
 
     def test_lifecycle_cards_registered(self):
         self.assertTrue(set(CARD_NAMES) <= set(CARDS))
