@@ -8,23 +8,23 @@
     "rows_per_insert": 1000,
     "columns": 5,
     "predicted_merges_for_allowance": 1386,
-    "fit_run": "cost-20261024T044126Z",
+    "fit_run": "cost-20261024T054012Z",
     "fit_measurement_ids": [
-      "cost-20261024T044126Z/s3/merge-natural/default/k1",
-      "cost-20261024T044126Z/s3/merge-natural/default/k2",
-      "cost-20261024T044126Z/s3/merge-natural/default/k3",
-      "cost-20261024T044126Z/s3/small-inserts/default/k1",
-      "cost-20261024T044126Z/s3/small-inserts/default/k2",
-      "cost-20261024T044126Z/s3/small-inserts/default/k3"
+      "cost-20261024T054012Z/s3/merge-natural/default/k1",
+      "cost-20261024T054012Z/s3/merge-natural/default/k2",
+      "cost-20261024T054012Z/s3/merge-natural/default/k3",
+      "cost-20261024T054012Z/s3/small-inserts/default/k1",
+      "cost-20261024T054012Z/s3/small-inserts/default/k2",
+      "cost-20261024T054012Z/s3/small-inserts/default/k3"
     ],
-    "merge_effective_fan_in": 6.1912,
+    "merge_effective_fan_in": 6.2271,
     "fit_residuals": {
-      "cost-20261024T044126Z/s3/merge-natural/default/k1": 0.1867,
-      "cost-20261024T044126Z/s3/merge-natural/default/k2": 0.1867,
-      "cost-20261024T044126Z/s3/merge-natural/default/k3": 0.1867,
-      "cost-20261024T044126Z/s3/small-inserts/default/k1": -0.1339,
-      "cost-20261024T044126Z/s3/small-inserts/default/k2": -0.1355,
-      "cost-20261024T044126Z/s3/small-inserts/default/k3": -0.0928
+      "cost-20261024T054012Z/s3/merge-natural/default/k1": 0.1838,
+      "cost-20261024T054012Z/s3/merge-natural/default/k2": 0.1838,
+      "cost-20261024T054012Z/s3/merge-natural/default/k3": 0.1838,
+      "cost-20261024T054012Z/s3/small-inserts/default/k1": -0.2033,
+      "cost-20261024T054012Z/s3/small-inserts/default/k2": -0.0424,
+      "cost-20261024T054012Z/s3/small-inserts/default/k3": -0.2244
     },
     "pooled_fan_in_distribution": {
       "13-20": 0.0,
@@ -57,7 +57,8 @@
       "distributions": "max_tv = 2 x largest TV of a fit record to the pooled fit distribution + 1 / predicted merges, predicted merges = floor((inserts - 1) / (f - 1))",
       "fan_in_mean": "the fit records' per-record mean range, widened by one part each side",
       "result_size_distribution": "pooled fit distribution restricted to sizes up to the insert count and renormalised"
-    }
+    },
+    "amplification_model": "the registry rule write_amplification_rule (lifecycle.amplification_rule)"
   },
   "expected": {
     "foreground": {
@@ -125,16 +126,16 @@
         "reason": "fit per-record mean range widened by one part"
       },
       "amplification_bytes": {
-        "model": "rewrite_levels",
-        "fan_in": 6.1912,
-        "abs": 0.3474,
+        "model": "rewrite_levels_at_weighted_ratio",
+        "fan_in": 6.2271,
+        "abs": 0.3898,
         "rel": 0
       }
     }
   },
   "tolerance": {
     "abs": {
-      "amplification_bytes": 0.3474
+      "amplification_bytes": 0.3898
     },
     "rel": {
       "amplification_bytes": 0
@@ -262,5 +263,5 @@
       "line": 2155
     }
   ],
-  "prediction_commit": "b652973295f"
+  "prediction_commit": "uncommitted"
 }

@@ -2808,7 +2808,7 @@
       "validity": {
         "merge_size_ratio": [
           6.0,
-          653.0
+          718.0
         ],
         "insert_rows": [
           1000,
@@ -4846,7 +4846,7 @@
       "validity": {
         "merge_size_ratio": [
           6.0,
-          653.0
+          718.0
         ],
         "insert_rows": [
           1000,
@@ -4924,7 +4924,7 @@
       "validity": {
         "merge_size_ratio": [
           6.0,
-          653.0
+          718.0
         ],
         "insert_rows": [
           1000,
