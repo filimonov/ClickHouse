@@ -346,3 +346,35 @@ class MetadataFilesTest(unittest.TestCase):
                 card.metadata_files(ctx_for(manifest('objects-per-part.narrow-compact'), FakeCluster(), policy=policy), parts)
         for policy in ('cas', 'local'):
             self.assertIsNone(card.metadata_files(ctx_for(manifest('objects-per-part.narrow-compact'), FakeCluster(), policy=policy), parts))
+
+
+class CasInventoryOutsideTheWindowTest(unittest.TestCase):
+    # On a CAS disk `system.remote_data_paths` reads the catalog, lists the table and probes roots: the snapshot
+    # must not land in the measured window. Local-metadata disks keep it in `complete`.
+    def run_case(self, name, policy):
+        card, m = CARDS[name.split('.')[0]], manifest(name)
+        cluster = FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})
+        ctx = ctx_for(m, cluster, policy)
+        with no_metadata(card):
+            card.complete(ctx)
+        log = cluster.clients[0].log
+        in_window = [q for q in log if 'remote_data_paths' in q]
+        card.teardown(ctx)
+        snapshots = [i for i, q in enumerate(log) if 'remote_data_paths' in q]
+        drop = [i for i, q in enumerate(log) if q.startswith('DROP DATABASE')]
+        return card.state(ctx), in_window, snapshots, drop
+
+    def test_cas_policies_snapshot_the_layout_in_the_teardown_before_the_drop(self):
+        for name in ('cold-select.cache-off', 'startup.intact'):
+            for policy in ('cas', 'cas_cached'):
+                st, in_window, snapshots, drop = self.run_case(name, policy)
+                self.assertEqual(in_window, [], (name, policy))
+                self.assertEqual(len(snapshots), 1, (name, policy))
+                self.assertLess(snapshots[0], min(drop), (name, policy))
+                self.assertIn('layout', st)
+
+    def test_s3_keeps_the_snapshot_in_complete(self):
+        for name in ('cold-select.cache-off', 'startup.intact'):
+            _, in_window, snapshots, _ = self.run_case(name, 's3')
+            self.assertEqual(len(in_window), 1, name)
+            self.assertEqual(len(snapshots), 1, name)

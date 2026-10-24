@@ -1,0 +1,61 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.cas-holdout-on-narrow-3",
+  "policy": "cas_cached",
+  "inputs": {
+    "shape": "narrow",
+    "part_type": "wide",
+    "cache_enabled": "1",
+    "parts_read": 3,
+    "read_streams_per_part": 2,
+    "warm_passes": 1,
+    "rule": "cache misses of a cold read: one segment per .bin stream per part plus one per distinct marks blob not already cached; equal blobs share a cache entry; the identical measured pass sends no request"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "warm_get_requests": {
+        "min": 7,
+        "max": 12
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": ".bin, marks and primary.idx stay blobs; every other part file up to 1 MiB (statistics.packed, data.cmrk4, checksums.txt) is inline in the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 67
+    },
+    {
+      "claim": "an inline file is served from the manifest bytes and sends no request",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2000
+    },
+    {
+      "claim": "part views are retained after the load: a read resolves blob keys without a manifest GET",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Parts/PartFolderAccess.cpp",
+      "line": 159
+    },
+    {
+      "claim": "the marks of each stream are loaded once into the mark cache, keyed by part path",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMarksLoader.cpp",
+      "line": 109
+    },
+    {
+      "claim": "a stream read is one .bin range at these sizes",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeReaderStream.cpp",
+      "line": 270
+    },
+    {
+      "claim": "the filesystem cache keys segments by object path: equal blobs of several part files share one entry",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.cpp",
+      "line": 41
+    }
+  ]
+}

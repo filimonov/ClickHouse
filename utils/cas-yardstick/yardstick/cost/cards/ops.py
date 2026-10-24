@@ -181,8 +181,30 @@ class Drop(OperationCard):
         return out
 
 
+class CasInventoryAfterWindow:
+    """On a CAS disk, snapshot `system.remote_data_paths` in the teardown, not in `complete`.
+
+    The CAS disk answers it with catalog reads, table listings and root probes (`ContentAddressedMetadataStorage.cpp`
+    `getStorageObjects`), which would count as workload in the window. Disks with local metadata answer it locally.
+    """
+
+    def complete(self, ctx, timeout_s=300):
+        if not ctx.policy.startswith('cas'):
+            return super().complete(ctx, timeout_s)
+        self.wait_drained(ctx, timeout_s)
+        st = self.state(ctx)
+        st['parts'] = self.all_parts(ctx)
+        st['metadata'] = None  # a CAS disk keeps no local metadata files
+
+    def teardown(self, ctx):
+        st = self.state(ctx)
+        if ctx.policy.startswith('cas') and 'layout' not in st:
+            st['layout'] = self.snapshot_layout(ctx, st['parts'])
+        super().teardown(ctx)
+
+
 @register
-class ColdSelect(S3Card):
+class ColdSelect(CasInventoryAfterWindow, S3Card):
     """A restart, then one SELECT: GetObject requests and bytes of a cold read.
 
     Setup: DDL, inserts, `Cluster.stop/start` of the replica (memory caches empty), a `count()` that waits for the
@@ -273,7 +295,7 @@ class ColdSelect(S3Card):
 
 
 @register
-class Startup(S3Card):
+class Startup(CasInventoryAfterWindow, S3Card):
     """`Cluster.stop` then `Cluster.start` of a replica with intact state, inside the window.
 
     The window ends after a `count()` per table, which waits for the tables to load. `startup_seconds` is the

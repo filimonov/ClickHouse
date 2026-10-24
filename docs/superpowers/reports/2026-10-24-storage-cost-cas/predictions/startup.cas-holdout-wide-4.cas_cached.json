@@ -1,0 +1,68 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "startup.cas-holdout-wide-4",
+  "policy": "cas_cached",
+  "inputs": {
+    "part_type": "wide",
+    "active_parts": 4,
+    "cache_enabled": "1",
+    "ref_log_tail_records": 12,
+    "role": "holdout",
+    "rule": "fixed per restart by policy + per active part (manifest GET; Wide: + first marks blob) + one GET per ref log record since the last snapshot"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": 55,
+        "PutObject": {
+          "min": 12,
+          "max": 13,
+          "basis": "derived",
+          "reason": "one mount lease renewal may fall inside the window"
+        },
+        "HeadObject": 11,
+        "DeleteObject": 4,
+        "ListObjectsV2": 7
+      }
+    },
+    "observations": {
+      "active_parts": 4
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index and rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a Wide part's index granularity is loaded from its first column's marks file (a blob); a Compact part's data.cmrk4 is inline",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWide.cpp",
+      "line": 60
+    },
+    {
+      "claim": "an inline file is served from the manifest bytes and sends no request",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2000
+    },
+    {
+      "claim": "a table's refs are recovered by replaying its durable log: one GET per log record since the last snapshot",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 441
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    },
+    {
+      "claim": "the mount lease renews every 10 s with one PutObject: a renewal can fall inside the window",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp",
+      "line": 690
+    }
+  ]
+}
