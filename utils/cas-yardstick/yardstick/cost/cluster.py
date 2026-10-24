@@ -64,6 +64,8 @@ class Cluster:
         self.startup_seconds: list[float] = []
         self.generations: dict[int, list[dict]] = {}
         self._running: set[int] = set()
+        # Replicas handed to `server.sh start` and not stopped since; a start that raised later is not in `_running`.
+        self._launched: set[int] = set()
 
     def run_dir(self, i: int) -> str:
         return os.path.join(self.pass_dir, f'r{i}')
@@ -130,6 +132,7 @@ class Cluster:
                     self.stop(i)
                 else:
                     self._sh(['stop', self.run_dir(i)])
+                    self._launched.discard(i)
             except Exception as e:
                 errors.append(f'stop replica {i}: {e}')
         errors += self._stop_relays()
@@ -149,6 +152,7 @@ class Cluster:
         """Launch replica `i`; return seconds until it answers (replica 1: until Keeper does)."""
         t0 = time.monotonic()
         t_start_us = _now_us()
+        self._launched.add(i)
         self._sh(['start', self.binary, self.run_dir(i), str(self.topology.tcp(i))])
         with open(os.path.join(self.run_dir(i), 'server.pid')) as f:
             pid = int(f.read())
@@ -179,6 +183,10 @@ class Cluster:
         and the shutdown still runs.
         """
         if i not in self._running:
+            # Not registered, but `server.sh start` may have left a process behind; its pidfile reaches it.
+            if i in self._launched and os.path.exists(os.path.join(self.run_dir(i), 'server.pid')):
+                self._sh(['stop', self.run_dir(i)])
+            self._launched.discard(i)
             return
         generation = self.generations[i][-1]
         try:
@@ -190,6 +198,7 @@ class Cluster:
             generation['t_end_us'] = _now_us()
             self._running.discard(i)
             self._sh(['stop', self.run_dir(i)])
+            self._launched.discard(i)
 
     def stop_all(self) -> None:
         errors = []

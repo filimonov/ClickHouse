@@ -206,8 +206,7 @@ class TracerTest(unittest.TestCase):
         prefix = localio.Tracer('/p/pass', 2, 3).prefix()
         self.assertEqual(prefix, 'strace -f -ttt -T -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2,fsync,fdatasync '
                                  '-o /p/pass/strace.r2.g3.txt')
-        with self.assertRaises(ValueError):
-            localio.Tracer('/has space', 1).prefix()
+        self.assertTrue(localio.Tracer('/has space', 1).prefix().endswith("-o '/has space/strace.r1.g0.txt'"))
 
     def test_preflight_trace(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,6 +339,16 @@ class ServerShTest(unittest.TestCase):
         proc, seen = self.run_start({'TRACE_PREFIX': 'env RIG_TRACE=1'})
         self.assertIn('RIG_TRACE=1 argv=server --config-file=', seen)
         self.assertNotEqual(proc.returncode, 0)  # the fake binary exits, so start reports failure
+
+    def test_server_sh_keeps_quoted_spaces_in_trace_prefix(self):
+        _, seen = self.run_start({'TRACE_PREFIX': "env 'RIG_TRACE=a b'"})
+        self.assertIn('RIG_TRACE=a b argv=server --config-file=', seen)
+
+    def test_tracer_prefix_quotes_a_path_with_spaces(self):
+        import shlex
+        with tempfile.TemporaryDirectory(suffix=' with space') as tmp:
+            tracer = localio.Tracer(tmp, 1)
+            self.assertEqual(shlex.split(tracer.prefix())[-1], tracer.path())
 
     def test_server_sh_without_trace_prefix(self):
         _, seen = self.run_start({})

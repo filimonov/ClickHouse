@@ -232,6 +232,22 @@ class ClusterTest(ClusterFixture):
         self.assertIn(('sh', 'stop', 'r1'), self.log)
         self.assertNotIn(('sh', 'start', 'r2'), self.log)
 
+    def test_stop_all_stops_a_launched_but_unregistered_replica_by_pidfile(self):
+        cluster = self.make()
+        cluster.start_all()
+        with mock.patch.object(cluster_module, 'traced_child_pid', side_effect=RuntimeError('no child')):
+            cluster.trace_prefix = 'strace'
+            cluster.stop(2)
+            with self.assertRaises(RuntimeError):
+                cluster.start(2)  # server.sh launched it, then the pid lookup failed
+        self.assertNotIn(2, cluster._running)
+        self.log.clear()
+        cluster.stop_all()
+        self.assertIn(('sh', 'stop', 'r2'), self.log)
+        self.log.clear()
+        cluster.stop_all()
+        self.assertEqual([e for e in self.log if e[0] == 'sh'], [])  # each server is stopped once
+
     def test_stop_all_order(self):
         cluster = self.make()
         cluster.start_all()
@@ -244,6 +260,42 @@ class ClusterTest(ClusterFixture):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ServerShStopIdentityTest(unittest.TestCase):
+    """`server.sh stop` signals only the process it started: the comm recorded at start must still match."""
+
+    def stop_foreign(self, comm):
+        import signal
+        import subprocess
+        server_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server.sh')
+        foreign = subprocess.Popen(['sleep', '60'], start_new_session=True)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with open(os.path.join(tmp, 'server.pid'), 'w') as f:
+                    f.write(str(foreign.pid))
+                with open(os.path.join(tmp, 'server.port'), 'w') as f:
+                    f.write('1')  # nothing answers SYSTEM SHUTDOWN there
+                if comm is not None:
+                    with open(os.path.join(tmp, 'server.comm'), 'w') as f:
+                        f.write(comm + '\n')
+                done = subprocess.run(['bash', server_sh, 'stop', tmp], capture_output=True, text=True, timeout=60,
+                                      env={**os.environ, 'SERVER_STOP_TIMEOUT': '1'})
+            self.assertIsNone(foreign.poll(), 'server.sh signalled a process it did not start')
+            return done
+        finally:
+            foreign.send_signal(signal.SIGKILL)
+            foreign.wait()
+
+    def test_reused_pid_is_not_signalled(self):
+        done = self.stop_foreign('clickhouse')
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("is now 'sleep'", done.stdout)
+
+    def test_no_sigkill_without_a_recorded_comm(self):
+        done = self.stop_foreign(None)
+        self.assertEqual(done.returncode, 1)
+        self.assertIn('not sending SIGKILL', done.stderr)
 
 
 class ServerShTracedKillTest(unittest.TestCase):

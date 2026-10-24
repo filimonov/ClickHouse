@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import shlex
 import shutil
 import stat
 import threading
@@ -190,11 +191,9 @@ class Tracer:
         return sorted(found, key=lambda p: int(re.search(r'\.g(\d+)\.txt$', p).group(1)))
 
     def prefix(self) -> str:
-        # server.sh word-splits the prefix, so a path with whitespace would be cut apart.
-        if re.search(r'\s', self.path()):
-            raise ValueError(f'trace path must not contain whitespace: {self.path()}')
+        # server.sh parses the prefix with shell quoting, so the quoted path may contain spaces.
         # -T gives each call its duration, so a call that straddles a window edge can be told apart.
-        return f'strace -f -ttt -T -yy -e trace={STRACE_SYSCALLS} -o {self.path()}'
+        return f'strace -f -ttt -T -yy -e trace={STRACE_SYSCALLS} -o {shlex.quote(self.path())}'
 
     def preflight_trace(self) -> list:
         return preflight_trace()

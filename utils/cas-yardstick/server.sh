@@ -16,6 +16,15 @@ group_of() {
     ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ' || true
 }
 
+# `server.comm` holds the comm of `server.pid` once the server answered; a different comm means the pid was reused.
+recorded_comm() {
+    cat "$1/server.comm" 2>/dev/null || true
+}
+
+live_comm() {
+    cat "/proc/$1/comm" 2>/dev/null || true
+}
+
 # A group other than the caller's own; empty when the pid is gone or shares the caller's group.
 own_group() {
     local pgid
@@ -60,9 +69,10 @@ case "$cmd" in
         # Cache disk paths resolve against custom_cached_disks_base_directory.
         # setsid: SYSTEM SHUTDOWN signals the server's whole process group, which must not contain the caller.
         # No watchdog: server.pid is then the server itself, and SYSTEM SHUTDOWN delivers one SIGTERM, not two.
-        # TRACE_PREFIX (e.g. "strace -f -o file") is a command prefix; it is word-split on purpose.
-        # shellcheck disable=SC2086
-        CLICKHOUSE_WATCHDOG_ENABLE=0 setsid nohup ${TRACE_PREFIX:-} "$binary" server --config-file="$dir/etc/config.xml" -- \
+        # TRACE_PREFIX (e.g. "strace -f -o 'a file'") is a command prefix in shell quoting, so a quoted path may hold
+        # spaces. It is already a command the caller runs; eval parses its quotes and gives it no further power.
+        eval "trace=(${TRACE_PREFIX:-})"
+        CLICKHOUSE_WATCHDOG_ENABLE=0 setsid nohup "${trace[@]}" "$binary" server --config-file="$dir/etc/config.xml" -- \
             --path="$dir/data/" --tmp_path="$dir/tmp/" --user_files_path="$dir/uf/" \
             --logger.log="$dir/server.log" --logger.errorlog="$dir/server.err.log" \
             --tcp_port="$port" --http_port=$((port + 1)) --interserver_http_port=$((port + 2)) \
@@ -77,6 +87,7 @@ case "$cmd" in
                 exit 1
             fi
             if [ "$(curl -s --max-time 5 "http://127.0.0.1:$((port + 1))/?query=SELECT+1" || true)" = 1 ]; then
+                live_comm "$(cat "$dir/server.pid")" > "$dir/server.comm"
                 echo "up after $i s"
                 exit 0
             fi
@@ -109,12 +120,22 @@ case "$cmd" in
         [ -f "$dir/server.port" ] || { echo "no $dir/server.port" >&2; exit 1; }
         port=$(cat "$dir/server.port")
         pid=$(cat "$dir/server.pid")
+        comm=$(recorded_comm "$dir")
+        if kill -0 "$pid" 2>/dev/null && [ -n "$comm" ] && [ "$(live_comm "$pid")" != "$comm" ]; then
+            echo "pid $pid is now '$(live_comm "$pid")', not the server ('$comm'); the server is gone, not signalling it"
+            exit 0
+        fi
         if kill -0 "$pid" 2>/dev/null; then
             curl -s --max-time 10 "http://127.0.0.1:$((port + 1))/" --data-binary "SYSTEM SHUTDOWN" > /dev/null || true
             for _ in $(seq 1 "$STOP_TIMEOUT"); do
                 kill -0 "$pid" 2>/dev/null || { echo "stopped"; exit 0; }
                 sleep 1
             done
+            if [ -z "$comm" ] || [ "$(live_comm "$pid")" != "$comm" ]; then
+                echo "server $pid still alive after $STOP_TIMEOUT s, but its comm '$(live_comm "$pid")' does not match" \
+                     "the recorded '${comm:-<no server.comm>}'; not sending SIGKILL" >&2
+                exit 1
+            fi
             echo "server $pid still alive after $STOP_TIMEOUT s; sending SIGKILL to its process group" >&2
             kill_group KILL "$pid"
             for _ in $(seq 1 5); do
