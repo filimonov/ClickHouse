@@ -23,6 +23,7 @@ from pathlib import Path
 import artifacts
 
 ROLES = ("fit", "holdout")
+REGISTRY = Path(__file__).resolve().parents[3] / "docs/superpowers/cost-model/inputs-registry.json"
 COEF_ONLY = "_coefficient_only.json"
 
 
@@ -60,15 +61,31 @@ def _cells(report, variant, card, coefficient, operations):
     return cells, None
 
 
-def _references(node, coefficient):
+def _references(node, coefficient, rules=None, seen=None):
+    """True when `node` reads `coefficient` as a coef, a lookup table or a registry quantity of that id; with `rules`
+    (derivation id -> rule), also through the registry derivations its `input` nodes name.
+
+    Cells are selected by direct reads only: a cell that reaches a coefficient through a derivation was not what the
+    card measured. The coefficients a selected cell needs are found through the derivations."""
+    rules = rules or {}
+    seen = set() if seen is None else seen
     if isinstance(node, dict):
-        if (node.get("kind") == "coef" and node.get("id") == coefficient) or \
-                (node.get("kind") == "lookup" and node.get("table_id") == coefficient):
+        kind, ref = node.get("kind"), node.get("id")
+        if (kind in ("coef", "input") and ref == coefficient) or (kind == "lookup" and node.get("table_id") == coefficient):
             return True
-        return any(_references(v, coefficient) for v in node.values())
+        if kind == "input" and ref in rules and ref not in seen:
+            seen.add(ref)
+            if _references(rules[ref], coefficient, rules, seen):
+                return True
+        return any(_references(v, coefficient, rules, seen) for v in node.values())
     if isinstance(node, list):
-        return any(_references(v, coefficient) for v in node)
+        return any(_references(v, coefficient, rules, seen) for v in node)
     return False
+
+
+def registry_rules(registry):
+    """id -> rule of every registry derivation."""
+    return {q["id"]: q["rule"] for q in (registry or {}).get("quantities", []) if q.get("kind") == "derivation" and q.get("rule")}
 
 
 def _coefficients(report):
@@ -88,8 +105,12 @@ def _safe(s):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", s)
 
 
-def build(report_dirs, coverage):
-    """Returns (fixtures {file name: fixture}, coefficient-only edges, problems)."""
+def build(report_dirs, coverage, registry=None):
+    """Returns (fixtures {file name: fixture}, coefficient-only edges, problems).
+
+    `registry` lets a cell reach a coefficient through the registry derivations it reads.
+    """
+    rules = registry_rules(registry)
     problems = artifacts.validate_coverage(coverage)
     if problems:
         return {}, [], [f"coverage: {p}" for p in problems]
@@ -157,7 +178,7 @@ def build(report_dirs, coverage):
             # Cells may read coefficients other reports own (a variant reusing another's counts).
             own = {c.get("id") for c in coefficients}
             coefficients = coefficients + [c for cid, c in sorted(foreign.items())
-                                           if cid not in own and any(_references(x, cid) for x in cells.values())]
+                                           if cid not in own and any(_references(x, cid, rules) for x in cells.values())]
             fixtures[_safe(f"{e['experiment_id']}.{e['policy']}.{e['coefficient']}.{e['role']}.k{k}") + ".json"] = {
                 "experiment_id": e["experiment_id"], "policy": e["policy"], "coefficient": e["coefficient"],
                 "role": e["role"], "edge_id": edge_id, "inputs": pred["inputs"],
@@ -181,9 +202,10 @@ def main(argv=None):
     ap.add_argument("--reports", required=True, help="glob of report directories")
     ap.add_argument("--coverage", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--registry", default=str(REGISTRY), help="inputs registry whose derivations cells may read")
     a = ap.parse_args(argv)
     reports = sorted(Path(p) for p in glob.glob(a.reports) if Path(p).is_dir())
-    fixtures, coefficient_only, problems = build(reports, _load(a.coverage))
+    fixtures, coefficient_only, problems = build(reports, _load(a.coverage), _load(a.registry))
     if problems:
         print("build_fixtures: " + "\n  ".join([f"{len(problems)} problem(s):", *problems]), file=sys.stderr)
         return 1

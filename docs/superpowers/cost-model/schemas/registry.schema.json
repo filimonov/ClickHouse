@@ -124,6 +124,30 @@
               }
             ]
           },
+          "verified_range": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Map of parameter to [lo, hi] the quantity was verified over; outside it a derived formula still applies. Exactly one of verified_range and validity, its old name."
+          },
           "validity": {
             "anyOf": [
               {
@@ -145,7 +169,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Old name of verified_range; readers accept it."
           },
           "evidence": {
             "type": "object",
@@ -243,6 +268,19 @@
             ],
             "additionalProperties": false
           },
+          "presets": {
+            "description": "Enum quantities only: member -> {registered quantity id: value} that the member stands for (shape = narrow: columns = 5, ...).",
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              }
+            }
+          },
           "status": {
             "enum": [
               "ok",
@@ -263,12 +301,23 @@
           "default",
           "rule",
           "coef",
-          "validity",
           "evidence",
           "hint",
           "status"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "verified_range"
+            ]
+          },
+          {
+            "required": [
+              "validity"
+            ]
+          }
+        ]
       }
     },
     "sets": {

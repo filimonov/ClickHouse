@@ -313,6 +313,32 @@ class RegistryTests(ArtifactTestCase):
         self.assert_rejects(artifacts.validate_registry,
                             with_value(r, ("quantities", deriv, "rule"), None), "rule")
 
+    def test_registry_presets_name_enum_members_and_registered_quantities(self):
+        r = load("registry.json")
+        i = next(i for i, q in enumerate(r["quantities"]) if q["id"] == "shape")
+        member = r["quantities"][i]["enum"][0]
+        ok = with_value(r, ("quantities", i, "presets"), {member: {"parts_inserted": 3}})
+        self.assertEqual(artifacts.validate_registry(ok), [])
+        self.assert_rejects(artifacts.validate_registry,
+                            with_value(r, ("quantities", i, "presets"), {"nope": {"parts_inserted": 3}}), "not in enum")
+        self.assert_rejects(artifacts.validate_registry,
+                            with_value(r, ("quantities", i, "presets"), {member: {"nope": 3}}), "unknown id nope")
+        num = next(i for i, q in enumerate(r["quantities"]) if q["value_type"] == "number")
+        self.assert_rejects(artifacts.validate_registry,
+                            with_value(r, ("quantities", num, "presets"), {"x": {"parts_inserted": 3}}), "enum quantity")
+
+    def test_registry_verified_range_replaces_validity(self):
+        r = load("registry.json")
+        renamed = copy.deepcopy(r)
+        for q in renamed["quantities"]:
+            q["verified_range"] = q.pop("validity")
+        self.assertEqual(artifacts.validate_registry(renamed), [])
+        both = copy.deepcopy(r)
+        both["quantities"][0]["verified_range"] = None
+        self.assert_rejects(artifacts.validate_registry, both, "required exactly once")
+        self.assertEqual(artifacts.verified_range({"verified_range": {"a": [1, 2]}, "validity": None}), {"a": [1, 2]})
+        self.assertEqual(artifacts.verified_range({"validity": {"a": [1, 2]}}), {"a": [1, 2]})
+
 
 class FormulasTests(ArtifactTestCase):
     TABLES = {"objects_per_part": 2}

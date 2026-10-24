@@ -27,14 +27,18 @@ class BuildFixturesTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def run_main(self, coverage=None, reports=None):
+    def run_main(self, coverage=None, reports=None, registry=None):
         cov = SAMPLE / "coverage.json"
         if coverage is not None:
             cov = self.tmp / "coverage.json"
             cov.write_text(json.dumps(coverage))
+        extra = []
+        if registry is not None:
+            (self.tmp / "registry.json").write_text(json.dumps(registry))
+            extra = ["--registry", str(self.tmp / "registry.json")]
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
-            code = build_fixtures.main(["--reports", str(reports or SAMPLE / "*/"), "--coverage", str(cov), "--out", str(self.out)])
+            code = build_fixtures.main(["--reports", str(reports or SAMPLE / "*/"), "--coverage", str(cov), "--out", str(self.out), *extra])
         return code, err.getvalue()
 
     def coverage(self):
@@ -196,6 +200,35 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         fx = json.loads((self.out / NAME).read_text())
         self.assertEqual(list(fx["cells"]), ["insert"])
+
+    def test_cell_reading_a_registry_derivation_carries_its_coefficients(self):
+        # A formula over source quantities lives in the registry under the coefficient's id; the cell reads it as an
+        # input, and the fixture carries the coefficients its rule reads, also those another report owns.
+        reports = self.tmp / "reports"
+        shutil.copytree(SAMPLE, reports, ignore=shutil.ignore_patterns("coverage.json"))
+        mine = reports / REPORT.name
+        doc = json.loads((mine / "formulas.json").read_text())
+        doc["cells"]["insert"] = doc["cells"].pop("insert_basic.write")
+        doc["cells"]["insert"]["ledger_rows"][0]["expr"] = {"kind": "input", "id": "puts_per_compact_part", "dim": "count"}
+        doc["cells"]["merge"] = doc["cells"].pop("other_card.write")
+        (mine / "formulas.json").write_text(json.dumps(doc))
+        other = reports / "2026-10-24-storage-cost-other"
+        other.mkdir()
+        (other / "coefficients.json").write_text(json.dumps([{"id": "foreign_factor", "kind": "scalar", "dim": "count",
+                                                              "value": 1, "status": "ok"}]))
+        rule = {"kind": "mul", "dim": "count", "a": {"kind": "input", "id": "parts_inserted", "dim": "count"},
+                "b": {"kind": "coef", "id": "foreign_factor", "dim": "count"}}
+        code, err = self.run_main(reports=reports / "*/",
+                                  registry={"quantities": [{"id": "puts_per_compact_part", "kind": "derivation", "rule": rule}]})
+        self.assertEqual(code, 0, err)
+        fx = json.loads((self.out / NAME).read_text())
+        self.assertEqual(list(fx["cells"]), ["insert"])
+        self.assertEqual(sorted(c["id"] for c in fx["coefficients"]), ["foreign_factor", "puts_per_compact_part"])
+        # Without the derivation's rule the foreign coefficient is not carried.
+        code, err = self.run_main(reports=reports / "*/", registry={"quantities": []})
+        self.assertEqual(code, 0, err)
+        fx = json.loads((self.out / NAME).read_text())
+        self.assertEqual([c["id"] for c in fx["coefficients"]], ["puts_per_compact_part"])
 
     def test_cell_not_referencing_the_coefficient_fails(self):
         cov = self.coverage()

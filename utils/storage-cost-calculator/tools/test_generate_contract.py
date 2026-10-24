@@ -432,6 +432,15 @@ class GenerateTest(unittest.TestCase):
         self.assertTrue(contract["evidence_statement"].startswith("Measured on ClickHouse commit 78133cca87d (release 26.8) against a RustFS S3 store."))
 
 
+class VerifiedRangeTest(unittest.TestCase):
+    def test_contract_records_carry_verified_range_and_the_old_name(self):
+        out = gc.with_verified_range([{"id": "a", "verified_range": {"x": [1, 2]}}, {"id": "b", "validity": None},
+                                      {"id": "c"}])
+        self.assertEqual(out[0], {"id": "a", "verified_range": {"x": [1, 2]}, "validity": {"x": [1, 2]}})
+        self.assertEqual(out[1], {"id": "b", "verified_range": None, "validity": None})
+        self.assertEqual(out[2], {"id": "c"})
+
+
 class RegistryUiTest(unittest.TestCase):
     def registry(self, settings):
         qs = [{"id": f"s{i}", "kind": "input", "ui": {"tier": "setting", "name": None, "short": "x"}} for i in range(settings)]

@@ -137,10 +137,10 @@ def dependency(registry, formulas_list):
     for q in quantities:
         if q["value_type"] == "enum" and q["default"] is not None and q["default"] not in q["enum"]:
             problems.append(f"quantity {q['id']}: default {q['default']!r} not in enum {q['enum']}")
-        for key, (lo, hi) in (q["validity"] or {}).items():
+        for key, (lo, hi) in (artifacts.verified_range(q) or {}).items():
             value = q["default"] if key == q["id"] else defaults.get(key)
             if isinstance(value, (int, float)) and not lo <= value <= hi:
-                problems.append(f"quantity {q['id']}: default {value} outside validity {key} [{lo}, {hi}]")
+                problems.append(f"quantity {q['id']}: default {value} outside the verified range {key} [{lo}, {hi}]")
     for n, f in enumerate(formulas_list):
         where = f"formulas[{n}] ({f.get('variant')})"
         problems += [f"{where} {p}" for p in artifacts.validate_formulas(f, tables)]
@@ -417,8 +417,8 @@ def evidence(coverage, coefficients, measurement_ids=None, identity=None):
                          for m in sorted(listed | set(ev.get("measurement_ids", []))) if m not in measurement_ids]
         if not any(priority.get(r["experiment_id"]) == "P1" for r in rows):
             continue
-        if c.get("validity") is None:
-            problems.append(f"{cid}: P1 measured coefficient needs a validity domain")
+        if artifacts.verified_range(c) is None:
+            problems.append(f"{cid}: P1 measured coefficient needs a verified range")
         fits = [r for r in rows if r["role"] == "fit" and r["status"] in ("done", "consumed")]
         holdouts = [r for r in rows if r["role"] == "holdout" and r["status"] == "done"]
         if not fits:

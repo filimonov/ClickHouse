@@ -217,6 +217,8 @@ def build(opts, mode="dev"):
             loaded = []
         for c in loaded:
             cid = c.get("id") if isinstance(c, dict) else None
+            if isinstance(c, dict) and "verified_range" in c and "validity" in c:
+                problems.append(f"coefficient {cid}: both verified_range and its old name validity")
             if cid in coef_owner:
                 problems.append(f"coefficient {cid} is owned by both {coef_owner[cid]} and {r.name}")
                 continue
@@ -291,8 +293,9 @@ def build(opts, mode="dev"):
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
         "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending), measured_build(evidence)),
-        "registry": with_measured_by(reg["quantities"], coefficients, coef_owner, evidence), "sets": reg["sets"], "precedence": reg["precedence"],
-        "coefficients": coefficients, "billing": bil,
+        "registry": with_verified_range(with_measured_by(reg["quantities"], coefficients, coef_owner, evidence)),
+        "sets": reg["sets"], "precedence": reg["precedence"],
+        "coefficients": with_verified_range(coefficients), "billing": bil,
         "variants": domain["variants"], "operations": domain["operations"], "families": domain["families"],
         "state_ids": list(STATE_IDS),
         "applicability": app,
@@ -373,13 +376,24 @@ def measured_by(q, coefficients, coef_owner, commit):
     head = {"source": "Default from", "assumed": "Assumed:", "provider": "Provider rule:", "measured": "Measured:"}[ev["kind"]]
     parts = [f"{head} {cite(ev['ref'], commit)}."]
     for c in coefficients:
-        r = (c.get("validity") or {}).get(q["id"])
+        r = (artifacts.verified_range(c) or {}).get(q["id"])
         if not r:
             continue
         ids = (c.get("evidence") or {}).get("measurement_ids") or []
         report = coef_owner.get(c["id"], "no report")
         parts.append(f"Measured from {r[0]:g} to {r[1]:g} by {c['id']} ({report}, {len(ids)} measurement(s)).")
     return " ".join(parts)
+
+
+def with_verified_range(records):
+    """Contract copies carry `verified_range`, and `validity` with the same value for readers not yet renamed."""
+    out = []
+    for x in records:
+        if isinstance(x, dict) and ("verified_range" in x or "validity" in x):
+            r = artifacts.verified_range(x)
+            x = dict(x, verified_range=r, validity=r)
+        out.append(x)
+    return out
 
 
 def with_measured_by(quantities, coefficients, coef_owner, evidence):
@@ -512,11 +526,11 @@ def _coefficient_rows(contract, refs):
             c, ev = by_id[ref], by_id[ref].get("evidence") or {}
             owner = contract["owners"]["coefficients"].get(ref, "")
             rows.append((ref, _value(c), c.get("dim"), ev.get("kind"), ev.get("ref"), ev.get("version"),
-                         json.dumps(c.get("validity")) if c.get("validity") is not None else "", owner))
+                         json.dumps(artifacts.verified_range(c)) if artifacts.verified_range(c) is not None else "", owner))
         elif ref in reg:
             q = reg[ref]
             rows.append((ref, json.dumps(q["default"]), q["unit"], q["evidence"]["kind"], q["evidence"]["ref"],
-                         q["evidence"]["version"], json.dumps(q["validity"]) if q["validity"] else "", "registry"))
+                         q["evidence"]["version"], json.dumps(artifacts.verified_range(q)) if artifacts.verified_range(q) else "", "registry"))
         else:
             rows.append((ref, "", "", "missing", "", "", "", ""))
     return rows
@@ -582,7 +596,7 @@ def inputs_block(contract, rendered):
         ev = q["evidence"]
         out.append(f"| {_code(q['id'])} | {_code(q['block'])} | {_cell_text(q['label'])} | {_code(q['kind'])} | "
                    f"{_code(q['scope'])} | {_code(q['unit'])} | {_code(json.dumps(q['default'])) if q['default'] is not None else ''} | "
-                   f"{_code(json.dumps(q['validity'])) if q['validity'] else ''} | {_code(rendered['rules'].get(q['id']))} | "
+                   f"{_code(json.dumps(artifacts.verified_range(q))) if artifacts.verified_range(q) else ''} | {_code(rendered['rules'].get(q['id']))} | "
                    f"{_cell_text(ev['kind'])}: {_cell_text(ev['ref'])} ({_cell_text(ev['version'])}) | {_code(q['status'])} |")
     out += ["", "Form placement. `workload` and `setting` inputs make up the default form (at most "
             f"{MAX_SETTING_INPUTS} settings); `advanced` inputs sit in the collapsed low-level section; `hidden` inputs are "

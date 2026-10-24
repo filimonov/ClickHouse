@@ -53,7 +53,7 @@ Every validator returns a list of `"<path>: <message>"` strings. An empty list m
 - **Measurement sections.** `window.open_attempts` lists workload attempts that had no row at the window end, and `ledger.complete` is false when it is non-empty. Counts include `accepted_dropped` (upstream ok, reply lost) and `upstream_4xx`. `inventory.note` (optional) says why `initial` is `declared`; `inventory.reclassified` lists the `reclassify` calls. A clipped `local.*.trace` carries `window`, `outside`, `files` and `crossing`.
 - **Prediction.** Each expected count is an integer or `{"min","max"}`; a range may add `basis` (`derived` or `assumption`) with the `reason`, so an assumed bound is never read as a source derivation. Callers and ops come from the ledger enums.
 - **Coverage.** Evidence rows with role `holdout` or `validation` need a non-null `prediction_commit`; `closure_check.py --mode final` requires it to be reachable from `HEAD` and committed no later than the run id time of every record the row cites. Only `fit` rows may carry null. A row's `measurement_ids` name its own `policy`; a row that applies another policy's records to its variant names that policy in `borrowed_from`. Each case declares `duration_s`, its expected pass duration (`0..timeout_s`); `cost estimate` budgets every pass at `max(measured median, duration_s)`.
-- **Registry.** Ids are unique. `enum` is required for `value_type` `enum`, `table` for `table`. A `rule` exists exactly for `derivation`. Precedence groups never share members. `default_locked` and `rules` keys are group members. Set members, group members and table index ids must be registered quantities.
+- **Registry.** Ids are unique. `enum` is required for `value_type` `enum`, `table` for `table`. A `rule` exists exactly for `derivation`. Precedence groups never share members. `default_locked` and `rules` keys are group members. Set members, group members and table index ids must be registered quantities. An enum quantity may carry `presets`, which map a member to the values of other registered quantities it stands for (`shape` = `narrow` sets `columns` = 5, ...).
 
 ## Formulas grammar v1 {#formulas-grammar}
 
@@ -84,7 +84,7 @@ Worked examples, each a standalone node validated with `validate_node(node, "$",
 | `example-multipart-parts.json` | 1 part up to the first buffer, else `1 + ceil_to((size - first_buffer) / part_size, 1)` |
 | `example-min-max.json` | `max(1, min(parts_inserted, 10000, 500))`; also evaluated by `model.test.js` |
 
-`coefficients.json` entries (`{id, kind: scalar|table, dim, value, validity, tolerance, evidence, status}`) are produced per report and have no validator here. A table value is `{"index": [...], "values": {"<k1>|<k2>": number}}`.
+`coefficients.json` entries (`{id, kind: scalar|table, dim, value, basis, verified_range, tolerance, evidence, status}`) are produced per report and have no validator here. `basis` is `derived` (a count read from the source graph; the measurements verify it), `fitted` (an empirical fit with no derivation) or `assumed`. `verified_range` maps each parameter to the `[lo, hi]` the measurements covered; outside it a `derived` value still applies, a `fitted` one is an extrapolation. `validity` is its old name: registry quantities and coefficients may carry either, never both, and `generate_contract.py` writes both into the contract until every reader takes `verified_range`. A table value is `{"index": [...], "values": {"<k1>|<k2>": number}}`.
 
 ## Billing contract free list {#billing-free}
 

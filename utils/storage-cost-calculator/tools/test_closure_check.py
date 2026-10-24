@@ -75,7 +75,7 @@ class DependencyTest(unittest.TestCase):
         b = quantity('b', kind='derivation', default=None, rule=inp('a'))
         self.assertTrue(any('cycle' in p for p in cc.dependency(registry(a, b), [])))
         bad = quantity('r', default=9, validity={'r': [1, 6]})
-        self.assertTrue(any('validity' in p for p in cc.dependency(registry(bad), [])))
+        self.assertTrue(any('verified range' in p for p in cc.dependency(registry(bad), [])))
         dup = registry(quantity('x'), quantity('x'))
         self.assertTrue(cc.dependency(dup, []))
 
@@ -213,7 +213,10 @@ class EvidenceTest(unittest.TestCase):
         self.assertTrue(any('m2 does not resolve' in p for p in
                             cc.evidence(self.cov(fit1, other), [self.coefficient], measurement_ids={'m1'})))
         nodomain = dict(self.coefficient, validity=None)
-        self.assertTrue(any('validity domain' in p for p in cc.evidence(self.cov(fit1, other), [nodomain])))
+        self.assertTrue(any('verified range' in p for p in cc.evidence(self.cov(fit1, other), [nodomain])))
+        renamed = dict(self.coefficient)
+        renamed['verified_range'] = renamed.pop('validity')
+        self.assertFalse(any('verified range' in p for p in cc.evidence(self.cov(fit1, other), [renamed])))
 
 
 class AccountingTest(unittest.TestCase):

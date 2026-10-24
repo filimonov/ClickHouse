@@ -647,6 +647,14 @@ def _validate_cell(cell, path, tables):
 
 # --- registry ----------------------------------------------------------------------------------
 
+def verified_range(x):
+    """Parameter -> [lo, hi] a registry quantity or coefficient was verified over: `verified_range`, or `validity`,
+    its old name, which readers keep accepting."""
+    if not isinstance(x, dict):
+        return None
+    return x["verified_range"] if "verified_range" in x else x.get("validity")
+
+
 # Page placement of a registry input: workload and setting fields are on the form, advanced ones in the
 # low-level section, hidden ones only in the info dialog. `nearest` maps a lookup key without a measurement to one with.
 REGISTRY_UI_TIERS = ("workload", "setting", "advanced", "hidden")
@@ -665,13 +673,15 @@ def validate_registry(d):
         "default": nullable(either(number, string)),
         "rule": anything,
         "coef": nullable(nonempty_string),
+        "verified_range": nullable(dict_of(pair(number))),
         "validity": nullable(dict_of(pair(number))),
         "evidence": obj({"kind": enum("assumed", "source", "measured", "provider"),
                          "ref": nonempty_string, "version": nonempty_string}),
         "hint": nullable(obj({"sql": nonempty_string, "mapping": dict_of(string)})),
         "status": enum("ok", "unsupported"),
         "ui": ui,
-    }, {"ui"})
+        "presets": dict_of(dict_of(either(number, string))),
+    }, {"ui", "presets", "verified_range", "validity"})
     spec = {
         "schema": literal("registry/1"), "version": nonempty_string,
         "quantities": list_of(quantity),
@@ -685,6 +695,8 @@ def validate_registry(d):
     ids = {}
     for i, q in enumerate(d["quantities"]):
         qp = f"$.quantities[{i}]"
+        if ("verified_range" in q) == ("validity" in q):
+            problems.append(f"{qp}.verified_range: required exactly once (`validity` is its old name)")
         if q["id"] in ids:
             problems.append(f"{qp}.id: duplicate id {q['id']}")
         ids[q["id"]] = q
@@ -699,6 +711,15 @@ def validate_registry(d):
                 problems += validate_node(q["rule"], f"{qp}.rule", False, table_arities_from_registry(d))
         elif q["rule"] is not None:
             problems.append(f"{qp}.rule: only a derivation has a rule")
+    # A preset names other quantities' values for one member of an enum (shape = narrow: columns = 5, ...).
+    for i, q in enumerate(d["quantities"]):
+        for member, values in (q.get("presets") or {}).items():
+            pp = f"$.quantities[{i}].presets.{member}"
+            if q["value_type"] != "enum":
+                problems.append(f"{pp}: presets belong to an enum quantity")
+            elif member not in q["enum"]:
+                problems.append(f"{pp}: {member} not in enum {q['enum']}")
+            problems += [f"{pp}: unknown id {k}" for k in values if k not in ids]
     for set_id, members in d["sets"].items():
         problems += [f"$.sets.{set_id}: unknown member {m}" for m in members if m not in ids]
     for i, q in enumerate(d["quantities"]):
