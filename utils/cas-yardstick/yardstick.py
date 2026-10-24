@@ -5,6 +5,7 @@ import os
 import sys
 
 from yardstick import report as R
+from yardstick.cost import cli as cost_cli
 from yardstick.compare import compare_runs, reference_dir
 from yardstick.cards import CARDS
 from yardstick.config import POLICIES
@@ -91,7 +92,7 @@ def list_counters():
     return 0
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--list-counters', action='store_true', help='print the counters behind every aggregate')
     sub = parser.add_subparsers(dest='command')
@@ -126,6 +127,12 @@ def main():
     c.add_argument('reference_dir', nargs='?')
     c.set_defaults(func=cmd_compare)
 
+    cost_cli.add_parsers(sub)
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     if args.list_counters:
         return list_counters()
