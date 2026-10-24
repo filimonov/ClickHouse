@@ -13,7 +13,7 @@ import artifacts  # noqa: E402
 
 R = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-s3')
 EXPERIMENTS = os.path.join(R, 'experiments')
-S3_CARDS = {'objects-per-part', 'big-insert-multipart', 'mutation', 'drop', 'cold-select', 'startup', 'merge-only'}
+S3_CARDS = {'objects-per-part', 'big-insert-multipart', 'mutation', 'drop', 'cold-select', 'startup', 'merge-only', 'merge-forced'}
 MIB = 1 << 20
 
 
