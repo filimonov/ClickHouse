@@ -21,7 +21,7 @@ EXPERIMENTS = os.path.join(R, 'experiments')
 CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout', 'mix-holdout-2'},
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'drop-60s', 'merge'}, 'gc-idle': {'populated'},
-         'gc-scale': {'objects-1k', 'objects-10k', 'objects-30k', 'objects-100k'},
+         'gc-scale': {'objects-1k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
          'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
 P = 'cost-20261024T000000Z/cas/gc-idle/populated/k1/shared'
@@ -404,14 +404,14 @@ class GcScaleTest(unittest.TestCase):
     def test_pool_sizes_are_built_deterministically(self):
         card = CARDS['gc-scale']
         sizes = {}
-        for case in ('objects-1k', 'objects-10k', 'objects-30k', 'objects-100k'):
+        for case in ('objects-1k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'):
             m = manifest(f'gc-scale.{case}')
             with tempfile.TemporaryDirectory() as tmp:
                 ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
                 sql = [card.insert_sql(ctx, i) for i in range(card.parts_n(ctx))]
                 self.assertEqual(len(set(sql)), len(sql), case)  # every part has its own values
                 sizes[case] = cas.pool_objects(card.parts_n(ctx), m['params']['columns_n'])
-        for case, target in (('objects-1k', 1000), ('objects-10k', 10000), ('objects-30k', 30000),
+        for case, target in (('objects-1k', 1000), ('objects-5k', 5000), ('objects-10k', 10000), ('objects-30k', 30000),
                              ('objects-100k', 100000)):
             self.assertLess(abs(sizes[case] - target) / target, 0.06, (case, sizes[case]))
 

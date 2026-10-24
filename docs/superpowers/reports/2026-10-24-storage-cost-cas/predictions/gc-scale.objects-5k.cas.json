@@ -1,0 +1,67 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-scale.objects-5k",
+  "policy": "cas",
+  "inputs": {
+    "parts": 25,
+    "role": "holdout",
+    "rule": "fold round = 28 + 1 GET per new manifest + 1 GET per new ref log record (3 per insert); a Deferred round = 18; blob objects add no request",
+    "replaces": "gc-scale.objects-30k if it fails: 30k (444 ref log records) lies past the 256-record snapshot threshold, where objects-100k (1479 records) measured 3689 fold requests against the linear 1 + 3 per part; 5k (75 records) lies inside the fitted regime"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "objects": 5077,
+      "fold_round_requests": 128,
+      "deferred_round_requests": 18,
+      "round_outcomes": [
+        "Success",
+        "Deferred"
+      ]
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "SYSTEM CAS GC RUN runs one synchronous round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 336
+    },
+    {
+      "claim": "a round with no changed shard and no due graduation is Deferred: no fold",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 303
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "a round that acquires the lease pulses once more",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 182
+    },
+    {
+      "claim": "one pulse is a GET of gc/hb and one conditional PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp",
+      "line": 5076
+    },
+    {
+      "claim": "a _snap snapshot is published after more than 256 log records or 1 MiB of tail",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h",
+      "line": 296
+    }
+  ],
+  "prediction_commit": "pending"
+}
