@@ -1,0 +1,22 @@
+{
+  "name": "alloc_stripe2_beats_single",
+  "preset_id": "aws-us-east-1",
+  "layouts": [
+    "single",
+    "stripe2"
+  ],
+  "demand": {
+    "capacity_gib": 100,
+    "peak_iops": 60000,
+    "peak_mibps": 500
+  },
+  "expected": {
+    "monthly_cost": 289.6,
+    "layout": "stripe2",
+    "alternatives": {
+      "single": 309.6,
+      "stripe2": 289.6
+    }
+  },
+  "derivation": "single: iops = max(3000,60000,ceil(500/0.25)=2000) = 60000; mibps = 500; size = max(100, ceil(60000/500)=120, 1) = 120 (grown for the 500 IOPS/GiB cap, not rejected). Cost = 120*0.08 + 57000*0.005 + 375*0.04 = 9.6 + 285 + 15 = 309.6. stripe2: iops = max(3000,30000,1000) = 30000; mibps = 250; size = max(50, 60, 1) = 60. Cost = 2 * (4.8 + 27000*0.005 + 125*0.04) = 2 * (4.8 + 135 + 5) = 289.6. stripe2 is cheaper by two baselines of 3000 IOPS and 125 MiB/s: 15 + 5 = 20."
+}

@@ -1,0 +1,28 @@
+{
+  "name": "transfer_decimal",
+  "preset_id": "aws-us-east-1",
+  "preset_overrides": {
+    "units": "decimal"
+  },
+  "rows": [
+    {
+      "row_type": "transfer",
+      "op_kind": "xfer",
+      "outcome_class": "ok",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "quantity": 200
+    }
+  ],
+  "expected": {
+    "total": 2.147483648,
+    "lines": {
+      "ec2_ec2_cross_az": {
+        "quantity": 214.7483648,
+        "money": 2.147483648
+      }
+    }
+  },
+  "derivation": "decimal: 200 GiB * 1.073741824 = 214.7483648 GB; * 0.01 = 2.147483648."
+}

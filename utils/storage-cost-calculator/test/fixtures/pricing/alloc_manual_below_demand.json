@@ -1,0 +1,21 @@
+{
+  "name": "alloc_manual_below_demand",
+  "preset_id": "aws-us-east-1",
+  "demand": {
+    "capacity_gib": 100,
+    "peak_iops": 6000,
+    "peak_mibps": 200
+  },
+  "manual": {
+    "volumes": 1,
+    "size_gib": 50,
+    "iops": 3000,
+    "mibps": 125
+  },
+  "expected": {
+    "feasible": true,
+    "monthly_cost": 4,
+    "note_contains": "below demand"
+  },
+  "derivation": "Valid: 3000 <= 50*500, 125 <= 3000*0.25. Cost = 50*0.08 + 0 + 0 = 4.0. Below demand: 50 < 100 GiB, 3000 < 6000 IOPS, 125 < 200 MiB/s -> priced with a below-demand note."
+}

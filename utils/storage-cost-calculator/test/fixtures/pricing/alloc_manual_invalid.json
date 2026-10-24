@@ -1,0 +1,20 @@
+{
+  "name": "alloc_manual_invalid",
+  "preset_id": "aws-us-east-1",
+  "demand": {
+    "capacity_gib": 100,
+    "peak_iops": 6000,
+    "peak_mibps": 200
+  },
+  "manual": {
+    "volumes": 1,
+    "size_gib": 10,
+    "iops": 6000,
+    "mibps": 200
+  },
+  "expected": {
+    "feasible": false,
+    "note_contains": "iops_per_gib_max"
+  },
+  "derivation": "Provider limit: iops <= size * 500 = 10 * 500 = 5000; requested 6000 -> invalid, no cost."
+}

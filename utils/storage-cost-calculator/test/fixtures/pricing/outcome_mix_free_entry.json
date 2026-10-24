@@ -1,0 +1,68 @@
+{
+  "name": "outcome_mix_free_entry",
+  "preset_id": "aws-us-east-1",
+  "outcome_mix": {
+    "GetObject": {
+      "ok": 0.9,
+      "client_error": 0.06,
+      "server_error": 0.03,
+      "dropped": 0.01
+    }
+  },
+  "rows": [
+    {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 1000000
+    },
+    {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "client_error",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 100000,
+      "status": 400,
+      "s3_code": "InvalidArgument"
+    },
+    {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "client_error",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 1000,
+      "status": 403,
+      "s3_code": "AccessDenied"
+    },
+    {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "server_error",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 50
+    }
+  ],
+  "expected": {
+    "total": 0.389,
+    "lines": {
+      "get_and_other": {
+        "quantity": 960000,
+        "money": 0.384
+      },
+      "put_copy_post_list": {
+        "quantity": 1000,
+        "money": 0.005
+      }
+    }
+  },
+  "derivation": "GetObject all=1,000,000 split 0.9 ok + 0.06 client_error (404 NoSuchKey is not on the free list, so billed) = 0.96 billed = 960,000; server_error 0.03 and dropped 0.01 are not billed. HeadObject client_error 400/InvalidArgument is on the free list -> 0 billed. GET class: 960 * 0.0004 = 0.384. PutObject client_error 403/AccessDenied is free only for requests outside the owner account (entry has a condition the row does not state) -> billed 1000/1000 * 0.005 = 0.005. PutObject server_error not billed. Total 0.389."
+}

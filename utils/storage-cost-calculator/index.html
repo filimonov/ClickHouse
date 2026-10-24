@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storage Cost Calculator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header><h1>Storage Cost Calculator</h1></header>
+<main>
+<div id="presets"></div>
+<div id="inputs"></div>
+<div id="cards"></div>
+<div id="table"></div>
+<div id="drill"></div>
+<div id="notes"></div>
+<div id="evidence"></div>
+<div id="chart"></div>
+</main>
+<!-- contract:begin --><script type="application/json" id="contract">{}</script><!-- contract:end -->
+<script src="model.js"></script>
+<script src="contract.js"></script>
+<script src="billing.js"></script>
+<script src="ui.js"></script>
+<script>
+// ?measurement=<url> loads a drill JSON written by tools/drill.mjs and renders it into #drill.
+// Under file:// browsers block fetch of local files: put the JSON beside this page and serve the
+// directory with `python3 -m http.server`, or open the page through a local server.
+(function () {
+  var m = new URLSearchParams(location.search).get('measurement');
+  if (!m) return;
+  fetch(m).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (j) {
+    SCC.ui.renderDrill(document.getElementById('drill'), j);
+  }).catch(function (e) {
+    document.getElementById('drill').textContent = 'Cannot load ' + m + ': ' + e.message;
+  });
+})();
+</script>
+</body>
+</html>

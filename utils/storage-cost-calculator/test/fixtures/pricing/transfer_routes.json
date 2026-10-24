@@ -1,0 +1,51 @@
+{
+  "name": "transfer_routes",
+  "preset_id": "aws-us-east-1",
+  "rows": [
+    {
+      "row_type": "transfer",
+      "op_kind": "xfer",
+      "outcome_class": "ok",
+      "category": null,
+      "route": "ec2_s3_same_region",
+      "scope": "variant",
+      "quantity": 1000
+    },
+    {
+      "row_type": "transfer",
+      "op_kind": "xfer",
+      "outcome_class": "ok",
+      "category": null,
+      "route": "ec2_ec2_cross_az",
+      "scope": "variant",
+      "quantity": 200
+    },
+    {
+      "row_type": "transfer",
+      "op_kind": "xfer",
+      "outcome_class": "ok",
+      "category": null,
+      "route": "internet",
+      "scope": "variant",
+      "quantity": 50
+    }
+  ],
+  "expected": {
+    "total": 2,
+    "lines": {
+      "ec2_s3_same_region": {
+        "quantity": 1000,
+        "money": 0
+      },
+      "ec2_ec2_cross_az": {
+        "quantity": 200,
+        "money": 2
+      },
+      "internet": {
+        "quantity": 50,
+        "money": 0
+      }
+    }
+  },
+  "derivation": "binary_gb. Same-region EC2<->S3 price 0 -> 0. Cross-AZ: 200 GB * 0.01 = 2.00. Internet price is null -> line with a note and money 0. Total 2.00."
+}

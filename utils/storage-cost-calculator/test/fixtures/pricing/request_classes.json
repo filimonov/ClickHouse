@@ -1,0 +1,69 @@
+{
+  "name": "request_classes",
+  "preset_id": "aws-us-east-1",
+  "rows": [
+    {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 2000000
+    },
+    {
+      "row_type": "request",
+      "op_kind": "ListObjectsV2",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 500000
+    },
+    {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 10000000
+    },
+    {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 5000000
+    },
+    {
+      "row_type": "request",
+      "op_kind": "DeleteObjects",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "quantity": 1000000
+    }
+  ],
+  "expected": {
+    "total": 18.5,
+    "lines": {
+      "put_copy_post_list": {
+        "quantity": 2500000,
+        "money": 12.5
+      },
+      "get_and_other": {
+        "quantity": 15000000,
+        "money": 6
+      },
+      "delete_cancel": {
+        "quantity": 1000000,
+        "money": 0
+      }
+    }
+  },
+  "derivation": "PUT/COPY/POST/LIST class: (2,000,000 + 500,000) / 1000 * 0.005 = 2500 * 0.005 = 12.5. GET class: (10,000,000 + 5,000,000) / 1000 * 0.0004 = 15000 * 0.0004 = 6.0. DELETE class price 0 -> 0. Total 18.5."
+}

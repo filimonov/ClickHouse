@@ -1,0 +1,74 @@
+{
+  "schema": "registry/1",
+  "version": "1",
+  "quantities": [
+    {
+      "id": "uncompressed_bytes_per_part",
+      "block": "fixture",
+      "label": "uncompressed_bytes_per_part",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "bytes",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048576,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "fixture",
+        "version": "1"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "parts_inserted",
+      "block": "fixture",
+      "label": "parts_inserted",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "fixture",
+        "version": "1"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "min_bytes_for_wide_part",
+      "block": "fixture",
+      "label": "min_bytes_for_wide_part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "bytes",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10485760,
+      "rule": null,
+      "coef": "min_bytes_for_wide_part",
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "fixture",
+        "version": "1"
+      },
+      "hint": null,
+      "status": "ok"
+    }
+  ],
+  "sets": {},
+  "precedence": []
+}
