@@ -191,8 +191,6 @@ class S3Card(LifecycleCard):
     def complete(self, ctx, timeout_s=300):
         self.wait_drained(ctx, timeout_s)
         st = self.state(ctx)
-        st['rows'] = [sum(_count(self.replica_client(ctx), f'SELECT count() FROM {DATABASE}.{t}')
-                          for t in self.tables(ctx))]
         st['parts'] = self.all_parts(ctx)
         st['layout'] = self.snapshot_layout(ctx, st['parts'])
         st['metadata'] = self.metadata_files(ctx, [p for p in st['parts'] if p['active']])
@@ -202,6 +200,14 @@ class S3Card(LifecycleCard):
         root = os.path.join(ctx.pass_dir, self.p(ctx)['replica'], 's3_meta')
         rels = [p['path'][p['path'].find('store/'):] for p in parts if 'store/' in p['path']]
         return allocated(root, rels) if os.path.isdir(root) else None
+
+    def teardown(self, ctx):
+        """Counts rows after the window: a count() over lightweight-deleted parts reads `_row_exists` from S3."""
+        st = self.state(ctx)
+        if 'rows' not in st:
+            st['rows'] = [sum(_count(self.replica_client(ctx), f'SELECT count() FROM {DATABASE}.{t}')
+                              for t in self.tables(ctx))]
+        super().teardown(ctx)
 
     def collect_layout(self, ctx):  # the lifecycle hook keyed by part name only; this card keys by table too
         raise NotImplementedError('S3Card snapshots its layout with snapshot_layout')

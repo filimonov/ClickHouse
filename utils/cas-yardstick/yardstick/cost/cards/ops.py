@@ -286,3 +286,26 @@ class Startup(S3Card):
         out = super().assertions(ctx, draft)
         out['startup_seconds>0'] = (True, draft['observations']['startup_seconds'] > 0)
         return out
+
+
+@register
+class MergeOnly(OperationCard):
+    """Inserts with merges stopped in the setup; the window holds only `OPTIMIZE TABLE … FINAL`.
+
+    The result is read from `system.parts`; removal of the sources waits for `old_parts_lifetime`, outside the window.
+    """
+
+    name = 'merge-only'
+
+    def observe(self, ctx, draft):
+        out = super().observe(ctx, draft)
+        st = self.state(ctx)
+        sources = [p for p in st['parts_before'] if p['active']]
+        results = [p for p in st['parts'] if p['active']]
+        return {**out, 'sources': len(sources), 'source_types': sorted({p['part_type'] for p in sources}),
+                'results': self.part_view(results)}
+
+    def assertions(self, ctx, draft):
+        out = super().assertions(ctx, draft)
+        out['one_result'] = (1, len(draft['observations']['results']))
+        return out

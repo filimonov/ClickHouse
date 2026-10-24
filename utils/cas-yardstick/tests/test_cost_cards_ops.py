@@ -131,3 +131,34 @@ class StartupTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WindowContentsTest(unittest.TestCase):
+    def test_row_counts_run_after_the_window_before_the_drop(self):
+        # A count() over lightweight-deleted parts reads `_row_exists`: it must not land in the measured window.
+        card, m = CARDS['mutation'], manifest('mutation.lightweight-delete')
+        cluster = FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})
+        ctx = ctx_for(m, cluster)
+        ctx.replay = lambda: type('B', (), {'upper': type('I', (), {'objects': {}})()})()
+        card.complete(ctx)
+        self.assertFalse([q for q in cluster.clients[0].log if q.startswith('SELECT count() FROM yardstick.')])
+        card.teardown(ctx)
+        log = cluster.clients[0].log
+        counts = [i for i, q in enumerate(log) if q.startswith('SELECT count() FROM yardstick.')]
+        drop = [i for i, q in enumerate(log) if q.startswith('DROP DATABASE')]
+        self.assertEqual(len(counts), 2)
+        self.assertLess(max(counts), min(drop))
+        self.assertEqual(card.state(ctx)['rows'], [0])
+
+
+class MergeOnlyTest(unittest.TestCase):
+    def test_inserts_run_in_the_setup_and_the_window_holds_only_the_merge(self):
+        card, m = CARDS['merge-only'], manifest('merge-only.narrow-compact-sources')
+        cluster = FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})
+        ctx = ctx_for(m, cluster)
+        card.setup(ctx)
+        log = cluster.clients[0].log
+        self.assertEqual(sum(q.startswith('INSERT') for q in log), 8)
+        n = len(log)
+        card.measured(ctx)
+        self.assertEqual(log[n:], ['OPTIMIZE TABLE yardstick.t FINAL'])

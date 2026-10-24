@@ -1,0 +1,83 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.warm-off",
+  "policy": "s3",
+  "inputs": {
+    "replicas": 1,
+    "large_objects_per_part": 0,
+    "multipart_parts": 0,
+    "parts_inserted_per_month": 0,
+    "merge_results_per_month": 0,
+    "merge_sources_per_month": 0,
+    "merge_removals_per_month": 0,
+    "large_objects_per_merge_result": 0,
+    "mutations_per_month": 0,
+    "mutated_compact_parts_per_month": 0,
+    "mutated_wide_parts_per_month": 0,
+    "large_objects_per_mutated_part": 0,
+    "mutation_entries_removed_per_month": 0,
+    "mutation_kind": "update_column",
+    "expired_parts_per_month": 0,
+    "expiry_operations_per_month": 0,
+    "select_part_reads_per_day": 0.13150684931506848,
+    "read_streams_per_part": 3,
+    "parts_first_read_per_month": 0,
+    "restarts_per_month": 0,
+    "active_parts": 0,
+    "outdated_parts": 0,
+    "statistics_refreshes_per_month": 0,
+    "retained_mutation_entries": 0,
+    "missed_parts_per_restart": 0,
+    "cache_miss_fraction": 0,
+    "cache_size_gib": 0,
+    "write_amplification_rule": 1,
+    "cache_enabled": "0",
+    "shape": "wide",
+    "part_type": "wide"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": {
+          "min": 1,
+          "max": 200,
+          "basis": "assumption",
+          "reason": "warm part reads: this fit measures them"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    },
+    {
+      "claim": "a cold part read loads statistics.packed once per column file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1386
+    },
+    {
+      "claim": "statistics part pruning keeps the estimates on the part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1475
+    },
+    {
+      "claim": "marks come from the mark cache once loaded",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeMarksLoader.cpp",
+      "line": 109
+    }
+  ],
+  "prediction_commit": "pending"
+}
