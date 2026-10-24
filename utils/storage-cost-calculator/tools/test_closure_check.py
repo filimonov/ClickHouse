@@ -535,5 +535,13 @@ class PerFamilyBackingTest(unittest.TestCase):
             cc.support({"quantities": []}, cov, [], pending=[], applicability={}, coefficients=coefficients)
         self.assertEqual(seen["measured"], {"orphan"})
 
+    def test_validation_rows_do_not_widen_a_coefficients_families(self):
+        # A validation row confirms a value on another card; only fit and hold-out rows make the coefficient a
+        # member of that card's family (whose entries then need fit and hold-out rows there).
+        expr = {"kind": "coef", "id": "ca"}
+        cov = self.cov([("ca", "a-card.x", "fit", "done"), ("ca", "a-card.y", "holdout", "done"),
+                        ("ca", "b-card.x", "validation", "done")])
+        self.assertEqual(cc._pending_cells(cov, self.files(expr), self.APP), [])
+
 if __name__ == '__main__':
     unittest.main()

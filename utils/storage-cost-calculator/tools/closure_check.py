@@ -194,12 +194,12 @@ def derived_refs(node, registry):
 def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
-    A coefficient belongs to the families of the cards its evidence rows come from. A (cell, family) entry is backed
+    A coefficient belongs to the families of the cards its fit and hold-out rows come from. A (cell, family) entry is backed
     when every coefficient the cell references (through registry derivations too) that belongs to that family has a
     completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the variant; the
     cell's coefficients of other families are checked under their own entries. An entry with no coefficient of its
-    family is backed by a `done` validation row (or fit and hold-out rows) of that family for a quantity the cell
-    references (source-derived evidence exercised by a fixture). One such row backs the entry even when the cell
+    family is backed by a `done` validation row (or fit and hold-out rows) of that family for a quantity or coefficient
+    the cell references (source-derived evidence exercised by a fixture). One such row backs the entry even when the cell
     reads several pinned quantities: pinned values are source facts, and the row shows the fixture exercises the
     cell on that variant. A planned row backs nothing. A coefficient in `measured` (the ids of measured
     coefficients) with no evidence row at all belongs to no family, so every supported entry of a cell that reads
@@ -216,8 +216,10 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
         for v in card["model_variants"]:
             rows.setdefault((row["coefficient"], card["family"], v), set()).add((row.get("role"), row["status"]))
     families_of = {}
-    for coef, fam, _ in rows:
-        families_of.setdefault(coef, set()).add(fam)
+    for (coef, fam, _), got in rows.items():
+        # Validation rows confirm a value; only fit and hold-out rows make the coefficient one of the family's.
+        if {role for role, _ in got} & {"fit", "holdout"}:
+            families_of.setdefault(coef, set()).add(fam)
 
     def measured_ok(coef, fam, v):
         got = rows.get((coef, fam, v), set())
@@ -246,7 +248,7 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
                 own = {c for c in entry["coefs"] if fam in families_of.get(c, set())}
                 orphans = {c for c in entry["coefs"] if c in (measured or ()) and c not in families_of}
                 backed = not orphans and (all(measured_ok(c, fam, v) for c in own) if own
-                                          else pinned_ok(entry["quantities"], fam, v))
+                                          else pinned_ok(entry["quantities"] | entry["coefs"], fam, v))
                 if not backed:
                     pending.append((v, op, fam))
     return pending
