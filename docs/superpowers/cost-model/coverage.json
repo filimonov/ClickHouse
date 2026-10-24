@@ -1968,7 +1968,12 @@
           5
         ],
         "objects_per_part": [
+          11,
           11
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -1990,7 +1995,12 @@
           5
         ],
         "objects_per_part": [
+          11,
           11
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2012,7 +2022,12 @@
           5
         ],
         "objects_per_part": [
+          19,
           19
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2034,7 +2049,12 @@
           5
         ],
         "objects_per_part": [
+          19,
           19
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2056,7 +2076,12 @@
           40
         ],
         "objects_per_part": [
+          11,
           11
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2078,7 +2103,12 @@
           40
         ],
         "objects_per_part": [
+          11,
           11
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2102,6 +2132,10 @@
         "objects_per_part": [
           22,
           154
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -2125,6 +2159,10 @@
         "objects_per_part": [
           22,
           154
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -2146,7 +2184,12 @@
           40
         ],
         "objects_per_part": [
+          89,
           89
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -2168,7 +2211,12 @@
           40
         ],
         "objects_per_part": [
+          89,
           89
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -2190,7 +2238,12 @@
           21
         ],
         "objects_per_part": [
+          158,
           158
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -2212,7 +2265,12 @@
           21
         ],
         "objects_per_part": [
+          158,
           158
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -2234,7 +2292,12 @@
           20
         ],
         "objects_per_part": [
+          49,
           49
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "validation",
@@ -2256,7 +2319,12 @@
           2
         ],
         "objects_per_part": [
+          15,
           15
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
         ]
       },
       "role": "validation",
@@ -2274,7 +2342,16 @@
       "policy": "s3",
       "span": {
         "merge_result_objects": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "validation",
@@ -2292,7 +2369,16 @@
       "policy": "s3",
       "span": {
         "merge_result_objects": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "validation",
@@ -2310,7 +2396,16 @@
       "policy": "s3",
       "span": {
         "merge_result_objects": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "validation",
@@ -2328,7 +2423,16 @@
       "policy": "s3",
       "span": {
         "merge_result_objects": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "validation",
@@ -2350,7 +2454,12 @@
           20
         ],
         "objects_per_part": [
+          49,
           49
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "validation",
@@ -2372,7 +2481,12 @@
           2
         ],
         "objects_per_part": [
+          15,
           15
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
         ]
       },
       "role": "validation",
@@ -2390,7 +2504,16 @@
       "policy": "s3_cached",
       "span": {
         "merge_result_objects": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "validation",
@@ -2408,7 +2531,16 @@
       "policy": "s3_cached",
       "span": {
         "merge_result_objects": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "validation",
@@ -2426,7 +2558,16 @@
       "policy": "s3_cached",
       "span": {
         "merge_result_objects": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "validation",
@@ -2444,7 +2585,16 @@
       "policy": "s3_cached",
       "span": {
         "merge_result_objects": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "validation",
@@ -2461,11 +2611,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
         ],
-        "part_type": [
-          "compact"
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2482,11 +2634,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
         ],
-        "part_type": [
-          "compact"
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2503,11 +2657,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2524,11 +2680,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2545,11 +2703,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "compact"
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2566,11 +2726,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "compact"
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2587,11 +2749,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -2608,11 +2772,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -2629,13 +2795,15 @@
       "experiment_id": "objects-per-part.wide-compact-2",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "rows": [
+          25000,
+          25000
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
           25000,
           25000
         ]
@@ -2654,13 +2822,15 @@
       "experiment_id": "objects-per-part.wide-compact-2",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "rows": [
+          25000,
+          25000
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
           25000,
           25000
         ]
@@ -2679,8 +2849,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2697,8 +2872,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2715,8 +2895,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2733,8 +2918,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2751,8 +2941,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2769,8 +2964,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2787,11 +2987,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -2808,11 +3010,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -2829,11 +3033,13 @@
       "experiment_id": "objects-per-part.types-holdout",
       "policy": "s3",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -2850,11 +3056,13 @@
       "experiment_id": "objects-per-part.types-holdout",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
         ],
-        "part_type": [
-          "wide"
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -2872,7 +3080,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          15,
           15
+        ],
+        "columns": [
+          2,
+          2
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
         ]
       },
       "role": "validation",
@@ -2890,7 +3107,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          15,
           15
+        ],
+        "columns": [
+          2,
+          2
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
         ]
       },
       "role": "validation",
@@ -2907,8 +3133,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2925,8 +3156,13 @@
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -2943,8 +3179,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2961,8 +3202,13 @@
       "experiment_id": "objects-per-part.narrow-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -2979,8 +3225,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -2997,8 +3248,13 @@
       "experiment_id": "objects-per-part.wide-compact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -3015,8 +3271,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -3033,8 +3294,13 @@
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -3054,6 +3320,10 @@
         "columns": [
           20,
           20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3073,6 +3343,10 @@
         "columns": [
           20,
           20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3090,7 +3364,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -3108,7 +3391,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -3126,7 +3418,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -3144,7 +3445,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -3162,7 +3472,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -3180,7 +3499,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -3198,7 +3526,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3216,7 +3553,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3234,7 +3580,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          154,
           154
+        ],
+        "columns": [
+          25,
+          25
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -3252,7 +3607,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          154,
           154
+        ],
+        "columns": [
+          25,
+          25
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -3270,7 +3634,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          158,
           158
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3288,7 +3661,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          158,
           158
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3306,7 +3688,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          49,
           49
+        ],
+        "columns": [
+          20,
+          20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3324,7 +3715,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          49,
           49
+        ],
+        "columns": [
+          20,
+          20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3342,7 +3742,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -3360,7 +3769,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -3378,7 +3796,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -3396,7 +3823,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          19,
           19
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -3414,7 +3850,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -3432,7 +3877,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          11,
           11
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -3450,7 +3904,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3468,7 +3931,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          89,
           89
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3486,7 +3958,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          154,
           154
+        ],
+        "columns": [
+          25,
+          25
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -3504,7 +3985,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          154,
           154
+        ],
+        "columns": [
+          25,
+          25
+        ],
+        "rows_per_insert": [
+          5000,
+          100000
         ]
       },
       "role": "fit",
@@ -3522,7 +4012,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          158,
           158
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3540,7 +4039,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          158,
           158
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3558,7 +4066,16 @@
       "policy": "s3",
       "span": {
         "objects_per_part": [
+          49,
           49
+        ],
+        "columns": [
+          20,
+          20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3576,7 +4093,16 @@
       "policy": "s3_cached",
       "span": {
         "objects_per_part": [
+          49,
           49
+        ],
+        "columns": [
+          20,
+          20
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3600,6 +4126,10 @@
         "streams_read": [
           3,
           3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3623,6 +4153,10 @@
         "streams_read": [
           4,
           4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3646,6 +4180,10 @@
         "streams_read": [
           4,
           4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "validation",
@@ -3669,6 +4207,10 @@
         "streams_read": [
           3,
           3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3692,6 +4234,10 @@
         "streams_read": [
           4,
           4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3715,6 +4261,10 @@
         "streams_read": [
           4,
           4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "validation",
@@ -3731,8 +4281,13 @@
       "experiment_id": "cold-select.cache-off",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3749,8 +4304,13 @@
       "experiment_id": "cold-select.cache-off-types",
       "policy": "s3",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3767,10 +4327,14 @@
       "experiment_id": "cold-select.cache-off-types",
       "policy": "s3",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
         ],
-        "band": "wide fit +-50 %"
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
       },
       "role": "holdout",
       "prediction_commit": "80cd02f1c27",
@@ -3786,12 +4350,17 @@
       "experiment_id": "cold-select.cache-off-types-2",
       "policy": "s3",
       "span": {
-        "shape": [
-          "types"
-        ],
         "k_range": [
           20000,
           100000
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3811,6 +4380,10 @@
         "columns": [
           40,
           40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3830,6 +4403,10 @@
         "columns": [
           21,
           21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3846,8 +4423,13 @@
       "experiment_id": "cold-select.cache-on",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3864,8 +4446,13 @@
       "experiment_id": "cold-select.cache-on-types",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3882,12 +4469,17 @@
       "experiment_id": "cold-select.cache-on-types-2",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
-        ],
         "k_range": [
           20000,
           100000
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3904,8 +4496,13 @@
       "experiment_id": "cold-select.cache-on",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3922,8 +4519,13 @@
       "experiment_id": "cold-select.cache-on-types",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "fit",
@@ -3940,12 +4542,17 @@
       "experiment_id": "cold-select.cache-on-types-2",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
-        ],
         "k_range": [
           20000,
           100000
+        ],
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3962,8 +4569,13 @@
       "experiment_id": "cold-select.cache-on",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "fit",
@@ -3980,8 +4592,13 @@
       "experiment_id": "cold-select.cache-on-types",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "holdout",
@@ -3998,8 +4615,13 @@
       "experiment_id": "cold-select.cache-on-types-2",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "types"
+        "columns": [
+          26,
+          26
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
         ]
       },
       "role": "validation",
@@ -4016,15 +4638,17 @@
       "experiment_id": "startup.intact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "active_parts": [
           3,
           3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4041,15 +4665,17 @@
       "experiment_id": "startup.wide-parts",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "wide"
-        ],
         "active_parts": [
           2,
           2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4066,15 +4692,17 @@
       "experiment_id": "startup.intact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "active_parts": [
           3,
           3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4091,15 +4719,17 @@
       "experiment_id": "startup.wide-parts",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "wide"
-        ],
         "active_parts": [
           2,
           2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4116,15 +4746,17 @@
       "experiment_id": "startup.intact",
       "policy": "s3",
       "span": {
-        "shape": [
-          "narrow"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "active_parts": [
           3,
           3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4141,15 +4773,17 @@
       "experiment_id": "startup.wide-parts",
       "policy": "s3",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "wide"
-        ],
         "active_parts": [
           2,
           2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4166,15 +4800,17 @@
       "experiment_id": "startup.intact",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "narrow"
-        ],
-        "part_type": [
-          "compact"
-        ],
         "active_parts": [
           3,
           3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4191,15 +4827,17 @@
       "experiment_id": "startup.wide-parts",
       "policy": "s3_cached",
       "span": {
-        "shape": [
-          "wide"
-        ],
-        "part_type": [
-          "wide"
-        ],
         "active_parts": [
           2,
           2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4220,8 +4858,13 @@
           5,
           5
         ],
-        "source_type": [
-          "compact"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4242,8 +4885,13 @@
           5,
           5
         ],
-        "source_type": [
-          "wide"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4264,8 +4912,13 @@
           40,
           40
         ],
-        "source_type": [
-          "compact"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -4286,8 +4939,13 @@
           40,
           40
         ],
-        "source_type": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4308,8 +4966,13 @@
           5,
           5
         ],
-        "source_type": [
-          "compact"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4330,8 +4993,13 @@
           5,
           5
         ],
-        "source_type": [
-          "wide"
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4352,8 +5020,13 @@
           40,
           40
         ],
-        "source_type": [
-          "compact"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
         ]
       },
       "role": "fit",
@@ -4374,8 +5047,13 @@
           40,
           40
         ],
-        "source_type": [
-          "wide"
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
         ]
       },
       "role": "holdout",
@@ -4395,6 +5073,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4414,6 +5100,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4433,6 +5127,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4452,6 +5154,14 @@
         "empty_parts": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4471,6 +5181,14 @@
         "empty_parts": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4490,6 +5208,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4509,6 +5235,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4528,6 +5262,14 @@
         "parts_removed": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4547,6 +5289,14 @@
         "empty_parts": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4566,6 +5316,14 @@
         "empty_parts": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4582,12 +5340,17 @@
       "experiment_id": "mutation.wide-update-one-column",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4604,12 +5367,17 @@
       "experiment_id": "mutation.wide-update-one-column",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4629,6 +5397,14 @@
         "tables": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4648,6 +5424,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4664,12 +5448,17 @@
       "experiment_id": "mutation.wide-update-one-column",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4686,12 +5475,17 @@
       "experiment_id": "mutation.wide-update-one-column",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4711,6 +5505,14 @@
         "tables": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4730,6 +5532,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
         ]
       },
       "role": "fit",
@@ -4746,12 +5556,17 @@
       "experiment_id": "mutation.compact-update-one-column",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4768,12 +5583,17 @@
       "experiment_id": "mutation.compact-update-one-column",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4793,6 +5613,14 @@
         "tables": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4812,6 +5640,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4828,12 +5664,17 @@
       "experiment_id": "mutation.compact-update-one-column",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4850,12 +5691,17 @@
       "experiment_id": "mutation.compact-update-one-column",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "update_column"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4875,6 +5721,14 @@
         "tables": [
           1,
           1
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4894,6 +5748,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
         ]
       },
       "role": "fit",
@@ -4910,12 +5772,17 @@
       "experiment_id": "mutation.wide-delete",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -4932,12 +5799,17 @@
       "experiment_id": "mutation.wide-delete",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -4957,6 +5829,14 @@
         "tables": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -4976,6 +5856,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -4992,12 +5880,17 @@
       "experiment_id": "mutation.wide-delete",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5014,12 +5907,17 @@
       "experiment_id": "mutation.wide-delete",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5039,6 +5937,14 @@
         "tables": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5058,6 +5964,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5074,12 +5988,17 @@
       "experiment_id": "mutation.lightweight-delete",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "lightweight_delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5096,12 +6015,17 @@
       "experiment_id": "mutation.lightweight-delete",
       "policy": "s3",
       "span": {
-        "mutation_kind": [
-          "lightweight_delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5121,6 +6045,14 @@
         "tables": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5140,6 +6072,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5156,12 +6096,17 @@
       "experiment_id": "mutation.lightweight-delete",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "lightweight_delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5178,12 +6123,17 @@
       "experiment_id": "mutation.lightweight-delete",
       "policy": "s3_cached",
       "span": {
-        "mutation_kind": [
-          "lightweight_delete"
-        ],
         "parts": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5203,6 +6153,14 @@
         "tables": [
           2,
           2
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",
@@ -5222,6 +6180,14 @@
         "parts_removed": [
           2,
           4
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          400000
         ]
       },
       "role": "fit",

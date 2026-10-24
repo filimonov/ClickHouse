@@ -1260,54 +1260,6 @@
        ]
       }
      }
-    },
-    {
-     "row_type": "request",
-     "op_kind": "GetObject",
-     "outcome_class": "ok",
-     "category": null,
-     "route": null,
-     "scope": "variant",
-     "basis": "predicted",
-     "expr": {
-      "kind": "mul",
-      "dim": "count",
-      "a": {
-       "kind": "mul",
-       "dim": "1",
-       "a": {
-        "kind": "mul",
-        "dim": "1",
-        "a": {
-         "kind": "input",
-         "id": "restarts_per_month",
-         "dim": "count"
-        },
-        "b": {
-         "kind": "input",
-         "id": "replicas",
-         "dim": "count"
-        }
-       },
-       "b": {
-        "kind": "input",
-        "id": "missed_parts_per_restart",
-        "dim": "count"
-       }
-      },
-      "b": {
-       "kind": "lookup",
-       "dim": "count",
-       "table_id": "catchup_requests_per_missed_part",
-       "keys": [
-        {
-         "kind": "const",
-         "value": "s3",
-         "dim": "enum:variant_id"
-        }
-       ]
-      }
-     }
     }
    ],
    "allocation": null,
@@ -1315,7 +1267,7 @@
    "notes": [
     {
      "kind": "const",
-     "value": "pending_owner: replication. catchup_requests_per_missed_part[s3] (last GetObject row) comes from the replication report; the startup rows are measured here.",
+     "value": "pending_owner: replication. Catch-up after a restart is a GetObject row of missed_parts_per_restart x catchup_requests_per_missed_part[s3], added when the replication report defines that coefficient: the contract loader rejects a reference to a coefficient no report carries.",
      "dim": "1"
     }
    ]
