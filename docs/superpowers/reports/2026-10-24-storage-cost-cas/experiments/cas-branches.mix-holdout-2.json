@@ -1,0 +1,38 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "cas-branches.mix-holdout-2",
+  "card": "cas-branches",
+  "case_id": "mix-holdout-2",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "min_bytes_for_wide_part": 0
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a1 Array(UInt32), a2 Array(UInt32), s1 String, s2 String, l LowCardinality(String)",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, range(k % 3) AS a1, arrayMap(x -> toUInt32(x * k), range(k % 5)) AS a2, hex(sipHash64(k, {seed})) AS s1, repeat('x', k % 11) AS s2, toString(k % 31) AS l FROM numbers({rows})",
+    "rows": 200000,
+    "inserts": 1
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Replacement hold-out for the branch population (mix-holdout drove a change): one Wide part (200 000 rows) of UInt64, two Array(UInt32), two String and one LowCardinality(String) columns; every substream file a fresh blob, every small file inline."
+}

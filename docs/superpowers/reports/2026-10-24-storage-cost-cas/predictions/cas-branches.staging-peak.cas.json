@@ -5,8 +5,8 @@
   "inputs": {
     "part_type": "Wide",
     "staged_bin_bytes": 160061125,
-    "basis": "derived for the bytes; assumption for the sampling",
-    "note": "every blob file of the part sits in the scratch directory until the commit; the 0.5 s sampler may miss the exact peak, so the lower bound is half the staged bytes (assumption)"
+    "basis": "derived",
+    "note": "every blob file of the part (5 .bin of 32 012 225 B, 5 equal .cmrk2 of a few KiB) sits in the scratch directory from the part write to the end of its commit; the card polls the scratch directory every 5 ms. The runner sampler (0.5 s) missed the plateau in 2 of 3 passes of run cost-20261024T074131Z"
   },
   "expected": {
     "foreground": {
@@ -24,9 +24,9 @@
         "inline": 9,
         "resurrect": 0
       },
-      "local_peak_bytes": {
-        "min": 80030562,
-        "max": 168449733
+      "scratch_peak_bytes": {
+        "min": 160061125,
+        "max": 160081605
       }
     }
   },

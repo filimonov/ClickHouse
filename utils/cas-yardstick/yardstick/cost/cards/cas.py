@@ -98,6 +98,46 @@ def by_family(rows: list, families: list) -> dict:
     return out
 
 
+class ScratchPoller:
+    """Peak bytes of the files under every `cas_scratch` directory of one replica, polled on a thread.
+
+    The runner's directory sampler (0.5 s) misses a staging plateau shorter than its interval; the staged files of a
+    part live from the part write to the end of its commit (ContentAddressedTransaction.cpp:984-995, :593), so a
+    poll every few milliseconds sees the plateau.
+    """
+
+    def __init__(self, replica_dir: str, interval_s: float):
+        import threading  # noqa: PLC0415 (only the staging case polls)
+        self.replica_dir, self.interval_s, self.peak = replica_dir, interval_s, 0
+        self._stop, self._thread = threading.Event(), threading.Thread(target=self._run, daemon=True)
+
+    def _size(self) -> int:
+        import os  # noqa: PLC0415
+        total = 0
+        for root, dirs, files in os.walk(self.replica_dir):
+            if 'cas_scratch' not in root.split(os.sep):
+                continue
+            for f in files:
+                try:
+                    total += os.stat(os.path.join(root, f)).st_size
+                except FileNotFoundError:
+                    pass  # removed between the listing and the stat: no longer staged
+        return total
+
+    def _run(self):
+        while not self._stop.is_set():
+            self.peak = max(self.peak, self._size())
+            self._stop.wait(self.interval_s)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self) -> int:
+        self._stop.set()
+        self._thread.join()
+        return max(self.peak, self._size())
+
+
 def pool_prefix(ctx) -> str:
     """The pass's CAS pool prefix in the bucket: `<run_id>/<policy>/<card>/<case>/k<n>/shared/` (runner key layout)."""
     return '/'.join(ctx.pass_dir.rstrip('/').split('/')[-5:]) + '/shared/'
@@ -197,9 +237,17 @@ class CasBranches(CasCard):
     name = 'cas-branches'
 
     def measured(self, ctx):
-        result = super().measured(ctx)
-        for step in self.p(ctx).get('steps', []):
-            self.replica_client(ctx).query(self.sql(ctx, step))
+        poll_ms = self.p(ctx).get('scratch_poll_ms')
+        poller = ScratchPoller(ctx.cluster.run_dir(1), poll_ms / 1000) if poll_ms else None
+        if poller:
+            poller.start()
+        try:
+            result = super().measured(ctx)
+            for step in self.p(ctx).get('steps', []):
+                self.replica_client(ctx).query(self.sql(ctx, step))
+        finally:
+            if poller:
+                self.state(ctx)['scratch_peak_bytes'] = poller.stop()
         return result
 
     def complete(self, ctx, timeout_s=300):
@@ -236,6 +284,7 @@ class CasBranches(CasCard):
                 'staged_bytes': sum(st.get('placement_sizes', {}).get(part, {}).get(fn, 0)
                                     for part, f in files.items() for fn, key in f.items() if key),
                 'local_peak_bytes': local.get('peak_allocated_bytes'),
+                'scratch_peak_bytes': st.get('scratch_peak_bytes'),
                 'branch_hashes': {b: sorted(h) for b, h in hashes.items()},
                 'manifest_puts': sum(1 for e in st['events'] if e['event_type'] == 'manifest_put'),
                 'ref_events': {t: sum(1 for e in st['events'] if e['event_type'] == t)
@@ -249,8 +298,9 @@ class CasBranches(CasCard):
             source = obs['placement'].get(checks['adopted_columns']['source_part'], {})
             if not source:
                 source = self.state(ctx)['placement'].get(checks['adopted_columns']['source_part'], {})
+            # `cas_log` renders a blob id as `<algo>:<hex>` (blobIdOf); placement keys end in `<algo>/<2 hex>/<hex>`.
             by_hash = {key.rsplit('/', 1)[-1]: fn for fn, key in source.items() if key}
-            adopted = sorted({by_hash.get(h, '?') for h in obs['branch_hashes'].get('adoption', [])})
+            adopted = sorted({by_hash.get(h.rsplit(':', 1)[-1], '?') for h in obs['branch_hashes'].get('adoption', [])})
             columns = sorted({fn.split('.', 1)[0] for fn in adopted if fn.endswith('.bin')})
             out['adoption.columns'] = (checks['adopted_columns']['columns'], columns)
             out['adoption.files_known'] = (True, '?' not in adopted)

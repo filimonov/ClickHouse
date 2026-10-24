@@ -18,7 +18,7 @@ import artifacts  # noqa: E402
 
 R = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-cas')
 EXPERIMENTS = os.path.join(R, 'experiments')
-CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout'},
+CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout', 'mix-holdout-2'},
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-10k', 'objects-30k', 'objects-100k'},
@@ -279,6 +279,25 @@ class BranchesTest(unittest.TestCase):
             split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
             self.assertEqual([r['op'] for r in split['foreground']], ['PutObject'])
             self.assertEqual([r['op'] for r in card.state(ctx)['observer_rows']], ['GetObject'])
+
+
+class ScratchPollerTest(unittest.TestCase):
+    def test_peak_counts_only_scratch_files_and_survives_removal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = os.path.join(tmp, 'data', 'disks', 'cas', 'cas_scratch')
+            os.makedirs(scratch)
+            with open(os.path.join(tmp, 'data', 'other.bin'), 'wb') as f:
+                f.write(b'x' * 1000)
+            poller = cas.ScratchPoller(tmp, 0.001)
+            poller.start()
+            for i in range(3):
+                with open(os.path.join(scratch, f'f{i}.tmp'), 'wb') as f:
+                    f.write(b'y' * 100)
+            import time
+            time.sleep(0.05)
+            for i in range(3):
+                os.remove(os.path.join(scratch, f'f{i}.tmp'))
+            self.assertEqual(poller.stop(), 300)
 
 
 class GcLifecycleTest(unittest.TestCase):

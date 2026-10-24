@@ -4,25 +4,58 @@
   "policy": "cas",
   "inputs": {
     "drop_requests": {
-      "GetObject": 9,
-      "PutObject": 7,
+      "GetObject": 12,
+      "PutObject": 13,
       "HeadObject": 1,
       "DeleteObject": 1,
       "ListObjectsV2": 2
     },
-    "basis": "drop_requests: measured shape from smoke run cost-20261024T073204Z (gc-lifecycle.drop) with GC off here, so no request falls inside a round"
+    "basis": "fit: the first prediction (GET 9, PUT 7 for the drop) came from a GC-on smoke pass where part of the drop fell inside rounds; run cost-20261024T074131Z measured the drop of 5 parts as 6 ref transactions (one ref_drop per part, batched by the ref queue, plus the namespace terminal), 5 extra catalog GETs, one catalog PUT, the format_version.txt HEAD/GET/DELETE and 2 LISTs"
   },
   "expected": {
     "foreground": {
       "r1": {
         "HeadObject": 6,
-        "PutObject": 52,
-        "GetObject": 45,
+        "PutObject": 58,
+        "GetObject": 48,
         "DeleteObject": 1,
         "ListObjectsV2": 2
       }
     },
-    "observations": {}
+    "observations": {
+      "foreground_by_family": {
+        "batch": {
+          "ListObjectsV2": 2
+        },
+        "blob": {
+          "HeadObject": 5,
+          "PutObject": 5
+        },
+        "blob_meta": {
+          "PutObject": 5
+        },
+        "manifest": {
+          "GetObject": 5,
+          "PutObject": 5
+        },
+        "ns_files": {
+          "DeleteObject": 1,
+          "GetObject": 1,
+          "HeadObject": 1
+        },
+        "ref_catalog": {
+          "GetObject": 20,
+          "PutObject": 1
+        },
+        "ref_ckpt": {
+          "GetObject": 22,
+          "PutObject": 21
+        },
+        "ref_stream": {
+          "PutObject": 21
+        }
+      }
+    }
   },
   "tolerance": {
     "abs": {},

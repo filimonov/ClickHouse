@@ -31,7 +31,8 @@
     "row_bytes": 40,
     "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, k * 3 AS a, k * 5 AS b, k * 7 AS c, k * 11 AS d FROM numbers({rows})",
     "rows": 4000000,
-    "inserts": 1
+    "inserts": 1,
+    "scratch_poll_ms": 5
   },
   "scale": 1.0,
   "repeats": 3,
