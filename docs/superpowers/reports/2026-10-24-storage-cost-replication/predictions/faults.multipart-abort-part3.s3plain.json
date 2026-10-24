@@ -1,0 +1,89 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.multipart-abort-part3",
+  "policy": "s3plain",
+  "inputs": {
+    "basis": "assumption"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 0,
+          "max": 60,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 60,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "CreateMultipartUpload": {
+          "min": 1,
+          "max": 1,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "UploadPart": {
+          "min": 5,
+          "max": 6,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "AbortMultipartUpload": {
+          "min": 1,
+          "max": 1,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 2,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 4,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    },
+    {
+      "claim": "a failed write buffer is cancelled and tries to abort its multipart upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 244
+    },
+    {
+      "claim": "the abort sends AbortMultipartUpload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 469
+    }
+  ],
+  "prediction_commit": "pending"
+}

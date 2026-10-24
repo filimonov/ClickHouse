@@ -1,0 +1,71 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-natural-fit.default",
+  "policy": "cas",
+  "inputs": {
+    "basis": "acquisition_rule (lifecycle report): with default settings a follower fetches every inserted part and executes a merge or mutation itself unless a source is missing when it runs the entry; the 0.25 bound on that race is an assumption"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 1,
+          "max": 100000,
+          "basis": "assumption",
+          "reason": "natural merges run on both replicas; the counts depend on the merge sequence, which this case measures; the bound only rules out a missing or runaway workload"
+        }
+      },
+      "r2": {
+        "PutObject": {
+          "min": 1,
+          "max": 100000,
+          "basis": "assumption",
+          "reason": "natural merges run on both replicas; the counts depend on the merge sequence, which this case measures; the bound only rules out a missing or runaway workload"
+        }
+      }
+    },
+    "observations": {
+      "fetch_fraction_insert": 1.0,
+      "fetch_fraction_merge": {
+        "min": 0.0,
+        "max": 0.25
+      },
+      "fetch_fraction_mutation": {
+        "min": 0.0,
+        "max": 0.25
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a merge entry is fetched when a source part is missing on the replica that executes it",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp",
+      "line": 155
+    },
+    {
+      "claim": "with default thresholds (3600 s, 10 GiB) the age branch never fires on these entries",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp",
+      "line": 224
+    },
+    {
+      "claim": "a mutation entry is fetched only past both thresholds or when its source is missing",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MutateFromLogEntryTask.cpp",
+      "line": 138
+    },
+    {
+      "claim": "a replica skips an entry whose part or a covering part it already has",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 2695
+    },
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    }
+  ],
+  "prediction_commit": "pending"
+}

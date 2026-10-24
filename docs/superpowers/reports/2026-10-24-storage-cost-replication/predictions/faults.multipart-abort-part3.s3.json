@@ -1,0 +1,64 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.multipart-abort-part3",
+  "policy": "s3",
+  "inputs": {
+    "upload_parts": 3,
+    "failing_part_attempts": 4,
+    "basis": "3 upload parts (32 MiB first buffer, then 16 MiB); the parts before the failing one once, the failing last part (1 + 1)^2 = 4 times with s3_retry_attempts = 1; one AbortMultipartUpload"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "CreateMultipartUpload": 1,
+        "UploadPart": 6,
+        "AbortMultipartUpload": 1,
+        "PutObject": {
+          "min": 0,
+          "max": 14,
+          "basis": "assumption",
+          "reason": "the files written before the failure surfaces depend on the writer order; the temporary part is removed after it"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 2,
+          "basis": "assumption",
+          "reason": "the files written before the failure surfaces depend on the writer order; the temporary part is removed after it"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    },
+    {
+      "claim": "a failed write buffer is cancelled and tries to abort its multipart upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 244
+    },
+    {
+      "claim": "the abort sends AbortMultipartUpload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 469
+    }
+  ],
+  "prediction_commit": "pending"
+}

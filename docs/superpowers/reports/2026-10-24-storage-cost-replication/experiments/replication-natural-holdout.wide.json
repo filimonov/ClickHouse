@@ -33,6 +33,9 @@
       "r2": {}
     },
     "window": "inserts",
+    "skip_statements": {
+      "s3plain": "s3_plain_rewritable refuses every mutation: a plain metadata storage has no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805, tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240)"
+    },
     "columns": "k UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64",
     "row_bytes": 160,
     "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed} + 1) % 100 AS c1, sipHash64(k, {seed} + 2) % 1000 AS c2, sipHash64(k, {seed} + 3) % 10000 AS c3, sipHash64(k, {seed} + 4) % 100000 AS c4, sipHash64(k, {seed} + 5) % 1000000 AS c5, sipHash64(k, {seed} + 6) % 10 AS c6, sipHash64(k, {seed} + 7) % 100 AS c7, sipHash64(k, {seed} + 8) % 1000 AS c8, sipHash64(k, {seed} + 9) % 10000 AS c9, sipHash64(k, {seed} + 10) % 100000 AS c10, sipHash64(k, {seed} + 11) % 1000000 AS c11, sipHash64(k, {seed} + 12) % 10 AS c12, sipHash64(k, {seed} + 13) % 100 AS c13, sipHash64(k, {seed} + 14) % 1000 AS c14, sipHash64(k, {seed} + 15) % 10000 AS c15, sipHash64(k, {seed} + 16) % 100000 AS c16, sipHash64(k, {seed} + 17) % 1000000 AS c17, sipHash64(k, {seed} + 18) % 10 AS c18, sipHash64(k, {seed} + 19) % 100 AS c19 FROM numbers({rows})",

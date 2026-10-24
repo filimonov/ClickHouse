@@ -1,0 +1,125 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-fetch.merge",
+  "policy": "cas",
+  "inputs": {
+    "basis": "assumption"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        }
+      },
+      "r2": {
+        "PutObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "the sender sends every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "each sent file is read through the disk: one GetObject per object on the sender",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file: one PutObject per file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, checksums, index granularity, primary index and row count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a fetch writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "always_fetch_merged_part: the replica fetches every merge result",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp",
+      "line": 101
+    },
+    {
+      "claim": "an unsuccessful preparation runs executeFetch",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/ReplicatedMergeMutateTaskBase.cpp",
+      "line": 207
+    },
+    {
+      "claim": "a fetched MERGE_PARTS result increments ReplicatedPartFetchesOfMerged",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 2955
+    },
+    {
+      "claim": "on a content-addressed disk the sender offers a relink: the manifest, not the blobs",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 425
+    },
+    {
+      "claim": "the receiver builds the part from shared-pool blob references, stages its own manifest and precommits it",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h",
+      "line": 199
+    }
+  ],
+  "prediction_commit": "pending"
+}

@@ -1,0 +1,87 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-fetch.merge",
+  "policy": "s3",
+  "inputs": {
+    "objects_per_compact_part": 11,
+    "receiver_load_gets": 9,
+    "merge_gets_per_source_part": 8,
+    "mutation_gets_per_part": 26,
+    "basis": "objects_per_part[narrow][compact], merge_gets_per_source_part[narrow][compact] and mutation_gets_per_part[0][update_column][compact] of the s3 report; receiver load reads from probe_replicated_fetch.gate (9 of 11 files)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": 43,
+        "PutObject": 11
+      },
+      "r2": {
+        "PutObject": 11,
+        "GetObject": 9
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "the sender sends every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "each sent file is read through the disk: one GetObject per object on the sender",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file: one PutObject per file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, checksums, index granularity, primary index and row count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a fetch writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "always_fetch_merged_part: the replica fetches every merge result",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp",
+      "line": 101
+    },
+    {
+      "claim": "an unsuccessful preparation runs executeFetch",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/ReplicatedMergeMutateTaskBase.cpp",
+      "line": 207
+    },
+    {
+      "claim": "a fetched MERGE_PARTS result increments ReplicatedPartFetchesOfMerged",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 2955
+    }
+  ],
+  "prediction_commit": "pending"
+}

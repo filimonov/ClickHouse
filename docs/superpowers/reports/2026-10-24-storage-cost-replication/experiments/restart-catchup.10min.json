@@ -1,0 +1,49 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "restart-catchup.10min",
+  "card": "restart-catchup",
+  "case_id": "10min",
+  "policies": [
+    "s3",
+    "s3plain",
+    "cas",
+    "local"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "follower": "r2",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 1000,
+    "setup_inserts": 3,
+    "inserts": 1000,
+    "duration_s": 600,
+    "quiet_s": 30,
+    "quiesce_timeout_s": 900,
+    "window": "inserts",
+    "replica_settings": {
+      "r1": {},
+      "r2": {}
+    },
+    "expected_rows": 503000
+  },
+  "scale": 0.5,
+  "repeats": 1,
+  "timeout_s": 1800,
+  "description": "Three parts on both replicas; Cluster.stop(2); small-inserts on r1 at scale 0.5 (500 inserts of 1 000 rows over 600 s, merges on); r1 quiet for 30 s; Cluster.start(2); the window ends when r2 has caught up. One repeat: the case runs over 11 minutes."
+}

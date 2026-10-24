@@ -1,0 +1,50 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "replication-zero-copy.insert",
+  "card": "replication-zero-copy",
+  "case_id": "insert",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 2,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "allow_remote_fs_zero_copy_replication": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "follower": "r2",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 100000,
+    "setup_inserts": 0,
+    "inserts": 2,
+    "window": "inserts",
+    "statements": [],
+    "replica_settings": {
+      "r1": {},
+      "r2": {}
+    },
+    "expected_path": {
+      "insert": "fetch"
+    },
+    "expected_rows": 200000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "As replication-fetch.insert with allow_remote_fs_zero_copy_replication = 1 on both replicas: r2 fetches object references."
+}

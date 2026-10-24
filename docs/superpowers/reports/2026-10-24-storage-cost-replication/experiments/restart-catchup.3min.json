@@ -1,0 +1,47 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "restart-catchup.3min",
+  "card": "restart-catchup",
+  "case_id": "3min",
+  "policies": [
+    "s3",
+    "cas"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "follower": "r2",
+    "seed": 20261024,
+    "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})",
+    "rows": 1000,
+    "setup_inserts": 3,
+    "inserts": 1000,
+    "duration_s": 180,
+    "quiet_s": 30,
+    "quiesce_timeout_s": 900,
+    "window": "inserts",
+    "replica_settings": {
+      "r1": {},
+      "r2": {}
+    },
+    "expected_rows": 253000
+  },
+  "scale": 0.25,
+  "repeats": 1,
+  "timeout_s": 1800,
+  "description": "Hold-out of catchup_requests_per_missed_part and startup_requests_after_restart: as 10min with 250 inserts over 180 s. One repeat."
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.put-5xx-nth7",
+  "policy": "s3plain",
+  "inputs": {
+    "basis": "assumption"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 0,
+          "max": 60,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 60,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    }
+  ],
+  "prediction_commit": "pending"
+}
