@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "f1e28441d109c4b8",
+ "contract_version": "76aaba5dd2294aec",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -37,7 +37,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -62,7 +62,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -87,7 +87,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -112,7 +112,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -137,7 +137,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -162,7 +162,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -179,7 +179,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -215,7 +215,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -240,7 +240,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -265,7 +265,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -290,7 +290,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -315,7 +315,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -340,7 +340,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -357,7 +357,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -391,7 +391,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -416,7 +416,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -441,7 +441,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -466,7 +466,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -483,7 +483,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -524,7 +524,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -549,7 +549,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -574,7 +574,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -599,7 +599,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -624,7 +624,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -649,7 +649,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -666,7 +666,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -702,7 +702,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -727,7 +727,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -752,7 +752,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -777,7 +777,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -802,7 +802,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -827,7 +827,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -844,7 +844,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -878,7 +878,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -903,7 +903,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -928,7 +928,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -953,7 +953,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -970,7 +970,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1011,7 +1011,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1036,7 +1036,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1061,7 +1061,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1086,7 +1086,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1111,7 +1111,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1136,7 +1136,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1153,7 +1153,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1189,7 +1189,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1214,7 +1214,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1239,7 +1239,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1264,7 +1264,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1289,7 +1289,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1314,7 +1314,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1331,7 +1331,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1365,7 +1365,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1390,7 +1390,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1415,7 +1415,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1440,7 +1440,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1457,7 +1457,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1498,7 +1498,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1523,7 +1523,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1548,7 +1548,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1573,7 +1573,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1598,7 +1598,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1623,7 +1623,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1640,7 +1640,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1676,7 +1676,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1701,7 +1701,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1726,7 +1726,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1751,7 +1751,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1776,7 +1776,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1801,7 +1801,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1818,7 +1818,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1852,7 +1852,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1877,7 +1877,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1902,7 +1902,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1927,7 +1927,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -1944,7 +1944,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -1985,7 +1985,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2010,7 +2010,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2035,7 +2035,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2060,7 +2060,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2085,7 +2085,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2110,7 +2110,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2127,7 +2127,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -2163,7 +2163,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2188,7 +2188,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2213,7 +2213,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2238,7 +2238,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2263,7 +2263,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2288,7 +2288,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2305,7 +2305,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
@@ -2339,7 +2339,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2364,7 +2364,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2389,7 +2389,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2414,7 +2414,7 @@
         },
         "cas": {
          "value": null,
-         "state": "unavailable",
+         "state": "unsupported_cut",
          "extrapolated": false
         }
        }
@@ -2431,7 +2431,7 @@
        "unavailable"
       ],
       "cas": [
-       "unavailable"
+       "unsupported_cut"
       ]
      },
      "crossing": null,
