@@ -602,13 +602,14 @@
       ],
       "values": {
         "s3": 0,
-        "s3plain": 0
+        "s3plain": 0,
+        "cas": 0
       }
     },
     "validity": {
       "upload_parts": [
         2,
-        3
+        4
       ]
     },
     "tolerance": {
@@ -625,7 +626,10 @@
         "cost-20261024T115147Z/s3/faults/multipart-abort/k3",
         "cost-20261024T115147Z/s3plain/faults/multipart-abort/k1",
         "cost-20261024T115147Z/s3plain/faults/multipart-abort/k2",
-        "cost-20261024T115147Z/s3plain/faults/multipart-abort/k3"
+        "cost-20261024T115147Z/s3plain/faults/multipart-abort/k3",
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k1",
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k2",
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"

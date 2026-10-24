@@ -24,7 +24,7 @@ validation case passes with the idle-table cleanup listing it predicts. Results:
   `GcScale`, `Lease`, `GcUnderLoad`); manifests in `experiments/`, predictions in `predictions/`.
 - **Cut by owner directive D14:** `gc-scale.mounts-2.10k`, `gc-scale.refgrowth-low.10k`,
   `gc-scale.refgrowth-high.10k`. The `mounts` and `ref_growth` terms of `gc_round_requests` are unsupported.
-- **Validation owned here, run in Task 7:** `gc-under-load.default` (manifest and prediction only).
+- **Cut by owner directive D14:** `gc-under-load.default` (manifest and prediction only; coverage `status: cut`).
 
 ## Request origin {#origin}
 
@@ -255,7 +255,7 @@ Measured (owner `cas`, `coefficients.json`); each has a fit and a distinct hold-
 
 | Coefficient | Value | Fit | Hold-out | Validity |
 |---|---|---|---|---|
-| `cas_objects_per_part[shape][part_type]` | narrow Compact 1, narrow Wide 10 blob files | `fresh`, `adoption`, `staging-peak` | `inline`, `mix-holdout-2` | 100–4 000 000 rows per insert |
+| `cas_objects_per_part[shape][part_type]` | narrow Compact 1, narrow Wide 10; wide Compact 1, wide Wide 80; types Compact 2, types Wide 135 blob files (upper bound, see the validation report) | `fresh`, `adoption`, `staging-peak`; `objects-per-part.*` (validation report) | `inline`, `mix-holdout-2`; `objects-per-part.types-holdout-2` | 100–4 000 000 rows per insert |
 | `cas_branch_population[write][branch]` | per part write, e.g. one-column mutation: fresh 1, hash hit 1, adoption 8, inline 9 | `fresh`, `hash-hit`, `adoption`, `staging-peak` | `mix-holdout-2` | as above |
 | `gc_round_requests[term]` | fold GET 17 + 1 per new manifest + 1 per tail log record, PUT 5, LIST 4; Deferred GET 12, PUT 1, LIST 3; per blob object 0 | `objects-1k`, `objects-10k` (residual 0) | `objects-5k`, `objects-3k` | 1 017–9 949 objects |
 | `gc_round_duration[term]` | fold 260.1 ms + 3.114 ms per new part (±39.2 ms, the largest fit or hold-out residual); Deferred 25.8 ms | `objects-1k`, `objects-10k` | `objects-3k` | as above |
@@ -288,7 +288,7 @@ Pinned (registry, source-derived, reconciled exactly by the named cases): `cas_k
 | `gc` | `cas_gc`, `lifecycle` (retired parts) | supported |
 | `lease` | `cas_lease` | supported |
 | `reads` | `reads_cache` | unsupported_cut: `cold-select` on `cas` not measured |
-| `recovery` | `startup_recovery` | unsupported_cut: `startup` on `cas` not measured |
+| `recovery` | `startup_recovery` | supported: startup and catch-up requests per restart from the replication report's tables (wired in the validation report) |
 
 The `lease` cell holds the idle-time traffic of a server: the mount lease renewal and, per table, the MergeTree
 cleanup thread's listing of the table's files (a catalog GET and a LIST per run, every `cas_table_cleanup_period_s`:
@@ -334,7 +334,9 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 - **Task 2 cards not run on `cas`.** `objects-per-part`, `mutation`, `drop`, `cold-select` and `startup` declare
   `policies = ('s3', 's3_cached')` (`cards/shapes.py` `S3Card`) and are UNSUPPORTED on `cas`. The plan's
   `cas_branch_population` hold-out `types-holdout` on `cas` is therefore replaced by the CAS-owned
-  `cas-branches.mix-holdout-2`. Hence `reads` and `recovery` are `unsupported_cut` and no `cas_cached` case ran.
+  `cas-branches.mix-holdout-2`. Hence `reads` is `unsupported_cut`. The validation report
+  (`docs/superpowers/reports/2026-10-24-storage-cost-validation`) ran the shape cards on `cas` and `cas_cached` after
+  `S3Card` opened to every policy, and wired `recovery` from the replication report's tables.
 - **Multipart blobs.** A blob above the first upload buffer (32 MiB) is a multipart upload; the `inserts` cell prices
   one `PutObject` per blob. `staging-peak` blobs were 32 012 225 B, just below the buffer.
 - **Snapshot regime.** Past 256 ref log records since a table's last snapshot, a fold reads each record about twice
@@ -346,8 +348,8 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 - **Attribution under GC.** A foreground request that starts inside a GC round is counted as maintenance. The GC-on
   cases therefore predict foreground as ranges; the exact graphs come from the GC-off cases.
 - **Reclaim requests per object** (HEAD 2, `.meta` GET 3 and PUT 1, DELETE 2 per blob; GET 2 per manifest) come
-  from `gc-lifecycle.drop` maintenance rows and are priced as constants; `gc-under-load.default` (Task 7) validates
-  the integrated GC cost.
+  from `gc-lifecycle.drop` maintenance rows and are priced as constants; the integrated GC cost under load is not
+  validated (`gc-under-load.default` is cut by D14).
 - **Concurrent runs.** Task 2's run `cost-20261024T075800Z` overlapped run `cost-20261024T075656Z` on the same
   RustFS; counts are per pass prefix and unaffected, timings may be.
 

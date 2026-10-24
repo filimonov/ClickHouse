@@ -373,9 +373,9 @@ replay, 647 retirement entries over 18 merge records replay, the nine raw checks
 | Finding | Round 4 | Disposition |
 |---|---|---|
 | R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
-| R4-2 | the observation cutoff is not in the records | OPEN: the card records `quiet_cutoff_us` and `cutoff_us` (test `test_observation_cutoff_is_recorded`), but no lifecycle record carries them: the report run predates the change, and `amplification-run.2h` is cut. Placement: recorded by the next natural-merge run (Task 7 replacement hold-outs) |
+| R4-2 | the observation cutoff is not in the records | Closed: the natural-merge records of the validation report (`cost-20261024T154049Z`, `s3` and `s3plain`) carry `quiet_cutoff_us` and `cutoff_us`; replaying `window.no_workload_after_cutoff` from their raw ledger finds 0 workload attempts after the cutoff, as recorded (`docs/superpowers/reports/2026-10-24-storage-cost-validation` §Amplification) |
 
-MINOR totals over the four rounds: 7 fixed, 1 closed by the D14 cut (#16), 1 open (R4-2).
+MINOR totals over the four rounds: 7 fixed, 1 closed by the D14 cut (#16), 1 closed by the validation report (R4-2).
 
 **Cut by owner directive D14.** The campaign deadline cuts every P2 case (spec §5.5): `async-inserts.steady`,
 `async-inserts.bursty` and `amplification-run.2h` have `status: cut` in `coverage.json`. Their manifests and

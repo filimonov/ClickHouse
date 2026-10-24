@@ -272,7 +272,7 @@ planned scale in `cost-20261024T014123Z` (records in `raw/estimate/`):
 - **Basis:** every pass is budgeted at `max(measured median, duration_s)`, where `duration_s` is the case's declared
   duration in `coverage.json`: 7200 s for `amplification-run` (timeout 14 400 s), 600 s for `gc-*` and
   `replication-*`, 120 s elsewhere. All 50 cases sit on their floor (the samples' medians are 8..83 s), so the floors
-  decide the total; `amplification-run` alone is 30 h of P1 + P2 (4 policies x 3 repeats x 2 h, with the reserve).
+  decide the total; `amplification-run`, a P2 case, alone is 30 h of P2 (4 policies x 3 repeats x 2 h, with the reserve).
   The earlier estimate (P1 14.5 h, P1 + P2 17.8 h) budgeted a tenth of `timeout_s` per pass and put
   `amplification-run` at minutes. Per-case lines are in `raw/estimate/estimate.txt`.
 - **Sample shape deviation:** a compact part on CAS is one blob, so the plan's "500 inserts of a 100-column

@@ -372,14 +372,18 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
   lower bound, records the upper, and checks the store: `ListParts` on every aborted upload id must answer
   `NoSuchUpload` (`aborted_uploads_gone_in_store`; RustFS rc.3 answers it per upload id although it cannot list
   incomplete uploads by prefix). The old records keep their FAILED status, so `failed_upload_residue` has no CAS
-  value; its placement is a `planned` CAS fit edge of `faults.multipart-abort` under the current card (Task 7).
+  value here; the validation report reran `faults.multipart-abort` on CAS with the current card: residue 0 in every
+  repeat, `failed_upload_residue[cas]` = 0.
 - **CAS `faults.multipart-abort-part3b` (FAILED, consumed).** The fresh CAS hold-out predicted 3 upload parts per
   publication; 72 MB is 4 parts (32 + 16 + 16 + 8 MiB), and part 4 is sent although part 3 fails: `UploadPart` 56
   (8 × 7), not 48 (8 × 6). A prediction arithmetic error. `faults.multipart-abort-part3c` (75 000 rows, 4 parts,
-  `UploadPart` 56) is the fresh hold-out, committed at `bac037b336d` before its first run (planned, Task 7).
+  `UploadPart` 56) is the fresh hold-out, committed at `bac037b336d` before its first run; it passed in the
+  validation report (`UploadPart` 56, residue 0).
 - **CAS and s3plain hold-outs consumed.** Their assumed ranges were revised (`0bc1e557850`) after the stopped run
   `cost-20261024T113828Z` had already run those cases, so their hold-out edges are `consumed`. The done hold-outs
-  of every coefficient are on `s3` and `ebs`. Fresh CAS and s3plain hold-outs belong to Task 7.
+  of every coefficient are on `s3` and `ebs` here; the validation report's fresh CAS and s3plain hold-outs
+  (`replication-fetch.insert-3`, `replication-local.merge-40k` and `-30k`, `faults.put-5xx-nth5`,
+  `faults.multipart-abort-75k`) pass, except `acquire_bytes` on CAS (relink bytes are per part).
 - **CAS values are means.** CAS windows carry the background ref publisher; values are K=3 means and the absolute
   tolerance is half the widest K=3 range (the spreads are in the fit details).
 - **Restart catch-up is K=1.** The 10-minute case runs once per variant; its tolerance (`rel` 0.25) is assumed,
@@ -390,15 +394,15 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 - **Fault outcomes are checked in the fit, not the card.** The cards assert that each fault fired and its retry
   chain; the billable split (`store_reached`) is derived from the records' ledger counts when the coefficient is
   fitted. A card assertion of it needs a rerun and is parked (§[Review](#review)).
-- **s3 `recovery` cell wiring is Task 7.** The s3 report's `recovery` cell still carries the `not_supported` state
-  for `missed_parts_per_restart` > 0. Replacing it with two rows keyed by `replication_op`
-  (`GetObject` and `PutObject`: `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
-  `catchup_requests_per_missed_part[variant_id][replication_op]`, plus `startup_requests_after_restart`) and the
-  follower rows of `inserts` (`acquire_requests[s3][insert][receiver|sender][…]`) is placed on Task 7; this report
-  defines the ids and values only.
+- **s3 and CAS `recovery` cells read the catch-up table.** The s3 cell prices catch-up `GetObject` and `PutObject`
+  as `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
+  `catchup_requests_per_missed_part[variant_id][replication_op]` for replicas > 1, and the s3 `inserts` cell adds the
+  receiver's load reads (`acquire_requests[s3][insert][receiver][GetObject]`); the CAS `recovery` cell also prices
+  `startup_requests_after_restart[cas]` per restart (validity: 3 active parts). Wiring:
+  `docs/superpowers/reports/2026-10-24-storage-cost-validation` §Wiring.
 - **Records come from the card before `bac037b336d`.** Every fault record was measured with the card that asserted
-  the upper residue bound; the k2/k3 CAS failures are that assertion. Task 7 reruns `faults.multipart-abort` on
-  CAS, the fresh hold-out `faults.multipart-abort-part3c` and the residue cases with the current card.
+  the upper residue bound; the k2/k3 CAS failures are that assertion. The validation report reran
+  `faults.multipart-abort` on CAS and the fresh hold-out `faults.multipart-abort-part3c` with the current card.
 - **Replacement and fetch faults are cut** (D14): a non-zero `replacement_rate` is unsupported.
 
 ## Cross-report id mismatches {#cross-report}

@@ -17,7 +17,9 @@
             "s3",
             "s3_cached",
             "s3plain",
-            "s3plain_cached"
+            "s3plain_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -33,7 +35,9 @@
             "s3",
             "s3_cached",
             "s3plain",
-            "s3plain_cached"
+            "s3plain_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -49,7 +53,9 @@
             "s3",
             "s3_cached",
             "s3plain",
-            "s3plain_cached"
+            "s3plain_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -65,7 +71,9 @@
             "s3",
             "s3_cached",
             "s3plain",
-            "s3plain_cached"
+            "s3plain_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -95,7 +103,9 @@
           "case_id": "types-fit-compact",
           "policies": [
             "s3",
-            "s3_cached"
+            "s3_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -109,7 +119,9 @@
           "case_id": "types-fit-wide",
           "policies": [
             "s3",
-            "s3_cached"
+            "s3_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -125,7 +137,9 @@
             "s3",
             "s3_cached",
             "s3plain",
-            "s3plain_cached"
+            "s3plain_cached",
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -178,9 +192,10 @@
           "status": "run"
         },
         {
-          "case_id": "objects-per-part",
+          "case_id": "types-holdout-single",
           "policies": [
-            "cas"
+            "s3plain",
+            "s3plain_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -188,13 +203,13 @@
           "timeout_s": 600,
           "duration_s": 60,
           "priority": "P1",
-          "status": "planned"
+          "status": "run"
         },
         {
-          "case_id": "types-holdout-single",
+          "case_id": "types-holdout-2",
           "policies": [
-            "s3plain",
-            "s3plain_cached"
+            "cas",
+            "cas_cached"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -220,7 +235,8 @@
           "case_id": "compact-below-bytes",
           "policies": [
             "s3",
-            "s3plain"
+            "s3plain",
+            "cas"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -312,7 +328,8 @@
           "case_id": "wide-above-bytes",
           "policies": [
             "s3",
-            "s3plain"
+            "s3plain",
+            "cas"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -325,7 +342,8 @@
         {
           "case_id": "wide-equal-bytes",
           "policies": [
-            "s3"
+            "s3",
+            "cas"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -338,8 +356,7 @@
         {
           "case_id": "part-size-sequence",
           "policies": [
-            "local",
-            "cas"
+            "local"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -461,6 +478,21 @@
           "policies": [
             "s3",
             "local"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "validation",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
           ],
           "replicas": 1,
           "scale": 1.0,
@@ -1684,7 +1716,7 @@
           "timeout_s": 3600,
           "duration_s": 1200,
           "priority": "P1",
-          "status": "planned"
+          "status": "cut"
         }
       ]
     },
@@ -1871,6 +1903,33 @@
           "status": "run"
         },
         {
+          "case_id": "put-5xx-nth5",
+          "policies": [
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "multipart-abort-75k",
+          "policies": [
+            "s3plain"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "multipart-abort-part3c",
           "policies": [
             "cas"
@@ -1881,7 +1940,7 @@
           "timeout_s": 900,
           "duration_s": 60,
           "priority": "P1",
-          "status": "planned"
+          "status": "run"
         },
         {
           "case_id": "multipart-abort",
@@ -2033,6 +2092,20 @@
           "duration_s": 61,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "insert-3",
+          "policies": [
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     },
@@ -2092,6 +2165,33 @@
           "duration_s": 60,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "merge-40k",
+          "policies": [
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "merge-30k",
+          "policies": [
+            "s3plain"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     },
@@ -2118,6 +2218,21 @@
           "repeats": 3,
           "timeout_s": 1800,
           "duration_s": 93,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "validation",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
           "priority": "P1",
           "status": "run"
         }
@@ -3114,7 +3229,7 @@
       "role": "validation",
       "prediction_commit": "8ae3a262cae",
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "gc_round_duration",
@@ -3203,7 +3318,7 @@
       "role": "validation",
       "prediction_commit": "8ae3a262cae",
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "gc_round_requests",
@@ -5149,9 +5264,13 @@
         ]
       },
       "role": "fit",
-      "prediction_commit": null,
-      "measurement_ids": [],
-      "status": "planned"
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k1",
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k2",
+        "cost-20261024T154049Z/cas/faults/multipart-abort/k3"
+      ],
+      "status": "done"
     },
     {
       "coefficient": "failed_upload_residue",
@@ -15742,6 +15861,878 @@
         "cost-20261024T103803Z/s3plain_cached/drop/partition-3/k3"
       ],
       "status": "consumed"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.narrow-compact",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.narrow-compact",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.narrow-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          400000,
+          400000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.narrow-wide",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          400000,
+          400000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.wide-compact",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          20000,
+          20000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.wide-compact",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          20000,
+          20000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.wide-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.wide-wide",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-fit-compact",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          5000,
+          5000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-fit-compact",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          5000,
+          5000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-fit-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-fit-wide",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          70000,
+          70000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout-2",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          70000,
+          70000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.compact-below-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          9437160,
+          9437160
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.wide-above-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          11534360,
+          11534360
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.wide-equal-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          10485760,
+          10485760
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "acquire_requests",
+      "experiment_id": "replication-fetch.insert-3",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          150000,
+          150000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k1",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k2",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "acquire_requests",
+      "experiment_id": "replication-fetch.insert-3",
+      "policy": "s3plain",
+      "span": {
+        "part_rows": [
+          150000,
+          150000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k1",
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k2",
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "acquire_bytes",
+      "experiment_id": "replication-fetch.insert-3",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          150000,
+          150000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k1",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k2",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "acquire_bytes",
+      "experiment_id": "replication-fetch.insert-3",
+      "policy": "s3plain",
+      "span": {
+        "part_rows": [
+          150000,
+          150000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k1",
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k2",
+        "cost-20261024T154049Z/s3plain/replication-fetch/insert-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "local_exec_requests",
+      "experiment_id": "replication-local.merge-40k",
+      "policy": "cas",
+      "span": {
+        "source_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/replication-local/merge-40k/k1",
+        "cost-20261024T154049Z/cas/replication-local/merge-40k/k2",
+        "cost-20261024T154049Z/cas/replication-local/merge-40k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "local_exec_requests",
+      "experiment_id": "replication-local.merge-40k",
+      "policy": "s3plain",
+      "span": {
+        "source_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/replication-local/merge-40k/k1",
+        "cost-20261024T154049Z/s3plain/replication-local/merge-40k/k2",
+        "cost-20261024T154049Z/s3plain/replication-local/merge-40k/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "local_exec_requests",
+      "experiment_id": "replication-local.merge-30k",
+      "policy": "s3plain",
+      "span": {
+        "source_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/replication-local/merge-30k/k1",
+        "cost-20261024T154049Z/s3plain/replication-local/merge-30k/k2",
+        "cost-20261024T154049Z/s3plain/replication-local/merge-30k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "retry_outcome_mix",
+      "experiment_id": "faults.put-5xx-nth5",
+      "policy": "cas",
+      "span": {
+        "nth": [
+          5,
+          5
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/faults/put-5xx-nth5/k1",
+        "cost-20261024T154049Z/cas/faults/put-5xx-nth5/k2",
+        "cost-20261024T154049Z/cas/faults/put-5xx-nth5/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "retry_outcome_mix",
+      "experiment_id": "faults.put-5xx-nth5",
+      "policy": "s3plain",
+      "span": {
+        "nth": [
+          5,
+          5
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/faults/put-5xx-nth5/k1",
+        "cost-20261024T154049Z/s3plain/faults/put-5xx-nth5/k2",
+        "cost-20261024T154049Z/s3plain/faults/put-5xx-nth5/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort",
+      "policy": "s3",
+      "span": {
+        "upload_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "2c006846dbc",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/faults/multipart-abort/k1",
+        "cost-20261024T154049Z/s3/faults/multipart-abort/k2",
+        "cost-20261024T154049Z/s3/faults/multipart-abort/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort",
+      "policy": "s3plain",
+      "span": {
+        "upload_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort/k1",
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort/k2",
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort-part3c",
+      "policy": "cas",
+      "span": {
+        "upload_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "bac037b336d",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/faults/multipart-abort-part3c/k1",
+        "cost-20261024T154049Z/cas/faults/multipart-abort-part3c/k2",
+        "cost-20261024T154049Z/cas/faults/multipart-abort-part3c/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort-75k",
+      "policy": "s3plain",
+      "span": {
+        "upload_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort-75k/k1",
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort-75k/k2",
+        "cost-20261024T154049Z/s3plain/faults/multipart-abort-75k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/merge-natural/validation/k1",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k2",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/merge-natural/validation/k1",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k2",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3plain/merge-natural/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "merge-natural.validation",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/merge-natural/validation/k1",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k2",
+        "cost-20261024T154049Z/cas/merge-natural/validation/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "fetch_fraction",
+      "experiment_id": "replication-natural-fit.validation",
+      "policy": "s3",
+      "span": {
+        "inserts": [
+          24,
+          24
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/replication-natural-fit/validation/k1",
+        "cost-20261024T154049Z/s3/replication-natural-fit/validation/k2",
+        "cost-20261024T154049Z/s3/replication-natural-fit/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "fetch_fraction",
+      "experiment_id": "replication-natural-fit.validation",
+      "policy": "s3plain",
+      "span": {
+        "inserts": [
+          24,
+          24
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3plain/replication-natural-fit/validation/k1",
+        "cost-20261024T154049Z/s3plain/replication-natural-fit/validation/k2",
+        "cost-20261024T154049Z/s3plain/replication-natural-fit/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "fetch_fraction",
+      "experiment_id": "replication-natural-fit.validation",
+      "policy": "cas",
+      "span": {
+        "inserts": [
+          24,
+          24
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/replication-natural-fit/validation/k1",
+        "cost-20261024T154049Z/cas/replication-natural-fit/validation/k2",
+        "cost-20261024T154049Z/cas/replication-natural-fit/validation/k3"
+      ],
+      "status": "done"
     }
   ],
   "domain": {

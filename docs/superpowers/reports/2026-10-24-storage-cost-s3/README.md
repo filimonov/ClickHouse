@@ -324,20 +324,21 @@ Applicability lists, per cell, exactly the families whose rules or coefficients 
 | Cell | Families | Rows |
 |---|---|---|
 | `storage` | `lifecycle` | active `data_bytes` × replicas; outdated: merged-away bytes, ingest × (`write_amplification_rule` − 1), held for `old_parts_lifetime` |
-| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject` |
+| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph`, `replication` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject`: the sender's reads and the receiver's 9 load reads per part |
 | `merges` | `lifecycle`, `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | result writes with multipart rows, source `GetObject` (cache branch), one `DeleteObjects` per removed source |
 | `mutations` | `mutation_deletes`, `multipart_graph` | writes per Compact and Wide part with multipart rows, `mutation_<n>.txt` writes and removals (plain `MergeTree` only), `GetObject` per part, `DeleteObjects` |
 | `deletes` | `mutation_deletes` | one empty part per expiry operation, one `DeleteObjects` per expired part and per empty part |
 | `reads` | `reads_cache` | warm stream reads, first reads of new parts and after restarts, statistics refreshes (no cache); cached misses (cache) |
-| `recovery` | `startup_recovery` | access checks, part and history loads per restart; `not_supported` while `missed_parts_per_restart` > 0 |
+| `recovery` | `startup_recovery` | access checks, part and history loads per restart; catch-up `GetObject` and `PutObject` per missed part when replicas > 1 |
 | `local_disk` | `objects_per_part_by_shape` | metadata of active and outdated parts plus the cache size |
 
-The follower `GetObject` row of `inserts` uses `objects_per_part` (the phase-0 replicated fetch read every object of
-the part once) until the replication report's `acquire_requests[s3][insert]` replaces it. Catch-up after a restart
-belongs to the replication report (`pending_owner: replication` in the cell's state): catch-up `GetObject` and
-`PutObject` = `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3]`, and
-`startup_requests_after_restart[s3]` replaces the startup rows. They are not wired into this cell yet, so the
-`recovery` cell is `not_supported` for workloads with missed parts.
+The follower rows of `inserts` are the sender's reads (`objects_per_part`: one `GetObject` per object, as
+`acquire_requests[s3][insert][sender]` measures) and the receiver's load reads
+(`acquire_requests[s3][insert][receiver][GetObject]` = 9 per part, narrow and Wide). Catch-up after a restart reads
+the replication report's table: `GetObject` and `PutObject` = restarts × replicas × `missed_parts_per_restart` ×
+`catchup_requests_per_missed_part[s3][op]`, for replicas > 1. The startup rows stay: at 3 active narrow parts they
+give `GetObject` 50, `PutObject` 2, `DeleteObject` 2, and the replicated restart measured 48, 1, 1
+(`startup_requests_after_restart[s3]`, tolerance 2).
 
 ## Assumptions {#assumptions}
 
