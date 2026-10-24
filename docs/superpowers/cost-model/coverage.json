@@ -1248,242 +1248,6 @@
       ]
     },
     {
-      "name": "cas-branches",
-      "family": "cas_branches",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "fresh",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "hash-hit",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "adoption",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "inline",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "staging-peak",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "name": "cas-drop",
-      "family": "cas_branches",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "foreground-ref-removal",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "name": "gc-lifecycle",
-      "family": "cas_gc",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "reclaim-delay-by-stage",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P1",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "name": "gc-idle",
-      "family": "cas_gc",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "populated-pool",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P1",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "name": "gc-scale",
-      "family": "cas_gc",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "objects-1k",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "objects-10k",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "objects-100k",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P1",
-          "status": "planned"
-        },
-        {
-          "case_id": "mounts",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 2,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P2",
-          "status": "planned"
-        },
-        {
-          "case_id": "ref-growth",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 1800,
-          "duration_s": 600,
-          "priority": "P2",
-          "status": "planned"
-        }
-      ]
-    },
-    {
-      "name": "lease",
-      "family": "cas_lease",
-      "model_variants": [
-        "cas"
-      ],
-      "cases": [
-        {
-          "case_id": "lease",
-          "policies": [
-            "cas"
-          ],
-          "replicas": 1,
-          "scale": 1.0,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 120,
-          "priority": "P1",
-          "status": "planned"
-        }
-      ]
-    },
-    {
       "name": "local-volume-sampling",
       "family": "local_volumes",
       "model_variants": [
@@ -1504,6 +1268,394 @@
           "repeats": 3,
           "timeout_s": 900,
           "duration_s": 120,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "cas-branches",
+      "family": "cas_branches",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "fresh",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "hash-hit",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "adoption",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "inline",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "staging-peak",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "mix-holdout",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "mix-holdout-2",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "cas-drop",
+      "family": "cas_branches",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "table-sync",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "gc-lifecycle",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "drop",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 40,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "drop-60s",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 240,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "drop-60s-12",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 240,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "merge",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 40,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "gc-idle",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "populated",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "gc-scale",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "objects-1k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "objects-3k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "objects-5k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "objects-10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "objects-30k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "objects-100k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 300,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "mounts-2.10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "cut"
+        },
+        {
+          "case_id": "refgrowth-low.10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "cut"
+        },
+        {
+          "case_id": "refgrowth-high.10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "cut"
+        }
+      ]
+    },
+    {
+      "name": "lease",
+      "family": "cas_lease",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "idle-10min",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1200,
+          "duration_s": 600,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "idle-20min",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 1200,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "gc-under-load",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "default",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 1200,
           "priority": "P1",
           "status": "planned"
         }
@@ -6312,6 +6464,767 @@
         "cost-20261024T064154Z/s3/boundaries/wide-above-bytes/k3"
       ],
       "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "cas-branches.fresh",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "cas-branches.adoption",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "cas-branches.mix-holdout",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k1",
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k2",
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "cas-branches.mix-holdout-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          200000,
+          200000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k1",
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k2",
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.fresh",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.adoption",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k1",
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k2",
+        "cost-20261024T082909Z/cas/cas-branches/adoption/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.mix-holdout",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k1",
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k2",
+        "cost-20261024T074131Z/cas/cas-branches/mix-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.mix-holdout-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          200000,
+          200000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k1",
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k2",
+        "cost-20261024T082909Z/cas/cas-branches/mix-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "cas-branches.inline",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100,
+          100
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/inline/k1",
+        "cost-20261024T082909Z/cas/cas-branches/inline/k2",
+        "cost-20261024T082909Z/cas/cas-branches/inline/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.hash-hit",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k1",
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k2",
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_population",
+      "experiment_id": "cas-branches.staging-peak",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          4000000,
+          4000000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k1",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k2",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-1k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          1017,
+          1017
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-10k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          9949,
+          9949
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-100k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          100081,
+          100081
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T074131Z/cas/gc-scale/objects-100k/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-3k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          3047,
+          3047
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-under-load.default",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          0,
+          0
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [],
+      "status": "planned"
+    },
+    {
+      "coefficient": "gc_round_duration",
+      "experiment_id": "gc-scale.objects-1k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          1017,
+          1017
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_duration",
+      "experiment_id": "gc-scale.objects-10k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          9949,
+          9949
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-10k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_duration",
+      "experiment_id": "gc-scale.objects-100k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          100081,
+          100081
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T074131Z/cas/gc-scale/objects-100k/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_duration",
+      "experiment_id": "gc-scale.objects-3k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          3047,
+          3047
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-3k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_duration",
+      "experiment_id": "gc-under-load.default",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          0,
+          0
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [],
+      "status": "planned"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-30k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          30046,
+          30046
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T074131Z/cas/gc-scale/objects-30k/k1",
+        "cost-20261024T074131Z/cas/gc-scale/objects-30k/k2",
+        "cost-20261024T074131Z/cas/gc-scale/objects-30k/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.objects-5k",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          5077,
+          5077
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "a03cfd0da44",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-scale/objects-5k/k1",
+        "cost-20261024T082909Z/cas/gc-scale/objects-5k/k2",
+        "cost-20261024T082909Z/cas/gc-scale/objects-5k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.mounts-2.10k",
+      "policy": "cas",
+      "span": {
+        "mounts": [
+          2,
+          2
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [],
+      "status": "cut"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.refgrowth-low.10k",
+      "policy": "cas",
+      "span": {
+        "ref_events_between_rounds": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [],
+      "status": "cut"
+    },
+    {
+      "coefficient": "gc_round_requests",
+      "experiment_id": "gc-scale.refgrowth-high.10k",
+      "policy": "cas",
+      "span": {
+        "ref_events_between_rounds": [
+          20000,
+          20000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [],
+      "status": "cut"
+    },
+    {
+      "coefficient": "lease_requests_per_s",
+      "experiment_id": "lease.idle-10min",
+      "policy": "cas",
+      "span": {
+        "idle_s": [
+          600,
+          600
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/lease/idle-10min/k1",
+        "cost-20261024T082909Z/cas/lease/idle-10min/k2",
+        "cost-20261024T082909Z/cas/lease/idle-10min/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "lease_requests_per_s",
+      "experiment_id": "lease.idle-20min",
+      "policy": "cas",
+      "span": {
+        "idle_s": [
+          1200,
+          1200
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/lease/idle-20min/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "reclaim_delay_periods",
+      "experiment_id": "gc-lifecycle.drop",
+      "policy": "cas",
+      "span": {
+        "gc_interval_s": [
+          10,
+          10
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop/k1",
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop/k2",
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "reclaim_delay_periods",
+      "experiment_id": "gc-lifecycle.merge",
+      "policy": "cas",
+      "span": {
+        "gc_interval_s": [
+          10,
+          10
+        ],
+        "retire": [
+          1,
+          1
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-lifecycle/merge/k1",
+        "cost-20261024T082909Z/cas/gc-lifecycle/merge/k2",
+        "cost-20261024T082909Z/cas/gc-lifecycle/merge/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "reclaim_delay_periods",
+      "experiment_id": "gc-lifecycle.drop-60s",
+      "policy": "cas",
+      "span": {
+        "gc_interval_s": [
+          60,
+          60
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "e240fbfe885",
+      "measurement_ids": [
+        "cost-20261024T075656Z/cas/gc-lifecycle/drop-60s/k1",
+        "cost-20261024T075656Z/cas/gc-lifecycle/drop-60s/k2",
+        "cost-20261024T075656Z/cas/gc-lifecycle/drop-60s/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "reclaim_delay_periods",
+      "experiment_id": "gc-lifecycle.drop-60s-12",
+      "policy": "cas",
+      "span": {
+        "gc_interval_s": [
+          60,
+          60
+        ],
+        "inserts": [
+          12,
+          12
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k1",
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k2",
+        "cost-20261024T082909Z/cas/gc-lifecycle/drop-60s-12/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_key_families",
+      "experiment_id": "gc-idle.populated",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-idle/populated/k1",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k2",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_scheduler_rule",
+      "experiment_id": "gc-idle.populated",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-idle/populated/k1",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k2",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_heartbeat_requests_per_s",
+      "experiment_id": "gc-idle.populated",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/gc-idle/populated/k1",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k2",
+        "cost-20261024T082909Z/cas/gc-idle/populated/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_requests",
+      "experiment_id": "cas-branches.hash-hit",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k1",
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k2",
+        "cost-20261024T082909Z/cas/cas-branches/hash-hit/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_publish_requests",
+      "experiment_id": "cas-branches.fresh",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_ref_requests_per_rename",
+      "experiment_id": "cas-branches.fresh",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8ae3a262cae",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k1",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k2",
+        "cost-20261024T082909Z/cas/cas-branches/fresh/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_foreground_ref_removal_requests",
+      "experiment_id": "cas-drop.table-sync",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-drop/table-sync/k1",
+        "cost-20261024T082909Z/cas/cas-drop/table-sync/k2",
+        "cost-20261024T082909Z/cas/cas-drop/table-sync/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "staging_peak_bytes_rule",
+      "experiment_id": "cas-branches.staging-peak",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k1",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k2",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "staging_rule",
+      "experiment_id": "cas-branches.staging-peak",
+      "policy": "cas",
+      "span": {
+        "passes": [
+          3,
+          3
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "9974efc8938",
+      "measurement_ids": [
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k1",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k2",
+        "cost-20261024T082909Z/cas/cas-branches/staging-peak/k3"
+      ],
+      "status": "done"
     }
   ],
   "domain": {
@@ -6329,7 +7242,9 @@
       "deletes",
       "reads",
       "recovery",
-      "local_disk"
+      "local_disk",
+      "gc",
+      "lease"
     ],
     "families": [
       "objects_per_part_by_shape",

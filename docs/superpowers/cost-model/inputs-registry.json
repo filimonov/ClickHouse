@@ -7842,6 +7842,1003 @@
       },
       "hint": null,
       "status": "ok"
+    },
+    {
+      "id": "cas_key_families",
+      "block": "cas",
+      "label": "CAS key families: blob, blob_meta, manifest, ref_stream, ref_ckpt, ns_files, ref_catalog (foreground state); lease, gc_hb, gc, pool_meta, roots (maintenance only)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "cas_layout_26_8"
+      ],
+      "table": null,
+      "default": "cas_layout_26_8",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h:397",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT replaceRegexpOne(remote_path, '.*/(blobs|cas/manifests|cas/ns/stream|cas/ns/state|cas/ref_catalog|gc|roots|_pool_meta).*', '\\\\1') AS family, count() FROM system.remote_data_paths WHERE disk_name = '<cas disk>' GROUP BY family",
+        "mapping": {
+          "cas_key_families": "regexes in utils/cas-yardstick/yardstick/cost/cards/cas_probe.py CAS_FAMILIES"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_gc_interval_s",
+      "block": "cas",
+      "label": "GC round interval (cas_gc_interval_sec)",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 60,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cas_gc_interval_s": [
+          10,
+          60
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "default tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:58",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT extractAllGroups(..) -- read <cas_gc_interval_sec> from the disk config",
+        "mapping": {
+          "cas_gc_interval_s": "cas_gc_interval_sec of the CAS disk; 60 when absent"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gc_scheduler_rule",
+      "block": "cas",
+      "label": "GC scheduling: a round starts cas_gc_interval_sec after the previous round finished; only the GC leader pulses the heartbeat, every interval / 4 and once per round on acquiring the lease",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "wait_interval_after_round"
+      ],
+      "table": null,
+      "default": "wait_interval_after_round",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp:349",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT round_id, event_type, event_time_microseconds FROM system.cas_gc_log WHERE event_type IN ('Start', 'Finish') ORDER BY event_time_microseconds DESC LIMIT 20",
+        "mapping": {
+          "gc_scheduler_rule": "next Start minus previous Finish = cas_gc_interval_sec"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gc_heartbeat_requests_per_s",
+      "block": "cas",
+      "label": "GC heartbeat requests per second (GET and PUT of gc/hb per pulse; per-round pulses add 2 per round)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "a": {
+          "kind": "const",
+          "value": 2,
+          "dim": "count"
+        },
+        "b": {
+          "kind": "div",
+          "a": {
+            "kind": "input",
+            "id": "cas_gc_interval_s",
+            "dim": "s"
+          },
+          "b": {
+            "kind": "const",
+            "value": 4,
+            "dim": "1"
+          },
+          "dim": "s",
+          "on_zero": "unavailable"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp:81",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_redelete_budget",
+      "block": "cas",
+      "label": "Blob deletes a GC round may issue (cas_gc_round_redelete_budget; 0 = unbounded)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 5000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:66",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "read <cas_gc_round_redelete_budget> from the disk config",
+        "mapping": {
+          "gc_round_redelete_budget": "5000 when absent"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "staging_rule",
+      "block": "cas",
+      "label": "Staging: staging_backend = local (default) writes every blob file of a part to the scratch directory while hashing; the files are uploaded at commit and removed after it",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "local_scratch_until_commit"
+      ],
+      "table": null,
+      "default": "local_scratch_until_commit",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:984",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+        "mapping": {
+          "staging_rule": "cas_staging_backend absent or local"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "staging_peak_bytes_rule",
+      "block": "cas",
+      "label": "Staging peak: the blob file bytes of the parts committing at the same time (each insert or merge stages its whole part)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "sum_of_committing_part_blob_bytes"
+      ],
+      "table": null,
+      "default": "sum_of_committing_part_blob_bytes",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:593",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_branch_requests",
+      "block": "cas",
+      "label": "Requests per blob file by entry branch: fresh HEAD + PUT body + PUT .meta; hash hit HEAD + GET .meta; adoption and inline none",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "head_then_publish_or_observe"
+      ],
+      "table": null,
+      "default": "head_then_publish_or_observe",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:397",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event_type, outcome, reason, count() FROM system.cas_log WHERE event_date >= today() - 1 AND event_type IN ('blob_put', 'blob_reuse_adopt') GROUP BY ALL",
+        "mapping": {
+          "cas_branch_requests": "blob_put = fresh; blob_reuse_adopt observed = hash hit; adopt manifest-trust = adoption"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_publish_requests",
+      "block": "cas",
+      "label": "Requests to publish a part: manifest PUT and GET, then precommit and promote ref transactions (catalog GET, _log PUT, _ckpt GET, _ckpt PUT each)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:646",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_ref_requests_per_rename",
+      "block": "cas",
+      "label": "Requests of the rename ref transaction of a new part (catalog GET, _log PUT, _ckpt GET, _ckpt PUT)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 4,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:3320",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_foreground_ref_removal_requests",
+      "block": "cas",
+      "label": "Requests of DROP TABLE SYNC: per part up to one ref transaction (4 requests); per table the terminal transaction, a catalog PUT, 3 table-file requests and 2 LISTs (9 more)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 9,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:3428",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_hash_hit_fraction",
+      "block": "cas",
+      "label": "Fraction of a part's blob files whose bytes the pool already holds (hash hits)",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cas_hash_hit_fraction": [
+          0,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default: no repeated content",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, outcome, reason, count() FROM system.cas_log WHERE event_date >= today() - 1 AND event_type IN ('blob_put', 'blob_reuse_adopt') GROUP BY ALL",
+        "mapping": {
+          "cas_hash_hit_fraction": "blob_reuse_adopt observed / (blob_put + blob_reuse_adopt observed)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_blob_bytes",
+      "block": "cas",
+      "label": "Mean bytes of a blob file",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048576,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(size) FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND remote_path != ''",
+        "mapping": {
+          "cas_blob_bytes": "avg(size)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_mutations_per_s",
+      "block": "cas",
+      "label": "Mutations (ALTER UPDATE/DELETE) per second",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_parts_per_mutation",
+      "block": "cas",
+      "label": "Parts one mutation rewrites",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_mutated_columns",
+      "block": "cas",
+      "label": "Columns one mutation rewrites",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_table_drops_per_s",
+      "block": "cas",
+      "label": "DROP TABLE per second",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_parts_per_dropped_table",
+      "block": "cas",
+      "label": "Active parts of a dropped table",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_mount_renew_period_s",
+      "block": "cas",
+      "label": "Mount lease renewal period (cas_mount_renew_period_ms / 1000)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:74",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_pool_objects",
+      "block": "cas",
+      "label": "Objects in the CAS pool (blobs, .meta siblings, manifests)",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 5000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 2 FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND remote_path != ''",
+        "mapping": {
+          "cas_pool_objects": "blob files x 2 (.meta) + parts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_write",
+      "block": "cas",
+      "label": "Kind of part write (key of cas_branch_population)",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "insert_compact",
+        "insert_wide",
+        "mutate_one_column",
+        "reinsert_identical"
+      ],
+      "table": null,
+      "default": "insert_compact",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_branch",
+      "block": "cas",
+      "label": "Entry branch of a part file",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "fresh",
+        "hash_hit",
+        "adoption",
+        "inline"
+      ],
+      "table": null,
+      "default": "fresh",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_term",
+      "block": "cas",
+      "label": "Term of the GC round request and duration tables",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "fold_get",
+        "fold_put",
+        "fold_list",
+        "fold_get_per_manifest",
+        "fold_get_per_tail_log_record",
+        "deferred_get",
+        "deferred_put",
+        "deferred_list",
+        "per_blob_object",
+        "fold_base",
+        "fold_per_part",
+        "deferred_round"
+      ],
+      "table": null,
+      "default": "deferred_round",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_mutation_marks_hit_fraction",
+      "block": "cas",
+      "label": "Fraction of a mutated column's marks files whose bytes are unchanged (a hash hit; fixed-width CODEC(NONE) columns)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cas_mutation_marks_hit_fraction": [
+          0,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default: compressed marks change with the data",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_manifest_bytes",
+      "block": "cas",
+      "label": "Bytes of one part manifest (inline small files included)",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 13000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "measured 13 019 B (5-column Compact) and 13 751 B (5-column Wide) in cas-branches",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(size) FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND remote_path = ''",
+        "mapping": {
+          "cas_manifest_bytes": "compressed manifest; inline bytes sum is an upper bound"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_graduation_budget",
+      "block": "cas",
+      "label": "Blobs a GC round may graduate to delete_pending (cas_gc_round_graduation_budget; 0 = unbounded)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 5000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:65",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_tables",
+      "block": "cas",
+      "label": "Tables on the CAS disk with inserts",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_ref_log_tail_records",
+      "block": "cas",
+      "label": "Ref log records of one table since its last snapshot that a folding GC round reads",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 128,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "cas_ref_log_tail_records": [
+          0,
+          256
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "half the snapshot threshold of 256 records (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h:296): the tail grows from 0 to 256 between snapshots",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_stage",
+      "block": "cas",
+      "label": "GC reclamation stage",
+      "kind": "input",
+      "scope": "pool",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "condemn",
+        "manifest_delete",
+        "blob_delete"
+      ],
+      "table": null,
+      "default": "blob_delete",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_objects_per_part",
+      "block": "cas",
+      "label": "Blob files per part (the rest of the part is inline in its manifest)",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "shape",
+          "part_type"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_objects_per_part",
+      "validity": {
+        "insert_rows": [
+          100,
+          4000000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT countIf(remote_path != '') FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND local_path LIKE '%/<part>/%'",
+        "mapping": {
+          "cas_objects_per_part": "blob files of one part"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_branch_population",
+      "block": "cas",
+      "label": "Part files per entry branch for one part write",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cas_write",
+          "cas_branch"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_branch_population",
+      "validity": {
+        "insert_rows": [
+          100,
+          4000000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, outcome, reason, count() FROM system.cas_log WHERE event_date >= today() - 1 AND event_type IN ('blob_put', 'blob_reuse_adopt') GROUP BY ALL",
+        "mapping": {
+          "cas_branch_population": "per part: blob_put, blob_reuse_adopt observed / adopt, and inline files (empty remote_path)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests",
+      "block": "cas",
+      "label": "Requests of one GC round (excluding heartbeat pulses outside the round)",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "gc_round_term"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "gc_round_requests",
+      "validity": {
+        "cas_pool_objects": [
+          1017,
+          9949
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT round_id, outcome, duration_ms FROM system.cas_gc_log WHERE event_type = 'Finish' ORDER BY event_time_microseconds DESC LIMIT 20",
+        "mapping": {
+          "gc_round_requests": "Deferred rounds cost deferred_round; a Success round with new parts fold_base + fold_per_part x parts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_duration",
+      "block": "cas",
+      "label": "Duration of one GC round",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "ms",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "gc_round_term"
+        ],
+        "dim": "ms"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "gc_round_duration",
+      "validity": {
+        "cas_pool_objects": [
+          1017,
+          9949
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(duration_ms) FROM system.cas_gc_log WHERE event_type = 'Finish' AND event_date >= today() - 1",
+        "mapping": {
+          "gc_round_duration": "duration_ms"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "lease_requests_per_s",
+      "block": "cas",
+      "label": "Mount lease renewals per second per server: one If-Match PUT per renew period, start to start",
+      "kind": "derivation",
+      "scope": "replica",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+        },
+        "b": {
+          "kind": "input",
+          "id": "cas_mount_renew_period_s",
+          "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp:690",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.events WHERE event = 'CASMountRenewalAttempts'",
+        "mapping": {
+          "lease_requests_per_s": "increase per second"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "reclaim_delay_periods",
+      "block": "cas",
+      "label": "GC round periods from retirement to each reclamation stage (seconds = periods x (interval + round duration))",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "gc_stage"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "reclaim_delay_periods",
+      "validity": {
+        "cas_gc_interval_s": [
+          10,
+          60
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, min(event_time) FROM system.cas_log WHERE event_type IN ('indegree_zero', 'blob_delete', 'manifest_delete') GROUP BY event_type",
+        "mapping": {
+          "reclaim_delay_s": "stage time minus the DROP/merge time"
+        }
+      },
+      "status": "ok"
     }
   ],
   "sets": {},
