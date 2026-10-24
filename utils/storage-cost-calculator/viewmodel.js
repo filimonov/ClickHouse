@@ -620,7 +620,10 @@
     return {
       variant: v, replicas: p.replicas, capacity_gib: d.capacity_gib, peak_iops: d.peak_iops, peak_mibps: d.peak_mibps, headroom, peak_factor: peak,
       volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
-      short: `${fmtQuantity(d.capacity_gib || 0, 'GiB')} per replica, needs ${need}: ${verdict}`,
+      // A column that keeps nothing on the volume pays only the smallest one; "0 GiB, needs 0 IOPS" says less.
+      short: !(d.capacity_gib > 0) && !(d.peak_iops > 0) && !(d.peak_mibps > 0)
+        ? `no local data; the minimum gp3 volume (${fmtQuantity(r.size_gib, 'GiB')}) per replica`
+        : `${fmtQuantity(d.capacity_gib || 0, 'GiB')} per replica, needs ${need}: ${verdict}`,
       instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
     };
   }
