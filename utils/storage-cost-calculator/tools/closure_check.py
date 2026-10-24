@@ -587,7 +587,8 @@ def replay_problems(record, raw_path):
         Path(f.name).unlink()
     # Exit 1 means mismatches, each printed on stdout; exit 1 with nothing printed is a crash, like any other code.
     if done.returncode not in (0, 1) or (done.returncode == 1 and not done.stdout.strip()):
-        return [f"{record.get('measurement_id')}: replay failed (exit {done.returncode}): {done.stderr.strip()[-500:]}"]
+        tail = "\n".join(x for x in (done.stdout.strip(), done.stderr.strip()) if x)[-500:]
+        return [f"{record.get('measurement_id')}: replay failed (exit {done.returncode}): {tail}"]
     return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
 
 

@@ -313,7 +313,10 @@ class ReplayExitTest(unittest.TestCase):
         self.assertIn('KeyError: marks', found[0])
 
     def test_exit_2_and_signals_are_failures(self):
-        self.assertIn('replay failed (exit 2)', self.replay(2, 'partial\n', 'boom')[0])
+        found = self.replay(2, "replay failed: AttributeError: 'NoneType' object has no attribute 'policy'\n", 'boom')[0]
+        self.assertIn('replay failed (exit 2)', found)
+        self.assertIn('AttributeError', found)
+        self.assertIn('boom', found)
         self.assertIn('replay failed (exit -9)', self.replay(-9)[0])
 
 
