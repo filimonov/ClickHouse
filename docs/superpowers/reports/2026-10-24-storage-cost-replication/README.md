@@ -342,19 +342,35 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
   the merged `data.bin` was closed by the reader after 792 823 bytes (ledger seq 8999: downstream `dropped`,
   upstream `unknown`, no fault rule installed) and reissued from offset 0 (seq 9000, 4 318 512 bytes): r1
   `GetObject` 44 against 43, in 1 of 3 repeats. The cause in the reader is not identified. The prediction is now
-  43..44 (`basis: assumption`, `bac037b336d`); `acquire_requests` carries `abs` tolerance 1 for it.
+  43..44 (`basis: assumption`, `bac037b336d`). The fit edge of `acquire_requests` and `acquire_bytes` on
+  `replication-fetch.merge` / `s3` cites all three repeats, k2 included (it fits the range; its record keeps the
+  FAILED status it got under the exact 43); `acquire_requests` carries `abs` tolerance 1 for it. The re-read stays
+  open.
+- **Manifest modes follow the cards.** The forced replication and fault cards are `stochastic` (CAS windows cross
+  their boundaries) and compare `s3`, `s3plain` and `local` exactly themselves; their 19 manifests said
+  `deterministic` and now say `stochastic`, as every record already did. No prediction relied on a stochastic
+  tolerance: every tolerance is empty, so the slack is 0 either way, and the cards' own exact check (unpredicted ops
+  included) ran for those policies. No verdict changes.
 - **CAS `faults.multipart-abort` k2, k3 (FAILED by a too strict card; resolved as a timing bound).** In each of the
   8 publications the server aborts its own upload: `WriteBufferFromS3::tryToAbortMultipartUpload` waits for every
   part task (`task_tracker->safeWaitAll`, `IO/WriteBufferFromS3.cpp:273`) and then sends `AbortMultipartUpload`
-  (`:274`, `:469`), which the store answered ok every time (8 per repeat). In k2 (the 6th of the 8 uploads, part 1 at seq 1300, abort at
-  seq 1303) and k3 (seq 1503, 2.2 ms after its abort started) the relay saw a part-1 response finish after that
-  upload's abort started, so the bounded replay keeps the
-  32 MiB part in its upper inventory and retires it in the lower: residue lower 0, upper 33 554 432 bytes, after
-  the 30 s wait. The server had the part's answer before aborting, so the store holds no residue. Had it kept one,
-  the server would not abort again, and neither would the rig: the runner's cleanup aborts only uploads without an
-  ok abort (`yardstick/cost/runner.py` `open_uploads`); only a bucket lifecycle rule would clean it. The card now
-  asserts the lower bound and records the upper (`bac037b336d`); the old records keep their FAILED status, so
-  `failed_upload_residue` has no CAS value until a rerun.
+  (`:274`, `:469`), which the store answered ok every time (8 per repeat). The relay saw one part-1 response
+  finish after its upload's abort had started:
+
+  | Repeat | Upload | Part 1 row | Abort row | Part response end after abort start |
+  |---|---|---|---|---|
+  | k2 | 6th of 8 | seq 1300 | seq 1303 | 1.7 ms |
+  | k3 | 8th of 8 | seq 1503 | seq 1506 | 2.2 ms |
+
+  The bounded replay therefore keeps that 32 MiB part in its upper inventory and retires it in the lower: residue
+  lower 0, upper 33 554 432 bytes, after the 30 s wait. The server had the part's answer before aborting, so the
+  store should hold nothing; a lower bound alone cannot prove that. Had a part been kept, the server would not abort
+  again, and neither would the rig: the runner's cleanup aborts only uploads without an ok abort
+  (`yardstick/cost/runner.py` `open_uploads`); only a bucket lifecycle rule would clean it. The card now asserts the
+  lower bound, records the upper, and checks the store: `ListParts` on every aborted upload id must answer
+  `NoSuchUpload` (`aborted_uploads_gone_in_store`; RustFS rc.3 answers it per upload id although it cannot list
+  incomplete uploads by prefix). The old records keep their FAILED status, so `failed_upload_residue` has no CAS
+  value; its placement is a `planned` CAS fit edge of `faults.multipart-abort` under the current card (Task 7).
 - **CAS `faults.multipart-abort-part3b` (FAILED, consumed).** The fresh CAS hold-out predicted 3 upload parts per
   publication; 72 MB is 4 parts (32 + 16 + 16 + 8 MiB), and part 4 is sent although part 3 fails: `UploadPart` 56
   (8 × 7), not 48 (8 × 6). A prediction arithmetic error. `faults.multipart-abort-part3c` (75 000 rows, 4 parts,

@@ -9856,6 +9856,7 @@
       "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
+        "cost-20261024T115147Z/s3/replication-fetch/merge/k2",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
       ],
       "status": "done"
@@ -9874,6 +9875,7 @@
       "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
+        "cost-20261024T115147Z/s3/replication-fetch/merge/k2",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
       ],
       "status": "done"
@@ -11202,6 +11204,21 @@
         "cost-20261024T115147Z/s3plain/faults/multipart-abort-part3/k3"
       ],
       "status": "consumed"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort",
+      "policy": "cas",
+      "span": {
+        "upload_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [],
+      "status": "planned"
     },
     {
       "coefficient": "failed_upload_residue",

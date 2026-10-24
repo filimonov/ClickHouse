@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 
 from .. import ledger as L
+from ..s3client import S3Error
 from .cas_probe import CAS_FAMILIES
 from .lifecycle import LifecycleCard, check_observation
 from .probes import compare_ledger, register, window_rows
@@ -93,6 +94,28 @@ class Faults(LifecycleCard):
                 break
             time.sleep(POLL_S)
         st['abort_wait_s'] = time.monotonic() - t0
+        st['uploads_after_abort'] = self.check_aborted_uploads(ctx)
+
+    def check_aborted_uploads(self, ctx) -> dict:
+        """Store-side check of every upload the server aborted: ListParts must answer NoSuchUpload.
+
+        The replay's lower bound alone could hide a part the store kept; RustFS rc.3 cannot list incomplete uploads by
+        prefix, but it answers ListParts per upload id. The rig port keeps these requests out of the workload.
+        """
+        replica = self.p(ctx)['replica']
+        aborted = sorted({(r['bucket'], r['key'], r['upload_id']) for r in window_rows(ctx)
+                          if r['caller'] == replica and r['op'] == 'AbortMultipartUpload'
+                          and r['upstream']['outcome'] == 'ok'})
+        present = []
+        for bucket, key, upload_id in aborted:
+            try:
+                ctx.rig.list_parts(bucket, key, upload_id)
+            except S3Error as e:
+                if 'NoSuchUpload' not in e.body:
+                    raise
+                continue
+            present.append(upload_id)
+        return {'aborted': len(aborted), 'gone': len(aborted) - len(present), 'present': present}
 
     def observe(self, ctx, draft):
         rows = self.caller_rows(ctx, draft)
@@ -109,6 +132,7 @@ class Faults(LifecycleCard):
                 'part2_attempts': len(part2),
                 'incomplete_after_window': st['incomplete_after'], 'abort_wait_s': st['abort_wait_s'],
                 'incomplete_after_window_upper': st['residue']['upper'],
+                'uploads_after_abort': st['uploads_after_abort'],
                 'insert_failed': bool(draft['observations'].get('expected_exceptions'))}
 
     def assertions(self, ctx, draft):
@@ -125,6 +149,7 @@ class Faults(LifecycleCard):
         if p['expect_insert_failure']:
             out['abort_by_server_ok'] = (True, any(a['upstream'] == 'ok' for a in obs['aborts']))
             out['incomplete_after_window'] = (0, obs['incomplete_after_window'])
+            out['aborted_uploads_gone_in_store'] = ([], obs['uploads_after_abort']['present'])
         elif self.per_policy(ctx, 'expect_retry_chain'):
             out['failed_not_retried'] = ([], obs['retries']['failed_not_retried'])
         if exact:

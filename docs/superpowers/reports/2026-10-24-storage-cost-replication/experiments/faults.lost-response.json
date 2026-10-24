@@ -9,7 +9,7 @@
     "cas"
   ],
   "replicas": 1,
-  "mode": "deterministic",
+  "mode": "stochastic",
   "controls": {
     "merges": "stop",
     "gc": "off",

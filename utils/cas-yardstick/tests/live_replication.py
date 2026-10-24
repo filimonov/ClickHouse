@@ -1,4 +1,4 @@
-"""The deterministic replication and fault cases once on `s3` against the pinned binary, two replicas.
+"""The forced replication and fault cases (compared exactly on `s3` by the cards) once on `s3` against the pinned binary, two replicas.
 Run from utils/cas-yardstick under the rig lock: YARDSTICK_LIVE=1 python3 -m unittest tests.live_replication -v
 (about 10 minutes)."""
 import glob
@@ -24,7 +24,8 @@ class LiveReplicationTest(unittest.TestCase):
         if not BINARY.exists():
             self.skipTest(f'no binary {BINARY}')
         manifests = [json.loads(pathlib.Path(p).read_text()) for p in glob.glob(str(REPORT / 'experiments' / '*.json'))]
-        cases = sorted(m['experiment_id'] for m in manifests if m['mode'] == 'deterministic' and 's3' in m['policies'])
+        slow = {'replication-natural-fit', 'replication-natural-holdout', 'restart-catchup'}
+        cases = sorted(m['experiment_id'] for m in manifests if m['card'] not in slow and 's3' in m['policies'])
         runs = ROOT / 'tmp' / 'cas-yardstick' / 'cost-runs' / f'live-replication-{time.strftime("%Y%m%d-%H%M%S")}'
         args = SimpleNamespace(binary=str(BINARY), runs_dir=str(runs), port_base=19700, endpoint=None, commit=None,
                                source_dir=None, manifests=[str(REPORT)], cases=','.join(cases), policies='s3',

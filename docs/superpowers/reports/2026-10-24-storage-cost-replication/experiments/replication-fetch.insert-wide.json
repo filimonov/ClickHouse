@@ -10,7 +10,7 @@
     "local"
   ],
   "replicas": 2,
-  "mode": "deterministic",
+  "mode": "stochastic",
   "controls": {
     "merges": "stop",
     "gc": "off",

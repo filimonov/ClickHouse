@@ -111,6 +111,7 @@ class ManifestsTest(unittest.TestCase):
             self.assertIn(m['card'], OWN_CARDS, name)
             self.assertIn(m['card'], CARDS, name)
             self.assertEqual(m['replicas'], CARDS[m['card']].replicas, name)
+            self.assertEqual(m['mode'], CARDS[m['card']].mode, name)
             stopped = m['settings']['table'].get('max_parts_to_merge_at_once') == 1
             self.assertEqual(stopped, m['controls']['merges'] == 'stop', name)
             for p in m['policies']:
@@ -300,6 +301,45 @@ class FaultsTest(unittest.TestCase):
         part = {('b', 'k', 'u', 1): {'size': 32 << 20}}
         bounds = N(lower=N(incomplete={}), upper=N(incomplete=part))
         self.assertEqual(faults.residue_bounds(bounds), {'lower': 0, 'upper': 32 << 20})
+
+    def _aborted_ctx(self, rig):
+        from types import SimpleNamespace as N
+        m = manifest('faults.multipart-abort')
+        ctx = ctx_for(m, FakeCluster(n=1))
+        part = {('b', 'k', 'u1', 1): {'size': 32 << 20}}
+        ctx.replay = lambda: N(lower=N(incomplete={}), upper=N(incomplete=part))
+        ctx.rig = rig
+        abort = {'seq': 5, 'caller': 'r1', 'op': 'AbortMultipartUpload', 'bucket': 'b', 'key': 'k', 'upload_id': 'u1',
+                 'upstream': {'outcome': 'ok'}, 'downstream': {'outcome': 'delivered'}}
+        return ctx, [abort]
+
+    def test_store_side_check_lists_parts_of_every_aborted_upload(self):
+        from yardstick.cost.s3client import S3Error
+
+        class Rig:
+            def __init__(self, gone):
+                self.gone, self.asked = gone, []
+
+            def list_parts(self, bucket, key, upload_id):
+                self.asked.append((bucket, key, upload_id))
+                if self.gone:
+                    raise S3Error('GET', 'x', 404, '<Error><Code>NoSuchUpload</Code></Error>')
+                return [{'part_number': 1, 'size': 32 << 20, 'etag': 'e'}]
+        old_rows, old_wait = faults.window_rows, faults.ABORT_WAIT_S
+        try:
+            faults.ABORT_WAIT_S = 0
+            for gone, present in ((True, []), (False, ['u1'])):
+                rig = Rig(gone)
+                ctx, rows = self._aborted_ctx(rig)
+                faults.window_rows = lambda ctx, rows=rows: rows
+                CARDS['faults'].complete(ctx)
+                st = CARDS['faults'].state(ctx)
+                self.assertEqual(rig.asked, [('b', 'k', 'u1')])
+                self.assertEqual(st['uploads_after_abort'], {'aborted': 1, 'gone': 1 - len(present), 'present': present})
+                # The asserted residue is the lower bound; the upper is only recorded.
+                self.assertEqual((st['incomplete_after'], st['residue']['upper']), (0, 32 << 20))
+        finally:
+            faults.window_rows, faults.ABORT_WAIT_S = old_rows, old_wait
 
     def test_retry_view_chains_a_failed_attempt_with_its_retry(self):
         def attempt(seq, outcome, up):
