@@ -517,3 +517,19 @@ class LeaseTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FormulasTest(unittest.TestCase):
+    def test_no_cell_carries_a_cut_family_and_multipart_is_conditional(self):
+        # The page cuts a whole operation when a cut family is listed and any row of its cell is non-zero, so a cell
+        # never lists one; a multipart upload happens only when multipart_upload (0 below the first buffer) is 1.
+        with open(os.path.join(R, 'formulas.json')) as f:
+            doc = json.load(f)
+        for op, fams in doc['applicability'].items():
+            if op in doc['cells']:
+                self.assertNotIn('unsupported_cut', fams.values(), op)
+        for op in ('inserts', 'merges'):
+            rows = {r['op_kind']: json.dumps(r['expr']) for r in doc['cells'][op]['ledger_rows']}
+            for kind in ('CreateMultipartUpload', 'UploadPart', 'CompleteMultipartUpload'):
+                self.assertIn('"multipart_upload"', rows[kind], (op, kind))
+            self.assertIn('"multipart_upload"', rows['PutObject'], op)
