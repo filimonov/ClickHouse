@@ -182,6 +182,13 @@ class MetadataTest(unittest.TestCase):
         self.assertEqual(shapes.metadata_ratios(None, 22, 44), {})
 
 
+class SizeHistogramTest(unittest.TestCase):
+    def test_buckets_cover_the_upload_buffer_boundaries(self):
+        h = shapes.size_histogram([10, 4096, 4097, 1 << 20, (1 << 20) + 1, 32 << 20, (32 << 20) + 1, 1 << 40])
+        self.assertEqual(h, {'le_4KiB': 0.25, '4KiB_1MiB': 0.25, '1MiB_32MiB': 0.25, 'gt_32MiB': 0.25})
+        self.assertEqual(shapes.size_histogram([]), dict.fromkeys(h, 0.0))
+
+
 class MultipartTest(unittest.TestCase):
     def test_multipart_assertions_hold_for_one_upload_of_two_or_more_parts(self):
         ops = {'CreateMultipartUpload': {'attempts': 1}, 'UploadPart': {'attempts': 3},

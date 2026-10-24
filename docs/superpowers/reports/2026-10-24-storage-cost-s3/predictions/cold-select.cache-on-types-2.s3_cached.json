@@ -1,0 +1,49 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.cache-on-types-2",
+  "policy": "s3_cached",
+  "inputs": {
+    "fit_experiment": "cold-select.cache-on-types",
+    "fit_run": "cost-20261024T075016Z",
+    "cached_miss_gets_per_part_read": 7,
+    "cached_miss_bytes_per_part_read": 914467.5
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "warm_get_requests": 14,
+      "warm_get_bytes_per_part": {
+        "min": 685851,
+        "max": 1143084
+      },
+      "cache_fill_io_per_byte": {
+        "min": 0.8,
+        "max": 1.5
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    },
+    {
+      "claim": "a cold read loads statistics.packed, one ranged read per column file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1386
+    }
+  ],
+  "prediction_commit": "pending"
+}

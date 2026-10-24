@@ -38,6 +38,19 @@ def tree_allocated(root: str) -> int:
     return allocated(root, [''])['allocated'] if os.path.isdir(root) else 0
 
 
+# Object size buckets: small files, up to the default 1 MiB read buffer, up to the 32 MiB first upload buffer, beyond.
+SIZE_BUCKETS = (('le_4KiB', 0, 4096), ('4KiB_1MiB', 4097, 1 << 20), ('1MiB_32MiB', (1 << 20) + 1, 32 << 20),
+                ('gt_32MiB', (32 << 20) + 1, float('inf')))
+
+
+def size_histogram(sizes: list) -> dict:
+    """Fraction of objects per size bucket."""
+    out = dict.fromkeys((b[0] for b in SIZE_BUCKETS), 0.0)
+    for x in sizes:
+        out[next(name for name, lo, hi in SIZE_BUCKETS if lo <= x <= hi)] += 1
+    return {k: v / len(sizes) for k, v in out.items()} if sizes else out
+
+
 def metadata_ratios(metadata: dict | None, objects: int, write_syscalls: int) -> dict:
     """Local metadata per object of the s3 disk: files, apparent and allocated bytes; write syscalls per object."""
     if not metadata or not objects:
@@ -269,6 +282,7 @@ class ObjectsPerPart(S3Card):
                 'objects_total': sum(counts.values()),
                 'object_bytes_total': sum(size for key in counts for _, size in st['layout'].get(key, {}).values()),
                 'put_payload_sizes': put_sizes,
+                'object_size_histogram': size_histogram(put_sizes),
                 'object_writes': writes,
                 'insert_tx_checks': sum(c['attempts'] for op, c in ops.items() if op not in OBJECT_WRITE_OPS),
                 'metadata': st.get('metadata'),

@@ -236,6 +236,8 @@ class ColdSelect(S3Card):
                 'bytes_per_get': nbytes / gets if gets else None, 'gets_by_file': dict(sorted(by_file.items())),
                 'requests_by_file': self.requests_by_file(ctx, draft),
                 'restarts_before_window': st['restarted_before_window'], 'warm': st['warm'],
+                'warm_get_requests': st['warm']['get_requests'],
+                'warm_get_bytes_per_part': st['warm']['get_bytes'] / len(parts) if parts else None,
                 'cache_fill_io_per_byte': ((st['warm']['cache_allocated_after'] - st['cache_before_warm'])
                                            / st['warm']['get_bytes'] if st['warm']['get_bytes'] else None),
                 'cache_allocated_before_warm': st['cache_before_warm']}
