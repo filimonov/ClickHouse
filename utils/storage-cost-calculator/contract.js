@@ -7,7 +7,7 @@
   const CONTRACT_SCHEMA = 'contract/1';
   const TOP_TYPES = {
     version: 'string', manifest: 'object', evidence_statement: 'string', registry: 'array', sets: 'object',
-    precedence: 'array', coefficients: 'array', billing: 'object', variants: 'array', operations: 'array',
+    precedence: 'array', coefficients: 'array', billing: 'object', variants: 'array', operations: 'array', families: 'array',
     applicability: 'object', formulas: 'object', states: 'object',
   };
   const MANIFEST_STRINGS = ['code_sha256', 'contract_version', 'registry_version', 'coverage_version', 'billing_version'];
@@ -29,13 +29,17 @@
       states[f.variant] = states[f.variant] || [];
       owners[f.variant] = owners[f.variant] || {};
       for (const [op, cell] of Object.entries(f.cells || {})) {
+        if (!cell || typeof cell !== 'object') { problems.push(`cells.${f.variant}.${op} (${f.owner}): expected object, got ${typeOf(cell)}`); continue; }
         if (formulas[f.variant][op]) {
           problems.push(`cell ${f.variant}.${op} is defined by both ${owners[f.variant][op]} and ${f.owner}`);
           continue;
         }
         formulas[f.variant][op] = cell;
         owners[f.variant][op] = f.owner;
-        for (const s of cell.states || []) states[f.variant].push(Object.assign({}, s, { operation: op }));
+        (Array.isArray(cell.states) ? cell.states : []).forEach((s, k) => {
+          if (!s || typeof s !== 'object') problems.push(`cells.${f.variant}.${op}.states[${k}] (${f.owner}): expected object, got ${typeOf(s)}`);
+          else states[f.variant].push(Object.assign({}, s, { operation: op }));
+        });
       }
     });
     return { formulas, states, problems };
@@ -43,17 +47,25 @@
 
   // Calls fn(node, path) for every expression node of a cell, with the path used in problem lines.
   function eachNode(cell, base, fn) {
-    (cell.ledger_rows || []).forEach((r, i) => fn(r.expr, `${base}.ledger_rows[${i}].expr`));
-    ((cell.allocation && cell.allocation.shares) || []).forEach((s, j) => fn(s.weight, `${base}.allocation.shares[${j}].weight`));
-    (cell.states || []).forEach((s, k) => fn(s.cond, `${base}.states[${k}].cond`));
-    (cell.notes || []).forEach((n, m) => fn(n, `${base}.notes[${m}]`));
+    const list = (v) => (Array.isArray(v) ? v : []);
+    const field = (o, k) => (o && typeof o === 'object' ? o[k] : undefined);
+    list(cell.ledger_rows).forEach((r, i) => fn(field(r, 'expr'), `${base}.ledger_rows[${i}].expr`));
+    list(field(cell.allocation, 'shares')).forEach((x, j) => fn(field(x, 'weight'), `${base}.allocation.shares[${j}].weight`));
+    list(cell.states).forEach((x, k) => fn(field(x, 'cond'), `${base}.states[${k}].cond`));
+    list(cell.notes).forEach((n, m) => fn(n, `${base}.notes[${m}]`));
   }
 
   // Reports references to coefficients that the contract does not carry; checkDims covers inputs.
   function checkRefs(node, path, coefs, problems) {
     if (!node || typeof node !== 'object') return;
-    if (node.kind === 'coef' && !coefs.has(node.id)) problems.push(`${path}: unknown coef ${node.id}`);
-    if (node.kind === 'lookup' && coefs.get(node.table_id) !== 'table') problems.push(`${path}: unknown table ${node.table_id}`);
+    if (node.kind === 'coef') {
+      if (!coefs.has(node.id)) problems.push(`${path}: unknown coef ${node.id}`);
+      else if (coefs.get(node.id) === 'table') problems.push(`${path}: coef ${node.id} is a table coefficient; use lookup`);
+    }
+    if (node.kind === 'lookup') {
+      if (!coefs.has(node.table_id)) problems.push(`${path}: unknown table ${node.table_id}`);
+      else if (coefs.get(node.table_id) !== 'table') problems.push(`${path}: ${node.table_id} is not a table coefficient`);
+    }
     // Sub-paths follow checkDims: /a, /keys/0, /cond/a.
     for (const [key, v] of Object.entries(node)) {
       if (Array.isArray(v)) v.forEach((x, i) => checkRefs(x, `${path}/${key}/${i}`, coefs, problems));
@@ -82,32 +94,40 @@
     }
   }
 
+  const isObj = (v) => typeOf(v) === 'object';
+
+  // Returns id -> kind for the well-formed coefficient records; malformed elements become problems.
   function checkUnique(c, problems, tables) {
-    const seen = new Map();
-    for (const q of c.registry) {
+    const seen = new Set();
+    c.registry.forEach((q, i) => {
+      if (!isObj(q)) { problems.push(`registry[${i}]: expected object, got ${typeOf(q)}`); return; }
       if (seen.has(q.id)) problems.push(`registry: duplicate quantity id ${q.id}`);
-      seen.set(q.id, true);
-    }
+      seen.add(q.id);
+    });
     const owner = new Map();
-    for (const rec of c.coefficients) {
+    c.coefficients.forEach((rec, i) => {
+      if (!isObj(rec)) { problems.push(`coefficients[${i}]: expected object, got ${typeOf(rec)}`); return; }
       const ref = rec.evidence && rec.evidence.ref;
       if (owner.has(rec.id)) {
-        problems.push(`coefficients: duplicate coefficient id ${rec.id} (owners ${owner.get(rec.id)} and ${ref})`);
-        continue;
+        problems.push(`coefficients: duplicate coefficient id ${rec.id} (owners ${owner.get(rec.id).ref} and ${ref})`);
+        return;
       }
-      owner.set(rec.id, ref);
+      owner.set(rec.id, { ref, kind: rec.kind });
       if (rec.kind === 'table') {
-        tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim };
+        if (!isObj(rec.value)) problems.push(`coefficients[${i}] (${rec.id}).value: table coefficient needs {index, values}, got ${typeOf(rec.value)}`);
+        else tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim };
       }
-    }
-    return new Map(c.coefficients.map((r) => [r.id, r.kind]));
+    });
+    return new Map([...owner].map(([id, o]) => [id, o.kind]));
   }
 
   function checkFormulas(c, kinds, problems) {
-    const registryArtifact = { quantities: c.registry, sets: c.sets, precedence: c.precedence };
+    const registryArtifact = { quantities: c.registry.filter(isObj), sets: c.sets, precedence: c.precedence };
     for (const [variant, ops] of Object.entries(c.formulas)) {
+      if (!isObj(ops)) { problems.push(`formulas.${variant}: expected object, got ${typeOf(ops)}`); continue; }
       for (const [op, cell] of Object.entries(ops)) {
         const base = `formulas.${variant}.${op}`;
+        if (!isObj(cell)) { problems.push(`${base}: expected object, got ${typeOf(cell)}`); continue; }
         eachNode(cell, base, (node, path) => {
           for (const p of model().checkDims(node, registryArtifact)) problems.push(path + p.slice(1));
           checkRefs(node, path, kinds, problems);
@@ -119,12 +139,11 @@
     }
   }
 
-  // The family list is not stored in the contract; the domain is variants × operations × (families seen anywhere).
+  // The domain comes from the contract's own variants, operations and families, never from applicability.
   function checkApplicability(c, problems) {
-    const families = new Set(c.families || []);
-    for (const ops of Object.values(c.applicability)) {
-      for (const fams of Object.values(ops || {})) Object.keys(fams || {}).forEach((f) => families.add(f));
-    }
+    if (c.families.length === 0) problems.push('families: must be non-empty');
+    c.families.forEach((f, i) => { if (typeof f !== 'string') problems.push(`families[${i}]: expected string, got ${typeOf(f)}`); });
+    const families = c.families.filter((f) => typeof f === 'string');
     const allowed = new Set(['supported', 'not_supported', 'unsupported_cut']);
     for (const v of c.variants) {
       for (const op of c.operations) {
@@ -137,6 +156,7 @@
     }
   }
 
+  // Returns a shallow-frozen copy; nested objects are shared with the input JSON.
   function load(json) {
     const problems = [];
     const c = json && typeof json === 'object' ? json : {};
@@ -148,7 +168,7 @@
       const kinds = checkUnique(c, problems, tables);
       if (ok('sets') && ok('precedence') && ok('formulas') && ok('applicability')) checkFormulas(c, kinds, problems);
     }
-    if (ok('applicability') && ok('variants') && ok('operations')) checkApplicability(c, problems);
+    if (ok('applicability') && ok('variants') && ok('operations') && ok('families')) checkApplicability(c, problems);
     if (problems.length > 0) {
       const err = new Error(problems.join('\n'));
       err.problems = problems;

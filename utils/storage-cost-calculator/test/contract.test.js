@@ -38,6 +38,7 @@ function minimal() {
     billing,
     variants: ['s3'],
     operations: ['insert'],
+    families: ['write_path'],
     applicability: { s3: { insert: { write_path: 'supported' } } },
     formulas: merged.formulas,
     states: merged.states,
@@ -118,7 +119,6 @@ test('test_merge_rejects_malformed_files', () => {
 test('test_applicability_domain_complete', () => {
   const c = minimal();
   c.operations = ['insert', 'merge'];
-  c.families = undefined;
   c.applicability = { s3: { insert: { write_path: 'supported' } } };
   const p = problemsOf(c);
   assert.equal(p.length, 1);
@@ -154,4 +154,69 @@ test('test_wrong_schema_and_missing_keys', () => {
   const c = minimal();
   delete c.sets;
   assert.ok(problemsOf(c).some((l) => /^sets/.test(l)));
+});
+
+test('test_family_missing_from_every_cell', () => {
+  const c = minimal();
+  c.families = ['write_path', 'reads'];
+  c.operations = ['insert', 'merge'];
+  c.applicability.s3.merge = { write_path: 'supported' };
+  const p = problemsOf(c);
+  assert.deepEqual(p.sort(), [
+    'applicability.s3.insert.reads: missing from the domain',
+    'applicability.s3.merge.reads: missing from the domain',
+  ]);
+});
+
+test('test_families_absent_or_empty', () => {
+  const a = minimal();
+  delete a.families;
+  assert.match(problemsOf(a).join('\n'), /^families: expected array/m);
+  const b = minimal();
+  b.families = [];
+  assert.deepEqual(problemsOf(b), ['families: must be non-empty']);
+});
+
+test('test_malformed_elements_become_problems', () => {
+  const cases = [
+    ['table coef without value', (c) => { c.coefficients[1].value = null; }, /coefficients\[1\] \(objects_per_part\)\.value/],
+    ['null registry entry', (c) => { c.registry.push(null); }, /registry\[\d+\]: expected object/],
+    ['null coefficient entry', (c) => { c.coefficients.push(null); }, /coefficients\[2\]: expected object/],
+    ['null formulas cell', (c) => { c.formulas.s3.insert = null; }, /formulas\.s3\.insert: expected object/],
+    ['null ledger row', (c) => { c.formulas.s3.insert.ledger_rows.push(null); }, /formulas\.s3\.insert\.ledger_rows\[1\]\.expr/],
+  ];
+  for (const [name, mutate, re] of cases) {
+    const c = minimal();
+    c.formulas = JSON.parse(JSON.stringify(c.formulas));
+    mutate(c);
+    const p = problemsOf(c);
+    assert.ok(p.some((l) => re.test(l)), `${name}: ${p.join('\n')}`);
+  }
+});
+
+test('test_merge_malformed_elements', () => {
+  const f = JSON.parse(JSON.stringify(formulas));
+  f.cells.merge = null;
+  f.cells.insert.states.push(null);
+  const m = contract.mergeFormulas([f]);
+  assert.equal(m.problems.length, 2);
+  assert.match(m.problems.join('\n'), /cells\.s3\.merge \(variant-owner\)/);
+  assert.match(m.problems.join('\n'), /cells\.s3\.insert\.states\[1\]/);
+});
+
+test('test_lookup_and_coef_kind_mismatch', () => {
+  const c = minimal();
+  const f = JSON.parse(JSON.stringify(c.formulas));
+  f.s3.insert.ledger_rows[0].expr.b.table_id = 'min_bytes_for_wide_part';
+  f.s3.insert.notes = [{ kind: 'coef', id: 'objects_per_part', dim: 'count' }];
+  c.formulas = f;
+  const p = problemsOf(c);
+  assert.ok(p.some((l) => /min_bytes_for_wide_part is not a table coefficient/.test(l)), p.join('\n'));
+  assert.ok(p.some((l) => /formulas\.s3\.insert\.notes\[0\]: coef objects_per_part is a table coefficient; use lookup/.test(l)), p.join('\n'));
+});
+
+test('test_registry_missing_is_one_problem', () => {
+  const c = minimal();
+  delete c.registry;
+  assert.deepEqual(problemsOf(c), ['registry: expected array, got undefined']);
 });
