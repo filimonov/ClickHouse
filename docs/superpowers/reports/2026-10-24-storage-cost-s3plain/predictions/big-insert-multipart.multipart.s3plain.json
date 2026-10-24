@@ -35,7 +35,9 @@
     "shape": "unmodelled",
     "part_type": "wide",
     "s_bin_bytes": 60001850,
-    "objects": 15
+    "objects": 15,
+    "insert_rows": 600000,
+    "merge_result_part_type": "wide"
   },
   "expected": {
     "foreground": {

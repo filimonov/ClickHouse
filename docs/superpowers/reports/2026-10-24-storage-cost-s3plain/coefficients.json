@@ -1,0 +1,357 @@
+[
+  {
+    "id": "plain_meta_objects_per_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape"
+      ],
+      "values": {
+        "narrow": 1,
+        "wide": 1,
+        "types": 2
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "one directory per part and one per projection (the types shape has one projection)"
+    }
+  },
+  {
+    "id": "plain_dir_create_requests",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "plain_op"
+      ],
+      "values": {
+        "PutObject": 1,
+        "HeadObject": 1,
+        "GetObject": 0,
+        "CopyObject": 0,
+        "DeleteObject": 0,
+        "DeleteObjects": 0,
+        "ListObjectsV2": 0
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "plain_rename_requests",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 1,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "plain_copy_on_hardlink",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "plain_op"
+      ],
+      "values": {
+        "PutObject": 0,
+        "HeadObject": 1,
+        "GetObject": 0,
+        "CopyObject": 1,
+        "DeleteObject": 0,
+        "DeleteObjects": 0,
+        "ListObjectsV2": 0
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "no card hard-links on s3plain (mutations are refused); the copy itself is measured in every unlink"
+    }
+  },
+  {
+    "id": "plain_unlink_requests",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "plain_op"
+      ],
+      "values": {
+        "PutObject": 0,
+        "HeadObject": 1,
+        "GetObject": 0,
+        "CopyObject": 1,
+        "DeleteObject": 2,
+        "DeleteObjects": 0,
+        "ListObjectsV2": 0
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "plain_dir_remove_requests",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "plain_op"
+      ],
+      "values": {
+        "PutObject": 1,
+        "HeadObject": 0,
+        "GetObject": 0,
+        "CopyObject": 0,
+        "DeleteObject": 1,
+        "DeleteObjects": 0,
+        "ListObjectsV2": 0
+      }
+    },
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  },
+  {
+    "id": "plain_empty_part_objects",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 11,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "plain storage keeps a blob for every empty file; the empty covering part has 11 files"
+    }
+  },
+  {
+    "id": "plain_objects_per_part",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "shape",
+        "part_type"
+      ],
+      "values": {
+        "narrow|compact": 11,
+        "narrow|wide": 19,
+        "wide|compact": 11,
+        "wide|wide": 89
+      }
+    },
+    "validity": {
+      "insert_rows": [
+        1000,
+        400000
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k1",
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k2",
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k3",
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k1",
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k2",
+        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k3",
+        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k1",
+        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k2",
+        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k3",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "objects per active part from system.remote_data_paths; no types entry: its empty-file blobs depend on the JSON columns (6 per column with two typed paths in a Wide part)"
+    }
+  },
+  {
+    "id": "plain_expired_part_extra_files",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 2,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "partition.dat and minmax_<key>.idx (IMergeTreeDataPart.cpp:273) of one partition key column"
+    }
+  },
+  {
+    "id": "plain_startup_requests",
+    "kind": "table",
+    "dim": "count",
+    "value": {
+      "index": [
+        "cache_enabled",
+        "plain_startup_kind",
+        "plain_op"
+      ],
+      "values": {
+        "0|fixed|PutObject": 1,
+        "0|per_dir|PutObject": 0,
+        "0|fixed|HeadObject": 1,
+        "0|per_dir|HeadObject": 0,
+        "0|fixed|GetObject": 5,
+        "0|per_dir|GetObject": 1,
+        "0|fixed|CopyObject": 1,
+        "0|per_dir|CopyObject": 0,
+        "0|fixed|DeleteObject": 2,
+        "0|per_dir|DeleteObject": 0,
+        "0|fixed|DeleteObjects": 0,
+        "0|per_dir|DeleteObjects": 0,
+        "0|fixed|ListObjectsV2": 6,
+        "0|per_dir|ListObjectsV2": 1,
+        "1|fixed|PutObject": 2,
+        "1|per_dir|PutObject": 0,
+        "1|fixed|HeadObject": 2,
+        "1|per_dir|HeadObject": 0,
+        "1|fixed|GetObject": 6,
+        "1|per_dir|GetObject": 1,
+        "1|fixed|CopyObject": 2,
+        "1|per_dir|CopyObject": 0,
+        "1|fixed|DeleteObject": 4,
+        "1|per_dir|DeleteObject": 0,
+        "1|fixed|DeleteObjects": 0,
+        "1|per_dir|DeleteObjects": 0,
+        "1|fixed|ListObjectsV2": 6,
+        "1|per_dir|ListObjectsV2": 1
+      }
+    },
+    "validity": {
+      "replicas": [
+        1,
+        3
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T142405Z/s3plain/startup/intact/k1",
+        "cost-20261024T142405Z/s3plain/startup/intact/k2",
+        "cost-20261024T142405Z/s3plain/startup/intact/k3",
+        "cost-20261024T142405Z/s3plain_cached/startup/intact/k1",
+        "cost-20261024T142405Z/s3plain_cached/startup/intact/k2",
+        "cost-20261024T142405Z/s3plain_cached/startup/intact/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "fixed: the disk access checks (a PutObject, two reads, an unlink each; one check, two with the cache), format_version.txt, the prefix.path of the table and detached directories, four listings; per part directory: one prefix.path read and one listing"
+    }
+  },
+  {
+    "id": "plain_local_metadata_bytes_per_object",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 0,
+    "validity": null,
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
+      "version": "26.8@09d0772a842"
+    },
+    "status": "ok"
+  }
+]

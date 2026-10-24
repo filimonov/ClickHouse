@@ -17,8 +17,8 @@
     "large_objects_per_mutated_part": 0,
     "mutation_entries_removed_per_month": 0,
     "mutation_kind": "update_column",
-    "expired_parts_per_month": 1,
-    "expiry_operations_per_month": 1,
+    "expired_parts_per_month": 2,
+    "expiry_operations_per_month": 2,
     "select_part_reads_per_day": 0,
     "read_streams_per_part": 0,
     "parts_first_read_per_month": 0,
@@ -33,7 +33,9 @@
     "write_amplification_rule": 1,
     "cache_enabled": "1",
     "shape": "narrow",
-    "part_type": "compact"
+    "part_type": "compact",
+    "insert_rows": 100000,
+    "merge_result_part_type": "wide"
   },
   "expected": {
     "foreground": {

@@ -1,0 +1,9 @@
+c7313c8409279e11460afb2f855d972c5776bf82f69095e2cf308689a3b8543f  ./big-insert-multipart/cost-20261024T142405Z/ledger.jsonl.gz
+abc26130035948edbe22cdd89fb9a98dec11f274fce8eecb1dcf027ff626612e  ./boundaries/cost-20261024T142405Z/ledger.jsonl.gz
+44c068fd996b83eee3e783b8d8e37fd4bfe02b3aa0ed84f58299a54ea68f4809  ./cold-select/cost-20261024T142405Z/ledger.jsonl.gz
+66544719bbc45e000245df5333a4b0eea19cc29c7944a407f5bc298d51318958  ./drop/cost-20261024T103803Z/ledger.jsonl.gz
+6168bb8f1276afade5207f6dcdf9d54a4478bac728eac48ddce96c58d3e614d2  ./drop/cost-20261024T142405Z/ledger.jsonl.gz
+efbdb8e8d1c64e98f64a4bec0d322038edfa927eec2300e73a150d0bb53456eb  ./merge-only/cost-20261024T142405Z/ledger.jsonl.gz
+292f18ccbdbd202b5c9c7ef32410dcf8829646c16517816d75f3c5a3a9959084  ./objects-per-part/cost-20261024T103803Z/ledger.jsonl.gz
+e92617f55bbd0fdb9c8e11825af7a1599e355a99259126d0c65a2a8ce848b031  ./objects-per-part/cost-20261024T142405Z/ledger.jsonl.gz
+110ece9bcd8bbd35da3c3dabfcd11e0b1f25162af271ec8840c3a87417e42348  ./startup/cost-20261024T142405Z/ledger.jsonl.gz

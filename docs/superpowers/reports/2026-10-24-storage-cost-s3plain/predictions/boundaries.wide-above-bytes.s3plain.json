@@ -4,7 +4,9 @@
   "policy": "s3plain",
   "inputs": {
     "part_bytes_uncompressed": 11534360,
-    "min_level_for_wide_part": 0
+    "min_level_for_wide_part": 0,
+    "insert_rows": 288359,
+    "merge_result_part_type": "wide"
   },
   "expected": {
     "foreground": {

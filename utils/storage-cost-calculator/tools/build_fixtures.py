@@ -99,6 +99,12 @@ def build(report_dirs, coverage):
             if mid in measurements:
                 problems.append(f"measurement {mid} appears in {measurements[mid][1]} and {entry[1]}")
             measurements[mid] = (entry[0], entry[1], r)
+    foreign = {}
+    for r in report_dirs:
+        found, _ = _coefficients(r) if (r / "coefficients.json").exists() else ([], None)
+        for c in found or []:
+            if isinstance(c, dict) and c.get("id"):
+                foreign.setdefault(c["id"], c)
     fixtures = {}
     coefficient_only = []
     edges = [(f"evidence[{i}]", e) for i, e in enumerate(coverage["evidence"]) if e["status"] == "done" and e["role"] in ROLES]
@@ -146,6 +152,10 @@ def build(report_dirs, coverage):
             if problem:
                 problems.append(f"{where}: {problem}")
                 continue
+            # Cells may read coefficients other reports own (a variant reusing another's counts).
+            own = {c.get("id") for c in coefficients}
+            coefficients = coefficients + [c for cid, c in sorted(foreign.items())
+                                           if cid not in own and any(_references(x, cid) for x in cells.values())]
             fixtures[_safe(f"{e['experiment_id']}.{e['policy']}.{e['coefficient']}.{e['role']}.k{k}") + ".json"] = {
                 "experiment_id": e["experiment_id"], "policy": e["policy"], "coefficient": e["coefficient"],
                 "role": e["role"], "edge_id": edge_id, "inputs": pred["inputs"],

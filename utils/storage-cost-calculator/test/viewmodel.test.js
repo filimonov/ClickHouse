@@ -380,8 +380,8 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   const lv = vmod.build(pipeline.run(live, r0.inputs, aws, {}), live, r0.fields, r0.lockOrder, { pricePreset: aws, units: 'hour' });
   const f = (id) => lv.inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === id);
   assert.equal(f('data_bytes').derived_text, 'Derived from ingest rate × retention');
-  // EBS has a measured model since the EBS report; s3plain is the column still without one.
-  assert.equal(lv.cards.find((c) => c.variant === 's3plain').reason, 'No measured model for this column yet');
+  // EBS and s3plain have measured models; the logs scenario mutates, which s3_plain_rewritable refuses.
+  assert.match(lv.cards.find((c) => c.variant === 's3plain').reason, /s3_plain_rewritable cannot perform mutations/);
   assert.equal(lv.cards.find((c) => c.variant === 'ebs').state, 'ok');
   // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
   // 500 GiB/day ×1/4 … ×8, shown per hour.

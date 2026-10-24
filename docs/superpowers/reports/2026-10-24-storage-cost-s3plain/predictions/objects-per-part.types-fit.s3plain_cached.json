@@ -33,7 +33,9 @@
     "write_amplification_rule": 1,
     "cache_enabled": "1",
     "shape": "types",
-    "part_type": "compact"
+    "part_type": "compact",
+    "insert_rows": 5000,
+    "merge_result_part_type": "wide"
   },
   "expected": {
     "foreground": {

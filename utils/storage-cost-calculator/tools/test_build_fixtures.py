@@ -60,6 +60,26 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual(list(fx["cells"]), ["insert_basic.write"])
         self.assertEqual([c["id"] for c in fx["coefficients"]], ["puts_per_compact_part"])
 
+    def test_cells_get_the_coefficients_other_reports_own(self):
+        # A variant's cells may read a coefficient another report owns (s3plain reuses s3 counts); the fixture
+        # carries it, or the row would evaluate as unavailable.
+        reports = self.tmp / "reports"
+        shutil.copytree(SAMPLE, reports, ignore=shutil.ignore_patterns("coverage.json"))
+        mine = reports / REPORT.name
+        formulas = json.loads((mine / "formulas.json").read_text())
+        cell = next(iter(formulas["cells"].values()))
+        cell["ledger_rows"][0]["expr"] = {"kind": "mul", "dim": "count", "a": cell["ledger_rows"][0]["expr"],
+                                          "b": {"kind": "coef", "id": "foreign_factor", "dim": "count"}}
+        (mine / "formulas.json").write_text(json.dumps(formulas))
+        other = reports / "2026-10-24-storage-cost-other"
+        other.mkdir()
+        (other / "coefficients.json").write_text(json.dumps([{"id": "foreign_factor", "kind": "scalar", "dim": "count",
+                                                              "value": 1, "status": "ok"}]))
+        code, err = self.run_main(reports=reports / "*/")
+        self.assertEqual(code, 0, err)
+        fx = json.loads((self.out / NAME).read_text())
+        self.assertEqual(sorted(c["id"] for c in fx["coefficients"]), ["foreign_factor", "puts_per_compact_part"])
+
     def test_rebuild_removes_stale_fixtures(self):
         self.out.mkdir()
         (self.out / "stale.json").write_text("{}")
