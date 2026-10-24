@@ -10135,407 +10135,6 @@
       "status": "ok"
     },
     {
-      "id": "provisioned_size_gib",
-      "block": "local_disk",
-      "label": "Manual provisioning: size of each volume",
-      "kind": "input",
-      "scope": "volume",
-      "unit": "GiB",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": null,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "manual allocation; read only when volumes_per_replica is a number",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-        "mapping": {
-          "provisioned_size_gib": "total_space / 2^30 of the data disk"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "provisioned_iops",
-      "block": "local_disk",
-      "label": "Manual provisioning: IOPS of each volume",
-      "kind": "input",
-      "scope": "volume",
-      "unit": "iops",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 3000,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-        "mapping": {
-          "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "provisioned_mibps",
-      "block": "local_disk",
-      "label": "Manual provisioning: throughput of each volume",
-      "kind": "input",
-      "scope": "volume",
-      "unit": "mibps",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 125,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-        "mapping": {
-          "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "volumes_per_replica",
-      "block": "local_disk",
-      "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
-      "kind": "input",
-      "scope": "replica",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "auto"
-      ],
-      "table": null,
-      "default": "auto",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "auto picks the cheapest feasible layout of the billing contract",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
-        "mapping": {
-          "volumes_per_replica": "number of disks in the volume of the table storage policy"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "ebs_headroom",
-      "block": "ebs",
-      "label": "Free space provisioned above the active data, as a fraction of it (outdated parts until old_parts_lifetime, merge results before their sources go, metadata, growth)",
-      "kind": "input",
-      "scope": "volume",
-      "unit": "1",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 0.2,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "not measured: rig parts are small, so the rig peak over active bytes does not carry to production sizes; 0.2 is an operator choice",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-        "mapping": {
-          "ebs_headroom": "(total_space - free_space) / bytes_on_disk of active parts minus 1 is the current overhead"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "ebs_io_rule",
-      "block": "ebs",
-      "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
-      "kind": "pinned",
-      "scope": "volume",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "ssd_256kib_merged_sequential"
-      ],
-      "table": null,
-      "default": "ssd_256kib_merged_sequential",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "provider",
-        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-        "version": "2026-10-24"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "ebs_max_io_bytes",
-      "block": "ebs",
-      "label": "Largest I/O an SSD volume counts as one IOPS",
-      "kind": "pinned",
-      "scope": "volume",
-      "unit": "B",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 262144,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "provider",
-        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-        "version": "2026-10-24"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "io_op",
-      "block": "ebs",
-      "label": "Operation key of the EBS demand tables",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "inserts",
-        "merges",
-        "mutations",
-        "deletes",
-        "reads",
-        "recovery"
-      ],
-      "table": null,
-      "default": "inserts",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "table key",
-        "version": "0.2.0"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "io_direction",
-      "block": "ebs",
-      "label": "Direction key of the EBS demand tables",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "write",
-        "read"
-      ],
-      "table": null,
-      "default": "write",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "table key",
-        "version": "0.2.0"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "io_size_bucket",
-      "block": "ebs",
-      "label": "Request-size bucket (power-of-two upper bound)",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "<=4KiB",
-        "8KiB",
-        "16KiB",
-        "32KiB",
-        "64KiB",
-        "128KiB",
-        "256KiB",
-        "512KiB",
-        "1MiB",
-        ">1MiB"
-      ],
-      "table": null,
-      "default": "1MiB",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "table key",
-        "version": "0.2.0"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "io_bytes_per_op",
-      "block": "ebs",
-      "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
-      "kind": "measured",
-      "scope": "volume",
-      "unit": "1",
-      "value_type": "table",
-      "enum": null,
-      "table": {
-        "index": [
-          "io_op",
-          "io_direction"
-        ],
-        "dim": "1"
-      },
-      "default": null,
-      "rule": null,
-      "coef": "io_bytes_per_op",
-      "validity": {
-        "insert_rows": [
-          80000,
-          300000
-        ]
-      },
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-        "mapping": {
-          "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "io_request_size_distribution",
-      "block": "ebs",
-      "label": "Fraction of volume requests per size bucket, by operation and direction",
-      "kind": "measured",
-      "scope": "volume",
-      "unit": "1",
-      "value_type": "table",
-      "enum": null,
-      "table": {
-        "index": [
-          "io_op",
-          "io_direction",
-          "io_size_bucket"
-        ],
-        "dim": "1"
-      },
-      "default": null,
-      "rule": null,
-      "coef": "io_request_size_distribution",
-      "validity": {
-        "insert_rows": [
-          80000,
-          300000
-        ]
-      },
-      "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-        "mapping": {
-          "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "ebs_sequential_ios_per_mib",
-      "block": "ebs",
-      "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); real request counts were 1.3-6.5x this on the rig; the gp3 3000-IOPS baseline usually dominates",
-      "kind": "pinned",
-      "scope": "volume",
-      "unit": "req/MiB",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 4,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "provider",
-        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured spread of syscall I/Os per MiB on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
-        "version": "2026-10-24"
-      },
-      "hint": {
-        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-        "mapping": {
-          "ebs_sequential_ios_per_mib": "compare with CloudWatch VolumeWriteOps / (VolumeWriteBytes / 2^20) of the data volume"
-        }
-      },
-      "status": "ok"
-    },
-    {
-      "id": "peak_factor",
-      "block": "ebs",
-      "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "1",
-      "value_type": "number",
-      "enum": null,
-      "table": null,
-      "default": 1,
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
-        "version": "0.2.0"
-      },
-      "hint": {
-        "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
-        "mapping": {
-          "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
-        }
-      },
-      "status": "ok"
-    },
-    {
       "id": "plain_op",
       "block": "schema",
       "label": "S3 operation of an s3plain request row",
@@ -10911,6 +10510,488 @@
         "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
         "mapping": {
           "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "provisioned_size_gib",
+      "block": "local_disk",
+      "label": "Manual provisioning: size of each volume",
+      "kind": "input",
+      "scope": "volume",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "manual allocation; read only when volumes_per_replica is a number",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+        "mapping": {
+          "provisioned_size_gib": "total_space / 2^30 of the data disk"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "provisioned_iops",
+      "block": "local_disk",
+      "label": "Manual provisioning: IOPS of each volume",
+      "kind": "input",
+      "scope": "volume",
+      "unit": "iops",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+        "mapping": {
+          "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "provisioned_mibps",
+      "block": "local_disk",
+      "label": "Manual provisioning: throughput of each volume",
+      "kind": "input",
+      "scope": "volume",
+      "unit": "mibps",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 125,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+        "mapping": {
+          "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "volumes_per_replica",
+      "block": "local_disk",
+      "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
+      "kind": "input",
+      "scope": "replica",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "auto"
+      ],
+      "table": null,
+      "default": "auto",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "auto picks the cheapest feasible layout of the billing contract",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
+        "mapping": {
+          "volumes_per_replica": "number of disks in the volume of the table storage policy"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "ebs_capacity_headroom",
+      "block": "ebs",
+      "label": "Capacity headroom over stored data (free space, temporary merge output)",
+      "kind": "input",
+      "scope": "volume",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1.3,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "provisioned capacity = data_bytes x this factor; the rig shows the headroom exists (the probe_local_volume capacity peak and merge-natural allocated peaks exceed the final active bytes, docs/superpowers/reports/2026-10-24-storage-cost-ebs) but its small parts do not size it",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT name, path, total_space, free_space FROM system.disks -- and SELECT sum(bytes_on_disk) FROM system.parts WHERE active",
+        "mapping": {
+          "ebs_capacity_headroom": "(total_space - free_space) / sum(bytes_on_disk) at the busiest merge, plus the largest part a merge may write (max_bytes_to_merge_at_max_space_in_pool)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "ebs_io_rule",
+      "block": "ebs",
+      "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
+      "kind": "pinned",
+      "scope": "volume",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "ssd_256kib_merged_sequential"
+      ],
+      "table": null,
+      "default": "ssd_256kib_merged_sequential",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "provider",
+        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+        "version": "2026-10-24"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "ebs_max_io_bytes",
+      "block": "ebs",
+      "label": "Largest I/O an SSD volume counts as one IOPS",
+      "kind": "pinned",
+      "scope": "volume",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 262144,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "provider",
+        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+        "version": "2026-10-24"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "io_op",
+      "block": "ebs",
+      "label": "Operation key of the EBS demand tables",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "inserts",
+        "merges",
+        "mutations",
+        "deletes",
+        "reads",
+        "recovery"
+      ],
+      "table": null,
+      "default": "inserts",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "io_direction",
+      "block": "ebs",
+      "label": "Direction key of the EBS demand tables",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "write",
+        "read"
+      ],
+      "table": null,
+      "default": "write",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "io_size_bucket",
+      "block": "ebs",
+      "label": "Request-size bucket (power-of-two upper bound)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "<=4KiB",
+        "8KiB",
+        "16KiB",
+        "32KiB",
+        "64KiB",
+        "128KiB",
+        "256KiB",
+        "512KiB",
+        "1MiB",
+        ">1MiB"
+      ],
+      "table": null,
+      "default": "1MiB",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "table key",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "io_bytes_per_op",
+      "block": "ebs",
+      "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "io_op",
+          "io_direction"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "io_bytes_per_op",
+      "validity": {
+        "insert_rows": [
+          80000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+        "mapping": {
+          "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "op_write_bytes",
+      "block": "ebs",
+      "label": "Volume write bytes per source row of a mutated part; the mutation's reads are not modelled",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "B",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "io_op"
+        ],
+        "dim": "B"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "op_write_bytes",
+      "validity": {
+        "mutated_part_rows": [
+          30000,
+          400000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, count(), sum(rows) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('MutatePart', 'RemovePart') GROUP BY event_type",
+        "mapping": {
+          "op_write_bytes": "write_bytes of /proc/<clickhouse pid>/io over a mutation or restart, divided by the rows mutated, parts dropped or restarts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "drop_write_bytes_per_part",
+      "block": "ebs",
+      "label": "Volume write bytes per dropped part: not modelled (per-part writes did not carry to the hold-out layout)",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "drop_write_bytes_per_part",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); drop.partition 219 kB per dropped part, drop.partition-2 126 kB: the per-part unit fails the hold-out",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "unsupported"
+    },
+    {
+      "id": "restart_write_bytes",
+      "block": "ebs",
+      "label": "Volume write bytes per restart: below the rig resolution, not modelled",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "restart_write_bytes",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); startup.intact / startup.small net writes were negative after the idle baseline",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "unsupported"
+    },
+    {
+      "id": "io_request_size_distribution",
+      "block": "ebs",
+      "label": "Fraction of volume requests per size bucket, by operation and direction",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "io_op",
+          "io_direction",
+          "io_size_bucket"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "io_request_size_distribution",
+      "validity": {
+        "insert_rows": [
+          80000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+        "mapping": {
+          "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "ebs_sequential_ios_per_mib",
+      "block": "ebs",
+      "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); the rig syscall proxy counted 1.3-6.5x this (5.3-26.1 per MiB; insert reads, 1335-1608 per MiB on negligible bytes, excluded); the gp3 3000-IOPS baseline usually dominates",
+      "kind": "pinned",
+      "scope": "volume",
+      "unit": "req/MiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 4,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "provider",
+        "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured syscall-proxy spread on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 I/Os per MiB (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
+        "version": "2026-10-24"
+      },
+      "hint": {
+        "sql": "SELECT event_type, sum(size_in_bytes) / 1048576 AS mib FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
+        "mapping": {
+          "ebs_sequential_ios_per_mib": "compare CloudWatch VolumeWriteOps of the data volume over the same day with 4 x mib; the ratio is the real I/Os per MiB"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "peak_factor",
+      "block": "ebs",
+      "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
+        "mapping": {
+          "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
         }
       },
       "status": "ok"

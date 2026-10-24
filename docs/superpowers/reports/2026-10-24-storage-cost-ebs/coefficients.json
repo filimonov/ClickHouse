@@ -9,12 +9,12 @@
         "io_direction"
       ],
       "values": {
-        "inserts|read": 0.000897,
-        "inserts|write": 1.038584,
-        "merges|read": 1.00566,
-        "merges|write": 1.013777,
-        "reads|read": 1.225166,
-        "reads|write": 0.001475
+        "inserts|read": 0.000265,
+        "inserts|write": 1.033463,
+        "merges|read": 1.004677,
+        "merges|write": 1.006703,
+        "reads|read": 1.224855,
+        "reads|write": -4.6e-05
       }
     },
     "validity": {
@@ -25,12 +25,12 @@
     },
     "tolerance": {
       "abs": {
-        "inserts|read": 0.005858,
-        "inserts|write": 0.072581,
-        "merges|read": 0.012508,
-        "merges|write": 0.023712,
-        "reads|read": 0.284854,
-        "reads|write": 0.009057
+        "inserts|read": 0.005852,
+        "inserts|write": 0.074171,
+        "merges|read": 0.012077,
+        "merges|write": 0.02806,
+        "reads|read": 0.28423,
+        "reads|write": 0.005067
       },
       "rel": 0.1
     },
@@ -65,18 +65,18 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
       "version": "0.2.0",
       "measurement_ids": [
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -85,144 +85,144 @@
     "fit": {
       "method": "mean of the per-record values of io-sizes.narrow-compact, .narrow-wide and .types-holdout (ebs_fit.demand_fit)",
       "records": [
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
       ],
       "per_key": {
         "inserts|read": {
-          "spread": 0.0004291582428951323,
+          "spread": 0.00042598689045581113,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00024234768206245845,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00032129613828448184,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0003301703677841037,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.00037040059760522594,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00036539503149271763,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0004291582428951323,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 9.580364468836768e-05,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 9.378748628624176e-05,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 8.154855288742223e-05
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.00026450173335672614,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.00026450173335672614,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.00042598689045581113,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -3.2536098832144564e-05,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -3.6694569140997715e-05,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.00026450173335672614,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.0001387583436656362,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.00015713094206247226,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.00014085969185940106
           }
         },
         "inserts|write": {
-          "spread": 0.0337907051287516,
+          "spread": 0.03458555167562638,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": -0.008205264376974997,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.010710834183230045,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.010710805227931663,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.02387871041816414,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.02388006313721802,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0238737026427589,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0337907051287516,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.033678619958686706,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.03379005489883835
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.015311568780493223,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.015311309181207378,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": -0.007035490166388936,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.02105364107380958,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.021047500574109534,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.023835521463614562,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.034464726901376475,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.0345447526626208,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.03458555167562638
           }
         },
         "merges|read": {
-          "spread": 0.0037539213014912143,
+          "spread": 0.0035383014694798653,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0037539213014912143,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.003270567542966729,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0032763074267108117,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.002483451462595765,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.0023947788336518006,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0023193823991529694,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.000742389866281945,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.0012267037054090046,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.0011340900040774926
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.0035383014694798653,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.0035383014694798653,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.0035383014694798653,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.002023474430374872,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.002023474430374872,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.002023474430374872,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -0.0015148270391054375,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -0.0015148270391054375,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -0.0015148270391054375
           }
         },
         "merges|write": {
-          "spread": 0.009355927401353936,
+          "spread": 0.011529752592622566,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00023257614270266735,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00022316705292912964,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.00021097780633438923,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.009353544717396467,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.009348548272166246,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.009355927401353936,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.009093976817353244,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.00921388989620664,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.009083432675391911
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.003976559201794183,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.003987065044630755,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": -0.003991213240375435,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.006035020726542051,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.006025395076049378,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.006033451559412484,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.00929850558563694,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.009220446670545224,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.011529752592622566
           }
         },
         "reads|read": {
-          "spread": 0.1399267891387337,
+          "spread": 0.1396151055765218,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.13379340133449413,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13264604891991394,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13264604891991394,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.006686784979795135,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.006650031667348788,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.00655550770706137,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.1399267891387337,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.1395200401910881,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.13953099419870374
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.13295773248212583,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.13295773248212583,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.13295773248212583,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.0066573730943959575,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.0066573730943959575,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.0066573730943959575,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -0.1396151055765218,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -0.1396151055765218,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -0.1396151055765218
           }
         },
         "reads|write": {
-          "spread": 0.0020285524667166023,
+          "spread": 3.3413469364270324e-05,
           "residuals": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0020285524667166023,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.001581374351536461,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.0015864362092484323,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.000327453524810131,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00032796903681137036,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.00033900235941907125,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0007151100309679824,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0007096106636793199,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0007089623204615612
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 9.582157514281407e-06,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 7.4527855295772194e-06,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 1.2716387367171337e-05,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 1.5106173430710494e-05,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 1.7992322028353327e-05,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 1.487621963162918e-05,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -1.932693040080849e-05,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -3.3413469364270324e-05,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -2.498564573664416e-05
           }
         }
       },
       "holdout": {
         "records": [
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3"
         ],
         "checks": {
           "inserts|read": {
-            "fit": 0.0008971401700599561,
+            "fit": 0.00026450173335672614,
             "ok": true,
-            "slack": 0.00594803050279626,
-            "value": 0.0007250759750158224
+            "slack": 0.005878423954247295,
+            "value": 0.00019392079795842537
           },
           "inserts|write": {
-            "fit": 1.0385843036560058,
+            "fit": 1.0334629672240798,
             "ok": true,
-            "slack": 0.1764398406231038,
-            "value": 1.0349493210920213
+            "slack": 0.17751740007366074,
+            "value": 1.021663434283196
           },
           "merges|read": {
-            "fit": 1.005660228669173,
+            "fit": 1.00467690713942,
             "ok": true,
-            "slack": 0.11307386546989973,
-            "value": 1.0043955940168432
+            "slack": 0.11254429365290174,
+            "value": 1.0025436817736533
           },
           "merges|write": {
-            "fit": 1.013776918222415,
+            "fit": 1.0067029962149256,
             "ok": true,
-            "slack": 0.12508954662494937,
-            "value": 1.0180322848230006
+            "slack": 0.1287298048067377,
+            "value": 1.004778298802402
           },
           "reads|read": {
-            "fit": 1.2251664059829421,
+            "fit": 1.2248547224207302,
             "ok": true,
-            "slack": 0.4073702188757616,
-            "value": 1.3051539383894986
+            "slack": 0.4067156833951166,
+            "value": 1.3151351020114088
           },
           "reads|write": {
-            "fit": 0.001475025048520963,
+            "fit": -4.5589462757923344e-05,
             "ok": true,
-            "slack": 0.0092046074382853,
-            "value": 0.0024766232201547185
+            "slack": 0.005071385885004333,
+            "value": -4.406105004616944e-05
           }
         }
       }
@@ -239,55 +239,45 @@
         "io_size_bucket"
       ],
       "values": {
-        "inserts|read|128KiB": 0.0,
-        "inserts|read|16KiB": 0.0,
-        "inserts|read|1MiB": 0.0,
-        "inserts|read|256KiB": 0.0,
-        "inserts|read|32KiB": 0.0,
-        "inserts|read|512KiB": 0.0,
-        "inserts|read|64KiB": 0.0,
-        "inserts|read|8KiB": 0.0,
-        "inserts|read|<=4KiB": 1.0,
-        "inserts|read|>1MiB": 0.0,
-        "inserts|write|128KiB": 0.006879,
-        "inserts|write|16KiB": 0.008361,
-        "inserts|write|1MiB": 0.104316,
-        "inserts|write|256KiB": 0.019157,
-        "inserts|write|32KiB": 0.003439,
-        "inserts|write|512KiB": 0.019897,
-        "inserts|write|64KiB": 0.018263,
-        "inserts|write|8KiB": 0.015395,
-        "inserts|write|<=4KiB": 0.804293,
+        "inserts|write|128KiB": 0.007227,
+        "inserts|write|16KiB": 0.007227,
+        "inserts|write|1MiB": 0.122119,
+        "inserts|write|256KiB": 0.022475,
+        "inserts|write|32KiB": 0.003613,
+        "inserts|write|512KiB": 0.022078,
+        "inserts|write|64KiB": 0.021926,
+        "inserts|write|8KiB": 0.010151,
+        "inserts|write|<=4KiB": 0.783183,
         "inserts|write|>1MiB": 0.0,
-        "merges|read|128KiB": 0.629461,
-        "merges|read|16KiB": 0.01305,
+        "merges|read|128KiB": 0.662501,
+        "merges|read|16KiB": 0.013717,
         "merges|read|1MiB": 0.0,
         "merges|read|256KiB": 0.0,
-        "merges|read|32KiB": 0.012698,
+        "merges|read|32KiB": 0.013396,
         "merges|read|512KiB": 0.0,
-        "merges|read|64KiB": 0.047661,
-        "merges|read|8KiB": 0.007894,
-        "merges|read|<=4KiB": 0.289236,
+        "merges|read|64KiB": 0.050492,
+        "merges|read|8KiB": 0.008386,
+        "merges|read|<=4KiB": 0.251508,
         "merges|read|>1MiB": 0.0,
-        "merges|write|128KiB": 0.004739,
-        "merges|write|16KiB": 0.019003,
-        "merges|write|1MiB": 0.248639,
-        "merges|write|256KiB": 0.015267,
-        "merges|write|32KiB": 0.012891,
-        "merges|write|512KiB": 0.016616,
-        "merges|write|64KiB": 0.002375,
-        "merges|write|8KiB": 0.016259,
-        "merges|write|<=4KiB": 0.664211,
+        "merges|write|128KiB": 0.007051,
+        "merges|write|16KiB": 0.023953,
+        "merges|write|1MiB": 0.468308,
+        "merges|write|256KiB": 0.023012,
+        "merges|write|32KiB": 0.020076,
+        "merges|write|512KiB": 0.021729,
+        "merges|write|64KiB": 0.002936,
+        "merges|write|8KiB": 0.002936,
+        "merges|write|<=4KiB": 0.429999,
         "merges|write|>1MiB": 0.0,
-        "reads|read|128KiB": 0.802774,
-        "reads|read|16KiB": 0.006447,
+        "reads|read|128KiB": 0.818949,
+        "reads|read|16KiB": 0.006526,
         "reads|read|1MiB": 0.0,
         "reads|read|256KiB": 0.0,
-        "reads|read|32KiB": 0.00053,
+        "reads|read|32KiB": 0.000541,
         "reads|read|512KiB": 0.0,
-        "reads|read|64KiB": 0.001404,
-        "reads|read|8KiB": 0.013239,
-        "reads|read|<=4KiB": 0.175605,
+        "reads|read|64KiB": 0.001437,
+        "reads|read|8KiB": 0.013406,
+        "reads|read|<=4KiB": 0.159142,
         "reads|read|>1MiB": 0.0
       }
     },
@@ -299,11 +289,10 @@
     },
     "tolerance": {
       "max_tv": {
-        "inserts|read": 0.05,
-        "inserts|write": 0.280501,
-        "merges|read": 0.574494,
-        "merges|write": 0.436859,
-        "reads|read": 0.671762
+        "inserts|write": 0.383322,
+        "merges|read": 0.58646,
+        "merges|write": 0.768129,
+        "reads|read": 0.686468
       }
     },
     "domain": {
@@ -337,18 +326,18 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
       "version": "0.2.0",
       "measurement_ids": [
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-        "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -357,114 +346,273 @@
     "fit": {
       "method": "mean of the per-record request fractions (ebs_fit.pooled_distribution)",
       "records": [
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
       ],
       "per_key": {
-        "inserts|read": {
-          "tv": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0
-          }
-        },
         "inserts|write": {
           "tv": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.07873160004034215,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0733716482022282,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0733716482022282,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.11525066231523648,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.11525066231523648,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.11525066231523648,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.07988106256051809,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.07972122878764187,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.07988106256051809
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.07724344610189601,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.07724344610189601,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.09111692001976508,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.12178901044253905,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.12178901044253905,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.16666080531433394,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.10148039079007073,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.10148039079007079,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.10148039079007076
           }
         },
         "merges|read": {
           "tv": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.10019424235178682,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13311194075807056,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13311194075807056,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16778464124197381,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.1636416210584302,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.15682483066058686,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.2622470658962326,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.25580506791536634,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.25758282996943327
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.1237821127811534,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.1237821127811534,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.1237821127811534,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.17191587859960103,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.17191587859960103,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.17191587859960103,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.26823011050705325,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.26823011050705325,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.26823011050705325
           }
         },
         "merges|write": {
           "tv": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.08720719034802119,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.08483654512023311,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.08483654512023311,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.19342973811058917,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.19342973811058917,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.19342973811058917,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.15775512153425023,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.15851499995370313,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.15775512153425023
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.06360370641416396,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.06360370641416396,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.06360370641416396,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.3024185950656539,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.3024185950656539,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.3024185950656539,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.35119113043949646,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.35119113043949646,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.35906455007762195
           }
         },
         "reads|read": {
           "tv": {
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.09943588586806616,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.16564901424363745,
-            "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.16564901424363745,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16188571587162123,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.16494981070786796,
-            "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.1711367370225898,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.3020152431094547,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.3108810808202954,
-            "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.31000859467101305
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.14944193685758725,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.14944193685758725,
+            "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.14944193685758725,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.1707697469785008,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.1707697469785008,
+            "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.1707697469785008,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.318233776685767,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.318233776685767,
+            "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.318233776685767
           }
         }
       },
       "holdout": {
         "records": [
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-          "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+          "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3"
         ],
         "checks": {
-          "inserts|read": {
-            "max_tv": 0.05,
-            "ok": true,
-            "tv": 0.0
-          },
           "inserts|write": {
-            "max_tv": 0.28050132463047295,
+            "max_tv": 0.3833216106286679,
             "ok": true,
-            "tv": 0.08711062179716181
+            "tv": 0.09223222782264955
           },
           "merges|read": {
-            "max_tv": 0.5744941317924652,
+            "max_tv": 0.5864602210141066,
             "ok": true,
-            "tv": 0.055718477884216605
+            "tv": 0.08054788369786772
           },
           "merges|write": {
-            "max_tv": 0.4368594762211783,
+            "max_tv": 0.7681291001552439,
             "ok": true,
-            "tv": 0.1400313446457229
+            "tv": 0.12738639666744236
           },
           "reads|read": {
-            "max_tv": 0.6717621616405909,
+            "max_tv": 0.6864675533715341,
             "ok": true,
-            "tv": 0.1432262529285004
+            "tv": 0.11086404412566732
+          }
+        }
+      }
+    }
+  },
+  {
+    "id": "op_write_bytes",
+    "kind": "table",
+    "dim": "B",
+    "value": {
+      "index": [
+        "io_op"
+      ],
+      "values": {
+        "mutations": 13.313
+      }
+    },
+    "validity": {
+      "mutated_part_rows": [
+        30000,
+        400000
+      ]
+    },
+    "tolerance": {
+      "abs": {
+        "mutations": 19.558
+      },
+      "rel": 0.15
+    },
+    "domain": {
+      "fit": {
+        "mutations": "ALTER UPDATE of one column over 2 Compact parts of 100 000 rows and 2 Wide parts of 400 000 rows; per source row",
+        "deletes": "DROP PARTITION of 2 parts; per dropped part",
+        "recovery": "restart of one replica with 3 parts; per restart"
+      },
+      "holdout": {
+        "mutations": "2 Compact parts of 30 000 rows",
+        "deletes": "2 of 3 parts dropped",
+        "recovery": "3 parts of 1 000 rows"
+      }
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T162633Z/local/mutation/compact-30k/k1",
+        "cost-20261024T162633Z/local/mutation/compact-30k/k2",
+        "cost-20261024T162633Z/local/mutation/compact-30k/k3",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values); reads of these operations are not modelled",
+      "records": [
+        "cost-20261024T162633Z/local/drop/partition/k1",
+        "cost-20261024T162633Z/local/drop/partition/k2",
+        "cost-20261024T162633Z/local/drop/partition/k3",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2",
+        "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2",
+        "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3",
+        "cost-20261024T162633Z/local/startup/intact/k1",
+        "cost-20261024T162633Z/local/startup/intact/k2",
+        "cost-20261024T162633Z/local/startup/intact/k3"
+      ],
+      "per_key": {
+        "deletes": {
+          "spread": 367.72037949133664,
+          "residuals": {
+            "cost-20261024T162633Z/local/drop/partition/k1": -201.05378691578517,
+            "cost-20261024T162633Z/local/drop/partition/k2": -166.66659257555148,
+            "cost-20261024T162633Z/local/drop/partition/k3": 367.72037949133664
+          }
+        },
+        "mutations": {
+          "spread": 9.778841318393276,
+          "residuals": {
+            "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1": 9.753720599474407,
+            "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2": 9.753810124343152,
+            "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3": 9.756480963155271,
+            "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1": -9.778522106291632,
+            "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2": -9.778841318393276,
+            "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3": -9.70664826228793
+          }
+        },
+        "recovery": {
+          "spread": 43558.849139697624,
+          "residuals": {
+            "cost-20261024T162633Z/local/startup/intact/k1": 21733.35216649365,
+            "cost-20261024T162633Z/local/startup/intact/k2": 21825.496973203983,
+            "cost-20261024T162633Z/local/startup/intact/k3": -43558.849139697624
+          }
+        }
+      },
+      "holdout": {
+        "records": [
+          "cost-20261024T162633Z/local/drop/partition-2/k1",
+          "cost-20261024T162633Z/local/drop/partition-2/k2",
+          "cost-20261024T162633Z/local/drop/partition-2/k3",
+          "cost-20261024T162633Z/local/mutation/compact-30k/k1",
+          "cost-20261024T162633Z/local/mutation/compact-30k/k2",
+          "cost-20261024T162633Z/local/mutation/compact-30k/k3",
+          "cost-20261024T162633Z/local/startup/small/k1",
+          "cost-20261024T162633Z/local/startup/small/k2",
+          "cost-20261024T162633Z/local/startup/small/k3"
+        ],
+        "checks": {
+          "deletes": {
+            "cost-20261024T162633Z/local/drop/partition-2/k1": {
+              "fit": 219439.79560009087,
+              "ok": false,
+              "slack": 33651.410098996304,
+              "value": 126088.99805368837
+            },
+            "cost-20261024T162633Z/local/drop/partition-2/k2": {
+              "fit": 219439.79560009087,
+              "ok": false,
+              "slack": 33651.410098996304,
+              "value": 126342.24609665998
+            },
+            "cost-20261024T162633Z/local/drop/partition-2/k3": {
+              "fit": 219439.79560009087,
+              "ok": false,
+              "slack": 33651.410098996304,
+              "value": 126339.8266990537
+            }
+          },
+          "mutations": {
+            "cost-20261024T162633Z/local/mutation/compact-30k/k1": {
+              "fit": 13.312990058536661,
+              "ok": true,
+              "slack": 21.55463114556705,
+              "value": 26.649568840014318
+            },
+            "cost-20261024T162633Z/local/mutation/compact-30k/k2": {
+              "fit": 13.312990058536661,
+              "ok": true,
+              "slack": 21.55463114556705,
+              "value": 26.64983977517752
+            },
+            "cost-20261024T162633Z/local/mutation/compact-30k/k3": {
+              "fit": 13.312990058536661,
+              "ok": true,
+              "slack": 21.55463114556705,
+              "value": 26.650940233805244
+            }
+          },
+          "recovery": {
+            "cost-20261024T162633Z/local/startup/small/k1": {
+              "fit": -52936.72158912266,
+              "ok": true,
+              "slack": 95058.20651776364,
+              "value": -31848.468716261646
+            },
+            "cost-20261024T162633Z/local/startup/small/k2": {
+              "fit": -52936.72158912266,
+              "ok": true,
+              "slack": 95058.20651776364,
+              "value": -31107.7911853618
+            },
+            "cost-20261024T162633Z/local/startup/small/k3": {
+              "fit": -52936.72158912266,
+              "ok": true,
+              "slack": 95058.20651776364,
+              "value": -31157.934502252872
+            }
           }
         }
       }
