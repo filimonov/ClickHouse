@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "4e47613777895f68",
+ "version": "da55c22368ef843c",
  "manifest": {
   "code_sha256": "47f9bfc36da0dc16f131bcab2c0f0895eb62878c31dde85db2753dc897474b33",
   "code_files": {
@@ -14,9 +14,9 @@
    "viewmodel.js": "a1e87da7458675aceb6372a386cd642927f61ce300fc4694c79b996700e3b2ce"
   },
   "code_missing": [],
-  "contract_version": "4e47613777895f68",
+  "contract_version": "da55c22368ef843c",
   "registry_version": "0.3.0",
-  "registry_sha256": "e8a5c3a8ea6b8dda0522720d329c800580b1761aef00df7b44d54c7090f110c7",
+  "registry_sha256": "852e36236d85635055fcf7482d770b6d9dc98f302e6af18d91da82baefc12d6b",
   "coverage_version": "0.2.0",
   "coverage_sha256": "5fac58c963375f7de5b01ba482e88cf9c715149af601c9200546780767fb0851",
   "billing_version": "0.1.0",
@@ -79,7 +79,7 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "803b4f2fe513582fc9a70288128936dd32157a62f035417ea0683b433756de68"
+  "breakeven_sha256": "b994d1b1bd2d3efd282b79d6b83707b0e57198c79d2a889a25ba89e45ffca126"
  },
  "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 61 coefficient(s): 43 measured, 18 pinned to source. 58 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -8169,856 +8169,6 @@
    "status": "ok"
   },
   {
-   "id": "plain_op",
-   "block": "schema",
-   "label": "S3 operation of an s3plain request row",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "PutObject",
-    "HeadObject",
-    "GetObject",
-    "CopyObject",
-    "DeleteObject",
-    "DeleteObjects",
-    "ListObjectsV2"
-   ],
-   "table": null,
-   "default": "PutObject",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "plain_startup_kind",
-   "block": "topology_recovery",
-   "label": "Part of the s3plain startup cost: fixed per start, or per loaded directory",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "fixed",
-    "per_dir"
-   ],
-   "table": null,
-   "default": "fixed",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:138",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "plain_meta_objects_per_part",
-   "block": "schema",
-   "label": "s3plain directory objects per part: one __meta/<dir>/prefix.path for the part and one per projection",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_meta_objects_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT count() FROM system.projections WHERE database = '<db>' AND table = '<table>'",
-    "mapping": {
-     "plain_meta_objects_per_part": "1 + projections of the table"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_dir_create_requests",
-   "block": "inserts",
-   "label": "Requests per directory an s3plain part creates: the prefix.path PutObject and a HeadObject of it",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "plain_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_dir_create_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_dir_create_requests": "S3HeadObject per new part (1 per directory)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_rename_requests",
-   "block": "inserts",
-   "label": "PutObject per directory an s3plain rename rewrites (prefix.path); every new part is renamed from its tmp_ name",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "plain_rename_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_rename_requests": "PutObject per new part beyond its files and the create"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_copy_on_hardlink",
-   "block": "mutations_deletes",
-   "label": "Requests per hard link on s3plain: a server-side copy (HeadObject for the size, CopyObject); reached by ATTACH/REPLACE PARTITION FROM, never by mutations (refused)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "plain_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_copy_on_hardlink",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_copy_on_hardlink": "S3CopyObject per file of a cloned part"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_unlink_requests",
-   "block": "mutations_deletes",
-   "label": "Requests per file an s3plain part removal unlinks: copy aside (HeadObject, CopyObject), delete the file, delete the copy",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "plain_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_unlink_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_unlink_requests": "S3CopyObject per removed file; DeleteObject twice that"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_dir_remove_requests",
-   "block": "mutations_deletes",
-   "label": "Requests per directory of an s3plain part removal: the rename to delete_tmp_ (PutObject), the prefix.path delete",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "plain_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_dir_remove_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_dir_remove_requests": "per removed part directory"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_objects_per_part",
-   "block": "schema",
-   "label": "s3plain objects per part: one per part file, empty files included (s3 stores no blob for them)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "shape",
-     "part_type"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_objects_per_part",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT part_type, avg(c) FROM (SELECT p.part_type, p.name, count() AS c FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name) GROUP BY part_type",
-    "mapping": {
-     "plain_objects_per_part": "avg objects per active part by part_type"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_empty_part_objects",
-   "block": "mutations_deletes",
-   "label": "Objects of the empty part that covers a dropped or expired part on s3plain (a blob per empty file)",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "plain_empty_part_objects",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "plain_expired_part_extra_files",
-   "block": "mutations_deletes",
-   "label": "Files of an expired part besides its shape's files: partition.dat and minmax_<key>.idx of one partition key column",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "plain_expired_part_extra_files",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "plain_startup_requests",
-   "block": "topology_recovery",
-   "label": "Requests an s3plain server start sends besides part loads: layout listing and prefix.path reads per directory, the disk access checks",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "cache_enabled",
-     "plain_startup_kind",
-     "plain_op"
-    ],
-    "dim": "count"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "plain_startup_requests",
-   "validity": null,
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
-    "version": "0.3.0"
-   },
-   "hint": {
-    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
-    "mapping": {
-     "plain_startup_requests": "right after a start, minus the part loads"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "plain_local_metadata_bytes_per_object",
-   "block": "local_disk",
-   "label": "Local metadata bytes per object on s3plain: none, the layout is held in memory",
-   "kind": "pinned",
-   "scope": "cluster",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "plain_local_metadata_bytes_per_object",
-   "validity": null,
-   "evidence": {
-    "kind": "source",
-    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
-    "version": "26.8@09d0772a842"
-   },
-   "hint": {
-    "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
-    "mapping": {
-     "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_size_gib",
-   "block": "local_disk",
-   "label": "Manual provisioning: size of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "GiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_size_gib": "total_space / 2^30 of the data disk"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_iops",
-   "block": "local_disk",
-   "label": "Manual provisioning: IOPS of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "iops",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 3000,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_mibps",
-   "block": "local_disk",
-   "label": "Manual provisioning: throughput of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "mibps",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 125,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "volumes_per_replica",
-   "block": "local_disk",
-   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
-   "kind": "input",
-   "scope": "replica",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "auto"
-   ],
-   "table": null,
-   "default": "auto",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "auto picks the cheapest feasible layout of the billing contract",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
-    "mapping": {
-     "volumes_per_replica": "number of disks in the volume of the table storage policy"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_capacity_headroom",
-   "block": "ebs",
-   "label": "Capacity headroom over stored data (free space, temporary merge output)",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 1.3,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "provisioned capacity = data_bytes x this factor; the rig shows the headroom exists (the probe_local_volume capacity peak and merge-natural allocated peaks exceed the final active bytes, docs/superpowers/reports/2026-10-24-storage-cost-ebs) but its small parts do not size it",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks -- and SELECT sum(bytes_on_disk) FROM system.parts WHERE active",
-    "mapping": {
-     "ebs_capacity_headroom": "(total_space - free_space) / sum(bytes_on_disk) at the busiest merge, plus the largest part a merge may write (max_bytes_to_merge_at_max_space_in_pool)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_io_rule",
-   "block": "ebs",
-   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "ssd_256kib_merged_sequential"
-   ],
-   "table": null,
-   "default": "ssd_256kib_merged_sequential",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "ebs_max_io_bytes",
-   "block": "ebs",
-   "label": "Largest I/O an SSD volume counts as one IOPS",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 262144,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_op",
-   "block": "ebs",
-   "label": "Operation key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "inserts",
-    "merges",
-    "mutations",
-    "deletes",
-    "reads",
-    "recovery"
-   ],
-   "table": null,
-   "default": "inserts",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_direction",
-   "block": "ebs",
-   "label": "Direction key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "write",
-    "read"
-   ],
-   "table": null,
-   "default": "write",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_size_bucket",
-   "block": "ebs",
-   "label": "Request-size bucket (power-of-two upper bound)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "<=4KiB",
-    "8KiB",
-    "16KiB",
-    "32KiB",
-    "64KiB",
-    "128KiB",
-    "256KiB",
-    "512KiB",
-    "1MiB",
-    ">1MiB"
-   ],
-   "table": null,
-   "default": "1MiB",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_bytes_per_op",
-   "block": "ebs",
-   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_bytes_per_op",
-   "validity": {
-    "insert_rows": [
-     1000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "op_write_bytes",
-   "block": "ebs",
-   "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the largest measured record, 273 kB; the per-part unit did not carry, 125 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op"
-    ],
-    "dim": "B"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "op_write_bytes",
-   "validity": {
-    "insert_rows": [
-     30000,
-     400000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, count(), sum(rows) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('MutatePart', 'RemovePart') GROUP BY event_type",
-    "mapping": {
-     "op_write_bytes": "write_bytes of /proc/<clickhouse pid>/io over a mutation or restart, divided by the rows mutated, parts dropped or restarts"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "insert_write_overhead_rows",
-   "block": "ebs",
-   "label": "Fixed per-part write overhead of an insert, in rows: inserts write io_bytes_per_op[inserts, write] + this / insert_rows bytes per byte (marks, checksums, columns, count, serialization and statistics files and page rounding do not grow with rows)",
-   "kind": "measured",
-   "scope": "cluster",
-   "unit": "count",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": "insert_write_overhead_rows",
-   "validity": {
-    "insert_rows": [
-     1000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT avg(rows), avg(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 1 AND event_type = 'NewPart'",
-    "mapping": {
-     "insert_write_overhead_rows": "compare /proc write_bytes per inserted byte at two insert sizes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "io_request_size_distribution",
-   "block": "ebs",
-   "label": "Fraction of volume requests per size bucket, by operation and direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction",
-     "io_size_bucket"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_request_size_distribution",
-   "validity": {
-    "insert_rows": [
-     1000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_sequential_ios_per_mib",
-   "block": "ebs",
-   "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); the rig syscall proxy counted 1.3-6.5x this (5.3-26.1 per MiB; insert reads, 1335-1608 per MiB on negligible bytes, excluded); the gp3 3000-IOPS baseline usually dominates",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "req/MiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 4,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured syscall-proxy spread on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 I/Os per MiB (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
-    "version": "2026-10-24"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) / 1048576 AS mib FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
-    "mapping": {
-     "ebs_sequential_ios_per_mib": "compare CloudWatch VolumeWriteOps of the data volume over the same day with 4 x mib; the ratio is the real I/Os per MiB"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "peak_factor",
-   "block": "ebs",
-   "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 1,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
-    "mapping": {
-     "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
-    }
-   },
-   "status": "ok"
-  },
-  {
    "id": "large_objects_per_part",
    "block": "inserts",
    "label": "Part files larger than the 32 MiB first upload buffer, per inserted part (each one multipart upload)",
@@ -10901,7 +10051,7 @@
   {
    "id": "catchup_requests_per_missed_part",
    "block": "topology_recovery",
-   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+   "label": "Requests per part a restarted replica fetches to catch up, per S3 operation (replication report)",
    "kind": "measured",
    "scope": "cluster",
    "unit": "count",
@@ -10909,7 +10059,8 @@
    "enum": null,
    "table": {
     "index": [
-     "variant_id"
+     "variant_id",
+     "replication_op"
     ],
     "dim": "count"
    },
@@ -11065,6 +10216,856 @@
     "sql": "SELECT part_type, count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts' GROUP BY part_type",
     "mapping": {
      "merge_result_part_type": "the part type most merged parts have"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_op",
+   "block": "schema",
+   "label": "S3 operation of an s3plain request row",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "PutObject",
+    "HeadObject",
+    "GetObject",
+    "CopyObject",
+    "DeleteObject",
+    "DeleteObjects",
+    "ListObjectsV2"
+   ],
+   "table": null,
+   "default": "PutObject",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_startup_kind",
+   "block": "topology_recovery",
+   "label": "Part of the s3plain startup cost: fixed per start, or per loaded directory",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "fixed",
+    "per_dir"
+   ],
+   "table": null,
+   "default": "fixed",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.cpp:138",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_meta_objects_per_part",
+   "block": "schema",
+   "label": "s3plain directory objects per part: one __meta/<dir>/prefix.path for the part and one per projection",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_meta_objects_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:111",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.projections WHERE database = '<db>' AND table = '<table>'",
+    "mapping": {
+     "plain_meta_objects_per_part": "1 + projections of the table"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_dir_create_requests",
+   "block": "inserts",
+   "label": "Requests per directory an s3plain part creates: the prefix.path PutObject and a HeadObject of it",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_dir_create_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:125",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_dir_create_requests": "S3HeadObject per new part (1 per directory)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_rename_requests",
+   "block": "inserts",
+   "label": "PutObject per directory an s3plain rename rewrites (prefix.path); every new part is renamed from its tmp_ name",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_rename_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:239",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_rename_requests": "PutObject per new part beyond its files and the create"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_copy_on_hardlink",
+   "block": "mutations_deletes",
+   "label": "Requests per hard link on s3plain: a server-side copy (HeadObject for the size, CopyObject); reached by ATTACH/REPLACE PARTITION FROM, never by mutations (refused)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_copy_on_hardlink",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:456",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_copy_on_hardlink": "S3CopyObject per file of a cloned part"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_unlink_requests",
+   "block": "mutations_deletes",
+   "label": "Requests per file an s3plain part removal unlinks: copy aside (HeadObject, CopyObject), delete the file, delete the copy",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_unlink_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:390",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_unlink_requests": "S3CopyObject per removed file; DeleteObject twice that"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_dir_remove_requests",
+   "block": "mutations_deletes",
+   "label": "Requests per directory of an s3plain part removal: the rename to delete_tmp_ (PutObject), the prefix.path delete",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_dir_remove_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp:297",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_dir_remove_requests": "per removed part directory"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_objects_per_part",
+   "block": "schema",
+   "label": "s3plain objects per part: one per part file, empty files included (s3 stores no blob for them)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "shape",
+     "part_type"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_objects_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT part_type, avg(c) FROM (SELECT p.part_type, p.name, count() AS c FROM system.parts AS p INNER JOIN system.remote_data_paths AS r ON startsWith(r.local_path, substring(p.path, position(p.path, 'store/'))) WHERE p.active AND p.database = '<db>' AND p.table = '<table>' GROUP BY p.part_type, p.name) GROUP BY part_type",
+    "mapping": {
+     "plain_objects_per_part": "avg objects per active part by part_type"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_empty_part_objects",
+   "block": "mutations_deletes",
+   "label": "Objects of the empty part that covers a dropped or expired part on s3plain (a blob per empty file)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_empty_part_objects",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_expired_part_extra_files",
+   "block": "mutations_deletes",
+   "label": "Files of an expired part besides its shape's files: partition.dat and minmax_<key>.idx of one partition key column",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_expired_part_extra_files",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartition.cpp:470",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "plain_startup_requests",
+   "block": "topology_recovery",
+   "label": "Requests an s3plain server start sends besides part loads: layout listing and prefix.path reads per directory, the disk access checks",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "plain_startup_kind",
+     "plain_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "plain_startup_requests",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT event, value FROM system.events WHERE event IN ('S3PutObject', 'S3HeadObject', 'S3GetObject', 'S3CopyObject', 'S3DeleteObjects', 'S3ListObjects')",
+    "mapping": {
+     "plain_startup_requests": "right after a start, minus the part loads"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "plain_local_metadata_bytes_per_object",
+   "block": "local_disk",
+   "label": "Local metadata bytes per object on s3plain: none, the layout is held in memory",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "plain_local_metadata_bytes_per_object",
+   "validity": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": {
+    "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
+    "mapping": {
+     "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_size_gib",
+   "block": "local_disk",
+   "label": "Manual provisioning: size of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_size_gib": "total_space / 2^30 of the data disk"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_iops",
+   "block": "local_disk",
+   "label": "Manual provisioning: IOPS of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "iops",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_mibps",
+   "block": "local_disk",
+   "label": "Manual provisioning: throughput of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "mibps",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 125,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "volumes_per_replica",
+   "block": "local_disk",
+   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
+   "kind": "input",
+   "scope": "replica",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "auto"
+   ],
+   "table": null,
+   "default": "auto",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "auto picks the cheapest feasible layout of the billing contract",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
+    "mapping": {
+     "volumes_per_replica": "number of disks in the volume of the table storage policy"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_capacity_headroom",
+   "block": "ebs",
+   "label": "Capacity headroom over stored data (free space, temporary merge output)",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1.3,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "provisioned capacity = data_bytes x this factor; the rig shows the headroom exists (the probe_local_volume capacity peak and merge-natural allocated peaks exceed the final active bytes, docs/superpowers/reports/2026-10-24-storage-cost-ebs) but its small parts do not size it",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks -- and SELECT sum(bytes_on_disk) FROM system.parts WHERE active",
+    "mapping": {
+     "ebs_capacity_headroom": "(total_space - free_space) / sum(bytes_on_disk) at the busiest merge, plus the largest part a merge may write (max_bytes_to_merge_at_max_space_in_pool)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_io_rule",
+   "block": "ebs",
+   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "ssd_256kib_merged_sequential"
+   ],
+   "table": null,
+   "default": "ssd_256kib_merged_sequential",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "ebs_max_io_bytes",
+   "block": "ebs",
+   "label": "Largest I/O an SSD volume counts as one IOPS",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 262144,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_op",
+   "block": "ebs",
+   "label": "Operation key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "inserts",
+    "merges",
+    "mutations",
+    "deletes",
+    "reads",
+    "recovery"
+   ],
+   "table": null,
+   "default": "inserts",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_direction",
+   "block": "ebs",
+   "label": "Direction key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "write",
+    "read"
+   ],
+   "table": null,
+   "default": "write",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_size_bucket",
+   "block": "ebs",
+   "label": "Request-size bucket (power-of-two upper bound)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "<=4KiB",
+    "8KiB",
+    "16KiB",
+    "32KiB",
+    "64KiB",
+    "128KiB",
+    "256KiB",
+    "512KiB",
+    "1MiB",
+    ">1MiB"
+   ],
+   "table": null,
+   "default": "1MiB",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_bytes_per_op",
+   "block": "ebs",
+   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_bytes_per_op",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "op_write_bytes",
+   "block": "ebs",
+   "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the largest measured record, 273 kB; the per-part unit did not carry, 125 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op"
+    ],
+    "dim": "B"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "op_write_bytes",
+   "validity": {
+    "insert_rows": [
+     30000,
+     400000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, count(), sum(rows) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('MutatePart', 'RemovePart') GROUP BY event_type",
+    "mapping": {
+     "op_write_bytes": "write_bytes of /proc/<clickhouse pid>/io over a mutation or restart, divided by the rows mutated, parts dropped or restarts"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "insert_write_overhead_rows",
+   "block": "ebs",
+   "label": "Fixed per-part write overhead of an insert, in rows: inserts write io_bytes_per_op[inserts, write] + this / insert_rows bytes per byte (marks, checksums, columns, count, serialization and statistics files and page rounding do not grow with rows)",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "insert_write_overhead_rows",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT avg(rows), avg(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 1 AND event_type = 'NewPart'",
+    "mapping": {
+     "insert_write_overhead_rows": "compare /proc write_bytes per inserted byte at two insert sizes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "io_request_size_distribution",
+   "block": "ebs",
+   "label": "Fraction of volume requests per size bucket, by operation and direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction",
+     "io_size_bucket"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_request_size_distribution",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_sequential_ios_per_mib",
+   "block": "ebs",
+   "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); the rig syscall proxy counted 1.3-6.5x this (5.3-26.1 per MiB; insert reads, 1335-1608 per MiB on negligible bytes, excluded); the gp3 3000-IOPS baseline usually dominates",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "req/MiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 4,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured syscall-proxy spread on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 I/Os per MiB (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
+    "version": "2026-10-24"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) / 1048576 AS mib FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
+    "mapping": {
+     "ebs_sequential_ios_per_mib": "compare CloudWatch VolumeWriteOps of the data volume over the same day with 4 x mib; the ratio is the real I/Os per MiB"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "peak_factor",
+   "block": "ebs",
+   "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
+    "mapping": {
+     "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
     }
    },
    "status": "ok"
@@ -15601,7 +15602,7 @@
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
-    "replication": "not_applicable",
+    "replication": "supported",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
@@ -17474,6 +17475,69 @@
         ]
        }
       }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "input",
+         "id": "parts_inserted_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        }
+       },
+       "b": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "acquire_requests",
+        "keys": [
+         {
+          "kind": "const",
+          "value": "s3",
+          "dim": "enum:variant_id"
+         },
+         {
+          "kind": "const",
+          "value": "insert",
+          "dim": "enum:result_type"
+         },
+         {
+          "kind": "const",
+          "value": "receiver",
+          "dim": "enum:replication_role"
+         },
+         {
+          "kind": "const",
+          "value": "GetObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       }
+      }
      }
     ],
     "allocation": null,
@@ -18941,42 +19005,178 @@
         ]
        }
       }
-     }
-    ],
-    "allocation": null,
-    "states": [
+     },
      {
-      "id": "not_supported",
-      "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
-      "cond": {
-       "kind": "branch",
-       "dim": "bool",
-       "cond": {
-        "op": ">",
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
         "a": {
          "kind": "input",
          "id": "missed_parts_per_restart",
          "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": 0,
-         "dim": "count"
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
+          "kind": "input",
+          "id": "restarts_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "1",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "1"
+         }
         }
        },
-       "then": {
-        "kind": "const",
-        "value": 1,
-        "dim": "bool"
-       },
-       "else": {
-        "kind": "const",
-        "value": 0,
-        "dim": "bool"
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "catchup_requests_per_missed_part",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        }
        }
       }
      }
     ],
+    "allocation": null,
+    "states": [],
     "notes": []
    },
    "local_disk": {
@@ -28191,40 +28391,7 @@
  },
  "states": {
   "ebs": [],
-  "s3": [
-   {
-    "id": "not_supported",
-    "reason": "pending_owner: replication. Catch-up after a restart (GetObject and PutObject) is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; not wired into this cell yet",
-    "cond": {
-     "kind": "branch",
-     "dim": "bool",
-     "cond": {
-      "op": ">",
-      "a": {
-       "kind": "input",
-       "id": "missed_parts_per_restart",
-       "dim": "count"
-      },
-      "b": {
-       "kind": "const",
-       "value": 0,
-       "dim": "count"
-      }
-     },
-     "then": {
-      "kind": "const",
-      "value": 1,
-      "dim": "bool"
-     },
-     "else": {
-      "kind": "const",
-      "value": 0,
-      "dim": "bool"
-     }
-    },
-    "operation": "recovery"
-   }
-  ],
+  "s3": [],
   "s3plain": [
    {
     "id": "not_supported",

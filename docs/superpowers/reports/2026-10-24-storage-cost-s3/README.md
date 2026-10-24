@@ -9,9 +9,9 @@ doc_type: 'reference'
 
 # Storage cost calculator — s3 disk operation graphs (R2) {#s3}
 
-Every request count of the `s3` disk reconciles on the pinned binary: 53 cases on `s3` and `s3_cached`, K=3, 7
-report runs, each alone on the host. 254 records are ok; the 25 `FAILED` records belong to the
-consumed hold-outs and validations (§Review). All 16 remaining hold-out cases land on their committed predictions. Mutation
+Every request count of the `s3` disk reconciles on the pinned binary: 48 cases on `s3` and `s3_cached`, K=3, 6
+report runs, each alone on the host. 239 records are ok; the 25 `FAILED` records belong to the
+consumed hold-outs and validations (§Review). All 14 remaining hold-out cases land on their committed predictions. Mutation
 counts vary between repeats (§Mutation); every other count is identical in all repeats.
 The variant's eight cells are in `formulas.json`, their coefficients in `coefficients.json`.
 
@@ -19,7 +19,7 @@ The variant's eight cells are in `formulas.json`, their coefficients in `coeffic
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case not named next, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3`, `cost-20261024T123052Z` for the 1000-row validations, `cost-20261024T132311Z` and `cost-20261024T133108Z` for the small-part cases and `cost-20261024T180805Z` for the narrow-shape cold reads; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 279 records (254 ok, 25 `FAILED`) |
+| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case not named next, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3`, `cost-20261024T123052Z` for the 1000-row validations, `cost-20261024T132311Z` and `cost-20261024T133108Z` for the small-part cases, `cost-20261024T180805Z` for the narrow-shape cold reads; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 279 records (254 ok, 25 `FAILED`) |
 | Consumed hold-outs | `drop.partition-3` (falsified count), `mutation.update-mixed` and `mutation.update-mixed-2` (exact counts missed by the repeat spread), `mutation.update-mixed-3` (its band was a stochastic tolerance, which the mutation card did not apply; the card now refuses a manifest mode it does not run), `mutation.compact-small` and `mutation.compact-30k` (falsified forms of the granule rule). All their records stay in `measurements.jsonl`, 25 of them `FAILED` |
 | Invalid runs | `cost-20261024T073405Z`, `cost-20261024T074526Z`, `cost-20261024T075016Z`, `cost-20261024T075431Z`, `cost-20261024T075800Z`, `cost-20261024T083200Z`, `cost-20261024T084830Z` overlapped CAS or EBS runs on the same host and RustFS. No number of this report comes from them |
 | Predictions | fit predictions `80cd02f1c27` were written after exploratory runs. Hold-outs `80cd02f1c27`, `202d45aadbc`, `5519040a680`, `09e9319a11f`, `b04768eaa9e`, `3bd897814b9`, `67cae996c5f`, `ffeb16cdbbf`, `330cbb640bd`, `6d4548a13cf`, each before the first run of its case. The invalid runs executed the first hold-outs before the report run; no predicted count changed after that (later commits only added registry inputs and the commit ids), so the report run tests each committed count |
@@ -186,7 +186,8 @@ sources (`merge-forced.default`) and 16 for 2 are 8 per 5-column Compact source.
   wide table, 7 on the types table (`cached_miss_gets_per_part_read`); an identical read sends no request
   (`cold-select.cache-on*`). The narrow table (5 columns, Wide parts) fits 5 misses per part read
   (`cold-select.cache-on-narrow`); its hold-out `cold-select.cache-on-narrow-2`, predicted from 2 × streams − 1 per
-  part, lands on 20, and the cold read hold-out `cold-select.cache-off-narrow` on 44 = 4 × (5 + 2 × 3). The cache allocates 1.016 to 1.026 bytes per downloaded byte
+  part, lands on 20, and the cold read hold-out `cold-select.cache-off-narrow` on 44 = 4 × (5 + 2 × 3). The cache
+  allocates 1.016 to 1.026 bytes per downloaded byte
   (`Interpreters/FileCache/FileSegment.cpp:418`).
 
 ### Startup {#startup}
@@ -229,17 +230,12 @@ both policies unless two are shown (`s3` / `s3_cached`).
 
 | Case | Role | Predicted | Measured (`s3` / `s3_cached`) |
 |---|---|---|---|
-| `big-insert-multipart.multipart` | validation | 1 CompleteMultipartUpload, 1 CreateMultipartUpload, 14 PutObject, 3 UploadPart; `upload_part_sizes` | 1 CompleteMultipartUpload, 1 CreateMultipartUpload, 14 PutObject, 3 UploadPart |
-| `cold-select.cache-off` | fit, validation | 1–400 GetObject | 184 GetObject |
-| `cold-select.cache-off-narrow` | holdout | 44 GetObject | 44 GetObject |
-| `cold-select.cache-off-narrow-compact` | — | 1–400 GetObject | 32 GetObject |
-| `cold-select.cache-off-types` | fit, holdout, validation | 58 GetObject | 58 GetObject |
+| `big-insert-multipart.multipart` | — | 1 CompleteMultipartUpload, 1 CreateMultipartUpload, 14 PutObject, 3 UploadPart; `upload_part_sizes` | 1 CompleteMultipartUpload, 1 CreateMultipartUpload, 14 PutObject, 3 UploadPart |
+| `cold-select.cache-off` | fit | 1–400 GetObject | 184 GetObject |
+| `cold-select.cache-off-types` | fit, holdout | 58 GetObject | 58 GetObject |
 | `cold-select.cache-off-types-2` | holdout, validation | 58 GetObject; `bytes_per_get` | 58 GetObject |
-| `cold-select.cache-on` | fit, validation | 0–400 GetObject | no request |
-| `cold-select.cache-on-narrow` | fit | no request; `warm_get_requests` | no request |
-| `cold-select.cache-on-narrow-2` | holdout | no request; `warm_get_requests` | no request |
-| `cold-select.cache-on-narrow-compact` | — | no request; `warm_get_requests` | no request |
-| `cold-select.cache-on-types` | fit, validation | no request; `cache_fill_io_per_byte` | no request |
+| `cold-select.cache-on` | fit | 0–400 GetObject | no request |
+| `cold-select.cache-on-types` | fit | no request; `cache_fill_io_per_byte` | no request |
 | `cold-select.cache-on-types-2` | holdout | no request; `warm_get_requests`, `warm_get_bytes_per_part`, `cache_fill_io_per_byte` | no request |
 | `cold-select.warm-off` | fit | 1–200 GetObject | 12 GetObject |
 | `cold-select.warm-off-types` | holdout | 8 GetObject | 8 GetObject |
@@ -269,19 +265,19 @@ both policies unless two are shown (`s3` / `s3_cached`).
 | `mutation.wide-delete` | fit | 0–40 DeleteObject, 0–40 DeleteObjects, 0–400 GetObject, 4–200 PutObject | 3–4 DeleteObjects, 86 GetObject, 62 PutObject / 4 DeleteObjects, 74–76 GetObject, 62 PutObject |
 | `mutation.wide-update-one-column` | fit | 0–40 DeleteObject, 0–40 DeleteObjects, 0–400 GetObject, 4–200 PutObject | 2 DeleteObjects, 14 GetObject, 19 PutObject / 2 DeleteObjects, 4 GetObject, 19 PutObject |
 | `objects-per-part.mid-wide` | holdout, validation | 98 PutObject; `objects_total`, `insert_tx_checks`, `metadata_files_per_object`, `metadata_allocated_per_object`, `write_syscalls_per_object` | 98 PutObject |
-| `objects-per-part.narrow-compact` | fit, validation | 33 PutObject | 33 PutObject |
+| `objects-per-part.narrow-compact` | fit | 33 PutObject | 33 PutObject |
 | `objects-per-part.narrow-compact-1k` | validation | 33 PutObject | 33 PutObject |
-| `objects-per-part.narrow-wide` | fit, validation | 57 PutObject | 57 PutObject |
+| `objects-per-part.narrow-wide` | fit | 57 PutObject | 57 PutObject |
 | `objects-per-part.types-fit` | fit, validation | 30–400 PutObject | 176 PutObject |
 | `objects-per-part.types-fit-compact` | fit | 22 PutObject | 22 PutObject |
 | `objects-per-part.types-fit-wide` | fit | 154 PutObject | 154 PutObject |
 | `objects-per-part.types-holdout` | fit, validation | 316 PutObject; `objects_total`, `insert_tx_checks` | 316 PutObject |
-| `objects-per-part.wide-compact` | fit, validation | 33 PutObject | 33 PutObject |
+| `objects-per-part.wide-compact` | fit | 33 PutObject | 33 PutObject |
 | `objects-per-part.wide-compact-2` | holdout | 33 PutObject; `objects_total`, `insert_tx_checks`, `object_size_histogram` | 33 PutObject |
-| `objects-per-part.wide-wide` | fit, holdout, validation | 267 PutObject; `objects_total`, `insert_tx_checks`, `metadata_files_per_object`, `metadata_allocated_per_object`, `metadata_bytes_per_object` | 267 PutObject |
-| `startup.intact` | fit, validation | 0–4 DeleteObject, 0–4 DeleteObjects, 0–200 GetObject, 0–10 HeadObject, 0–4 PutObject | 2 DeleteObject, 50 GetObject, 2 PutObject / 3 DeleteObject, 36 GetObject, 3 PutObject |
+| `objects-per-part.wide-wide` | fit, holdout | 267 PutObject; `objects_total`, `insert_tx_checks`, `metadata_files_per_object`, `metadata_allocated_per_object`, `metadata_bytes_per_object` | 267 PutObject |
+| `startup.intact` | fit | 0–4 DeleteObject, 0–4 DeleteObjects, 0–200 GetObject, 0–10 HeadObject, 0–4 PutObject | 2 DeleteObject, 50 GetObject, 2 PutObject / 3 DeleteObject, 36 GetObject, 3 PutObject |
 | `startup.small` | validation | 2 DeleteObject, 50 GetObject, 2 PutObject | 2 DeleteObject, 50 GetObject, 2 PutObject / 3 DeleteObject, 36 GetObject, 3 PutObject |
-| `startup.wide-parts` | holdout, validation | 2 DeleteObject, 105 GetObject, 2 PutObject; `active_parts` | 2 DeleteObject, 105 GetObject, 2 PutObject / 3 DeleteObject, 26 GetObject, 3 PutObject |
+| `startup.wide-parts` | holdout | 2 DeleteObject, 105 GetObject, 2 PutObject; `active_parts` | 2 DeleteObject, 105 GetObject, 2 PutObject / 3 DeleteObject, 26 GetObject, 3 PutObject |
 
 Every assertion held in every ok record (part types from the registry predicate, `object_writes == objects_total`, full rewrite of Compact mutations, dropped objects deleted, restart before the cold read, `window.crossing` empty).
 
@@ -331,20 +327,21 @@ Applicability lists, per cell, exactly the families whose rules or coefficients 
 | Cell | Families | Rows |
 |---|---|---|
 | `storage` | `lifecycle` | active `data_bytes` × replicas; outdated: merged-away bytes, ingest × (`write_amplification_rule` − 1), held for `old_parts_lifetime` |
-| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject` |
+| `inserts` | `objects_per_part_by_shape`, `thresholds`, `multipart_graph`, `replication` | `PutObject`, multipart rows, `HeadObject` (`insert_tx_checks`), follower fetch `GetObject`: the sender's reads and the receiver's 9 load reads per part |
 | `merges` | `lifecycle`, `objects_per_part_by_shape`, `thresholds`, `multipart_graph` | result writes with multipart rows, source `GetObject` (cache branch), one `DeleteObjects` per removed source |
 | `mutations` | `mutation_deletes`, `multipart_graph` | writes per Compact and Wide part with multipart rows, `mutation_<n>.txt` writes and removals (plain `MergeTree` only), `GetObject` per part, `DeleteObjects` |
 | `deletes` | `mutation_deletes` | one empty part per expiry operation, one `DeleteObjects` per expired part and per empty part |
 | `reads` | `reads_cache` | warm stream reads, first reads of new parts and after restarts, statistics refreshes (no cache); cached misses (cache) |
-| `recovery` | `startup_recovery` | access checks, part and history loads per restart; `not_supported` while `missed_parts_per_restart` > 0 |
+| `recovery` | `startup_recovery` | access checks, part and history loads per restart; catch-up `GetObject` and `PutObject` per missed part when replicas > 1 |
 | `local_disk` | `objects_per_part_by_shape` | metadata of active and outdated parts plus the cache size |
 
-The follower `GetObject` row of `inserts` uses `objects_per_part` (the phase-0 replicated fetch read every object of
-the part once) until the replication report's `acquire_requests[s3][insert]` replaces it. Catch-up after a restart
-belongs to the replication report (`pending_owner: replication` in the cell's state): catch-up `GetObject` and
-`PutObject` = `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3]`, and
-`startup_requests_after_restart[s3]` replaces the startup rows. They are not wired into this cell yet, so the
-`recovery` cell is `not_supported` for workloads with missed parts.
+The follower rows of `inserts` are the sender's reads (`objects_per_part`: one `GetObject` per object, as
+`acquire_requests[s3][insert][sender]` measures) and the receiver's 9 load reads per part
+(`acquire_requests[s3][insert][receiver][GetObject]`, valid for 1 000–200 000 rows per insert; validation report). Catch-up after a restart reads
+the replication report's table: `GetObject` and `PutObject` = restarts × replicas × `missed_parts_per_restart` ×
+`catchup_requests_per_missed_part[s3][op]`, for replicas > 1. The startup rows stay: at 3 active narrow parts they
+give `GetObject` 50, `PutObject` 2, `DeleteObject` 2, and the replicated restart measured 48, 1, 1
+(`startup_requests_after_restart[s3]`, tolerance 2).
 
 ## Assumptions {#assumptions}
 
@@ -381,8 +378,8 @@ Each is `evidence.kind: assumed` in the registry or stated in a prediction:
 - **Compact parts read less than the cells price.** On the narrow table with Compact parts, a cold part read is 8
   `GetObject` (5 statistics, 2 `data.bin`, 1 marks) against 11 on Wide parts, and the cache misses 1 segment per part
   read against 5 (`cold-select.cache-off-narrow-compact`, `cold-select.cache-on-narrow-compact`, records kept, no
-  evidence row). The `reads` cell prices every part read with the Wide plan, so for workloads whose read parts are
-  Compact it is an upper bound.
+  evidence row). The `reads` cell prices every part read with the Wide plan, an upper bound where the read parts are
+  Compact.
 - **Statistics pruning candidates** can exceed parts read (`ReadFromMergeTree.cpp:3317`); the cell charges parts read.
 - **Small inserts.** The 1000-row validations `objects-per-part.narrow-compact-1k` and `startup.small`, predicted
   before their run, land exactly: `objects_per_part`, `insert_tx_checks`, `metadata_bytes_per_object` and the startup
