@@ -2570,6 +2570,19 @@
           "duration_s": 31,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "narrow-compact-10k",
+          "policies": [
+            "local"
+          ],
+          "replicas": 2,
+          "scale": 0.05,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 31,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     }
@@ -16627,9 +16640,9 @@
       "role": "fit",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k3"
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
       ],
       "status": "done"
     },
@@ -16650,9 +16663,9 @@
       "role": "fit",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k3"
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
       ],
       "status": "done"
     },
@@ -16696,9 +16709,9 @@
       "role": "fit",
       "prediction_commit": "6525e12d1dc",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
       ],
       "status": "done"
     },
@@ -16765,9 +16778,9 @@
       "role": "holdout",
       "prediction_commit": "b498967f6f3",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k1",
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k2",
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k3"
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
       ],
       "status": "done"
     },
@@ -16788,9 +16801,9 @@
       "role": "fit",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact/k3"
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
       ],
       "status": "done"
     },
@@ -16811,9 +16824,9 @@
       "role": "fit",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T171231Z/local/io-sizes/narrow-wide/k3"
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
       ],
       "status": "done"
     },
@@ -16857,9 +16870,9 @@
       "role": "fit",
       "prediction_commit": "6525e12d1dc",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T171231Z/local/io-sizes/types-holdout/k3"
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
       ],
       "status": "done"
     },
@@ -16926,9 +16939,9 @@
       "role": "holdout",
       "prediction_commit": "b498967f6f3",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k1",
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k2",
-        "cost-20261024T171231Z/local/io-sizes/mixed-holdout-3/k3"
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
       ],
       "status": "done"
     },
@@ -16945,9 +16958,47 @@
       "role": "validation",
       "prediction_commit": "95732071f0b",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k1",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k2",
-        "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k3"
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "insert_write_overhead_rows",
+      "experiment_id": "io-sizes.narrow-compact-1k",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "95732071f0b",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "insert_write_overhead_rows",
+      "experiment_id": "io-sizes.narrow-compact-10k",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "06d0354a09a",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k3"
       ],
       "status": "done"
     },
@@ -16964,9 +17015,9 @@
       "role": "validation",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/small-inserts/default/k1",
-        "cost-20261024T171231Z/local/small-inserts/default/k2",
-        "cost-20261024T171231Z/local/small-inserts/default/k3"
+        "cost-20261024T174727Z/local/small-inserts/default/k1",
+        "cost-20261024T174727Z/local/small-inserts/default/k2",
+        "cost-20261024T174727Z/local/small-inserts/default/k3"
       ],
       "status": "done"
     },
@@ -16983,9 +17034,9 @@
       "role": "validation",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/merge-natural/default/k1",
-        "cost-20261024T171231Z/local/merge-natural/default/k2",
-        "cost-20261024T171231Z/local/merge-natural/default/k3"
+        "cost-20261024T174727Z/local/merge-natural/default/k1",
+        "cost-20261024T174727Z/local/merge-natural/default/k2",
+        "cost-20261024T174727Z/local/merge-natural/default/k3"
       ],
       "status": "done"
     },
@@ -17002,9 +17053,9 @@
       "role": "fit",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/mutation/compact-update-one-column/k1",
-        "cost-20261024T171231Z/local/mutation/compact-update-one-column/k2",
-        "cost-20261024T171231Z/local/mutation/compact-update-one-column/k3"
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k1",
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k2",
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k3"
       ],
       "status": "done"
     },
@@ -17021,9 +17072,9 @@
       "role": "fit",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/mutation/wide-update-one-column/k1",
-        "cost-20261024T171231Z/local/mutation/wide-update-one-column/k2",
-        "cost-20261024T171231Z/local/mutation/wide-update-one-column/k3"
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k1",
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k2",
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k3"
       ],
       "status": "done"
     },
@@ -17040,9 +17091,9 @@
       "role": "holdout",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/mutation/compact-30k/k1",
-        "cost-20261024T171231Z/local/mutation/compact-30k/k2",
-        "cost-20261024T171231Z/local/mutation/compact-30k/k3"
+        "cost-20261024T174727Z/local/mutation/compact-30k/k1",
+        "cost-20261024T174727Z/local/mutation/compact-30k/k2",
+        "cost-20261024T174727Z/local/mutation/compact-30k/k3"
       ],
       "status": "done"
     },
@@ -17059,9 +17110,9 @@
       "role": "fit",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/drop/partition/k1",
-        "cost-20261024T171231Z/local/drop/partition/k2",
-        "cost-20261024T171231Z/local/drop/partition/k3"
+        "cost-20261024T174727Z/local/drop/partition/k1",
+        "cost-20261024T174727Z/local/drop/partition/k2",
+        "cost-20261024T174727Z/local/drop/partition/k3"
       ],
       "status": "done"
     },
@@ -17078,9 +17129,9 @@
       "role": "holdout",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/drop/partition-2/k1",
-        "cost-20261024T171231Z/local/drop/partition-2/k2",
-        "cost-20261024T171231Z/local/drop/partition-2/k3"
+        "cost-20261024T174727Z/local/drop/partition-2/k1",
+        "cost-20261024T174727Z/local/drop/partition-2/k2",
+        "cost-20261024T174727Z/local/drop/partition-2/k3"
       ],
       "status": "consumed"
     },
@@ -17097,9 +17148,9 @@
       "role": "fit",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/startup/intact/k1",
-        "cost-20261024T171231Z/local/startup/intact/k2",
-        "cost-20261024T171231Z/local/startup/intact/k3"
+        "cost-20261024T174727Z/local/startup/intact/k1",
+        "cost-20261024T174727Z/local/startup/intact/k2",
+        "cost-20261024T174727Z/local/startup/intact/k3"
       ],
       "status": "done"
     },
@@ -17116,9 +17167,9 @@
       "role": "holdout",
       "prediction_commit": "be94501e681",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/startup/small/k1",
-        "cost-20261024T171231Z/local/startup/small/k2",
-        "cost-20261024T171231Z/local/startup/small/k3"
+        "cost-20261024T174727Z/local/startup/small/k1",
+        "cost-20261024T174727Z/local/startup/small/k2",
+        "cost-20261024T174727Z/local/startup/small/k3"
       ],
       "status": "done"
     },
@@ -17135,9 +17186,9 @@
       "role": "fit",
       "prediction_commit": "d5cf507a02c",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/merge-natural/default/k1",
-        "cost-20261024T171231Z/local/merge-natural/default/k2",
-        "cost-20261024T171231Z/local/merge-natural/default/k3"
+        "cost-20261024T174727Z/local/merge-natural/default/k1",
+        "cost-20261024T174727Z/local/merge-natural/default/k2",
+        "cost-20261024T174727Z/local/merge-natural/default/k3"
       ],
       "status": "done"
     },
@@ -17154,9 +17205,9 @@
       "role": "holdout",
       "prediction_commit": "e145a15461a",
       "measurement_ids": [
-        "cost-20261024T171231Z/local/merge-natural/wide/k1",
-        "cost-20261024T171231Z/local/merge-natural/wide/k2",
-        "cost-20261024T171231Z/local/merge-natural/wide/k3"
+        "cost-20261024T174727Z/local/merge-natural/wide/k1",
+        "cost-20261024T174727Z/local/merge-natural/wide/k2",
+        "cost-20261024T174727Z/local/merge-natural/wide/k3"
       ],
       "status": "consumed"
     }

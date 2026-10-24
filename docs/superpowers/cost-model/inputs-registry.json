@@ -10810,7 +10810,7 @@
       "coef": "io_bytes_per_op",
       "validity": {
         "insert_rows": [
-          80000,
+          1000,
           300000
         ]
       },
@@ -10830,7 +10830,7 @@
     {
       "id": "op_write_bytes",
       "block": "ebs",
-      "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the larger measured value, 217 kB; the per-part unit did not carry, 126 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
+      "label": "Volume write bytes per unit: per source row of a mutated part (measured); per dropped part (assumption: the largest measured record, 273 kB; the per-part unit did not carry, 125 kB on the hold-out); per restart (assumption 0: below the idle baseline). Reads of these operations are not modelled",
       "kind": "measured",
       "scope": "volume",
       "unit": "B",
@@ -10865,6 +10865,38 @@
       "status": "ok"
     },
     {
+      "id": "insert_write_overhead_rows",
+      "block": "ebs",
+      "label": "Fixed per-part write overhead of an insert, in rows: inserts write io_bytes_per_op[inserts, write] + this / insert_rows bytes per byte (marks, checksums, columns, count, serialization and statistics files and page rounding do not grow with rows)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "insert_write_overhead_rows",
+      "validity": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(rows), avg(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 1 AND event_type = 'NewPart'",
+        "mapping": {
+          "insert_write_overhead_rows": "compare /proc write_bytes per inserted byte at two insert sizes"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "io_request_size_distribution",
       "block": "ebs",
       "label": "Fraction of volume requests per size bucket, by operation and direction",
@@ -10886,7 +10918,7 @@
       "coef": "io_request_size_distribution",
       "validity": {
         "insert_rows": [
-          80000,
+          1000,
           300000
         ]
       },

@@ -44,8 +44,8 @@
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
-      // 1,000-row inserts lie below the EBS write-bytes validity; the page shows the dependent EBS numbers as extrapolated.
-      expected_extrapolated: { ebs: ['io_bytes_per_op', 'op_write_bytes'] },
+      // 1,000-row inserts lie below the measured mutation part sizes; the page shows the dependent EBS numbers as extrapolated.
+      expected_extrapolated: { ebs: ['op_write_bytes'] },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
     // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts

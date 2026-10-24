@@ -83,38 +83,57 @@
               "kind": "add",
               "dim": "1",
               "a": {
-                "kind": "lookup",
+                "kind": "add",
                 "dim": "1",
-                "table_id": "io_bytes_per_op",
-                "keys": [
-                  {
-                    "kind": "const",
-                    "value": "inserts",
-                    "dim": "enum:io_op"
-                  },
-                  {
-                    "kind": "const",
-                    "value": "write",
-                    "dim": "enum:io_direction"
-                  }
-                ]
+                "a": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "inserts",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "write",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                },
+                "b": {
+                  "kind": "lookup",
+                  "dim": "1",
+                  "table_id": "io_bytes_per_op",
+                  "keys": [
+                    {
+                      "kind": "const",
+                      "value": "inserts",
+                      "dim": "enum:io_op"
+                    },
+                    {
+                      "kind": "const",
+                      "value": "read",
+                      "dim": "enum:io_direction"
+                    }
+                  ]
+                }
               },
               "b": {
-                "kind": "lookup",
+                "kind": "div",
                 "dim": "1",
-                "table_id": "io_bytes_per_op",
-                "keys": [
-                  {
-                    "kind": "const",
-                    "value": "inserts",
-                    "dim": "enum:io_op"
-                  },
-                  {
-                    "kind": "const",
-                    "value": "read",
-                    "dim": "enum:io_direction"
-                  }
-                ]
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "coef",
+                  "id": "insert_write_overhead_rows",
+                  "dim": "count"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "insert_rows",
+                  "dim": "count"
+                }
               }
             }
           }
@@ -170,38 +189,57 @@
                 "kind": "add",
                 "dim": "1",
                 "a": {
-                  "kind": "lookup",
+                  "kind": "add",
                   "dim": "1",
-                  "table_id": "io_bytes_per_op",
-                  "keys": [
-                    {
-                      "kind": "const",
-                      "value": "inserts",
-                      "dim": "enum:io_op"
-                    },
-                    {
-                      "kind": "const",
-                      "value": "write",
-                      "dim": "enum:io_direction"
-                    }
-                  ]
+                  "a": {
+                    "kind": "lookup",
+                    "dim": "1",
+                    "table_id": "io_bytes_per_op",
+                    "keys": [
+                      {
+                        "kind": "const",
+                        "value": "inserts",
+                        "dim": "enum:io_op"
+                      },
+                      {
+                        "kind": "const",
+                        "value": "write",
+                        "dim": "enum:io_direction"
+                      }
+                    ]
+                  },
+                  "b": {
+                    "kind": "lookup",
+                    "dim": "1",
+                    "table_id": "io_bytes_per_op",
+                    "keys": [
+                      {
+                        "kind": "const",
+                        "value": "inserts",
+                        "dim": "enum:io_op"
+                      },
+                      {
+                        "kind": "const",
+                        "value": "read",
+                        "dim": "enum:io_direction"
+                      }
+                    ]
+                  }
                 },
                 "b": {
-                  "kind": "lookup",
+                  "kind": "div",
                   "dim": "1",
-                  "table_id": "io_bytes_per_op",
-                  "keys": [
-                    {
-                      "kind": "const",
-                      "value": "inserts",
-                      "dim": "enum:io_op"
-                    },
-                    {
-                      "kind": "const",
-                      "value": "read",
-                      "dim": "enum:io_direction"
-                    }
-                  ]
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "coef",
+                    "id": "insert_write_overhead_rows",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "insert_rows",
+                    "dim": "count"
+                  }
                 }
               }
             },
@@ -714,7 +752,7 @@
       "notes": [
         {
           "kind": "const",
-          "value": "Drops: assumption, 217 kB written per dropped part (the larger measured value; the per-part unit did not carry between the fit and hold-out layouts, 126 kB); an upper bound pending a model keyed on part size",
+          "value": "Drops: assumption, 273 kB written per dropped part (the largest measured record; the per-part unit did not carry between the fit and hold-out layouts, 125 kB); an upper bound pending a model keyed on part size",
           "dim": "enum:note"
         }
       ]
