@@ -8,7 +8,8 @@ counters are the server-only idle control. Expected values come from `prediction
 
 Measurement boundary: process counters are page-cache-side (`write_bytes` counts pages dirtied, `read_bytes` counts
 cache misses), and strace sizes are syscall sizes. Device reads are not cold-read demand (no root to drop caches), so
-read demand is the traced syscall bytes: an upper bound of what a cold volume would read.
+read demand is the bytes the traced syscalls return: what the server issues, with no bound direction against a cold
+device (readahead and block rounding add bytes, cached re-reads repeat them).
 """
 from __future__ import annotations
 
@@ -130,12 +131,14 @@ class IoSizes(LifecycleCard):
     def _io(self, ctx) -> dict:
         return {f'r{i}': proc_io(self._pid(ctx, i)) for i in range(1, self.replicas + 1)}
 
-    def _phase(self, ctx, name: str, body) -> None:
+    def _phase(self, ctx, name: str, work, logical) -> None:
+        """Run `work` inside the window; `logical()` (part-log reads, a log flush) runs after the window closes, so
+        its own writes are not the operation's."""
         io0, t0 = self._io(ctx), time.time_ns() // 1000
-        logical = body()
+        work()
         t1, io1 = time.time_ns() // 1000, self._io(ctx)
         self.state(ctx).setdefault('phases', {})[name] = {
-            'name': name, 't0_us': t0, 't1_us': t1, 'wall_s': (t1 - t0) / 1e6, 'logical_bytes': logical,
+            'name': name, 't0_us': t0, 't1_us': t1, 'wall_s': (t1 - t0) / 1e6, 'logical_bytes': logical(),
             'proc_io': {r: {k: io1[r][k] - io0[r][k] for k in io1[r]} for r in io1}}
 
     def _compressed_bytes(self, ctx) -> int:
@@ -153,27 +156,26 @@ class IoSizes(LifecycleCard):
             raise ValueError(f'{self.name}: the manifest must set params.trace = true (request sizes come from strace)')
         client = self.replica_client(ctx)
         # The idle interval is the measurement of the baseline, not a wait for a condition.
-        self._phase(ctx, 'baseline', lambda: time.sleep(p['baseline_s']) or 0)
+        self._phase(ctx, 'baseline', lambda: time.sleep(p['baseline_s']), lambda: 0)
         n = self.inserts(ctx)
         for name in p['phases']:
             if name == 'insert':
-                def body():
+                def work():
                     for i in range(n):
                         self.insert(ctx, i)
-                    return self._part_log_bytes(ctx, 'NewPart')
+                self._phase(ctx, name, work, lambda: self._part_log_bytes(ctx, 'NewPart'))
             elif name == 'merge':
-                def body():
-                    before = self._part_log_bytes(ctx, 'MergeParts')
-                    client.query(self.sql(ctx, p['optimize']))  # OPTIMIZE FINAL returns after the merge
-                    return self._part_log_bytes(ctx, 'MergeParts') - before
+                before = self._part_log_bytes(ctx, 'MergeParts')
+                # OPTIMIZE FINAL returns after the merge.
+                self._phase(ctx, name, lambda: client.query(self.sql(ctx, p['optimize'])),
+                            lambda: self._part_log_bytes(ctx, 'MergeParts') - before)
             elif name == 'select':
-                def body():
-                    scanned = self._compressed_bytes(ctx)
-                    client.query(self.sql(ctx, p['select']), settings=ctx.manifest['settings']['query'])
-                    return scanned
+                scanned = self._compressed_bytes(ctx)
+                self._phase(ctx, name, lambda: client.query(self.sql(ctx, p['select']),
+                                                             settings=ctx.manifest['settings']['query']),
+                            lambda: scanned)
             else:
                 raise ValueError(f'{self.name}: unknown phase {name!r}')
-            self._phase(ctx, name, body)
         return {'unit_count': max(n, 1), 'effective_counts': {'inserts': n, 'rows': n * p['rows']}, 'observations': {}}
 
     def path_class(self, ctx):

@@ -145,9 +145,6 @@ class IdleCardTest(unittest.TestCase):
             io_sizes.IoSizes().measured(SimpleNamespace(manifest=m, pass_dir='x'))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class FitTest(unittest.TestCase):
     """The pooling and hold-out rules of `ebs_fit`, on synthetic records."""
@@ -195,3 +192,32 @@ class FitTest(unittest.TestCase):
         self.assertAlmostEqual(got['m']['peak_factor'], 2.5)
         with self.assertRaises(ValueError):
             ebs_fit.active_window(self.record('x', 'merge-natural.default', {}, window={'t_start_us': 0}), 60)
+
+    def test_ops_values_per_unit_net_of_the_baseline(self):
+        from yardstick.cost import ebs_fit
+        parts = lambda names: [{'name': n, 'rows': 100, 'active': 1} for n in names]  # noqa: E731
+        recs = [self.record('m', 'mutation.compact-update-one-column', {'parts_before': parts(['a', 'b'])},
+                            card='mutation', proc_io={'r1': {'write_bytes': 3000}}, wall_s=10),
+                self.record('d', 'drop.partition', {'parts_before': parts(['a', 'b', 'c']), 'parts_after': parts(['c'])},
+                            card='drop', proc_io={'r1': {'write_bytes': 1200}}, wall_s=10),
+                self.record('s', 'startup.intact', {}, card='startup', proc_io={'r1': {'write_bytes': 5000}}, wall_s=10)]
+        got = ebs_fit.ops_values(recs, ebs_fit.OPS_FIT, 100.0)
+        self.assertEqual(got, {'mutations': {'m': 10.0}, 'deletes': {'d': 100.0}, 'recovery': {'s': 4000.0}})
+        fit = ebs_fit.pooled({'a': 10.0, 'b': 12.0})
+        self.assertTrue(ebs_fit.ops_check(14.6, fit)['ok'])   # slack 2 x 1 + 0.15 x 11 = 3.65
+        self.assertFalse(ebs_fit.ops_check(14.7, fit)['ok'])
+
+
+class PhaseWindowTest(unittest.TestCase):
+    def test_logical_bytes_are_read_after_the_window_closes(self):
+        # SYSTEM FLUSH LOGS writes the part log to disk; inside the window it would count as the operation's writes.
+        card, events = io_sizes.IoSizes(), []
+        card._io = lambda ctx: events.append('io') or {'r1': {'write_bytes': len(events)}}
+        ctx = SimpleNamespace(pass_dir='p')
+        card._phase(ctx, 'insert', lambda: events.append('work'), lambda: events.append('logical') or 7)
+        self.assertEqual(events, ['io', 'work', 'io', 'logical'])
+        self.assertEqual(card.state(ctx)['phases']['insert']['logical_bytes'], 7)
+
+
+if __name__ == '__main__':
+    unittest.main()

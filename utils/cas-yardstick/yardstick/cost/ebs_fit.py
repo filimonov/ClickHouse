@@ -128,6 +128,43 @@ def tv_check(value: dict, fit: dict) -> dict:
     return {'tv': tv, 'max_tv': limit, 'ok': tv <= limit}
 
 
+OPS = {'mutation': 'mutations', 'drop': 'deletes', 'startup': 'recovery'}
+OPS_FIT = {'mutation.compact-update-one-column', 'mutation.wide-update-one-column', 'drop.partition', 'startup.intact'}
+OPS_HOLD = {'mutation.compact-30k', 'drop.partition-2', 'startup.small'}
+OPS_SLACK = (2.0, 0.15)  # (x spread, + fraction of the fit), fixed in the ops predictions before the run
+
+
+def op_units(record) -> float:
+    """Logical units of one ops record: source rows of the mutated parts, dropped parts, or one restart."""
+    obs, card = record['observations'], record['card']
+    if card == 'mutation':
+        return sum(p['rows'] for p in obs['parts_before'] if p['active'])
+    if card == 'drop':
+        before = {p['name'] for p in obs['parts_before'] if p['active']}
+        after = {p['name'] for p in obs['parts_after'] if p['active']}
+        return len(before - after)
+    if card == 'startup':
+        return 1
+    raise ValueError(f'{record["measurement_id"]}: not an ops card')
+
+
+def ops_values(records, experiment_ids, baseline_bps: float) -> dict:
+    """op -> measurement id -> net r1 write_bytes per unit (`op_units`), net of the idle r1 rate x wall time."""
+    out = {}
+    for r in ok(records, experiment_ids):
+        units = op_units(r)
+        if units <= 0:
+            raise ValueError(f'{r["measurement_id"]}: no logical units')
+        net = r['proc_io']['r1']['write_bytes'] - baseline_bps * r['wall_s']
+        out.setdefault(OPS[r['card']], {})[r['measurement_id']] = net / units
+    return out
+
+
+def ops_check(value: float, fit: dict) -> dict:
+    slack = OPS_SLACK[0] * fit['spread'] + OPS_SLACK[1] * abs(fit['value'])
+    return {'value': value, 'fit': fit['value'], 'slack': slack, 'ok': abs(value - fit['value']) <= slack}
+
+
 def main(argv) -> int:
     records = load(argv)
     base = idle_baseline(records)
