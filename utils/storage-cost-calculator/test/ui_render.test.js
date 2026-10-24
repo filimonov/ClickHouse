@@ -194,3 +194,13 @@ test('test_override_of_derived_field_survives_preset_switch_and_resets', () => {
   assert.equal(locked.ingest_rate.derived, true);
   assert.equal(locked.data_bytes.locked, true);
 });
+
+test('test_render_custom_prices_editable_and_unpriced_rule_empty', () => {
+  const c = load((x) => { x.billing.presets[0].transfer.push({ id: 'internet', price_per_gb: null, source_url: 'https://example.com/internet' }); });
+  const { parts } = page(base({ price_preset: 'custom' }), {}, c);
+  assert.match(parts.inputs, /data-path="request_classes\.put_copy_post_list\.price_per_1000" value="0\.005"/);
+  assert.match(parts.inputs, /data-path="transfer\.internet\.price_per_gb" value="" placeholder="not priced by this preset"/);
+  assert.equal(parts.inputs.includes('value="null"'), false);
+  // Another preset shows prices as text, not inputs.
+  assert.equal(/data-action="price-field"/.test(page(base()).parts.inputs), false);
+});

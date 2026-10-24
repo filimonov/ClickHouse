@@ -184,7 +184,10 @@
     const busy = page.cannot_reproduce;
     if (f.kind === 'price') {
       if (!f.editable) return `<span class="value">${esc(f.value_text)}</span>`;
-      return `<input type="number" step="any" min="0" data-action="price-field" data-path="${esc(f.path)}" value="${esc(f.value)}" aria-label="${esc(f.label)}">`;
+      // A rule the preset does not price (value null) starts empty; its value_text says so.
+      const v = f.value === null ? '' : f.value;
+      return `<span class="control"><input type="number" step="any" min="0" data-action="price-field" data-path="${esc(f.path)}" value="${esc(v)}"`
+        + `${f.value === null ? ` placeholder="${esc(f.value_text)}"` : ''} aria-label="${esc(f.label)}"><span class="unit">${esc(f.per)}</span></span>`;
     }
     if (!f.editable || busy) return `<span class="value">${esc(f.value_text)}</span>`;
     if (f.value_type === 'enum') {
