@@ -1,0 +1,60 @@
+{
+ "schema": "formulas/1",
+ "owner": "sample",
+ "variant": "s3",
+ "cells": {
+  "insert_basic.write": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "caller": "r1",
+     "expr": {
+      "kind": "mul",
+      "dim": "count",
+      "a": {
+       "kind": "input",
+       "id": "parts_inserted",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "coef",
+       "id": "puts_per_compact_part",
+       "dim": "count"
+      }
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  },
+  "other_card.write": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "caller": "r1",
+     "expr": {
+      "kind": "const",
+      "value": 99,
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": []
+  }
+ }
+}

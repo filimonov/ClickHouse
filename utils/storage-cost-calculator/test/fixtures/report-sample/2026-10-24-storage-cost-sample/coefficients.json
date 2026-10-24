@@ -1,0 +1,13 @@
+[
+ {
+  "id": "puts_per_compact_part",
+  "kind": "scalar",
+  "value": 3,
+  "dim": "count",
+  "validity": null,
+  "evidence": {
+   "kind": "measured",
+   "ref": "run42/s3_default/insert_basic/small_part/k0"
+  }
+ }
+]

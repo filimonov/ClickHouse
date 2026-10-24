@@ -1,0 +1,95 @@
+{
+ "schema": "coverage/1",
+ "version": "1",
+ "cards": [
+  {
+   "name": "insert_basic",
+   "family": "write_path",
+   "model_variants": [
+    "s3",
+    "s3plain",
+    "cas"
+   ],
+   "cases": [
+    {
+     "case_id": "small_part",
+     "policies": [
+      "s3_default"
+     ],
+     "replicas": 1,
+     "scale": 1.0,
+     "repeats": 3,
+     "timeout_s": 300,
+     "duration_s": 120,
+     "priority": "P1",
+     "status": "planned"
+    }
+   ]
+  }
+ ],
+ "evidence": [
+  {
+   "coefficient": "puts_per_compact_part",
+   "experiment_id": "insert_basic.small_part",
+   "policy": "s3_default",
+   "span": {
+    "uncompressed_bytes_per_part": [
+     0,
+     10485760
+    ]
+   },
+   "role": "fit",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [
+    "run42/s3_default/insert_basic/small_part/k0"
+   ],
+   "status": "done"
+  },
+  {
+   "coefficient": "puts_per_compact_part",
+   "experiment_id": "insert_basic.small_part",
+   "policy": "s3_default",
+   "span": {
+    "uncompressed_bytes_per_part": [
+     0,
+     10485760
+    ]
+   },
+   "role": "validation",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [
+    "run42/s3_default/insert_basic/small_part/k0"
+   ],
+   "status": "done"
+  },
+  {
+   "coefficient": "puts_per_compact_part",
+   "experiment_id": "insert_basic.missing",
+   "policy": "s3_default",
+   "span": {},
+   "role": "holdout",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [],
+   "status": "planned"
+  }
+ ],
+ "domain": {
+  "variants": [
+   "ebs",
+   "s3",
+   "s3plain",
+   "cas"
+  ],
+  "operations": [
+   "insert",
+   "merge",
+   "mutation"
+  ],
+  "families": [
+   "write_path"
+  ]
+ },
+ "excluded": [
+  "zero-copy replication"
+ ]
+}
