@@ -81,7 +81,7 @@ class DependencyTest(unittest.TestCase):
 
 class SupportTest(unittest.TestCase):
     def coverage(self, case_status='planned', evidence_status='done'):
-        case = {'case_id': 'c', 'policies': ['s3'], 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900,
+        case = {'case_id': 'c', 'policies': ['s3'], 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900, 'duration_s': 120,
                 'priority': 'P1', 'status': case_status}
         return {'schema': 'coverage/1', 'version': '1',
                 'cards': [{'name': 'card', 'family': 'fam', 'model_variants': ['s3'], 'cases': [case]}],
@@ -112,7 +112,7 @@ class SupportTest(unittest.TestCase):
 
     def test_support_cells_evidence_or_not_supported(self):
         def case(cid, policies=('s3', 'cas')):
-            return {'case_id': cid, 'policies': list(policies), 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900,
+            return {'case_id': cid, 'policies': list(policies), 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900, 'duration_s': 120,
                     'priority': 'P1', 'status': 'planned'}
         cov = {'schema': 'coverage/1', 'version': '1', 'domain': {'variants': ['s3', 'cas'], 'operations': ['x', 'y'], 'families': ['f', 'g']},
                'cards': [{'name': 'cf', 'family': 'f', 'model_variants': ['s3', 'cas'], 'cases': [case('c')]},
@@ -160,7 +160,7 @@ class EvidenceTest(unittest.TestCase):
                 'prediction_commit': 'abc' if role != 'fit' else None, 'measurement_ids': mids, 'status': status}
 
     def cov(self, *rows):
-        case = {'case_id': 'c1', 'policies': ['s3'], 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900,
+        case = {'case_id': 'c1', 'policies': ['s3'], 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900, 'duration_s': 120,
                 'priority': 'P1', 'status': 'planned'}
         case2 = dict(case, case_id='c2')
         return {'schema': 'coverage/1', 'version': '1', 'cards': [{'name': 'card', 'family': 'f', 'model_variants': ['s3'], 'cases': [case, case2]}],

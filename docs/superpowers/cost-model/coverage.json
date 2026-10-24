@@ -22,6 +22,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -36,6 +37,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -50,6 +52,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -64,6 +67,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -78,6 +82,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -92,6 +97,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -119,6 +125,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -144,6 +151,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -171,6 +179,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -198,6 +207,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -225,6 +235,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -252,6 +263,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P2",
           "status": "planned"
         }
@@ -278,7 +290,8 @@
           "replicas": 1,
           "scale": 1.0,
           "repeats": 3,
-          "timeout_s": 1800,
+          "timeout_s": 14400,
+          "duration_s": 7200,
           "priority": "P2",
           "status": "planned"
         }
@@ -306,6 +319,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -321,6 +335,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -336,6 +351,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -363,6 +379,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -378,6 +395,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -393,6 +411,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -420,6 +439,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P2",
           "status": "planned"
         }
@@ -447,6 +467,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -461,6 +482,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -486,6 +508,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P2",
           "status": "planned"
         }
@@ -513,6 +536,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -540,6 +564,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -567,6 +592,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P2",
           "status": "planned"
         }
@@ -594,6 +620,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -609,6 +636,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -624,6 +652,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -639,6 +668,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -651,6 +681,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         }
@@ -677,6 +708,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -691,6 +723,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -705,6 +738,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -720,6 +754,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P2",
           "status": "planned"
         }
@@ -741,6 +776,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -753,6 +789,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -765,6 +802,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -777,6 +815,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         },
@@ -789,6 +828,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -810,6 +850,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -831,6 +872,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         }
@@ -852,6 +894,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         }
@@ -873,6 +916,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -885,6 +929,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -897,6 +942,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P1",
           "status": "planned"
         },
@@ -909,6 +955,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P2",
           "status": "planned"
         },
@@ -921,6 +968,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 1800,
+          "duration_s": 600,
           "priority": "P2",
           "status": "planned"
         }
@@ -942,6 +990,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }
@@ -967,6 +1016,7 @@
           "scale": 1.0,
           "repeats": 3,
           "timeout_s": 900,
+          "duration_s": 120,
           "priority": "P1",
           "status": "planned"
         }

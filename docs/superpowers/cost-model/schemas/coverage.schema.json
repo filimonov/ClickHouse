@@ -54,6 +54,11 @@
                 "timeout_s": {
                   "type": "integer"
                 },
+                "duration_s": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "declared pass duration in seconds; the runtime estimate never budgets a pass shorter than this; at most timeout_s"
+                },
                 "priority": {
                   "enum": [
                     "P1",
@@ -75,6 +80,7 @@
                 "scale",
                 "repeats",
                 "timeout_s",
+                "duration_s",
                 "priority",
                 "status"
               ],

@@ -213,6 +213,7 @@ class CoverageTests(ArtifactTestCase):
             ("cards", 0, "name"), ("cards", 0, "family"), ("cards", 0, "model_variants"),
             ("cards", 0, "cases", 0, "case_id"), ("cards", 0, "cases", 0, "priority"),
             ("cards", 0, "cases", 0, "status"), ("cards", 0, "cases", 0, "timeout_s"),
+            ("cards", 0, "cases", 0, "duration_s"),
             ("evidence", 0, "coefficient"), ("evidence", 0, "span"), ("evidence", 0, "role"),
             ("evidence", 0, "prediction_commit"), ("evidence", 0, "measurement_ids"),
             ("domain", "variants"), ("domain", "operations"), ("domain", "families"),
@@ -232,6 +233,13 @@ class CoverageTests(ArtifactTestCase):
                             with_value(c, ("evidence", f, "role"), "holdout"), "prediction_commit")
         self.assert_valid(artifacts.validate_coverage, with_value(c, ("evidence", f, "role"), "validation"))
         self.assert_valid(artifacts.validate_coverage, with_value(c, ("evidence", f, "prediction_commit"), None))
+
+    def test_coverage_duration_is_a_floor_below_the_timeout(self):
+        c = load("coverage.json")
+        self.assert_rejects(artifacts.validate_coverage, with_value(c, ("cards", 0, "cases", 0, "duration_s"), -1),
+                            "duration_s")
+        self.assert_rejects(artifacts.validate_coverage, with_value(c, ("cards", 0, "cases", 0, "duration_s"), 10 ** 6),
+                            "duration_s")
 
     def test_coverage_rejects_bad_role_priority(self):
         c = load("coverage.json")

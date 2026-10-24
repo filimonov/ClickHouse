@@ -367,7 +367,7 @@ def validate_experiment(d):
 def validate_coverage(d):
     case = obj({
         "case_id": nonempty_string, "policies": list_of(nonempty_string, min_len=1), "replicas": integer,
-        "scale": number, "repeats": integer, "timeout_s": integer,
+        "scale": number, "repeats": integer, "timeout_s": integer, "duration_s": integer,
         "priority": enum("P1", "P2"), "status": enum("planned", "run", "cut"),
     })
     card = obj({"name": nonempty_string, "family": nonempty_string,
@@ -386,6 +386,12 @@ def validate_coverage(d):
     }
     problems = _run(obj(spec), d)
     if not problems:
+        for i, c in enumerate(d["cards"]):
+            for j, k in enumerate(c["cases"]):
+                # The estimate floors each pass at duration_s; a pass longer than its timeout cannot finish.
+                if not 0 <= k["duration_s"] <= k["timeout_s"]:
+                    problems.append(f"$.cards[{i}].cases[{j}].duration_s: must be within 0..timeout_s "
+                                    f"({k['timeout_s']}), got {k['duration_s']}")
         for i, row in enumerate(d["evidence"]):
             # A held-out row is only honest if the prediction predates the measurement.
             if row["role"] == "holdout" and row["prediction_commit"] is None:

@@ -7,7 +7,7 @@
       "family": "write_path",
       "model_variants": ["s3", "s3plain", "cas"],
       "cases": [
-        {"case_id": "small_part", "policies": ["s3_default"], "replicas": 1, "scale": 1.0, "repeats": 3, "timeout_s": 300, "priority": "P1", "status": "planned"}
+        {"case_id": "small_part", "policies": ["s3_default"], "replicas": 1, "scale": 1.0, "repeats": 3, "timeout_s": 300, "duration_s": 120, "priority": "P1", "status": "planned"}
       ]
     }
   ],
