@@ -9965,7 +9965,7 @@
     {
       "id": "catchup_requests_per_missed_part",
       "block": "topology_recovery",
-      "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+      "label": "Requests per part a restarted replica fetches to catch up, per S3 operation (replication report)",
       "kind": "measured",
       "scope": "cluster",
       "unit": "count",
@@ -9973,7 +9973,8 @@
       "enum": null,
       "table": {
         "index": [
-          "variant_id"
+          "variant_id",
+          "replication_op"
         ],
         "dim": "count"
       },
