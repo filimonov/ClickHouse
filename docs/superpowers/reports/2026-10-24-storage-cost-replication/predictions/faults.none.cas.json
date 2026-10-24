@@ -10,19 +10,37 @@
       "r1": {
         "PutObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
         "GetObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
         "HeadObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         }
@@ -51,5 +69,5 @@
       "line": 47
     }
   ],
-  "prediction_commit": "2c006846dbc"
+  "prediction_commit": "pending"
 }

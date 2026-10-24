@@ -1,0 +1,101 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "faults.multipart-abort-part3b",
+  "policy": "cas",
+  "inputs": {
+    "basis": "assumption"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "CreateMultipartUpload": {
+          "min": 8,
+          "max": 8,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
+        },
+        "UploadPart": {
+          "min": 48,
+          "max": 48,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
+        },
+        "AbortMultipartUpload": {
+          "min": 8,
+          "max": 8,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the retry strategy retries a retryable error up to s3_retry_attempts times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "and an outer loop reissues the request up to s3_retry_attempts + 1 times: a request that always fails is sent (s3_retry_attempts + 1)^2 times",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 852
+    },
+    {
+      "claim": "s3_retry_attempts defaults to 500: one injected failure is retried once and succeeds",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 47
+    },
+    {
+      "claim": "a failed write buffer is cancelled and tries to abort its multipart upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 244
+    },
+    {
+      "claim": "the abort sends AbortMultipartUpload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 469
+    }
+  ],
+  "prediction_commit": "pending"
+}

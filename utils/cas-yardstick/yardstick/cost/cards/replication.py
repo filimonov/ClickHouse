@@ -130,6 +130,10 @@ class ReplicationCard(LifecycleCard):
     policies = ('s3', 's3plain', 'cas', 'local')
     replicas = 2
     replicated = True
+    # The CAS ref publisher and lease run in the background, so a CAS window is not deterministic; every other
+    # policy is compared exactly by the card itself (`exact`), whatever the record's mode says.
+    mode = 'stochastic'
+    exact_policies = ('s3', 's3plain', 'local')
 
     def inventory_families(self, ctx):
         # CAS lease and GC control objects are maintenance by key family; GC is off in these cards.
@@ -182,6 +186,7 @@ class ReplicationCard(LifecycleCard):
 
     def measured(self, ctx):
         p = self.p(ctx)
+        self.state(ctx)['t0_us'] = time.time_ns() // 1000
         if p['window'] == 'inserts':
             n = self.inserts(ctx)
             for i in range(p.get('setup_inserts', 0), p.get('setup_inserts', 0) + n):
@@ -193,7 +198,8 @@ class ReplicationCard(LifecycleCard):
         raise ValueError(f'{self.name}: unknown params.window {p["window"]!r}')
 
     def part_logs(self, ctx) -> dict:
-        t0 = ctx.window()['t_start_us']
+        # The card's own window-start time: a local-disk pass has no proxy marks to read it from.
+        t0 = self.state(ctx)['t0_us']
         out = {}
         for name in self.names():
             rows = json_rows(self.client_of(ctx, name), PART_LOG_SQL.format(db=DATABASE, table=self.table, t0=t0))
@@ -226,7 +232,8 @@ class ReplicationCard(LifecycleCard):
 
     def common_assertions(self, ctx, draft) -> dict:
         pred = self.predicted(ctx)
-        out = compare_ledger(pred, draft['ledger']['foreground'], self.mode == 'deterministic')
+        exact = self.exact(ctx)
+        out = compare_ledger(pred, draft['ledger']['foreground'], exact)
         for key, want in pred['expected']['observations'].items():
             out[f'observation.{key}'] = check_observation(want, draft['observations'].get(key), draft['observations'])
         rows = self.p(ctx)['expected_rows']
@@ -234,9 +241,12 @@ class ReplicationCard(LifecycleCard):
             out[f'rows.{name}'] = (rows, actual)
         active = self.state(ctx)['active']
         out['active_parts.equal'] = (active[self.names()[0]], active[self.follower(ctx)])
-        if self.mode == 'deterministic':
+        if exact:
             out['window.crossing'] = ([], draft['window']['crossing'])
         return out
+
+    def exact(self, ctx) -> bool:
+        return self.p(ctx).get('exact', True) and ctx.policy in self.exact_policies
 
     def assertions(self, ctx, draft):
         return self.common_assertions(ctx, draft)
@@ -330,6 +340,9 @@ class NaturalReplicationCard(ReplicationCard):
 
     mode = 'stochastic'
 
+    def exact(self, ctx) -> bool:
+        return False
+
     def busy(self, ctx) -> bool:
         where = f"database = '{DATABASE}' AND table = '{self.table}'"
         sql = (f'SELECT (SELECT count() FROM system.merges WHERE {where}) + '
@@ -350,6 +363,7 @@ class NaturalReplicationCard(ReplicationCard):
 
     def measured(self, ctx):
         p, n = self.p(ctx), self.inserts(ctx)
+        self.state(ctx)['t0_us'] = time.time_ns() // 1000
         for i in range(n):
             self.insert(ctx, i)
         st = self.state(ctx)
@@ -396,8 +410,12 @@ class RestartCatchup(ReplicationCard):
     name = 'restart-catchup'
     mode = 'stochastic'
 
+    def exact(self, ctx) -> bool:
+        return False
+
     def measured(self, ctx):
         p, st = self.p(ctx), self.state(ctx)
+        st['t0_us'] = time.time_ns() // 1000
         follower = int(self.follower(ctx)[1:])
         ctx.cluster.stop(follower)
         st['t_stop_us'] = time.time_ns() // 1000

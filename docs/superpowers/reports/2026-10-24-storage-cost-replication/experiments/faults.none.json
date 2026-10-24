@@ -32,6 +32,11 @@
     "rows": 100000,
     "inserts": 1,
     "expect_insert_failure": false,
+    "expect_retry_chain": {
+      "s3": true,
+      "s3plain": true,
+      "cas": false
+    },
     "expected_failed_attempts": 0,
     "faults": []
   },

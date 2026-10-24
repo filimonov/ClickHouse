@@ -19,6 +19,36 @@
           "max": 80,
           "basis": "assumption",
           "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "CopyObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
         }
       },
       "r2": {
@@ -29,6 +59,36 @@
           "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
         },
         "GetObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "HeadObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the s3_plain_rewritable graph (R3) is not measured yet; the bound spans one object per part file plus directory metadata objects"
+        },
+        "CopyObject": {
           "min": 0,
           "max": 80,
           "basis": "assumption",
@@ -99,5 +159,5 @@
       "line": 2955
     }
   ],
-  "prediction_commit": "2c006846dbc"
+  "prediction_commit": "pending"
 }

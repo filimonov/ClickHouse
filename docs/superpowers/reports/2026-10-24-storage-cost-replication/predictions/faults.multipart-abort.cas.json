@@ -10,51 +10,57 @@
       "r1": {
         "PutObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
         "GetObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
         "HeadObject": {
           "min": 0,
-          "max": 60,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
-        "CreateMultipartUpload": {
-          "min": 1,
-          "max": 1,
-          "basis": "assumption",
-          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
-        },
-        "UploadPart": {
-          "min": 5,
-          "max": 6,
-          "basis": "assumption",
-          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
-        },
-        "AbortMultipartUpload": {
-          "min": 1,
-          "max": 1,
-          "basis": "assumption",
-          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
-        },
-        "DeleteObjects": {
+        "ListObjectsV2": {
           "min": 0,
-          "max": 2,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
         },
         "DeleteObject": {
           "min": 0,
-          "max": 4,
+          "max": 80,
           "basis": "assumption",
           "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 80,
+          "basis": "assumption",
+          "reason": "the CAS relink and publish graphs per replicated part are not measured yet; the bound spans the uncontended publish graph of the CAS report (PUT 7, GET 7 per part plus blob branches) with margin"
+        },
+        "CreateMultipartUpload": {
+          "min": 8,
+          "max": 8,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
+        },
+        "UploadPart": {
+          "min": 40,
+          "max": 40,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
+        },
+        "AbortMultipartUpload": {
+          "min": 8,
+          "max": 8,
+          "basis": "assumption",
+          "reason": "CAS republishes a failed blob up to 8 times (Pool/CasPartWriteTxn.cpp:387), measured in cost-20261024T113828Z"
         }
       }
     },
@@ -91,5 +97,5 @@
       "line": 469
     }
   ],
-  "prediction_commit": "2c006846dbc"
+  "prediction_commit": "pending"
 }

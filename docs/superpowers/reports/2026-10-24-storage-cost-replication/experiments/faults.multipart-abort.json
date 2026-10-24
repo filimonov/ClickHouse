@@ -33,7 +33,12 @@
     "rows": 40000,
     "inserts": 1,
     "expect_insert_failure": true,
-    "expected_failed_attempts": 4,
+    "expected_failed_attempts": {
+      "s3": 4,
+      "s3plain": 4,
+      "cas": 32
+    },
+    "expect_retry_chain": false,
     "faults": [
       {
         "caller": "r1",

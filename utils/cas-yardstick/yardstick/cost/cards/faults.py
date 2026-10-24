@@ -7,12 +7,16 @@ cleared when the INSERT returns, so no later request of the pass can match them.
 """
 from __future__ import annotations
 
+import time
+
 from .. import ledger as L
 from .cas_probe import CAS_FAMILIES
 from .lifecycle import LifecycleCard, check_observation
 from .probes import compare_ledger, register, window_rows
 
 FAILED = ('injected', 'dropped')
+ABORT_WAIT_S = 30  # the server's own abort of a failed upload may land after the INSERT returned
+POLL_S = 0.5
 
 
 def retry_view(rows: list) -> dict:
@@ -44,6 +48,13 @@ class Faults(LifecycleCard):
     name = 'faults'
     policies = ('s3', 's3plain', 'cas')
     expected_exceptions = (RuntimeError,)
+    # CAS background ref and lease traffic makes its window non-deterministic; the card compares the others exactly.
+    mode = 'stochastic'
+    exact_policies = ('s3', 's3plain')
+
+    def per_policy(self, ctx, key):
+        value = self.p(ctx)[key]
+        return value[ctx.policy] if isinstance(value, dict) else value
 
     def inventory_families(self, ctx):
         return CAS_FAMILIES if ctx.policy.removesuffix('_cached') == 'cas' else []
@@ -63,10 +74,16 @@ class Faults(LifecycleCard):
     def complete(self, ctx, timeout_s=300):
         super().complete(ctx, timeout_s)
         # The incomplete inventory after the window, before the teardown or the runner's cleanup can abort anything.
-        bounds = ctx.replay()
-        self.state(ctx)['incomplete_after'] = max(sum(p['size'] for p in inv.incomplete.values())
-                                                  for inv in (bounds.lower, bounds.upper))
-        self.state(ctx)['objects_after'] = len(bounds.upper.objects)
+        # The server aborts in the failed write buffer's cancel path; wait for that abort to reach the ledger.
+        st, t0 = self.state(ctx), time.monotonic()
+        while True:
+            bounds = ctx.replay()
+            st['incomplete_after'] = max(sum(p['size'] for p in inv.incomplete.values())
+                                         for inv in (bounds.lower, bounds.upper))
+            if st['incomplete_after'] == 0 or time.monotonic() - t0 >= ABORT_WAIT_S:
+                break
+            time.sleep(POLL_S)
+        st['abort_wait_s'] = time.monotonic() - t0
 
     def observe(self, ctx, draft):
         rows = self.caller_rows(ctx, draft)
@@ -81,24 +98,25 @@ class Faults(LifecycleCard):
                 'uploads_created': len(created),
                 'aborts': [{'upstream': r['upstream']['outcome'], 'downstream': r['downstream']['outcome']} for r in aborts],
                 'part2_attempts': len(part2),
-                'incomplete_after_window': st['incomplete_after'],
+                'incomplete_after_window': st['incomplete_after'], 'abort_wait_s': st['abort_wait_s'],
                 'insert_failed': bool(draft['observations'].get('expected_exceptions'))}
 
     def assertions(self, ctx, draft):
         pred = self.predicted(ctx)
-        out = compare_ledger(pred, draft['ledger']['foreground'], self.mode == 'deterministic')
+        exact = ctx.policy in self.exact_policies
+        out = compare_ledger(pred, draft['ledger']['foreground'], exact)
         for key, want in pred['expected']['observations'].items():
             out[f'observation.{key}'] = check_observation(want, draft['observations'].get(key), draft['observations'])
         obs, p = draft['observations'], self.p(ctx)
-        out['faults_fired'] = (p['expected_failed_attempts'], obs['retries']['failed_attempts'])
+        out['faults_fired'] = (self.per_policy(ctx, 'expected_failed_attempts'), obs['retries']['failed_attempts'])
         out['insert_failed'] = (p['expect_insert_failure'], obs['insert_failed'])
         rows = 0 if p['expect_insert_failure'] else self.inserts(ctx) * p['rows']
         out['rows.' + p['replica']] = (rows, self.state(ctx).get('rows', [None])[0])
         if p['expect_insert_failure']:
             out['abort_by_server_ok'] = (True, any(a['upstream'] == 'ok' for a in obs['aborts']))
             out['incomplete_after_window'] = (0, obs['incomplete_after_window'])
-        else:
+        elif self.per_policy(ctx, 'expect_retry_chain'):
             out['failed_not_retried'] = ([], obs['retries']['failed_not_retried'])
-        if self.mode == 'deterministic':
+        if exact:
             out['window.crossing'] = ([], draft['window']['crossing'])
         return out
