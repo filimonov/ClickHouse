@@ -1,0 +1,98 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-lifecycle.drop-60s",
+  "policy": "cas",
+  "inputs": {
+    "exact": false,
+    "role": "holdout",
+    "rule": "delay to a stage = (rounds to the stage - phase) x (interval + round duration); the phase of the retire inside an interval is in [0, 1), so condemn lies in [0, 1.1] periods and the blob delete in [2, 3.1] (fit at 10 s: 0.88 and 2.90 periods)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 70,
+          "max": 110,
+          "basis": "assumption",
+          "reason": "GC rounds run during the window; a foreground request inside a round is attributed to maintenance, so the split is not exact"
+        },
+        "GetObject": {
+          "min": 50,
+          "max": 100,
+          "basis": "assumption",
+          "reason": "GC rounds run during the window; a foreground request inside a round is attributed to maintenance, so the split is not exact"
+        },
+        "HeadObject": {
+          "min": 5,
+          "max": 12,
+          "basis": "assumption",
+          "reason": "GC rounds run during the window; a foreground request inside a round is attributed to maintenance, so the split is not exact"
+        }
+      }
+    },
+    "observations": {
+      "cohort_size": 20,
+      "cohort_manifests": 10,
+      "cohort_blobs": 10,
+      "reclaim_rounds.condemn": 1,
+      "reclaim_rounds.manifest_delete": 1,
+      "reclaim_rounds.blob_delete": 3,
+      "reclaim_rounds.total": 3,
+      "reclaim_periods.condemn": {
+        "min": 0.0,
+        "max": 1.1
+      },
+      "reclaim_periods.blob_delete": {
+        "min": 2.0,
+        "max": 3.1
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "cas_gc_interval_sec: seconds between GC rounds",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    },
+    {
+      "claim": "the scheduler loop waits a full interval after each round returns, so a round starts interval seconds after the previous one finished",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 349
+    },
+    {
+      "claim": "a condemned blob graduates to delete_pending in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 65
+    },
+    {
+      "claim": "a delete_pending blob is deleted with an exact-token delete in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 66
+    },
+    {
+      "claim": "cas_gc_log Finish rows carry the per-round counters",
+      "path": "tmp/src-26.8/src/Interpreters/ContentAddressedGarbageCollectionLog.cpp",
+      "line": 48
+    },
+    {
+      "claim": "blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "gc/hb is the advisory GC heartbeat",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 344
+    }
+  ],
+  "prediction_commit": "pending"
+}

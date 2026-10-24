@@ -20,7 +20,7 @@ R = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-24-stor
 EXPERIMENTS = os.path.join(R, 'experiments')
 CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout', 'mix-holdout-2'},
          'cas-drop': {'table-sync'},
-         'gc-lifecycle': {'drop', 'merge'}, 'gc-idle': {'populated'},
+         'gc-lifecycle': {'drop', 'drop-60s', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-10k', 'objects-30k', 'objects-100k'},
          'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
@@ -333,6 +333,8 @@ class GcLifecycleTest(unittest.TestCase):
             self.assertEqual(obs['reclaim_delay_s'], {'manifest_delete': 11.0, 'blob_delete': 22.0, 'condemn': 11.0,
                                                       'total': 22.0})
             self.assertEqual(obs['reclaim_rounds'], {'manifest_delete': 1, 'blob_delete': 2, 'condemn': 1, 'total': 2})
+            # No duration on the fixture rows: one period is the 10 s interval.
+            self.assertEqual(obs['reclaim_periods.blob_delete'], 2.2)
             draft = {'ledger': {'foreground': {}}, 'observations': obs, 'window': {'crossing': []},
                      'inventory': {'byte_hours': {'garbage': {'lower': 1.0, 'upper': 2.0}}}}
             st['split'] = {'foreground': []}

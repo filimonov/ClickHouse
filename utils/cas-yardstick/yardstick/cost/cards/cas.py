@@ -399,8 +399,15 @@ class GcLifecycle(GcCard):
                 'cohort_blobs': sum(1 for i in st['cohort'] if '/blobs/' in i[1]),
                 'reclaim_delay_s': delays, 'reclaim_rounds': {k: rounds_until(t) for k, t in stage_t.items()},
                 **{f'reclaim_rounds.{k}': rounds_until(t) for k, t in stage_t.items()},
+                # Delays in round periods (interval + mean round duration), so fits at one interval serve another.
+                **{f'reclaim_periods.{k}': (None if v is None else v / self.round_period_s(ctx)) for k, v in delays.items()},
                 'deleting_callers': sorted({d['caller'] for d in st['deleted'].values()}),
                 'gc_interval_s': self.p(ctx)['gc_interval_s']}
+
+    def round_period_s(self, ctx) -> float:
+        """Seconds from one round's start to the next: the interval plus the mean round duration."""
+        durations = [int(f['duration_ms']) for f in self.state(ctx)['finishes'] if 'duration_ms' in f]
+        return self.p(ctx)['gc_interval_s'] + (sum(durations) / len(durations) / 1000 if durations else 0.0)
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
