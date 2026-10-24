@@ -72,14 +72,33 @@
     return f.format(value).replace('-', '−');
   }
 
+  // A count per period reads as "per day", not "count/day" or "1/s".
+  const PERIOD_WORDS = { s: 'second', second: 'second', minute: 'minute', hour: 'hour', day: 'day', month: 'month' };
+  function plainUnit(unit) {
+    const m = /^(?:count|1)\/([a-z]+)$/.exec(unit || '');
+    return m && PERIOD_WORDS[m[1]] ? `per ${PERIOD_WORDS[m[1]]}` : unit;
+  }
+
   // Thousands separators; whole numbers above 1,000, two decimals above 1, six significant-ish below. The unit is
-  // kept as the contract states it; dimensionless units ("1", "count") are omitted.
+  // the contract's in plain words; dimensionless units ("1", "count") are omitted.
   function fmtQuantity(value, unit) {
     if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`fmtQuantity: expected a finite number, got ${JSON.stringify(value)}`);
     const abs = Math.abs(value);
     const digits = abs >= 1000 ? 0 : abs >= 1 ? 2 : 6;
     const s = nf(`q:${digits}`, { maximumFractionDigits: digits }).format(value).replace('-', '−');
-    return unit && unit !== '1' && unit !== 'count' ? `${s} ${unit}` : s;
+    return unit && unit !== '1' && unit !== 'count' ? `${s} ${plainUnit(unit)}` : s;
+  }
+
+  // Three significant digits for sizing figures the reader compares, not reconciles: "169 IOPS", "42.2 MiB/s".
+  function fmtSig(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`fmtSig: expected a finite number, got ${JSON.stringify(value)}`);
+    return nf('sig3', { maximumSignificantDigits: 3 }).format(value).replace('-', '−');
+  }
+
+  // A size in GiB shown in MiB below 1 GiB: "207 MiB", "3.63 GiB", "19,500 GiB".
+  function fmtSize(gib) {
+    if (typeof gib !== 'number' || !Number.isFinite(gib)) throw new Error(`fmtSize: expected a finite number, got ${JSON.stringify(gib)}`);
+    return gib > 0 && gib < 1 ? `${fmtSig(gib * 1024)} MiB` : `${fmtSig(gib)} GiB`;
   }
 
   // Unit prices keep up to six decimals ($0.0004 per 1,000 requests); totals use fmtMoney.
@@ -188,7 +207,16 @@
         return `${label} cannot ${joinWords(ops.map((op) => OP_CANNOT[op] || opWord(op)))}`
           + `${mut ? `; this workload runs ${fmtQuantity(mut)} ALTER UPDATE/DELETE per month` : ''}`;
       }
-      case 'unavailable': return ops.length ? `${label}: ${joinWords(ops.map(opWord))} not measured` : `${label}: not measured for this workload`;
+      case 'unavailable': {
+        const bad = infeasibleLayout(vr.reason);
+        if (bad && bad.need_gib !== null) {
+          return `${label} needs ${fmtSize(bad.need_gib)} per replica; the largest gp3 layout is ${bad.volumes} volumes of ${fmtQuantity(bad.max_gib, 'GiB')} (${fmtQuantity(bad.volumes * bad.max_gib, 'GiB')})`;
+        }
+        if (bad) return `${label}: no gp3 volume layout meets this workload's demand`;
+        const manual = /manual provisioning with volumes_per_replica = \S+ needs (\w+)/.exec(vr.reason || '');
+        if (manual) return `${label}: the manual volume layout needs a value for ${(contract.registry.find((q) => q.id === manual[1]) || {}).label || manual[1]}`;
+        return ops.length ? `${label}: ${joinWords(ops.map(opWord))} not measured` : `${label}: not measured for this workload`;
+      }
       case 'unsupported_cut': return `${label}: a measurement this workload needs for ${ops.length ? joinWords(ops.map(opWord)) : 'one operation'} is missing`;
       case 'backlog_grows': return `${label}: ${ops.length ? joinWords(ops.map(opWord)) : 'the background work'} cannot keep up with this workload; the backlog grows`;
       default: throw new Error(`unknown variant state ${JSON.stringify(vr.state)}`);
@@ -226,7 +254,7 @@
     const v = result.cheapest;
     if (!v || priced.length < 2) return { variant: null, text: null, priced: priced.length };
     const ex = result.variants[v].extrapolated || (contract && extrapolatedCells(contract, v, result.variants[v]).length > 0);
-    return { variant: v, text: ex ? 'cheapest (extrapolated)' : `cheapest of ${priced.length} priced`, priced: priced.length };
+    return { variant: v, text: `cheapest of ${priced.length} priced${ex ? ', extrapolated' : ''}`, priced: priced.length };
   }
 
   function barSegments(vr, preset) {
@@ -335,18 +363,21 @@
         }
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
-        const hint = pageState === 'ok' && c.money === 0 ? zeroHint(op, fields) : null;
-        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed), clickable: true, hint };
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed), clickable: true, money: c.money };
       });
+      // "no cold reads in this workload" applies to the whole row: said once, beside the row label.
+      const zero = pageState === 'ok' && cells.some((c) => c.state === 'ok' && c.money === 0);
+      for (const c of cells) delete c.money;
       for (const c of cells) {
         const vr = result.variants[c.variant];
         c.notes = c.state === 'ok' ? (vr.notes || []).filter((n) => n.kind === 'cell' && n.operation === op).map((n) => cite(noteText(n), measuredBuild(contract))) : [];
       }
-      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: null });
+      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: zero ? zeroHint(op, fields) : null });
     }
     const best = cheapestOf(result, contract);
     return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows,
-      column_notes: pageState === 'cannot_reproduce' ? {} : columnNotes(result, contract, preset, fields, pageState) };
+      column_notes: pageState === 'cannot_reproduce' ? {} : columnNotes(result, contract, preset, fields, pageState),
+      column_lines: pageState === 'cannot_reproduce' ? {} : columnLines(result, contract, preset, fields, pageState) };
   }
 
   // ---- drill ------------------------------------------------------------------------------------
@@ -540,7 +571,7 @@
         }
       }
       if (!f.value_text) f.value_text = f.kind === 'derivation' ? `derived: ${f.rule_text}` : valueText(f.value, q);
-      f.display_unit = f.rate ? q.unit.replace(/\/day$/, `/${per}`) : f.unit;
+      f.display_unit = plainUnit(f.rate ? q.unit.replace(/\/day$/, `/${per}`) : f.unit);
       f.display_value = roundDisplay(shown(q, f.value));
       f.display_range = f.range ? f.range.map((x) => roundDisplay(shown(q, x))) : null;
       if (f.rule_text) f.derived_text = `Derived from ${worded(f.rule_text)}`;
@@ -599,22 +630,42 @@
     const headroom = val('ebs_capacity_headroom');
     const peak = val('peak_factor');
     const d = p.demand || {};
+    const priced = pageState === 'ok' && preset && !preset.structure_only;
     const above = (vr.lines || []).filter((l) => l.rule_id === 'block_iops' || l.rule_id === 'block_mibps').reduce((s, l) => s + l.money, 0);
+    const extra = priced && above > 0 ? fmtMoney(above / p.replicas, preset.currency) : null;
+    const iopsNeed = d.peak_iops || 0;
+    const mibpsNeed = d.peak_mibps || 0;
     let verdict;
-    if (r.feasible === false) verdict = `no feasible gp3 layout: ${(r.notes || []).join('; ')}`;
-    else if (r.volumes > 1) verdict = `${r.volumes} gp3 volumes of ${fmtQuantity(r.size_gib, 'GiB')} (${r.layout})`;
-    else if (g && r.iops <= g.iops_baseline && r.mibps <= g.mibps_baseline) verdict = 'gp3 baseline sufficient';
-    else verdict = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${pageState === 'ok' && preset && !preset.structure_only ? ` (+${fmtMoney(above / p.replicas, preset.currency)}/month per replica)` : ''}`;
+    let brief;
+    if (r.feasible === false) {
+      verdict = `no feasible gp3 layout: ${(r.notes || []).join('; ')}`;
+      brief = 'no gp3 layout fits';
+    } else if (r.volumes > 1) {
+      // Why one volume is not enough decides what the reader should look at: the peak or the size.
+      const why = g && (iopsNeed > g.iops_baseline || mibpsNeed > g.mibps_baseline)
+        ? `one volume's baseline (${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s) is below the peak`
+        : g && g.size_gib && (d.capacity_gib || 0) > g.size_gib[1] ? `one volume holds at most ${fmtQuantity(g.size_gib[1], 'GiB')}`
+          : r.layout;
+      const cost = !priced ? null : extra ? `+${extra}/month per replica above the baseline` : 'no charge above the baseline';
+      verdict = [`${r.volumes} striped gp3 volumes of ${fmtQuantity(r.size_gib, 'GiB')}`, why, cost].filter(Boolean).join('; ');
+      brief = `${r.volumes} striped volumes${extra ? `, +${extra}/month` : ''}`;
+    } else if (g && r.iops <= g.iops_baseline && r.mibps <= g.mibps_baseline) {
+      verdict = 'gp3 baseline sufficient';
+      brief = 'gp3 baseline ok';
+    } else {
+      verdict = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${priced ? ` (+${fmtMoney(above / p.replicas, preset.currency)}/month per replica)` : ''}`;
+      brief = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${extra ? `, +${extra}/month` : ''}`;
+    }
     const components = [];
     for (const [op, c] of Object.entries(vr.cells || {})) {
       const q = (kind) => (c.rows || []).filter((x) => x.row_type === 'block_io' && x.op_kind === kind && x.state === 'ok').reduce((s, x) => s + x.quantity, 0);
       const iops = q('iops');
       const mibps = q('mibps');
-      if (iops > 0 || mibps > 0) components.push(`${OPERATION_LABELS[op] || op}: ${fmtQuantity(iops)} IOPS, ${fmtQuantity(mibps)} MiB/s`);
+      if (iops > 0 || mibps > 0) components.push(`${OPERATION_LABELS[op] || op}: ${fmtSig(iops)} IOPS, ${fmtSig(mibps)} MiB/s`);
     }
-    const need = `${fmtQuantity(d.peak_iops || 0)} IOPS, ${fmtQuantity(d.peak_mibps || 0)} MiB/s`;
+    const need = `${fmtSig(iopsNeed)} IOPS, ${fmtSig(mibpsNeed)} MiB/s`;
     const lines = [
-      `Volume size per replica: ${fmtQuantity(d.capacity_gib || 0, 'GiB')}${headroom !== null ? ` (stored data × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
+      `Volume size per replica: ${fmtSize(d.capacity_gib || 0)}${headroom !== null ? ` (stored data × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
       `Peak demand per replica: ${need}${peak !== null ? ` (average × ${fmtQuantity(peak)} peak_factor)` : ''}`,
       g ? `gp3 baseline per volume: ${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s included` : null,
       `${r.manual ? 'Manual layout' : 'Cheapest feasible layout'}: ${r.volumes} × ${fmtQuantity(r.size_gib, 'GiB')}, ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s, on ${p.replicas} ${p.replicas === 1 ? 'replica' : 'replicas'}`,
@@ -622,18 +673,32 @@
       ...components.map((x) => `Demand from ${x}`),
     ].filter(Boolean);
     const instance = (vr.notes || []).find((n) => n.kind === 'instance_class');
+    // A column that keeps nothing on the volume pays only the smallest one; "0 GiB, needs 0 IOPS" says less.
+    const empty = !(d.capacity_gib > 0) && !(iopsNeed > 0) && !(mibpsNeed > 0);
     return {
       variant: v, replicas: p.replicas, capacity_gib: d.capacity_gib, peak_iops: d.peak_iops, peak_mibps: d.peak_mibps, headroom, peak_factor: peak,
       volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
-      // A column that keeps nothing on the volume pays only the smallest one; "0 GiB, needs 0 IOPS" says less.
-      short: !(d.capacity_gib > 0) && !(d.peak_iops > 0) && !(d.peak_mibps > 0)
-        ? `no local data; the minimum gp3 volume (${fmtQuantity(r.size_gib, 'GiB')}) per replica`
-        : `${fmtQuantity(d.capacity_gib || 0, 'GiB')} per replica, needs ${need}: ${verdict}`,
+      short: empty ? `no local data; the minimum gp3 volume (${fmtSize(r.size_gib)}) per replica`
+        : `${fmtSize(d.capacity_gib || 0)} per replica, needs ${need}: ${verdict}`,
+      // One line for the breakdown's notes row; the column dialog has the rest.
+      line: empty ? `no local data · minimum gp3 volume ${fmtSize(r.size_gib)}`
+        : `${fmtSize(d.capacity_gib || 0)}/replica · ${fmtSig(iopsNeed)} IOPS · ${fmtSig(mibpsNeed)} MiB/s · ${brief}`,
       instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
     };
   }
 
-  // Column-level notes for the bottom row of the breakdown table: short lines; the column dialog has the detail.
+  // A block column that no gp3 layout can hold: the billing reason lists each layout and the limit it breaks.
+  function infeasibleLayout(reason) {
+    const m = /no feasible volume allocation: (.*)$/s.exec(String(reason || ''));
+    if (!m) return null;
+    const sizes = [...m[1].matchAll(/([a-z]+(\d*)): size_gib ([\d.]+) > ([\d.]+)/g)].map((x) => ({ volumes: Number(x[2] || 1), size: Number(x[3]), max: Number(x[4]) }));
+    const one = sizes.find((x) => x.volumes === 1);
+    if (!one) return { need_gib: null };
+    const most = Math.max(...sizes.map((x) => x.volumes));
+    return { need_gib: one.size, max_gib: one.max, volumes: most };
+  }
+
+  // Column-level notes: the column dialog lists them all.
   function columnNotes(result, contract, preset, fields, pageState) {
     const out = {};
     for (const v of contract.variants) {
@@ -646,6 +711,24 @@
       const by = (contract.evidence_by_variant || {})[v];
       if (by) items.push({ kind: 'evidence', text: `Evidence: ${by.fit_and_holdout} cells fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumption only` });
       out[v] = items;
+    }
+    return out;
+  }
+
+  // The notes row of the breakdown: one short line per column (sizing, else why it is off, else its evidence).
+  function columnLines(result, contract, preset, fields, pageState) {
+    const out = {};
+    for (const v of contract.variants) {
+      const vr = result.variants[v];
+      if (!vr) continue;
+      const sz = buildSizing(v, vr, preset, fields, pageState);
+      const bad = vr.state !== 'ok' ? infeasibleLayout(vr.reason) : null;
+      const by = (contract.evidence_by_variant || {})[v];
+      out[v] = sz ? sz.line
+        : bad ? (bad.need_gib !== null ? `no gp3 layout fits ${fmtSize(bad.need_gib)}/replica` : 'no gp3 layout fits')
+          : vr.state !== 'ok' ? cardSentence(v, vr, contract, null)
+            : by ? `evidence: ${by.fit_and_holdout} fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumed`
+              : (vr.lines || []).some((l) => l.rule_id === 'storage') ? 'storage GB read as GiB' : null;
     }
     return out;
   }
@@ -716,9 +799,13 @@
       const evidence = ui.measured_by ? cite(ui.measured_by, commit)
         : [ev.kind ? `${ev.kind}: ${cite(ev.ref, commit)}` : null, ids.length ? `${ids.length} measurement(s)` : null].filter(Boolean).join('; ');
       const validity = c && model().rangeOf(c) ? Object.entries(model().rangeOf(c)).map(([k, r]) => `${k} from ${fmtQuantity(r[0])} to ${fmtQuantity(r[1])}`).join('; ') : null;
+      // A value the user types is an input by definition, and "preset default" or "Default from <file>" repeats
+      // the Default row; a dialog for an input shows evidence only when it says more than that.
+      const userInput = !!q && q.kind === 'input';
+      const generic = userInput && (/^Assumed: (preset default|standard deployment profile|table key)\.$/.test(evidence) || /^Default from /.test(evidence));
       return {
-        kind: 'input', id: open.id, title: ui.short || (q && q.label) || open.id, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: kindText(q, c),
-        description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: evidence || null,
+        kind: 'input', id: open.id, title: ui.short || (q && q.label) || open.id, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: userInput ? null : kindText(q, c),
+        description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: (!generic && evidence) || null,
         range_text: (f && f.range_text) || (validity ? `measured for ${validity}` : 'no measured range: the value is used as entered'),
         value_text: f ? f.value_text : c && typeof c.value === 'number' ? fmtQuantity(c.value, c.dim) : null,
         derived_text: f && f.derived && f.derived_text ? f.derived_text : null,
@@ -743,7 +830,8 @@
       const fields = Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f]));
       const sz = buildSizing(open.variant, vr, preset, fields, result.page_state);
       const lines = [...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
-        ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing' && n.kind !== 'instance_class').map((n) => n.text)];
+        ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing').map((n) => n.text),
+        ...(vr.state === 'ok' ? [] : segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`))];
       return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs),
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
     }
@@ -874,6 +962,6 @@
     return vm;
   }
 
-  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

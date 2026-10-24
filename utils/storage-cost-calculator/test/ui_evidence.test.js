@@ -23,13 +23,14 @@ const row = (vm, op) => vm.table.rows.find((r) => r.operation === op);
 test('test_zero_cells_name_the_missing_work', () => {
   const C = load();
   const { vm, parts } = page(C);
-  for (const c of row(vm, 'mutations').cells) assert.equal(c.hint, 'no ALTER UPDATE/DELETE in this workload', c.variant);
-  assert.match(parts.table, /\$0\.00<\/button><span class="zero-hint">no ALTER UPDATE\/DELETE in this workload<\/span>/);
+  // The hint belongs to the row: said once beside its label, never per cell.
+  assert.equal(row(vm, 'mutations').note, 'no ALTER UPDATE/DELETE in this workload');
+  assert.match(parts.table, /<th scope="row">Mutations<span class="row-note">no ALTER UPDATE\/DELETE in this workload<\/span><\/th>/);
   // A $0 that comes from the model, not from a zero input, carries no hint.
-  assert.equal(row(vm, 'inserts').cells.find((c) => c.variant === 'ebs').hint, null);
+  assert.equal(row(vm, 'inserts').note, null);
   // Once the workload mutates, no hint remains on the row.
   const m = page(C, { mutations_per_month: 5 }).vm;
-  assert.ok(row(m, 'mutations').cells.every((c) => !c.hint));
+  assert.equal(row(m, 'mutations').note, null);
 });
 
 test('test_notes_live_in_the_table', () => {

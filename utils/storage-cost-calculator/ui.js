@@ -133,7 +133,7 @@
   const list = (items, cls) => (items.length ? `<ul${attr('class', cls)}>${items.join('')}</ul>` : '');
   const link = (ref) => (/^https?:\/\//.test(ref) ? `<a href="${esc(ref)}" rel="noopener" target="_blank">${esc(ref)}</a>` : esc(ref));
 
-  const rateUnit = (unit, per) => unit.replace(/\/day$/, `/${per}`);
+  const rateUnit = (unit, per) => viewmodel().plainUnit(unit.replace(/\/day$/, `/${per}`));
   // (i) button: opens the one info dialog for a registry row or coefficient (`id`), a cell or a column.
   const infoButton = (data, label) => `<button type="button" class="info-btn" data-action="info"${Object.entries(data).map(([k, v]) => attr(`data-${k}`, v)).join('')}`
     + ` aria-label="${esc(`About ${label}`)}" title="${esc(`About ${label}`)}">i</button>`;
@@ -304,16 +304,13 @@
       if (!c.clickable) return `<td class="cell-off"${lab} data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
       return `<td${lab}><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
         + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}`
-        + `${c.notes && c.notes.length ? infoButton({ 'info-kind': 'cell', variant: c.variant, operation: c.operation }, `${colLabel.get(c.variant)} ${r.label} notes`) : ''}`
-        + `${c.hint ? `<span class="zero-hint">${esc(c.hint)}</span>` : ''}</td>`;
+        + `${c.notes && c.notes.length ? infoButton({ 'info-kind': 'cell', variant: c.variant, operation: c.operation }, `${colLabel.get(c.variant)} ${r.label} notes`) : ''}</td>`;
     }).join('')}</tr>`).join('');
-    const notes = t.column_notes || {};
-    const notesRow = t.columns.some((c) => (notes[c.variant] || []).length)
-      ? `<tr class="notes-row" data-operation="notes"><th scope="row">Notes</th>${t.columns.map((c) => {
-        const items = notes[c.variant] || [];
-        return `<td data-label="${esc(c.label)}">${items.length ? `<ul class="col-notes">${items.map((n) => `<li data-kind="${esc(n.kind)}">${esc(n.text)}</li>`).join('')}</ul>`
-          + infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} notes`) : ''}</td>`;
-      }).join('')}</tr>` : '';
+    // One short line per column; the (i) opens the column dialog with sizing, instance, units and evidence.
+    const lines = t.column_lines || {};
+    const notesRow = t.columns.some((c) => lines[c.variant])
+      ? `<tr class="notes-row" data-operation="notes"><th scope="row">Notes</th>${t.columns.map((c) => `<td data-label="${esc(c.label)}">`
+        + `${lines[c.variant] ? `<span class="col-note">${esc(lines[c.variant])}${infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} notes`)}</span>` : ''}</td>`).join('')}</tr>` : '';
     return `<section class="section"><h2>Breakdown by workload type</h2><p class="mute">Select a cell to see how it is calculated.</p>`
       + `<div class="tbl"><table class="breakdown"><thead><tr><th scope="col">Workload type</th>${head}</tr></thead><tbody>${body}${notesRow}</tbody></table></div></section>`;
   }

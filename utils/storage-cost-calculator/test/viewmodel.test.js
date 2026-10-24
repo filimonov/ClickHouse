@@ -97,7 +97,7 @@ test('test_card_text_for_each_state', () => {
   assert.equal(card(alone, 'cas').cheapest, false);
   assert.equal(alone.table.columns.some((c) => c.cheapest), false);
   const exWin = rebuilt((x) => { x.variants[x.cheapest].extrapolated = true; });
-  assert.equal(card(exWin, res.cheapest).cheapest_text, 'cheapest (extrapolated)');
+  assert.equal(card(exWin, res.cheapest).cheapest_text, `cheapest of ${Object.values(res.variants).filter((x) => x.state === 'ok').length} priced, extrapolated`);
   // A state the view model does not know is an error, not a default text.
   const r0 = pipeline.resolveInputs(C, {}, [], {});
   const broken = JSON.parse(JSON.stringify(res));

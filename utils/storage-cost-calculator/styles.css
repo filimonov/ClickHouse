@@ -267,11 +267,9 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .field-head .badge, .panel-inputs .field-head .btn-small { font-size: 11px; padding: 0 6px; line-height: 18px; }
 .panel-inputs .group-note { margin: 4px 0; padding: 4px 8px; }
 .row-note { display: block; font-weight: 400; font-size: 12px; color: var(--mute); }
-.zero-hint { display: block; font-size: 12px; color: var(--mute); }
 .evidence-columns td { text-align: right; }
 .notes-row th, .notes-row td { vertical-align: top; }
-.col-notes { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--mute); display: inline; }
-.col-notes li { margin: 0 0 2px; }
+.col-note { font-size: 12px; color: var(--mute); }
 .card-sizing { font-size: 12px; color: var(--mute); margin: 8px 0 0; }
 .scenario-short .info-btn, .evidence-statement .info-btn, td .info-btn, .card-sizing .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .quick { grid-column: 1 / -1; display: flex; gap: 4px; }
@@ -287,8 +285,9 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .field-row { flex-direction: row; align-items: center; gap: 8px; }
 .panel-inputs .inputs > .block[data-block="prices"]:not([open]), .panel-inputs .inputs > .block[data-block="advanced"]:not([open]) { flex-basis: calc(50% - 3px); }
 @media (max-width: 420px) { .panel-inputs .settings-grid { grid-template-columns: minmax(0, 1fr); } }
-.panel-inputs .settings-grid .field-head { flex-wrap: nowrap; }
-.panel-inputs .settings-grid .field-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-inputs .settings-grid .field-head { flex-wrap: nowrap; align-items: flex-start; }
+/* A long setting name wraps to a second line; a cut-off name hides what the box means. */
+.panel-inputs .settings-grid .field-label { white-space: normal; overflow-wrap: normal; }
 .panel-inputs .field-row .field-label { white-space: nowrap; margin-right: 0; }
 .panel-inputs .field-row select { flex: 1 1 auto; min-width: 0; }
 /* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
