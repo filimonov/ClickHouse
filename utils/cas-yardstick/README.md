@@ -251,7 +251,7 @@ The cost rig (`yardstick/cost/`) measures per-request storage cost against a Rus
 | `127.0.1.<i>` | relay address of replica `i` |
 
 ```bash
-utils/cas-yardstick/rustfs-bin.sh ensure   # start the store unless it is up; `stop` stops it only if `ensure` started it
+utils/cas-yardstick/rustfs-bin.sh ensure   # start the store unless it is up (exit 0 = started here, 3 = already up); `stop` stops it only if `ensure` started it
 python3 utils/cas-yardstick/yardstick.py cost run --binary PATH --manifests REPORT_DIR --cases all|a.b,c.d --policies s3,cas
 python3 utils/cas-yardstick/yardstick.py cost probe --binary PATH     # five probes, drill + render checks; exit 2 on FAIL
 python3 utils/cas-yardstick/yardstick.py cost estimate RUN_DIR --coverage docs/superpowers/cost-model/coverage.json

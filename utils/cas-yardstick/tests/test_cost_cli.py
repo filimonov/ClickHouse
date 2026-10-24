@@ -162,7 +162,111 @@ class RunTest(unittest.TestCase):
         self.assertEqual(row, ['c.x', 's3', 'ok', '2.0', '5', '5', '5', '1/7', '150', '5120'])
 
 
+class OwnershipTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.m = os.path.join(self.tmp.name, 'm')
+        touch(os.path.join(self.tmp.name, 'clickhouse'))
+        write_manifest(self.m, 'c', 'one', ['s3'], repeats=1)
+
+    def go(self, rustfs, proxy_factory=FakeProxy, args=None, patch=None):
+        out = io.StringIO()
+        with redirect_stdout(out), mock.patch.object(cli, 'Topology', patch or cli.Topology):
+            return cli.cmd_run(args or run_args(self.tmp.name, [self.m]), run_case=lambda *a: ok_record('c', 'one'),
+                               proxy_factory=proxy_factory, rig_factory=FakeRig, rustfs=rustfs, cards={'c': object()})
+
+    def test_rustfs_ensure_exit_codes_decide_ownership(self):
+        for code, expected in ((0, True), (3, False)):
+            script = os.path.join(self.tmp.name, f'ensure{code}.sh')
+            with open(script, 'w') as f:
+                f.write(f'#!/bin/sh\nexit {code}\n')
+            os.chmod(script, 0o755)
+            self.assertIs(cli.Rustfs(script).ensure(), expected)
+        script = os.path.join(self.tmp.name, 'ensure1.sh')
+        with open(script, 'w') as f:
+            f.write('#!/bin/sh\necho boom >&2\nexit 1\n')
+        os.chmod(script, 0o755)
+        with self.assertRaisesRegex(RuntimeError, 'boom'):
+            cli.Rustfs(script).ensure()
+
+    def test_rustfs_stopped_when_setup_raises_after_ensure(self):
+        def broken(*a, **kw):
+            raise RuntimeError('topology')
+        rustfs = FakeRustfs(True)
+        with self.assertRaises(RuntimeError):
+            self.go(rustfs, patch=broken)
+        self.assertTrue(rustfs.stopped)
+
+    def test_rustfs_stopped_when_proxy_stop_raises(self):
+        class BadStop(FakeProxy):
+            def stop(self):
+                raise OSError('stop')
+        rustfs = FakeRustfs(True)
+        with self.assertRaises(OSError):
+            self.go(rustfs, proxy_factory=BadStop)
+        self.assertTrue(rustfs.stopped)
+
+    def test_empty_or_invalid_selection_fails_before_any_service(self):
+        class Counting(FakeRustfs):
+            def ensure(self):
+                raise AssertionError('service started')
+        err = io.StringIO()
+        base = run_args(self.tmp.name, [self.m])
+        for change, code, text in (
+                (dict(cases='c.nope'), 1, 'c.nope'),
+                (dict(policies='s3,gcs'), 1, 'gcs'),
+                (dict(policies='cas'), 1, 'nothing to run'),
+                (dict(cases='c.one,c.zzz'), 1, 'c.zzz')):
+            args = SimpleNamespace(**{**vars(base), **change})
+            err = io.StringIO()
+            with mock.patch('sys.stderr', err):
+                self.assertEqual(self.go(Counting(True), args=args), code)
+            self.assertIn(text, err.getvalue())
+        # probe: nothing for the five probes in these manifests -> exit 2, still no service
+        args = SimpleNamespace(**{**vars(base), 'manifests': self.m})
+        err = io.StringIO()
+        with mock.patch('sys.stderr', err):
+            code = cli.cmd_probe(args, run_case=None, proxy_factory=FakeProxy, rig_factory=FakeRig,
+                                 rustfs=Counting(True), cards={})
+        self.assertEqual(code, 2)
+        self.assertIn('nothing to run', err.getvalue())
+        args.policies = 'bogus'
+        with mock.patch('sys.stderr', io.StringIO()):
+            self.assertEqual(cli.cmd_probe(args, run_case=None, proxy_factory=FakeProxy, rig_factory=FakeRig,
+                                           rustfs=Counting(True), cards={}), 2)
+
+
 class ProbeTest(unittest.TestCase):
+    def test_failed_probe_record_skips_node_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            touch(os.path.join(tmp, 'clickhouse'))
+            m, tools = os.path.join(tmp, 'm'), os.path.join(tmp, 'tools')
+            os.makedirs(tools)
+            for name in cli.PROBES:
+                write_manifest(m, name, 'p', ['s3'], repeats=1)
+            for script in ('drill.mjs', 'render_check.mjs'):
+                touch(os.path.join(tools, script))
+            node = []
+
+            def fake_run_case(card, manifest, policy, k, deps):
+                rec = ok_record(manifest['card'], 'p')
+                return {**rec, 'status': 'FAILED', 'reason': 'boom'} if manifest['card'] == 'probe_s3_insert' else rec
+
+            def fake_subprocess(cmd, **kw):
+                node.append(cmd)
+                return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+            args = run_args(tmp, [m])
+            args.manifests = m
+            out = io.StringIO()
+            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess):
+                code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
+                                     rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
+            self.assertEqual(code, 2)
+            self.assertIn('FAIL probe_s3_insert: run FAILED', out.getvalue())
+            self.assertEqual(len(node), 8)
+            self.assertFalse(any('probe_s3_insert' in cmd for cmd in node))
     def test_probe_runs_five_with_drill_and_render_checks(self):
         with tempfile.TemporaryDirectory() as tmp:
             touch(os.path.join(tmp, 'clickhouse'))
@@ -270,9 +374,11 @@ class EstimateTest(unittest.TestCase):
         self.assertAlmostEqual(est.p1_hours, raw_p1 * 1.25 / 3600)
         raw_all = sum(c['seconds'] for c in est.cases)
         self.assertAlmostEqual(est.total_hours, raw_all * 1.25 / 3600)
-        # cut order: P2 by family (largest first: insert, then solo), then zero-copy, then types-*
-        self.assertEqual([c['label'] for c in est.cuts], ['P2 family insert', 'P2 family solo', 'replication-zero-copy*',
-                                                          'types-*'][:len(est.cuts)])
+        # cut order: P2 by family (largest first), then zero-copy replication, then the types cases; 0.1 h is out of reach
+        self.assertEqual([c['label'] for c in est.cuts], ['P2 family insert', 'P2 family solo',
+                                                          'replication-zero-copy*', 'types-*'])
+        self.assertFalse(est.reached)
+        self.assertAlmostEqual(est.cuts[-1]['remaining_hours'], 920 * 1.25 / 3600)
         first = est.cuts[0]
         self.assertEqual(first['experiments'], ['b.p2'])
         self.assertEqual(first['coefficients'], ['k_put'])
@@ -280,7 +386,6 @@ class EstimateTest(unittest.TestCase):
         self.assertEqual(first['presets'], ['small_cluster'])
         zc = next(c for c in est.cuts if c['label'] == 'replication-zero-copy*')
         self.assertEqual((zc['coefficients'], zc['quantities'], zc['presets']), (['k_zc'], ['zc_cost'], ['zero_copy']))
-        self.assertTrue(est.reached or est.cuts[-1]['remaining_hours'] > 0.1)
 
     def test_no_presets_file_reports_unknown_and_budget_met_needs_no_cuts(self):
         est = estimate.estimate([ok_record('a', 'p1', wall_s=1)], COVERAGE, REGISTRY, None, budget_hours=72)
@@ -288,6 +393,36 @@ class EstimateTest(unittest.TestCase):
         self.assertTrue(est.reached)
         est = estimate.estimate([ok_record('a', 'p1', wall_s=3600)], COVERAGE, REGISTRY, None, budget_hours=1)
         self.assertEqual(est.cuts[0]['presets'], 'unknown')
+
+
+class EstimateCommandTest(unittest.TestCase):
+    def test_sample_of_option_parsed_into_family_map(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = os.path.join(tmp, 'run')
+            os.makedirs(run_dir)
+            with open(os.path.join(run_dir, 'measurements.jsonl'), 'w') as f:
+                f.write(json.dumps(ok_record('c', 'x', wall_s=50)) + '\n')
+            cov = os.path.join(tmp, 'coverage.json')
+            with open(cov, 'w') as f:
+                json.dump(COVERAGE, f)
+            parser = argparse_parser()
+            args = parser.parse_args(['cost', 'estimate', run_dir, '--coverage', cov, '--registry', '/nope',
+                                      '--presets', '/nope', '--sample-of', 'repl=x', '--sample-of', 'solo=x', '--json'])
+            self.assertEqual(args.sample_of, ['repl=x', 'solo=x'])
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(args.func(args), 0)
+            cases = {c['experiment_id']: c for c in json.loads(out.getvalue())['cases']}
+            self.assertEqual((cases['replication-zero-copy.z']['basis'], cases['replication-zero-copy.z']['pass_seconds']),
+                             ('sample', 50))
+            self.assertEqual(cases['lonely.q']['basis'], 'sample')
+
+
+def argparse_parser():
+    import argparse
+    p = argparse.ArgumentParser()
+    cli.add_parsers(p.add_subparsers(dest='command'))
+    return p
 
 
 class RegisteredTest(unittest.TestCase):

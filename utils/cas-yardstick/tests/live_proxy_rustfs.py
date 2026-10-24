@@ -23,7 +23,7 @@ class ProxyLiveTest(LiveBase):
     def setUp(self):
         super().setUp()
         result = script('ensure', '--data', str(self.data))
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 3), result.stderr)
         self.ledger = self.data.parent / 'ledger.jsonl'
         self.proxy = LedgerProxy(('127.0.0.1', PORT), f'rustfs-{PORT}', self.ledger, CALLERS)
         self.proxy.start()

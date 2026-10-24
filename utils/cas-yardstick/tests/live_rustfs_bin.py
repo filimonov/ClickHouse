@@ -71,7 +71,7 @@ class LifecycleTest(LiveBase):
         self.assertTrue((self.data / '.started-by-rig').exists())
         pid = (self.data / '.rustfs.pid').read_text()
         second = script('ensure', '--data', data)
-        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(second.returncode, 3, second.stderr)
         self.assertEqual((self.data / '.rustfs.pid').read_text(), pid)
         self.assertEqual(script('stop', '--data', data).returncode, 0)
         self.assertNotEqual(script('status', '--data', data).returncode, 0)
@@ -81,7 +81,7 @@ class LifecycleTest(LiveBase):
         # A server that was already up is not ours: `ensure` leaves no marker and `stop` keeps it.
         self.assertEqual(script('start', '--data', data).returncode, 0)
         other = str(self.data.parent / 'other')
-        self.assertEqual(script('ensure', '--data', other).returncode, 0)
+        self.assertEqual(script('ensure', '--data', other).returncode, 3)
         self.assertFalse(pathlib.Path(other, '.started-by-rig').exists())
         self.assertEqual(script('stop', '--data', other).returncode, 0)
         self.assertEqual(script('status', '--data', data).returncode, 0)

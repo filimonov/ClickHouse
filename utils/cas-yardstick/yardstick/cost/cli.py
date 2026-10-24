@@ -5,7 +5,6 @@ import glob
 import hashlib
 import json
 import os
-import statistics
 import subprocess
 import sys
 import time
@@ -28,6 +27,8 @@ PROBES = ('probe_s3_insert', 'probe_replicated_fetch', 'probe_multipart_fault', 
           'probe_local_volume')
 PUT_CLASS = ('PutObject', 'UploadPart', 'CreateMultipartUpload', 'CompleteMultipartUpload', 'CopyObject')
 GET_CLASS = ('GetObject', 'HeadObject')
+ENSURE_ALREADY_UP = 3
+SUPPORTED_POLICIES = ('s3', 's3plain', 'cas', 'local', 's3_cached', 's3plain_cached', 'cas_cached')
 COLUMNS = ['case', 'policy', 'status', 'wall_s', 'PUT', 'GET', 'LIST', 'DEL calls/keys', 'inter-from B', 'local wB']
 
 
@@ -40,10 +41,11 @@ class Rustfs:
         self.script = script
 
     def ensure(self) -> bool:
+        """True when this call started the store (exit 0); False when it was already up (exit 3)."""
         done = subprocess.run([self.script, 'ensure'], capture_output=True, text=True)
-        if done.returncode != 0:
+        if done.returncode not in (0, ENSURE_ALREADY_UP):
             raise RuntimeError(f'rustfs-bin.sh ensure failed: {done.stderr.strip() or done.stdout.strip()}')
-        return '(already up)' not in done.stdout
+        return done.returncode == 0
 
     def stop(self) -> None:
         subprocess.run([self.script, 'stop'], check=False)
@@ -76,15 +78,14 @@ def _load_manifests(dirs) -> list:
     return [_read_json(p) for p in sorted(set(paths))]
 
 
-def _services(args, rustfs, proxy_factory, rig_factory, run_id):
-    """Start (or reuse) the store and start the proxy; returns (rustfs_started, proxy, rig, topology)."""
-    started = False if args.endpoint else rustfs.ensure()
+def _services(args, proxy_factory, rig_factory, run_id):
+    """Topology, proxy (not started) and rig client for the store at `args.endpoint` or the default."""
     endpoint = args.endpoint or DEFAULT_ENDPOINT
     host = urllib.parse.urlparse(endpoint)
     topology = Topology(port_base=args.port_base, replicas=args.replicas, store=(host.hostname, host.port))
     ledger = os.path.join(args.runs_dir, run_id, 'ledger.jsonl')
     proxy = proxy_factory(topology.store, f'store@{endpoint}', ledger, topology.callers)
-    return started, proxy, rig_factory(endpoint, 'clickhouse', 'clickhouse'), topology
+    return proxy, rig_factory(endpoint, 'clickhouse', 'clickhouse'), topology
 
 
 def _session(args, body, *, proxy_factory, rig_factory, rustfs):
@@ -92,7 +93,10 @@ def _session(args, body, *, proxy_factory, rig_factory, rustfs):
     run_id = 'cost-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
     started, proxy = False, None
     try:
-        started, proxy, rig, topology = _services(args, rustfs, proxy_factory, rig_factory, run_id)
+        if not args.endpoint:
+            # Ownership is recorded before anything else can raise, so the finally still stops a store started here.
+            started = rustfs.ensure()
+        proxy, rig, topology = _services(args, proxy_factory, rig_factory, run_id)
         proxy.start()
         problems = topology.verify_services(proxy, rig)
         if problems:
@@ -103,10 +107,12 @@ def _session(args, body, *, proxy_factory, rig_factory, rustfs):
                     commit=args.commit or _git_commit())
         return body(deps, run_id)
     finally:
-        if proxy is not None:
-            proxy.stop()
-        if started:
-            rustfs.stop()
+        try:
+            if proxy is not None:
+                proxy.stop()
+        finally:
+            if started:
+                rustfs.stop()
 
 
 def _execute(matrix, deps, run_id, cards, run_case_fn) -> list:
@@ -144,6 +150,7 @@ def table_row(r: dict) -> list:
     return [name, r['policy'], 'ok', f'{r["wall_s"]:.1f}', str(_sum_ops(r, PUT_CLASS)['attempts']),
             str(_sum_ops(r, GET_CLASS)['attempts']), str(allops['list_pages']),
             f'{allops["delete_calls"]}/{allops["delete_keys"]}',
+            # bytes the relays received from the replicas' interserver servers, i.e. what the senders shipped
             str(sum(v['from_target'] for v in r.get('interserver', {}).values())),
             str(sum(v.get('write_bytes', 0) for v in r.get('proc_io', {}).values()))]
 
@@ -156,22 +163,36 @@ def print_table(records: list) -> None:
 
 
 def _matrix(args, cards, only=None) -> list:
+    """(manifest, policies, repeats) per selected manifest; ValueError names a selection that matches nothing."""
     wanted = None if args.cases == 'all' else set(args.cases.split(','))
-    chosen = set(args.policies.split(','))
+    chosen = args.policies.split(',')
+    bad = [p for p in chosen if p not in SUPPORTED_POLICIES]
+    if bad:
+        raise ValueError(f'unsupported --policies value {", ".join(bad)}; supported: {", ".join(SUPPORTED_POLICIES)}')
+    manifests = sorted(_load_manifests(args.manifests if isinstance(args.manifests, list) else [args.manifests]),
+                       key=lambda m: m['experiment_id'])
+    unknown = sorted((wanted or set()) - {m['experiment_id'] for m in manifests})
+    if unknown:
+        raise ValueError(f'unknown --cases value {", ".join(unknown)}: no such experiment_id in the manifests')
     out = []
-    for manifest in sorted(_load_manifests(args.manifests if isinstance(args.manifests, list) else [args.manifests]),
-                           key=lambda m: m['experiment_id']):
+    for manifest in manifests:
         if (wanted is not None and manifest['experiment_id'] not in wanted) or (only and manifest['card'] not in only):
             continue
         policies = [p for p in manifest['policies'] if p in chosen]
         out.append((manifest, policies, args.repeats or manifest['repeats']))
+    if not any(policies for _, policies, _ in out):
+        raise ValueError(f'nothing to run: no manifest matches --cases {args.cases} with --policies {args.policies}')
     return out
 
 
 def cmd_run(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory=S3Client, rustfs=None, cards=None) -> int:
     if cards is None:
         from .cards import CARDS as cards  # noqa: PLC0415
-    matrix = _matrix(args, cards)
+    try:
+        matrix = _matrix(args, cards)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 1
     missing = sorted({m['card'] for m, _, _ in matrix if m['card'] not in cards})
     if missing:
         print(f'no such card: {", ".join(missing)}', file=sys.stderr)
@@ -201,7 +222,11 @@ def cmd_probe(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory
     args.cases, args.policies = 'all', getattr(args, 'policies', None) or 's3,cas,local'
     args.manifests = args.manifests or PROBE_MANIFESTS
     args.repeats = 1
-    matrix = _matrix(args, cards, only=set(PROBES))
+    try:
+        matrix = _matrix(args, cards, only=set(PROBES))
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
 
     def body(deps, run_id):
         run_dir = os.path.join(deps.runs_dir, run_id)

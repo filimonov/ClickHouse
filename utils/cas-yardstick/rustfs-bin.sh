@@ -1,5 +1,6 @@
 #!/bin/bash
 # RustFS binary (no container) for the cost rig.
+# ensure exit codes: 0 = started by this call (writes .started-by-rig), 3 = already up (not ours), other = failure.
 # usage: rustfs-bin.sh start [--data DIR] [--bin PATH] | stop [--data DIR] [--force] | status [--data DIR] | ensure [--data DIR] [--bin PATH]
 set -euo pipefail
 
@@ -96,6 +97,7 @@ case "$cmd" in
         if up; then
             (cd "$HERE" && python3 -m yardstick.cost.s3client ensure-bucket "$BUCKET" --endpoint "http://127.0.0.1:$PORT")
             echo "endpoint=http://127.0.0.1:$PORT (already up)"
+            exit 3
         else
             do_start
             touch "$DATA/$OWNED"

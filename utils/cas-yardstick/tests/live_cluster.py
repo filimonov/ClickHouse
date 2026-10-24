@@ -29,7 +29,7 @@ class LiveClusterTest(unittest.TestCase):
         was_up = listening()
         # ensure is idempotent and prints nothing we need; remember whether we own the process.
         result = script('ensure')
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(result.returncode, (0, 3), result.stderr)
         if not was_up:
             self.addCleanup(script, 'stop')
         self.topology = Topology(port_base=19700, replicas=2)
