@@ -68,7 +68,7 @@
         },
         {
           "row_type": "transfer",
-          "op_kind": "xfer",
+          "op_kind": "interserver_from_target",
           "outcome_class": "ok",
           "category": null,
           "route": "ec2_ec2_cross_az",

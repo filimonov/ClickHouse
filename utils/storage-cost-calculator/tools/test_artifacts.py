@@ -78,6 +78,13 @@ class LedgerRowTests(ArtifactTestCase):
         self.assert_each_detected(artifacts.validate_ledger_row, attempt, paths)
         self.assert_each_detected(artifacts.validate_ledger_row, attempt_with_copy, [("copy_source", "bucket")])
 
+    def test_ledger_row_batch_delete_keys_are_optional_strings(self):
+        row = load("ledger-row-batch-delete.json")
+        self.assert_valid(artifacts.validate_ledger_row, row)
+        self.assert_valid(artifacts.validate_ledger_row, without(row, ("delete_keys",)))
+        self.assert_rejects(artifacts.validate_ledger_row, with_value(row, ("delete_keys",), "x"), "delete_keys")
+        self.assert_rejects(artifacts.validate_ledger_row, with_value(row, ("delete_keys",), [1]), "delete_keys")
+
     def test_ledger_row_rejects_bad_enums_and_unknown_kind(self):
         attempt = load("ledger-row-attempt.json")
         self.assert_rejects(artifacts.validate_ledger_row, with_value(attempt, ("op",), "Frobnicate"), "op")
@@ -88,7 +95,8 @@ class LedgerRowTests(ArtifactTestCase):
 
 class MeasurementTests(ArtifactTestCase):
     COMMON = ["schema", "measurement_id", "experiment_id", "run_id", "card", "case_id", "policy", "variant",
-              "cache_enabled", "replicas", "k", "scale", "mode", "binary_sha256", "commit", "pass_dir", "status"]
+              "cache_enabled", "replicas", "k", "scale", "mode", "binary_sha256", "binary_download_sha256", "commit",
+              "rig_commit", "pass_dir", "status"]
 
     def test_measurement_example_valid_and_each_required_field_detected(self):
         ok = load("measurement-ok.json")
@@ -113,8 +121,17 @@ class MeasurementTests(ArtifactTestCase):
             ("assertions", "a1", "ok"),
             ("ledger", "foreground", "r1", "PutObject", "attempts"),
             ("ledger", "foreground", "r1", "PutObject", "delete_keys"),
+            ("ledger", "foreground", "r1", "PutObject", "accepted_dropped"),
+            ("ledger", "foreground", "r1", "PutObject", "upstream_4xx"),
+            ("window", "open_attempts"), ("ledger", "complete"), ("inventory", "reclassified"),
         ]
         self.assert_each_detected(artifacts.validate_measurement, ok, nested)
+        self.assert_valid(artifacts.validate_measurement, with_value(ok, ("binary_download_sha256",), None))
+        declared = with_value(ok, ("inventory", "initial"), "declared")
+        self.assert_valid(artifacts.validate_measurement, with_value(declared, ("inventory", "note"), "why"))
+        self.assert_rejects(artifacts.validate_measurement, with_value(declared, ("inventory", "note"), ""), "note")
+        self.assert_rejects(artifacts.validate_measurement, with_value(
+            ok, ("window", "open_attempts"), [{"seq": 1, "caller": "r1", "op": "PutObject"}]), "key")
 
     def test_measurement_unsupported_requires_reason(self):
         u = load("measurement-unsupported.json")
@@ -284,8 +301,28 @@ class FormulasTests(ArtifactTestCase):
             ("cells", cell, "states", 0, "reason"),
         ])
 
+    def test_formulas_rows_carry_outcome_facts_and_cells_list_exclusions(self):
+        f = load("formulas.json")
+        cell = next(iter(f["cells"]))
+        facts = with_value(f, ("cells", cell, "ledger_rows", 0, "status"), 403)
+        facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "s3_code"), "AccessDenied")
+        facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "condition"), "request initiated outside the account")
+        facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "caller"), "r1")
+        facts = with_value(facts, ("cells", cell, "ledger_rows", 0, "outcome_class"), "accepted_dropped")
+        self.assert_valid(artifacts.validate_formulas, facts)
+        self.assert_valid(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "status"), "4XX"))
+        self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "caller"), "r9"), "caller")
+        self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "status"), True), "status")
+        excluded = with_value(f, ("cells", cell, "excluded"), [{"kind": "op", "id": "HeadObject", "reason": "free"}])
+        self.assert_valid(artifacts.validate_formulas, excluded)
+        self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "excluded"), [{"kind": "op", "id": "x"}]),
+                            "reason")
+        self.assert_rejects(artifacts.validate_formulas, with_value(
+            f, ("cells", cell, "excluded"), [{"kind": "tier", "id": "x", "reason": "r"}]), "kind")
+
     def test_worked_formula_examples_valid(self):
-        for name in ("example-part-type.json", "example-objects-per-part.json", "example-multipart-parts.json"):
+        for name in ("example-part-type.json", "example-objects-per-part.json", "example-multipart-parts.json",
+                     "example-min-max.json"):
             node = load(name)
             self.assertEqual(artifacts.validate_node(node, "$", False, tables=self.TABLES), [], name)
 

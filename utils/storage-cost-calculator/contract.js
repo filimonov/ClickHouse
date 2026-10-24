@@ -51,7 +51,8 @@
     const field = (o, k) => (o && typeof o === 'object' ? o[k] : undefined);
     list(cell.ledger_rows).forEach((r, i) => fn(field(r, 'expr'), `${base}.ledger_rows[${i}].expr`));
     list(field(cell.allocation, 'shares')).forEach((x, j) => fn(field(x, 'weight'), `${base}.allocation.shares[${j}].weight`));
-    list(cell.states).forEach((x, k) => fn(field(x, 'cond'), `${base}.states[${k}].cond`));
+    // `cond: true` is an unconditional state (formulas grammar v1), not an expression node.
+    list(cell.states).forEach((x, k) => { if (field(x, 'cond') !== true) fn(field(x, 'cond'), `${base}.states[${k}].cond`); });
     list(cell.notes).forEach((n, m) => fn(n, `${base}.notes[${m}]`));
   }
 

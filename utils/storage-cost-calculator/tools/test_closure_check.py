@@ -80,13 +80,13 @@ class DependencyTest(unittest.TestCase):
 
 
 class SupportTest(unittest.TestCase):
-    def coverage(self, case_status='planned'):
+    def coverage(self, case_status='planned', evidence_status='done'):
         case = {'case_id': 'c', 'policies': ['s3'], 'replicas': 1, 'scale': 1.0, 'repeats': 3, 'timeout_s': 900,
                 'priority': 'P1', 'status': case_status}
         return {'schema': 'coverage/1', 'version': '1',
                 'cards': [{'name': 'card', 'family': 'fam', 'model_variants': ['s3'], 'cases': [case]}],
                 'evidence': [{'coefficient': 'k', 'experiment_id': 'card.c', 'policy': 's3', 'span': {}, 'role': 'fit',
-                              'prediction_commit': None, 'measurement_ids': [], 'status': 'planned'}],
+                              'prediction_commit': None, 'measurement_ids': [], 'status': evidence_status}],
                 'domain': {'variants': ['s3'], 'operations': ['insert', 'merge'], 'families': ['fam']}, 'excluded': []}
 
     def test_support_enumerates_domain_and_cut_rule(self):
@@ -118,9 +118,10 @@ class SupportTest(unittest.TestCase):
                'cards': [{'name': 'cf', 'family': 'f', 'model_variants': ['s3', 'cas'], 'cases': [case('c')]},
                          {'name': 'cg', 'family': 'g', 'model_variants': ['s3'], 'cases': [case('c', ('s3',))]}],
                'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': 's3', 'span': {}, 'role': 'fit', 'prediction_commit': None,
-                             'measurement_ids': [], 'status': 'planned'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))],
+                             'measurement_ids': [], 'status': 'done'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))],
                'excluded': []}
-        # s3: x uses kf and kg (evidence for f and g); y uses kf only (evidence for f, none for g).
+        # s3: x uses kf and kg; y uses kf only. A cell needs completed evidence for every coefficient it uses, so
+        # s3/x has none for f (kg is only measured by a family-g card) and none for g (kf only by family f).
         # cas: x is unconditionally not_supported; y uses kf (evidence for f, none for g; card cg does not cover cas).
         s3 = formulas('variant', {'kind': 'add', 'dim': 'count', 'a': coef('kf'), 'b': coef('kg')}, variant='s3', op='x')
         s3['cells']['y'] = formulas('variant', coef('kf'), variant='s3', op='y')['cells']['y']
@@ -129,13 +130,28 @@ class SupportTest(unittest.TestCase):
                              'states': [{'id': 'not_supported', 'cond': True, 'reason': 'no such operation'}]}
         pending = []
         self.assertEqual(cc.support(registry(), cov, [s3, cas], pending=pending), [])
-        self.assertEqual(sorted(pending), [('cas', 'y', 'g'), ('s3', 'y', 'g')])
+        self.assertEqual(sorted(pending), [('cas', 'y', 'g'), ('s3', 'x', 'f'), ('s3', 'x', 'g'), ('s3', 'y', 'g')])
         final = cc.support(registry(), cov, [s3, cas], require_formulas=True)
-        self.assertEqual(len(final), 2)
+        self.assertEqual(len(final), 4)
         self.assertTrue(any('s3/y/g' in p for p in final) and any('cas/y/g' in p for p in final), final)
         conditional = copy.deepcopy(cas)
         conditional['cells']['x']['states'][0]['cond'] = {'kind': 'const', 'value': 1, 'dim': 'bool'}
-        self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 4)
+        self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 6)
+
+    def test_planned_evidence_backs_nothing_and_cuts_reach_cells(self):
+        reg = registry(quantity('k', kind='measured', default=None))
+        cell = formulas('variant', coef('k'), op='insert')
+        cell['cells']['merge'] = cell['cells']['insert']
+        planned = cc.support(reg, self.coverage(evidence_status='planned'), [cell], require_formulas=True)
+        self.assertTrue(any('s3/insert/fam' in p for p in planned), planned)
+        cut = cc.support(registry(quantity('k', kind='measured', default=None, status='unsupported')),
+                         self.coverage('cut'), [cell], require_formulas=False)
+        self.assertTrue(any('s3/insert depends on cut coefficient k' in p for p in cut), cut)
+        unsupported = copy.deepcopy(cell)
+        for c in unsupported['cells'].values():
+            c['states'] = [{'id': 'not_supported', 'cond': True, 'reason': 'cut'}]
+        self.assertEqual(cc.support(registry(quantity('k', kind='measured', default=None, status='unsupported')),
+                                    self.coverage('cut'), [unsupported], require_formulas=False), [])
 
 
 class EvidenceTest(unittest.TestCase):
@@ -157,7 +173,7 @@ class EvidenceTest(unittest.TestCase):
     def test_evidence_distinct_holdout(self):
         fit = self.row('fit', 'card.c1', {'x': [0, 1]}, ['m1'])
         same = self.row('holdout', 'card.c1', {'x': [0, 1]}, ['m1'])
-        self.assertTrue(any('distinct' in p for p in cc.evidence(self.cov(fit, same), [self.coefficient])))
+        self.assertTrue(any('overlaps the fit data' in p for p in cc.evidence(self.cov(fit, same), [self.coefficient])))
         other = self.row('holdout', 'card.c2', {'x': [1, 2]}, ['m2'])
         self.assertEqual(cc.evidence(self.cov(fit, other), [self.coefficient]), [])
         self.assertTrue(any('holdout' in p for p in cc.evidence(self.cov(fit), [self.coefficient])))
@@ -171,6 +187,19 @@ class EvidenceTest(unittest.TestCase):
         self.assertTrue(any('path:line' in p for p in cc.evidence(self.cov(), [pinned])))
         pinned['evidence']['ref'] = 'src/Foo.cpp:12'
         self.assertEqual(cc.evidence(self.cov(), [pinned]), [])
+
+    def test_holdout_disjoint_from_every_fit_validity_and_resolvable_ids(self):
+        fit1 = self.row('fit', 'card.c1', {'x': [0, 1]}, ['m1'])
+        fit2 = self.row('fit', 'card.c1', {'x': [5, 6]}, ['m3'])
+        overlap = self.row('holdout', 'card.c2', {'x': [1, 2]}, ['m2', 'm3'])
+        found = cc.evidence(self.cov(fit1, fit2, overlap), [self.coefficient])
+        self.assertTrue(any('overlaps the fit data' in p for p in found), found)
+        other = self.row('holdout', 'card.c2', {'x': [1, 2]}, ['m2'])
+        self.assertEqual(cc.evidence(self.cov(fit1, fit2, other), [self.coefficient], measurement_ids={'m1', 'm2', 'm3'}), [])
+        self.assertTrue(any('m2 does not resolve' in p for p in
+                            cc.evidence(self.cov(fit1, other), [self.coefficient], measurement_ids={'m1'})))
+        nodomain = dict(self.coefficient, validity=None)
+        self.assertTrue(any('validity domain' in p for p in cc.evidence(self.cov(fit1, other), [nodomain])))
 
 
 class AccountingTest(unittest.TestCase):
@@ -193,6 +222,32 @@ class AccountingTest(unittest.TestCase):
         loose = copy.deepcopy(p)
         loose['tolerance'] = {'abs': {'PutObject': 1}, 'rel': {}}
         self.assertEqual(cc.accounting([stochastic], [loose], node_test_cmd=['true']), [])
+
+
+REPORT = os.path.join(HERE, '..', '..', '..', 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-phase0')
+
+
+class AccountingReplayTest(unittest.TestCase):
+    def gate(self, card):
+        with open(os.path.join(REPORT, 'measurements.jsonl')) as f:
+            record = next(r for r in map(json.loads, f) if r['card'] == card)
+        return record, cc.raw_slices([REPORT])[record['measurement_id']]
+
+    def test_gate_record_replays_from_its_raw_slice_and_a_tampered_one_does_not(self):
+        record, raw = self.gate('probe_multipart_fault')
+        self.assertEqual(cc.replay_problems(record, raw), [])
+        bad = copy.deepcopy(record)
+        bad['ledger']['foreground']['r1']['UploadPart']['attempts'] += 1
+        bad['inventory']['byte_hours']['incomplete']['upper'] *= 1.5
+        found = '\n'.join(cc.replay_problems(bad, raw))
+        self.assertIn('UploadPart attempts', found)
+        self.assertIn('byte_hours.incomplete.upper', found)
+
+    def test_final_mode_needs_a_raw_slice_and_the_pricing_tests_are_the_checked_in_ones(self):
+        m, p = example('measurement-ok.json'), example('prediction.json')
+        self.assertTrue(any('raw ledger slice' in x for x in cc.accounting([m], [p], node_test_cmd=['true'], mode='final', raw={})))
+        self.assertTrue(str(cc.NODE_TESTS).endswith('utils/storage-cost-calculator/test'))
+        self.assertTrue(list(cc.NODE_TESTS.glob('billing.test.js')))
 
 
 class BillingTest(unittest.TestCase):
@@ -249,6 +304,18 @@ class ReproductionTest(unittest.TestCase):
             with open(os.path.join(raw, 'a.txt'), 'w') as f:
                 f.write('HELLO')
             self.assertTrue(any('a.txt' in p for p in cc.reproduction(sums=[sums])))
+
+    def test_identities_agree_within_a_report_and_drills_render(self):
+        m = example('measurement-ok.json')
+        other = dict(m, rig_commit='0' * 40)
+        self.assertTrue(any('rig_commit' in p for p in cc.identities([m, other])))
+        self.assertEqual(cc.identities([m, dict(m)]), [])
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, 'raw', 'p'))
+            with open(os.path.join(d, 'raw', 'p', 'drill.json'), 'w') as f:
+                json.dump({'probe': 'p', 'cells': {}, 'mismatches': ['x']}, f)
+            self.assertTrue(any('render' in p for p in cc.rerender([d])))
+        self.assertEqual(cc.rerender([REPORT]), [])
 
 
 class MainTest(unittest.TestCase):

@@ -13,7 +13,9 @@
   "scale": 1.0,
   "mode": "deterministic",
   "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "binary_download_sha256": "2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46",
   "commit": "78133cca87d",
+  "rig_commit": "4b29975787f2c0c0dfbd3bd7e2b2cbbd8f2c9a51",
   "pass_dir": "tmp/rig/run42/pass0",
   "status": "ok",
   "effective_counts": {"parts": 1, "rows": 1000},
@@ -23,13 +25,14 @@
     "server": {"s3_max_single_part_upload_size": 33554432}
   },
   "config_hashes": ["1111111111111111111111111111111111111111111111111111111111111111"],
-  "window": {"start_seq": 16, "end_seq": 40, "t_start_us": 1761300000100000, "t_end_us": 1761300000900000, "crossing": [12]},
+  "window": {"start_seq": 16, "end_seq": 40, "t_start_us": 1761300000100000, "t_end_us": 1761300000900000, "crossing": [12], "open_attempts": []},
   "ledger": {
-    "foreground": {"r1": {"PutObject": {"attempts": 3, "delivered": 3, "dropped": 0, "injected": 0, "rejected": 0, "upstream_ok": 3, "upstream_error": 0, "upstream_unknown": 0, "req_payload_bytes": 3145728, "resp_payload_bytes": 0, "list_pages": 0, "list_keys": 0, "delete_calls": 0, "delete_keys": 0}}},
+    "foreground": {"r1": {"PutObject": {"attempts": 3, "delivered": 3, "dropped": 0, "injected": 0, "rejected": 0, "upstream_ok": 3, "upstream_error": 0, "upstream_unknown": 0, "req_payload_bytes": 3145728, "resp_payload_bytes": 0, "list_pages": 0, "list_keys": 0, "delete_calls": 0, "delete_keys": 0, "accepted_dropped": 0, "upstream_4xx": 0}}},
     "maintenance": {},
     "setup": {},
     "teardown": {},
-    "rig": {}
+    "rig": {},
+    "complete": true
   },
   "events": {"r1": {"S3PutObject": 3, "InsertedRows": 1000}},
   "proc_io": {"r1": {"rchar": 4096, "wchar": 3151872, "syscr": 12, "syscw": 40, "read_bytes": 0, "write_bytes": 0}},
@@ -47,7 +50,7 @@
     }
   },
   "interserver": {"relay0": {"to_target": 0, "from_target": 0, "connections_total": 0, "open_at_end": 0}},
-  "inventory": {"initial": "empty_verified", "byte_hours": {"active": {"lower": 0.5, "upper": 0.6}}, "uncertain_identities": 0},
+  "inventory": {"initial": "empty_verified", "byte_hours": {"active": {"lower": 0.5, "upper": 0.6}}, "uncertain_identities": 0, "reclassified": []},
   "observations": {"part_type": "compact"},
   "assertions": {"a1": {"expected": 3, "actual": 3, "ok": true}},
   "wall_s": 4.2,

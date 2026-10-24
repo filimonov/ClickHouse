@@ -1,0 +1,16 @@
+{
+  "kind": "max",
+  "dim": "count",
+  "args": [
+    {"kind": "const", "value": 1, "dim": "count"},
+    {
+      "kind": "min",
+      "dim": "count",
+      "args": [
+        {"kind": "input", "id": "parts_inserted", "dim": "count"},
+        {"kind": "const", "value": 10000, "dim": "count"},
+        {"kind": "const", "value": 500, "dim": "count"}
+      ]
+    }
+  ]
+}

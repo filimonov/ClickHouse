@@ -17,6 +17,20 @@
               "kind": "const",
               "value": 11,
               "dim": "count"
+            },
+            "caller": "r1"
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_active_gib_months",
+              "dim": "GiB*month"
             }
           }
         ],
@@ -24,7 +38,7 @@
         "states": [],
         "notes": []
       },
-      "probe_replicated_fetch": {
+      "probe_replicated_fetch.inserts": {
         "ledger_rows": [
           {
             "row_type": "request",
@@ -35,10 +49,31 @@
             "scope": "variant",
             "expr": {
               "kind": "const",
-              "value": 22,
+              "value": 11,
               "dim": "count"
-            }
+            },
+            "caller": "r1"
           },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_r1_active_gib_months",
+              "dim": "GiB*month"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      },
+      "probe_replicated_fetch.recovery": {
+        "ledger_rows": [
           {
             "row_type": "request",
             "op_kind": "GetObject",
@@ -50,7 +85,22 @@
               "kind": "const",
               "value": 11,
               "dim": "count"
-            }
+            },
+            "caller": "r1"
+          },
+          {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 11,
+              "dim": "count"
+            },
+            "caller": "r2"
           },
           {
             "row_type": "request",
@@ -63,11 +113,25 @@
               "kind": "input",
               "id": "probe_r2_get_requests",
               "dim": "count"
+            },
+            "caller": "r2"
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_r2_active_gib_months",
+              "dim": "GiB*month"
             }
           },
           {
             "row_type": "transfer",
-            "op_kind": "interserver",
+            "op_kind": "interserver_from_target",
             "outcome_class": "all",
             "category": null,
             "route": "ec2_ec2_cross_az",
@@ -75,6 +139,19 @@
             "expr": {
               "kind": "input",
               "id": "probe_interserver_gib",
+              "dim": "GiB"
+            }
+          },
+          {
+            "row_type": "transfer",
+            "op_kind": "interserver_to_target",
+            "outcome_class": "all",
+            "category": null,
+            "route": "ec2_ec2_cross_az",
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_interserver_to_gib",
               "dim": "GiB"
             }
           }
@@ -107,20 +184,20 @@
             "scope": "variant",
             "expr": {
               "kind": "const",
-              "value": 3,
+              "value": 2,
               "dim": "count"
             }
           },
           {
             "row_type": "request",
-            "op_kind": "CompleteMultipartUpload",
-            "outcome_class": "ok",
+            "op_kind": "UploadPart",
+            "outcome_class": "accepted_dropped",
             "category": null,
             "route": null,
             "scope": "variant",
             "expr": {
               "kind": "const",
-              "value": 0,
+              "value": 1,
               "dim": "count"
             }
           },
@@ -134,19 +211,6 @@
             "expr": {
               "kind": "const",
               "value": 4,
-              "dim": "count"
-            }
-          },
-          {
-            "row_type": "request",
-            "op_kind": "AbortMultipartUpload",
-            "outcome_class": "ok",
-            "category": null,
-            "route": null,
-            "scope": "variant",
-            "expr": {
-              "kind": "const",
-              "value": 0,
               "dim": "count"
             }
           },
@@ -204,7 +268,7 @@
           },
           {
             "row_type": "storage",
-            "op_kind": "incomplete_parts",
+            "op_kind": "incomplete",
             "outcome_class": "all",
             "category": "incomplete",
             "route": null,
@@ -212,6 +276,19 @@
             "expr": {
               "kind": "input",
               "id": "probe_incomplete_gib_months",
+              "dim": "GiB*month"
+            }
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_active_gib_months",
               "dim": "GiB*month"
             }
           }
@@ -310,6 +387,20 @@
           },
           {
             "row_type": "request",
+            "op_kind": "HeadObject",
+            "outcome_class": "client_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_head_error_requests",
+              "dim": "count"
+            },
+            "status": 404
+          },
+          {
+            "row_type": "request",
             "op_kind": "GetObject",
             "outcome_class": "ok",
             "category": null,
@@ -320,6 +411,21 @@
               "id": "probe_get_requests",
               "dim": "count"
             }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "client_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_get_error_requests",
+              "dim": "count"
+            },
+            "status": 404,
+            "s3_code": "NoSuchKey"
           },
           {
             "row_type": "request",
@@ -362,6 +468,19 @@
           },
           {
             "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_active_gib_months",
+              "dim": "GiB*month"
+            }
+          },
+          {
+            "row_type": "storage",
             "op_kind": "garbage",
             "outcome_class": "all",
             "category": "garbage",
@@ -375,14 +494,14 @@
           },
           {
             "row_type": "storage",
-            "op_kind": "active",
+            "op_kind": "metadata",
             "outcome_class": "all",
-            "category": "active",
+            "category": "metadata",
             "route": null,
             "scope": "variant",
             "expr": {
               "kind": "input",
-              "id": "probe_active_gib_months",
+              "id": "probe_metadata_gib_months",
               "dim": "GiB*month"
             }
           }

@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
 
-  const ARITH = new Set(['add', 'sub', 'mul', 'div', 'min', 'max']);
+  const ARITH = new Set(['add', 'sub', 'mul', 'div']);
   const CMP = {
     '<': (a, b) => a < b, '<=': (a, b) => a <= b, '>': (a, b) => a > b,
     '>=': (a, b) => a >= b, '==': (a, b) => a === b, '!=': (a, b) => a !== b,
@@ -75,8 +75,6 @@
       case 'add': v = x + y; break;
       case 'sub': v = x - y; break;
       case 'mul': v = x * y; break;
-      case 'min': v = Math.min(x, y); break;
-      case 'max': v = Math.max(x, y); break;
       case 'div':
         if (y === 0) {
           if (node.on_zero === 'zero') return ok(node, 0, kids, ex);
@@ -89,6 +87,17 @@
     }
     if (!Number.isFinite(v)) return unavailable(node, kids, ex, { reason: `non-finite result ${v}` });
     return ok(node, v, kids, ex);
+  }
+
+  // min/max take `args[]` (formulas grammar v1), unlike the binary a/b operators.
+  function evalMinMax(node, ctx) {
+    if (!Array.isArray(node.args) || node.args.length === 0) throw new Error(`${node.kind}: needs a non-empty args array`);
+    const parts = node.args.map((a) => evaluate(a, ctx));
+    const kids = parts.map((p) => p.trace);
+    const ex = anyExtrapolated(parts);
+    if (anyUnavailable(parts)) return unavailable(node, kids, ex);
+    const values = parts.map((p) => num(node, p));
+    return ok(node, node.kind === 'min' ? Math.min(...values) : Math.max(...values), kids, ex);
   }
 
   function evalRound(node, ctx) {
@@ -189,6 +198,8 @@
         return bad ? unavailable(node, [], false, { reason: `var ${node.name}: ${bad}` }) : ok(node, v, []);
       }
       case 'lookup': return evalLookup(node, ctx);
+      case 'min':
+      case 'max': return evalMinMax(node, ctx);
       case 'ceil_to':
       case 'floor_to': return evalRound(node, ctx);
       case 'branch': return evalBranch(node, ctx);
@@ -347,11 +358,19 @@
           }
           return declared;
         }
-        case 'add': case 'sub': case 'min': case 'max': {
+        case 'add': case 'sub': {
           const a = sub('a');
           const b = sub('b');
           if (a !== null && b !== null && (a !== b || a !== declared)) {
             bad(path, `${n.kind} operands ${a} and ${b} must both equal ${declared}`);
+          }
+          return declared;
+        }
+        case 'min': case 'max': {
+          if (!Array.isArray(n.args) || n.args.length === 0) { bad(path, `${n.kind} needs a non-empty args array`); return declared; }
+          const dims = n.args.map((x, i) => walk(x, `${path}/args/${i}`, bound));
+          if (dims.every((d) => d !== null) && dims.some((d) => d !== declared)) {
+            bad(path, `${n.kind} operands ${dims.join(', ')} must all equal ${declared}`);
           }
           return declared;
         }
@@ -416,7 +435,7 @@
         case 'input': case 'coef': s = n.id; break;
         case 'var': s = n.name; break;
         case 'lookup': s = `lookup(${n.table_id})[${n.keys.map((k) => r(k, 0)).join(', ')}]`; break;
-        case 'min': case 'max': s = `${n.kind}(${r(n.a, 0)}, ${r(n.b, 0)})`; break;
+        case 'min': case 'max': s = `${n.kind}(${n.args.map((x) => r(x, 0)).join(', ')})`; break;
         case 'ceil_to': case 'floor_to': s = `${n.kind}(${r(n.x, 0)}, ${r(n.step, 0)})`; break;
         case 'price': s = `price(unit=${n.unit}, rule=${n.rule_id}, ${r(n.quantity, 0)})`; break;
         case 'add': case 'sub': case 'mul': case 'div': {

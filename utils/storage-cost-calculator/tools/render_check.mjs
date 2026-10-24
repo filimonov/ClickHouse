@@ -5,6 +5,7 @@ import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const ui = require('../ui.js');
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 function fail(msg) {
   console.error(`render_check.mjs: ${msg}`);
@@ -38,6 +39,20 @@ function main(argv) {
     for (const l of cell.stage4_billing_lines || []) {
       moneyCount++;
       if (!html.includes(`data-value="${l.money}" data-kind="money"`)) problems.push(`${key}: money ${l.money} of ${l.rule_id} not rendered`);
+    }
+    // A price is never shown without its qualifications.
+    const article = html.split('<article ').find((a) => a.startsWith(`class="cell" data-cell="${key}"`)) || '';
+    const e = cell.evidence;
+    if (!e || !e.statement || !(e.limitations || []).length) problems.push(`${key}: evidence missing or empty in the drill JSON`);
+    else if (!article.includes('data-evidence="present"')) problems.push(`${key}: evidence block not rendered`);
+    else for (const l of e.limitations) if (!article.includes(esc(l))) problems.push(`${key}: limitation "${l}" not rendered`);
+    if (cell.state === 'unavailable' && (cell.stage4_billing_lines || cell.billing_total !== null)) problems.push(`${key}: unavailable cell carries money`);
+    if (cell.state === 'unavailable' && !article.includes('data-state="unavailable"')) problems.push(`${key}: unavailable state not rendered`);
+  }
+  for (const [g, group] of Object.entries(drill.groups || {})) {
+    for (const a of group.allocation || []) {
+      moneyCount++;
+      if (!html.includes(`data-value="${a.money}" data-kind="money"`)) problems.push(`group ${g}: allocated money ${a.money} of ${a.rule_id} not rendered`);
     }
   }
   if (!values) problems.push('no predicted/measured value to check');

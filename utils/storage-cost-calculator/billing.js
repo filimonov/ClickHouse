@@ -5,7 +5,10 @@
 
   const UNITS = ['decimal', 'binary_gb'];
   const GIB_IN_DECIMAL_GB = 1.073741824; // 2^30 / 10^9
-  const OUTCOMES = ['ok', 'client_error', 'server_error', 'dropped'];
+  // accepted_dropped: the store answered ok and the reply to the caller was lost, so the provider bills it.
+  // dropped: the store's outcome is unknown, so there is no billable fact.
+  const OUTCOMES = ['ok', 'accepted_dropped', 'client_error', 'server_error', 'dropped'];
+  const BILLED = new Set(['ok', 'accepted_dropped']);
   const EPS = 1e-9;
 
   // The preset's "GB" is 2^30 bytes under binary_gb and 10^9 bytes under decimal.
@@ -43,7 +46,7 @@
   function billedFractions(r, outcomeMix, free) {
     if (r.outcome_class !== 'all') {
       if (!OUTCOMES.includes(r.outcome_class)) throw new Error(`row ${rowName(r)}: unknown outcome_class`);
-      const billed = r.outcome_class === 'ok' || (r.outcome_class === 'client_error' && !isFreeOutcome(r, free));
+      const billed = BILLED.has(r.outcome_class) || (r.outcome_class === 'client_error' && !isFreeOutcome(r, free));
       return { billed: billed ? 1 : 0, excluded: { [r.outcome_class]: billed ? 0 : 1 } };
     }
     const mix = (outcomeMix && outcomeMix[r.op_kind]) || { ok: 1 };
@@ -54,7 +57,7 @@
     }
     const sum = OUTCOMES.reduce((s, k) => s + (mix[k] || 0), 0);
     if (Math.abs(sum - 1) > 1e-6) throw new Error(`outcome mix for ${r.op_kind} must sum to 1, got ${sum}`);
-    const billed = (mix.ok || 0) + (isFreeOutcome(r, free) ? 0 : (mix.client_error || 0));
+    const billed = (mix.ok || 0) + (mix.accepted_dropped || 0) + (isFreeOutcome(r, free) ? 0 : (mix.client_error || 0));
     return { billed, excluded: { client_error: isFreeOutcome(r, free) ? (mix.client_error || 0) : 0, server_error: mix.server_error || 0, dropped: mix.dropped || 0 } };
   }
 

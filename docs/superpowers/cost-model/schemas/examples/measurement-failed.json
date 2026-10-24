@@ -13,13 +13,15 @@
   "scale": 1.0,
   "mode": "deterministic",
   "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "binary_download_sha256": "2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46",
   "commit": "78133cca87d",
+  "rig_commit": "4b29975787f2c0c0dfbd3bd7e2b2cbbd8f2c9a51",
   "pass_dir": "tmp/rig/run42/pass1",
   "status": "FAILED",
   "reason": "server did not become ready within 60 s",
   "diagnostics": {"server_logs": ["tmp/rig/run42/pass1/r1/clickhouse-server.log"], "error_text": "timeout waiting for port 9000"},
   "partial": {
     "effective_counts": {"parts": 0},
-    "window": {"start_seq": 16, "end_seq": 20, "t_start_us": 1761300000100000, "t_end_us": 1761300000200000, "crossing": []}
+    "window": {"start_seq": 16, "end_seq": 20, "t_start_us": 1761300000100000, "t_end_us": 1761300000200000, "crossing": [], "open_attempts": []}
   }
 }

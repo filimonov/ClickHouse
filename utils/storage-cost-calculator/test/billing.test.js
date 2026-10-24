@@ -46,6 +46,32 @@ test('test_outcome_mix_split_and_free_list', () => {
   assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1)], P(), 'variant', { GetObject: { ok: 0.5 } }), /sum/);
 });
 
+test('test_accepted_dropped_is_billed_and_dropped_is_not', () => {
+  // The store accepted the request and its reply was lost: billed like ok. `dropped` means the store's outcome is
+  // unknown, so the row carries no billable fact.
+  const r = billing.bill([row('request', 'UploadPart', 'ok', 2000), row('request', 'UploadPart', 'accepted_dropped', 1000),
+    row('request', 'UploadPart', 'dropped', 7000)], P());
+  assert.equal(line(r, 'put_copy_post_list').quantity, 3000);
+  assert.match(line(r, 'put_copy_post_list').note, /7000 dropped/);
+  const mixed = billing.bill([row('request', 'GetObject', 'all', 1000)], P(), 'variant',
+    { GetObject: { ok: 0.5, accepted_dropped: 0.25, dropped: 0.25 } });
+  assert.equal(line(mixed, 'get_and_other').quantity, 750);
+});
+
+test('test_validated_cell_rows_keep_their_outcome_facts', () => {
+  // A cell row that passed validation keeps status, s3_code and condition through evaluateCell into billing.
+  const model = require('../model.js');
+  const cell = { ledger_rows: [
+    Object.assign(row('request', 'GetObject', 'client_error', null, { status: 403, s3_code: 'SignatureDoesNotMatch', caller: 'r1' }),
+      { expr: { kind: 'const', value: 100, dim: 'count' } }),
+    Object.assign(row('request', 'GetObject', 'client_error', null, { status: 403, s3_code: 'AccessDenied' }),
+      { expr: { kind: 'const', value: 3, dim: 'count' } }),
+  ], allocation: null, states: [], notes: [] };
+  const ev = model.evaluateCell(cell, { inputs: new Map(), coefs: new Map(), tables: new Map(), sets: new Map(), vars: new Map() });
+  assert.equal(ev.rows[0].s3_code, 'SignatureDoesNotMatch');
+  assert.equal(line(billing.bill(ev.rows, P()), 'get_and_other').quantity, 3);
+});
+
 test('test_storage_tiers_once', () => {
   const r = billing.bill([row('storage', 'stored', 'ok', 51200, { category: 'active' }),
     row('storage', 'stored', 'ok', 1, { category: 'outdated' })], P());

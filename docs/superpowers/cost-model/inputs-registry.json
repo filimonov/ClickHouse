@@ -358,7 +358,7 @@
     {
       "id": "probe_put_requests",
       "block": "reliability",
-      "label": "Probe: measured PutObject attempts",
+      "label": "Probe: PutObject requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -380,7 +380,7 @@
     {
       "id": "probe_get_requests",
       "block": "reliability",
-      "label": "Probe: measured GetObject attempts",
+      "label": "Probe: GetObject requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -402,7 +402,7 @@
     {
       "id": "probe_head_requests",
       "block": "reliability",
-      "label": "Probe: measured HeadObject attempts",
+      "label": "Probe: HeadObject requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -424,7 +424,7 @@
     {
       "id": "probe_list_requests",
       "block": "reliability",
-      "label": "Probe: measured ListObjectsV2 attempts",
+      "label": "Probe: ListObjectsV2 requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -446,7 +446,7 @@
     {
       "id": "probe_delete_requests",
       "block": "reliability",
-      "label": "Probe: measured DeleteObject attempts",
+      "label": "Probe: DeleteObject requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -468,7 +468,7 @@
     {
       "id": "probe_batch_delete_requests",
       "block": "reliability",
-      "label": "Probe: measured DeleteObjects attempts",
+      "label": "Probe: DeleteObjects requests the store answered ok (reply delivered)",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -490,7 +490,7 @@
     {
       "id": "probe_r2_get_requests",
       "block": "reliability",
-      "label": "Probe: fetch receiver GetObject attempts",
+      "label": "Probe: fetch receiver GetObject requests the store answered ok",
       "kind": "measured",
       "scope": "pool",
       "unit": "count",
@@ -512,7 +512,139 @@
     {
       "id": "probe_interserver_gib",
       "block": "reliability",
-      "label": "Probe: interserver bytes the fetch sender shipped",
+      "label": "Probe: interserver bytes the replicas' interserver servers sent (relay from_target)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_head_error_requests",
+      "block": "reliability",
+      "label": "Probe: HeadObject requests answered with a 4XX",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_get_error_requests",
+      "block": "reliability",
+      "label": "Probe: GetObject requests answered with a 4XX",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_metadata_gib_months",
+      "block": "cas",
+      "label": "Probe: metadata objects (CAS control state)",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_r1_active_gib_months",
+      "block": "reliability",
+      "label": "Probe: active objects replica 1 created",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_r2_active_gib_months",
+      "block": "reliability",
+      "label": "Probe: active objects replica 2 created",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_interserver_to_gib",
+      "block": "reliability",
+      "label": "Probe: interserver bytes the replicas' interserver servers received (relay to_target)",
       "kind": "measured",
       "scope": "cluster",
       "unit": "GiB",

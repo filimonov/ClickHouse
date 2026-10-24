@@ -13,7 +13,9 @@
   "scale": 1.0,
   "mode": "deterministic",
   "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "binary_download_sha256": "2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46",
   "commit": "78133cca87d",
+  "rig_commit": "4b29975787f2c0c0dfbd3bd7e2b2cbbd8f2c9a51",
   "pass_dir": "tmp/rig/run42/pass0",
   "status": "UNSUPPORTED",
   "reason": "the build lacks the CAS disk type"

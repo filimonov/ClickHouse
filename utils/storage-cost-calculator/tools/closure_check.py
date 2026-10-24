@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import artifacts
@@ -19,7 +20,11 @@ import artifacts
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_COST_MODEL = ROOT / "docs/superpowers/cost-model"
 DEFAULT_REPORTS = str(ROOT / "docs/superpowers/reports/2026-10-*-storage-cost-*")
-NODE_FIXTURES = ROOT / "utils/storage-cost-calculator/page/tests/pricing"
+NODE_TESTS = ROOT / "utils/storage-cost-calculator/test"
+YARDSTICK = ROOT / "utils/cas-yardstick"
+RENDER_CHECK = ROOT / "utils/storage-cost-calculator/tools/render_check.mjs"
+PRESETS = ROOT / "utils/storage-cost-calculator/presets.js"
+IDENTITY = ("binary_sha256", "binary_download_sha256", "commit", "rig_commit")
 REQUIRED = ("measurement-contract.md", "inputs-registry.json", "coverage.json", "billing-contract.json")
 # Rig policy (cards/runner.py `VARIANTS`) to the model variant it measures.
 POLICY_VARIANT = {"local": "ebs", "s3": "s3", "s3plain": "s3plain", "cas": "cas"}
@@ -162,13 +167,13 @@ def _cut_coefficients(coverage):
 def _pending_cells(coverage, formulas_list):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
-    A cell has evidence when a coefficient its formulas use has a non-cut evidence row from a card of that
-    family whose `model_variants` include the variant.
+    A cell has evidence when every coefficient its formulas use has a completed (`done` or `consumed`) evidence
+    row from a card of that family whose `model_variants` include the variant. A planned row backs nothing.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
     backed = {(row["coefficient"], card_of[row["experiment_id"]]["family"], v)
-              for row in coverage["evidence"] if row["status"] != "cut" and row["experiment_id"] in card_of
+              for row in coverage["evidence"] if row["status"] in ("done", "consumed") and row["experiment_id"] in card_of
               for v in card_of[row["experiment_id"]]["model_variants"]}
     cells = {}
     for f in formulas_list:
@@ -181,8 +186,21 @@ def _pending_cells(coverage, formulas_list):
         for op in domain["operations"]:
             entry = cells.get((v, op), {"unsupported": False, "coefs": set()})
             pending += [(v, op, fam) for fam in domain["families"]
-                        if not entry["unsupported"] and not any((c, fam, v) in backed for c in entry["coefs"])]
+                        if not entry["unsupported"] and not (entry["coefs"] and all((c, fam, v) in backed for c in entry["coefs"]))]
     return pending
+
+
+def _cells_on_cut(coverage, formulas_list):
+    """A cell that uses a coefficient resting only on cut experiments must be unconditionally not_supported."""
+    cut = _cut_coefficients(coverage)
+    out = []
+    for f in formulas_list:
+        for op, cell in (f.get("cells") or {}).items():
+            unsupported = any(s.get("cond") is True and s.get("id") == "not_supported" for s in cell.get("states", []))
+            for kind, ref in sorted(set(_walk(cell, []))):
+                if kind in ("coef", "table") and ref in cut and not unsupported:
+                    out.append(f"cell {f['variant']}/{op} depends on cut coefficient {ref} and is not marked not_supported")
+    return out
 
 
 def support(registry, coverage, formulas_list, require_formulas=False, pending=None):
@@ -201,6 +219,9 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
                 if variant not in card["model_variants"]:
                     problems.append(f"card {card['name']}.{case['case_id']}: policy {policy} measures {variant}, not in model_variants")
     problems += [f"family {f} has no card" for f in sorted(families - {c["family"] for c in coverage["cards"]})]
+    problems += _cells_on_cut(coverage, formulas_list)
+    if _cut_coefficients(coverage) and not PRESETS.exists():
+        print(f"note: {PRESETS} absent; cut propagation to presets not checked", file=sys.stderr)
     pending_cells = _pending_cells(coverage, formulas_list)
     if require_formulas:
         problems += [f"cell {v}/{op}/{fam}: no evidence and no unconditional not_supported state" for v, op, fam in pending_cells]
@@ -227,7 +248,8 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
 PROVENANCE = ("kind", "ref", "version", "measurement_ids", "binary_sha256", "commit")
 
 
-def evidence(coverage, coefficients):
+def evidence(coverage, coefficients, measurement_ids=None):
+    """`measurement_ids`, when given, are the ids the reports hold; evidence must resolve to them."""
     problems = [f"coverage {p}" for p in artifacts.validate_coverage(coverage)]
     if problems:
         return problems
@@ -248,16 +270,23 @@ def evidence(coverage, coefficients):
             continue
         listed = {m for r in rows for m in r["measurement_ids"]}
         problems += [f"{cid}: measurement {m} not in coverage evidence" for m in ev.get("measurement_ids", []) if m not in listed]
+        if measurement_ids is not None:
+            problems += [f"{cid}: measurement {m} does not resolve to a report record"
+                         for m in sorted(listed | set(ev.get("measurement_ids", []))) if m not in measurement_ids]
         if not any(priority.get(r["experiment_id"]) == "P1" for r in rows):
             continue
+        if c.get("validity") is None:
+            problems.append(f"{cid}: P1 measured coefficient needs a validity domain")
         fits = [r for r in rows if r["role"] == "fit" and r["status"] in ("done", "consumed")]
         holdouts = [r for r in rows if r["role"] == "holdout" and r["status"] == "done"]
         if not fits:
             problems.append(f"{cid}: P1 coefficient has no done fit row")
         if not holdouts:
             problems.append(f"{cid}: P1 coefficient has no done holdout row")
-        elif fits and not any(_distinct(h, f) for h in holdouts for f in fits):
-            problems.append(f"{cid}: holdout is not distinct from the fit (same experiment, span or measurements)")
+        for h in holdouts:
+            if fits and not all(_distinct(h, f) for f in fits):
+                problems.append(f"{cid}: holdout {h['experiment_id']} overlaps the fit data (same experiment and span, "
+                                "or shared measurements with some fit)")
     return problems
 
 
@@ -295,19 +324,56 @@ def _compare(m, pred):
 
 def _node_fixtures(cmd, mode):
     if cmd is None:
-        if shutil.which("node") and NODE_FIXTURES.is_dir():
-            cmd = ["node", "--test", str(NODE_FIXTURES)]
+        tests = sorted(str(p) for p in NODE_TESTS.glob("*.test.js"))
+        if shutil.which("node") and tests:
+            cmd = ["node", "--test", *tests]
         elif mode == "final":
-            return [f"node pricing fixtures missing: need node and {NODE_FIXTURES}"]
+            return [f"node pricing tests missing: need node and {NODE_TESTS}/*.test.js"]
         else:
-            print(f"note: node pricing fixtures skipped (node or {NODE_FIXTURES} absent)", file=sys.stderr)
+            print(f"note: node pricing tests skipped (node or {NODE_TESTS}/*.test.js absent)", file=sys.stderr)
             return []
     done = subprocess.run(cmd, capture_output=True, text=True)
     tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-15:])
     return [] if done.returncode == 0 else [f"node fixtures failed ({' '.join(cmd)}):\n{tail}"]
 
 
-def accounting(measurements, predictions, node_test_cmd=None, mode="dev"):
+def raw_slices(reports):
+    """measurement_id -> raw ledger slice (`raw/<card>/ledger.jsonl[.gz]`) of every report record."""
+    out = {}
+    for r in reports:
+        path = Path(r) / "measurements.jsonl"
+        if not path.exists():
+            continue
+        for line in path.read_text().splitlines():
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue  # reported by the loader
+            if not isinstance(m, dict):
+                continue
+            for name in ("ledger.jsonl", "ledger.jsonl.gz"):
+                p = Path(r) / "raw" / str(m.get("card")) / name
+                if p.exists():
+                    out[m.get("measurement_id")] = p
+    return out
+
+
+def replay_problems(record, raw_path):
+    """Counts and byte-hour bounds recomputed from the raw rows by the rig's own replay must match the record."""
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(record, f)
+    try:
+        done = subprocess.run([sys.executable, "-m", "yardstick.cost.reproduce", f.name, str(Path(raw_path).resolve())],
+                              cwd=YARDSTICK, capture_output=True, text=True)
+    finally:
+        Path(f.name).unlink()
+    if done.returncode not in (0, 1):
+        return [f"{record.get('measurement_id')}: replay failed: {done.stderr.strip()[-500:]}"]
+    return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
+
+
+def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=None):
+    """`raw` maps measurement ids to raw ledger slices; each record is replayed from its slice."""
     problems = [f"prediction {p}" for pr in predictions for p in artifacts.validate_prediction(pr)]
     preds = {(p["experiment_id"], p["policy"]): p for p in predictions if isinstance(p, dict) and "policy" in p}
     for m in measurements:
@@ -322,6 +388,13 @@ def accounting(measurements, predictions, node_test_cmd=None, mode="dev"):
         for cat, b in m["inventory"]["byte_hours"].items():
             if b["lower"] < 0 or b["lower"] > b["upper"]:
                 problems.append(f"{mid}: byte_hours.{cat} lower {b['lower']} not within 0 <= lower <= upper {b['upper']}")
+        if raw is not None:
+            if mid in raw:
+                problems += replay_problems(m, raw[mid])
+            elif mode == "final":
+                problems.append(f"{mid}: no raw ledger slice to replay")
+            else:
+                print(f"note: {mid}: no raw ledger slice, replay skipped", file=sys.stderr)
         pred = preds.get((m["experiment_id"], m["policy"]))
         if pred is None:
             problems.append(f"{mid}: no prediction for {m['experiment_id']} / {m['policy']}")
@@ -414,6 +487,30 @@ def reproduction(copies=(), sums=()):
     return problems
 
 
+def identities(measurements):
+    """Records of one report name one binary (downloaded and executed), one source commit and one rig commit."""
+    problems = []
+    for key in IDENTITY:
+        seen = sorted({str(m.get(key)) for m in measurements if m.get("status") == "ok"})
+        if len(seen) > 1:
+            problems.append(f"identity {key} differs across the report's records: {', '.join(seen)}")
+    return problems
+
+
+def rerender(reports):
+    """Every archived drill renders again with the page's own renderer, values and evidence included."""
+    drills = [p for r in reports for p in sorted((Path(r) / "raw").glob("*/drill.json"))]
+    if drills and not shutil.which("node"):
+        return ["node missing: archived drills cannot be re-rendered"]
+    problems = []
+    for d in drills:
+        probe = json.loads(d.read_text()).get("probe", "")
+        done = subprocess.run(["node", str(RENDER_CHECK), str(d), "--probe", probe], capture_output=True, text=True)
+        if done.returncode != 0:
+            problems.append(f"{d}: render check failed: {done.stderr.strip()[-300:]}")
+    return problems
+
+
 # --- driver ------------------------------------------------------------------------------------
 
 def _load(path, problems):
@@ -461,7 +558,7 @@ def main(argv=None):
     paths = sorted(cm.glob("formulas*.json")) + [r / "formulas.json" for r in reports if (r / "formulas.json").exists()]
     # A report's formulas.json may hold one formulas/1 object or an array of them (one per variant).
     formulas = [x for f in (_load(p, problems) for p in paths) if f is not None for x in (f if isinstance(f, list) else [f])]
-    coefficients, measurements, predictions = [], [], []
+    coefficients, measurements, predictions, per_report = [], [], [], []
     for r in reports:
         if (r / "coefficients.json").exists():
             loaded = _load(r / "coefficients.json", problems)
@@ -470,7 +567,8 @@ def main(argv=None):
             elif loaded is not None:
                 problems.append(f"{r / 'coefficients.json'}: expected a JSON array")
         if (r / "measurements.jsonl").exists():
-            measurements += _load_jsonl(r / "measurements.jsonl", problems)
+            per_report.append(_load_jsonl(r / "measurements.jsonl", problems))
+            measurements += per_report[-1]
         predictions += [x for x in (_load(p, problems) for p in sorted((r / "predictions").glob("*.json"))) if x is not None]
     reg = _load(cm / "inputs-registry.json", problems) if (cm / "inputs-registry.json").exists() else None
     cov = _load(cm / "coverage.json", problems) if (cm / "coverage.json").exists() else None
@@ -482,11 +580,16 @@ def main(argv=None):
         problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending)
         if pending:
             print(f"note: {len(pending)} support cells pending (no evidence, no not_supported state)", file=sys.stderr)
-        problems += evidence(cov, coefficients)
+        problems += evidence(cov, coefficients, {m.get("measurement_id") for m in measurements})
     if bil is not None:
         problems += billing(bil)
-    problems += accounting(measurements, predictions, mode=args.mode)
+    problems += accounting(measurements, predictions, mode=args.mode, raw=raw_slices(reports))
+    if args.mode == "final":
+        problems += [f"{r}: raw/SHA256SUMS missing" for r in reports if (r / "measurements.jsonl").exists() and not (r / "raw/SHA256SUMS").exists()]
     problems += reproduction([tuple(c.split("=", 1)) for c in args.copy], [r / "raw/SHA256SUMS" for r in reports if (r / "raw/SHA256SUMS").exists()])
+    for records in per_report:
+        problems += identities(records)
+    problems += rerender(reports)
     for p in problems:
         print(f"closure_check: {p}", file=sys.stderr)
     print(f"closure_check ({args.mode}): {'FAIL, %d problem(s)' % len(problems) if problems else 'ok'}")

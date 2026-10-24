@@ -65,6 +65,15 @@ test('test_load_valid_minimal', () => {
   assert.equal(contract.CONTRACT_SCHEMA, 'contract/1');
 });
 
+test('test_unconditional_state_is_not_an_expression', () => {
+  const c = minimal();
+  const op = Object.keys(c.formulas.s3)[0];
+  c.formulas = { s3: { [op]: Object.assign({}, c.formulas.s3[op], { states: [{ id: 'not_supported', cond: true, reason: 'r' }] }) } };
+  assert.deepEqual(problemsOf(c), []);
+  c.formulas.s3[op].states[0].cond = { kind: 'const', value: 1 };
+  assert.ok(problemsOf(c).some((p) => /states\[0\]\.cond: missing dim/.test(p)));
+});
+
 test('test_duplicate_owner_rejected', () => {
   const c = minimal();
   c.coefficients.push(coef('min_bytes_for_wide_part', 'scalar', { evidence: { ref: 'report-other' } }));

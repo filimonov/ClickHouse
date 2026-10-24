@@ -17,7 +17,7 @@ PHASES = ("setup", "window", "teardown", "outside")
 COUNTS_FIELDS = (
     "attempts", "delivered", "dropped", "injected", "rejected", "upstream_ok", "upstream_error",
     "upstream_unknown", "req_payload_bytes", "resp_payload_bytes", "list_pages", "list_keys",
-    "delete_calls", "delete_keys",
+    "delete_calls", "delete_keys", "accepted_dropped", "upstream_4xx",
 )
 PROC_IO_FIELDS = ("rchar", "wchar", "syscr", "syscw", "read_bytes", "write_bytes")
 CATEGORIES = ("active", "outdated", "garbage", "temporary", "incomplete", "detached", "metadata")
@@ -130,6 +130,22 @@ def _run(checker, v, path="$"):
     return checker(v, path)
 
 
+def obj_optional(spec, optional):
+    """Like obj, but keys in `optional` may be absent."""
+    strict = obj({k: v for k, v in spec.items() if k not in optional})
+
+    def check(v, path):
+        if not isinstance(v, dict):
+            return [f"{path}: expected object, got {_short(v)}"]
+        extra = {k: v[k] for k in optional if k in v}
+        base = {k: x for k, x in v.items() if k not in optional}
+        out = strict(base, path)
+        for key, value in extra.items():
+            out += spec[key](value, f"{path}.{key}")
+        return out
+    return check
+
+
 # --- ledger row --------------------------------------------------------------------------------
 
 _counts_payload = integer
@@ -158,6 +174,7 @@ _ATTEMPT = {
     "injected_rule": nullable(string),
     "phase": enum(*PHASES),
     "error": nullable(string),  # optional: proxy-side failure description
+    "delete_keys": list_of(string),  # optional: keys a DeleteObjects request names, parsed before forwarding
 }
 _MARK = {"kind": literal("mark"), "seq": integer, "label": nonempty_string, "t_us": integer}
 
@@ -167,7 +184,7 @@ def validate_ledger_row(d):
         return ["$: expected object"]
     kind = d.get("kind")
     if kind == "attempt":
-        return _run(obj_optional(_ATTEMPT, {"error"}), d)
+        return _run(obj_optional(_ATTEMPT, {"error", "delete_keys"}), d)
     if kind == "mark":
         return _run(obj(_MARK), d)
     return [f"$.kind: expected attempt or mark, got {_short(kind)}"]
@@ -184,7 +201,8 @@ _COMMON = {
     "run_id": nonempty_string, "card": nonempty_string, "case_id": nonempty_string,
     "policy": nonempty_string, "variant": enum(*VARIANTS), "cache_enabled": boolean,
     "replicas": integer, "k": integer, "scale": number, "mode": enum(*MODES),
-    "binary_sha256": nonempty_string, "commit": nonempty_string, "pass_dir": nonempty_string,
+    "binary_sha256": nonempty_string, "binary_download_sha256": nullable(nonempty_string),
+    "commit": nonempty_string, "rig_commit": nonempty_string, "pass_dir": nonempty_string,
     "status": enum("ok", "UNSUPPORTED", "FAILED"),
 }
 
@@ -195,6 +213,9 @@ _LOCAL_REPLICA = obj({
     "trace": nullable(obj({
         "tool": literal("strace"),
         "syscalls": dict_of(obj({"count": integer, "bytes": integer, "size_histogram": dict_of(integer)})),
+        "window": pair(number), "outside": integer, "files": list_of(string),
+        "crossing": list_of(obj({"pid": string, "syscall": nonempty_string, "path": string, "start": number,
+                                 "end": number, "bytes": integer})),
     })),
     "limitations": list_of(string),
 })
@@ -205,20 +226,26 @@ _OK_SECTIONS = {
     "effective_settings": obj({"table": free_object, "query": free_object, "server": free_object}),
     "config_hashes": list_of(string),
     "window": obj({"start_seq": integer, "end_seq": integer, "t_start_us": integer, "t_end_us": integer,
-                   "crossing": list_of(integer)}),
+                   "crossing": list_of(integer),
+                   "open_attempts": list_of(obj({"seq": integer, "caller": enum(*CALLERS), "op": enum(*OPS),
+                                                 "key": string}))}),
     "ledger": obj({"foreground": _CALLER_OPS, "maintenance": _CALLER_OPS, "setup": _CALLER_OPS,
-                   "teardown": _CALLER_OPS, "rig": _OP_COUNTS}),
+                   "teardown": _CALLER_OPS, "rig": _OP_COUNTS, "complete": boolean}),
     "events": dict_of(dict_of(number)),
     "proc_io": dict_of(obj({f: integer for f in PROC_IO_FIELDS})),
     "generations": dict_of(list_of(obj({"pid": integer, "t_start_us": integer, "t_end_us": integer}))),
     "local": dict_of(_LOCAL_REPLICA),
     "interserver": dict_of(obj({"to_target": integer, "from_target": integer,
                                 "connections_total": integer, "open_at_end": integer})),
-    "inventory": obj({
+    "inventory": obj_optional({
         "initial": enum("empty_verified", "declared"),
+        "note": nonempty_string,  # optional: why the initial inventory is declared rather than verified
         "byte_hours": dict_of(obj({"lower": number, "upper": number})),
         "uncertain_identities": integer,
-    }),
+        # Logical categories attached after creation (`garbage` after a DROP, ...), replayable from the raw slice.
+        "reclassified": list_of(obj({"category": enum(*CATEGORIES), "t_us": integer, "evidence": nonempty_string,
+                                     "keys": list_of(pair(string))})),
+    }, ("note",)),
     "observations": free_object,
     "assertions": dict_of(obj({"expected": anything, "actual": anything, "ok": boolean})),
     "wall_s": number,
@@ -251,22 +278,6 @@ def validate_measurement(d):
     problems = _run(obj_optional(spec, optional=("partial", "cleanup") if status == "FAILED" else ("cleanup",) if status == "ok" else ()), d)
     problems += _check_identity(d)
     return problems
-
-
-def obj_optional(spec, optional):
-    """Like obj, but keys in `optional` may be absent."""
-    strict = obj({k: v for k, v in spec.items() if k not in optional})
-
-    def check(v, path):
-        if not isinstance(v, dict):
-            return [f"{path}: expected object, got {_short(v)}"]
-        extra = {k: v[k] for k in optional if k in v}
-        base = {k: x for k, x in v.items() if k not in optional}
-        out = strict(base, path)
-        for key, value in extra.items():
-            out += spec[key](value, f"{path}.{key}")
-        return out
-    return check
 
 
 def _validate_partial(v, path):
@@ -508,6 +519,24 @@ def validate_formulas(d, tables=None):
     return problems
 
 
+_ROW = {
+    "row_type": enum("request", "storage", "transfer", "block_io", "block_capacity"),
+    "op_kind": nonempty_string,
+    "outcome_class": enum("ok", "accepted_dropped", "client_error", "server_error", "dropped", "all"),
+    "category": nullable(enum(*CATEGORIES)),
+    "route": nullable(enum("ec2_s3_same_region", "ec2_ec2_cross_az", "internet")),
+    "scope": enum("variant", "replica", "volume"),
+    "expr": anything,
+    # Optional outcome facts the billing preset's free list matches on, and the caller a request row reconciles with.
+    "status": either(integer, _typed("status class like 4XX", lambda v: isinstance(v, str) and len(v) == 3
+                                     and v[0].isdigit() and v[1:] == "XX")),
+    "s3_code": nullable(nonempty_string),
+    "condition": nullable(nonempty_string),
+    "caller": nullable(enum(*CALLERS)),
+}
+_ROW_OPTIONAL = ("status", "s3_code", "condition", "caller")
+
+
 def _validate_cell(cell, path, tables):
     if not isinstance(cell, dict):
         return [f"{path}: expected object"]
@@ -515,19 +544,14 @@ def _validate_cell(cell, path, tables):
     for key in ("ledger_rows", "allocation", "states", "notes"):
         if key not in cell:
             out.append(f"{path}: missing field {key}")
-    out += [f"{path}: unexpected field {k}" for k in cell if k not in ("ledger_rows", "allocation", "states", "notes")]
-    row_spec = {
-        "row_type": enum("request", "storage", "transfer", "block_io", "block_capacity"),
-        "op_kind": nonempty_string,
-        "outcome_class": enum("ok", "client_error", "server_error", "dropped", "all"),
-        "category": nullable(enum(*CATEGORIES)),
-        "route": nullable(enum("ec2_s3_same_region", "ec2_ec2_cross_az", "internet")),
-        "scope": enum("variant", "replica", "volume"),
-        "expr": anything,
-    }
+    out += [f"{path}: unexpected field {k}" for k in cell if k not in ("ledger_rows", "allocation", "states", "notes", "excluded")]
+    if "excluded" in cell:
+        # Record usage the cell deliberately does not price; the drill flags any other unmodelled usage.
+        out += _run(list_of(obj({"kind": enum("op", "category"), "id": nonempty_string, "reason": nonempty_string})),
+                    cell["excluded"], f"{path}.excluded")
     for i, row in enumerate(cell.get("ledger_rows", []) if isinstance(cell.get("ledger_rows"), list) else []):
         rp = f"{path}.ledger_rows[{i}]"
-        out += _run(obj(row_spec), row, rp)
+        out += _run(obj_optional(_ROW, _ROW_OPTIONAL), row, rp)
         if isinstance(row, dict) and "expr" in row:
             out += validate_node(row["expr"], f"{rp}.expr", False, tables)
     if "ledger_rows" in cell and not isinstance(cell["ledger_rows"], list):

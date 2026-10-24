@@ -35,14 +35,19 @@ test('test_drill_json_and_exit_code', () => {
   assert.deepEqual([put.predicted, put.measured, put.exact, put.branch_taken], [3, 3, true, ['then']]);
   assert.equal(c.stage1_inputs.inputs.parts_inserted, 1);
   assert.equal(c.stage1_inputs.coefs.min_bytes_for_wide_part, 10485760);
-  assert.equal(c.stage3_ledger_summary.by_row_type.request.rows, 2);
+  assert.equal(c.stage3_ledger_summary.by_row['request PutObject'].rows, 1);
+  // IOPS and MiB/s stay apart: no summary entry adds quantities of different units.
+  assert.deepEqual([c.stage3_ledger_summary.by_row['block_io iops'].quantity, c.stage3_ledger_summary.by_row['block_io mibps'].quantity], [6000, 200]);
   const money = Object.fromEntries(c.stage4_billing_lines.map((l) => [l.rule_id, l.money]));
   assert.equal(money.storage, 23); // 1000 GB * 0.023
   assert.equal(money.ec2_ec2_cross_az, 1); // 100 GB * 0.01
   assert.equal(money.block_capacity, 4); // stripe2: 2 x 25 GiB * 0.08
   assert.ok(Math.abs(c.billing_total - 28.000019) < 1e-9);
-  assert.equal(c.stage5_allocation.layout, 'stripe2');
-  assert.equal(c.stage5_allocation.monthly_cost, 4);
+  assert.equal(c.stage5_allocation.provisioning.layout, 'stripe2');
+  assert.equal(c.stage5_allocation.provisioning.monthly_cost, 4);
+  assert.equal(c.evidence.inventory_initial, 'declared');
+  assert.deepEqual(c.evidence.limitations, ['fixture limitation: one workstation']);
+  assert.equal(json.contract.registry_version, '1');
   assert.match(r.stdout, /PutObject ok \| then \| 3 \| 3/);
 
   const only = runDrill('cell', 'measurements.jsonl', ['--cell', 's3/insert']);
@@ -55,7 +60,7 @@ test('test_drill_json_and_exit_code', () => {
 test('test_drill_exit_code_on_mismatch_and_missing_input', () => {
   const bad = runDrill('bad', 'measurements-mismatch.jsonl');
   assert.equal(bad.r.status, 1);
-  assert.match(bad.r.stderr, /PutObject ok" predicted 3 measured 4/);
+  assert.match(bad.r.stderr, /request PutObject ok" predicted 3 measured 4/);
   assert.equal(bad.json.cells.insert.stage2_rows[0].exact, false);
   assert.equal(bad.json.mismatches.length, 2); // not equal, and outside the prediction
 
@@ -87,7 +92,7 @@ test('test_render_drill_contains_substituted_values_and_money', () => {
 
   const ok = node('render_check.mjs', [out, '--probe', 'probe_fixture']);
   assert.equal(ok.status, 0, ok.stderr);
-  assert.match(ok.stdout, /render_check OK probe_fixture: 9 values, 7 money lines/);
+  assert.match(ok.stdout, /render_check OK probe_fixture: 11 values, 14 money lines/);
   assert.equal(node('render_check.mjs', [out, '--probe', 'other']).status, 1);
 
   const doctored = JSON.parse(JSON.stringify(json));
@@ -151,9 +156,11 @@ test('test_mixed_outcomes_compare_attempts_without_false_mismatch', () => {
   const r = node('drill.mjs', [...args, '--out', out]);
   assert.equal(r.status, 0, r.stderr);
   const rows = JSON.parse(fs.readFileSync(out, 'utf8')).cells.insert.stage2_rows;
+  // Each outcome class reconciles with its own ledger outcome: 3 upstream ok, 2 upstream errors.
   const ok = rows.find((x) => x.op_kind === 'PutObject' && x.outcome_class === 'ok');
-  assert.deepEqual([ok.predicted, ok.op_predicted, ok.measured, ok.upstream_ok, ok.exact], [3, 5, 5, 3, true]);
-  assert.equal(rows.find((x) => x.outcome_class === 'client_error').exact, null);
+  assert.deepEqual([ok.predicted, ok.measured, ok.exact], [3, 3, true]);
+  const err = rows.find((x) => x.outcome_class === 'client_error');
+  assert.deepEqual([err.predicted, err.measured, err.exact], [2, 2, true]);
 });
 
 test('test_cell_selecting_nothing_fails_and_non_ok_records_are_reported', () => {
@@ -168,4 +175,132 @@ test('test_cell_selecting_nothing_fails_and_non_ok_records_are_reported', () => 
   const r = node('drill.mjs', [f, ...drillArgs('measurements.jsonl').slice(1)]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /skipped 1 non-ok record\(s\): bad1 \(failed\)/);
+});
+
+// ---- review fixes: contract, states, allocation, reconciliation, evidence ---------------------
+
+const readFx = (f) => JSON.parse(fs.readFileSync(path.join(FX, f), 'utf8'));
+const recordFx = () => JSON.parse(fs.readFileSync(path.join(FX, 'measurements.jsonl'), 'utf8').trim().split('\n')[1]);
+function drillWith(name, { record, formulas, prediction, extra } = {}) {
+  const files = {};
+  const put = (n, v) => { files[n] = path.join(tmp, `${name}-${n}`); fs.writeFileSync(files[n], typeof v === 'string' ? v : JSON.stringify(v)); };
+  put('m.jsonl', `${JSON.stringify(record || recordFx())}\n`);
+  put('f.json', formulas || readFx('formulas.json'));
+  put('p.json', prediction || readFx('prediction.json'));
+  const out = path.join(tmp, `${name}.json`);
+  const r = node('drill.mjs', [files['m.jsonl'], '--probe', 'probe_fixture', '--prediction', files['p.json'], '--formulas', files['f.json'],
+    '--registry', path.join(FX, 'registry.json'), '--billing', BILLING, '--out', out, ...(extra || [])]);
+  return { r, json: fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null, out };
+}
+
+test('test_contract_validation_rejects_bad_dims_and_unregistered_observations', () => {
+  const f = readFx('formulas.json');
+  f.cells.insert.ledger_rows[0].expr.dim = 'GiB';
+  const bad = drillWith('dims', { formulas: f });
+  assert.equal(bad.r.status, 1);
+  assert.match(bad.r.stderr, /mul of 1 and 1 is 1, node declares GiB/);
+  const rec = recordFx();
+  rec.observations.inputs = { parts_inserted: 1, not_in_registry: 5 };
+  const obs = drillWith('obs', { record: rec });
+  assert.equal(obs.r.status, 1);
+  assert.match(obs.r.stderr, /observation not_in_registry is not a registered quantity/);
+  assert.match(obs.r.stderr, /observation parts_inserted names a input quantity/);
+});
+
+test('test_unavailable_states_bill_nothing_and_render_the_state', () => {
+  const f = readFx('formulas.json');
+  f.cells.insert.states = [{ id: 'not_supported', cond: true, reason: 'fixture cannot do this' }];
+  const ns = drillWith('notsup', { formulas: f });
+  const c = ns.json.cells.insert;
+  assert.equal(c.state, 'unavailable');
+  assert.deepEqual([c.stage4_billing_lines, c.billing_total], [null, null]);
+  assert.match(c.unavailable_reasons[0], /not supported: fixture cannot do this/);
+  const html = ui.renderDrillHtml(ns.json);
+  assert.ok(html.includes('data-state="unavailable"'));
+  assert.equal(html.includes('data-kind="money"'), false);
+  const rc = node('render_check.mjs', [ns.out, '--probe', 'probe_fixture']);
+  assert.equal(rc.status, 0, rc.stderr);
+
+  const rec = recordFx();
+  rec.ledger.complete = false;
+  rec.window.open_attempts = [{ seq: 9, caller: 'r1', op: 'PutObject', key: 'k' }];
+  const inc = drillWith('incomplete', { record: rec });
+  assert.equal(inc.json.cells.insert.state, 'unavailable');
+  assert.match(inc.json.cells.insert.unavailable_reasons.join(';'), /incomplete ledger/);
+  assert.match(inc.r.stdout, /incomplete ledger/);
+});
+
+test('test_two_cells_share_one_bill_and_get_allocated_money', () => {
+  // The fixture cell split in two: storage tiers and the block allocation see the aggregate.
+  const f = readFx('formulas.json');
+  const rows = f.cells.insert.ledger_rows;
+  const half = (r) => Object.assign({}, r, { expr: { kind: 'const', value: r.expr.value / 2, dim: r.expr.dim } });
+  f.cells = {
+    'probe_fixture.inserts': { ledger_rows: [rows[0], half(rows[2]), half(rows[4])], allocation: null, states: [], notes: [] },
+    'probe_fixture.recovery': { ledger_rows: [rows[1], half(rows[2]), rows[3], half(rows[4]), rows[5], rows[6]], allocation: null, states: [], notes: [] },
+  };
+  const { r, json } = drillWith('split', { formulas: f, extra: ['--cell', 'probe_fixture'] });
+  assert.equal(r.status, 0, r.stderr);
+  const g = json.groups.s3;
+  assert.deepEqual(g.cells, ['probe_fixture.inserts', 'probe_fixture.recovery']);
+  const storage = g.allocation.find((a) => a.rule_id === 'storage');
+  assert.equal(storage.money, 23);
+  assert.deepEqual(Object.values(storage.shares).map((x) => x.money), [11.5, 11.5]);
+  const cap = g.allocation.find((a) => a.rule_id === 'block_capacity');
+  assert.equal(cap.money, 4); // one stripe2 allocation for 50 GiB, not two for 25
+  const totals = g.cells.map((k) => json.cells[k].billing_total);
+  assert.ok(Math.abs(totals[0] + totals[1] - g.total) < 1e-9);
+  const html = ui.renderDrillHtml(json);
+  assert.ok(html.includes('Allocation across probe_fixture.inserts, probe_fixture.recovery'));
+});
+
+test('test_reconciliation_catches_class_swaps_residuals_and_stochastic_tolerance', () => {
+  // Moving successful requests into a free error row keeps the op total but not the outcome split.
+  const f = readFx('formulas.json');
+  f.cells.insert.ledger_rows[0].expr = { kind: 'const', value: 2, dim: 'count' };
+  f.cells.insert.ledger_rows.push(Object.assign({}, f.cells.insert.ledger_rows[0], {
+    outcome_class: 'client_error', status: 403, s3_code: 'SignatureDoesNotMatch', expr: { kind: 'const', value: 1, dim: 'count' } }));
+  const swap = drillWith('swap', { formulas: f });
+  assert.equal(swap.r.status, 1);
+  assert.match(swap.r.stderr, /request PutObject ok" predicted 2 measured 3/);
+  assert.match(swap.r.stderr, /request PutObject client_error" predicted 1 measured 0/);
+
+  const rec = recordFx();
+  rec.ledger.maintenance = { r2: { HeadObject: Object.assign({}, rec.ledger.foreground.r1.GetObject, { attempts: 4, upstream_ok: 4 }) } };
+  const res = drillWith('residual', { record: rec });
+  assert.equal(res.r.status, 1);
+  assert.match(res.r.stderr, /unmodelled residual: r2 HeadObject ok x4/);
+  const ex = readFx('formulas.json');
+  ex.cells.insert.excluded = [{ kind: 'op', id: 'HeadObject', reason: 'fixture: not priced here' }];
+  assert.equal(drillWith('excluded', { record: rec, formulas: ex }).r.status, 0);
+
+  const stoch = recordFx();
+  stoch.mode = 'stochastic';
+  stoch.ledger.foreground.r1.GetObject.attempts = 13;
+  stoch.ledger.foreground.r1.GetObject.upstream_ok = 13;
+  const sf = readFx('formulas.json');
+  sf.cells.insert.ledger_rows[1].expr = { kind: 'const', value: 13, dim: 'count' };
+  const pred = readFx('prediction.json');
+  pred.tolerance = { abs: { GetObject: 1 }, rel: {} };
+  const out = drillWith('stoch', { record: stoch, formulas: sf, prediction: pred });
+  assert.equal(out.r.status, 1);
+  assert.match(out.r.stderr, /r1 GetObject measured 13 is outside the prediction 9..11 \+- 1/);
+  pred.tolerance = { abs: { GetObject: 2 }, rel: {} };
+  assert.equal(drillWith('stoch2', { record: stoch, formulas: sf, prediction: pred }).r.status, 0);
+});
+
+test('test_storage_must_match_the_record_and_evidence_is_required', () => {
+  const rec = recordFx();
+  rec.inventory.byte_hours.metadata = { lower: 1, upper: 2 };
+  const r = drillWith('meta', { record: rec });
+  assert.equal(r.r.status, 1);
+  assert.match(r.r.stderr, /unmodelled residual: storage category metadata/);
+  const ok = drillWith('evidence');
+  const doctored = JSON.parse(JSON.stringify(ok.json));
+  doctored.cells.insert.evidence.limitations = [];
+  const dpath = path.join(tmp, 'no-evidence.json');
+  fs.writeFileSync(dpath, JSON.stringify(doctored));
+  const rc = node('render_check.mjs', [dpath, '--probe', 'probe_fixture']);
+  assert.equal(rc.status, 1);
+  assert.match(rc.stderr, /evidence missing or empty/);
 });

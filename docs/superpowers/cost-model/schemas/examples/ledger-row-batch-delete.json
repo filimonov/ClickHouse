@@ -1,0 +1,54 @@
+{
+  "kind": "attempt",
+  "seq": 18,
+  "caller": "r1",
+  "store_id": "s3-main",
+  "t_start_us": 1761300000123456,
+  "t_end_us": 1761300000234567,
+  "method": "POST",
+  "path": "/bucket",
+  "query": {
+    "delete": ""
+  },
+  "req_headers": {
+    "content-length": "120",
+    "content-md5": "AAAAAAAAAAAAAAAAAAAAAA=="
+  },
+  "resp_headers": {},
+  "bucket": "bucket",
+  "key": "",
+  "op": "DeleteObjects",
+  "upload_id": null,
+  "part_number": null,
+  "copy_source": null,
+  "req_payload_bytes": 120,
+  "req_wire_bytes": 480,
+  "resp_payload_bytes": 0,
+  "resp_wire_bytes": 0,
+  "payload_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "expect_negotiated": false,
+  "downstream": {
+    "outcome": "dropped",
+    "status": null
+  },
+  "upstream": {
+    "outcome": "unknown",
+    "http_status": null,
+    "s3_code": null
+  },
+  "response_body": {
+    "upload_id": null,
+    "etag": null,
+    "complete_error": null,
+    "completed_parts": null,
+    "delete_results": null,
+    "list": null
+  },
+  "injected_rule": null,
+  "phase": "window",
+  "error": "upstream: connection closed",
+  "delete_keys": [
+    "data/abc/part_0.bin",
+    "data/abc/part_1.bin"
+  ]
+}

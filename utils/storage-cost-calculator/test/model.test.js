@@ -127,10 +127,13 @@ test('test_coef_outside_validity_extrapolated', () => {
 test('test_unavailable_propagates', () => {
   const un = inp('absent');
   const c = ctx({ sets: new Map([['s', ['a', 'b']]]) });
-  for (const kind of ['add', 'sub', 'mul', 'min', 'max', 'div']) {
+  for (const kind of ['add', 'sub', 'mul', 'div']) {
     const extra = kind === 'div' ? { on_zero: 'zero' } : {};
     assert.equal(model.evaluate(bin(kind, k(1), un, 'count', extra), c).state, 'unavailable', kind);
     assert.equal(model.evaluate(bin(kind, un, k(1), 'count', extra), c).state, 'unavailable', kind);
+  }
+  for (const kind of ['min', 'max']) {
+    assert.equal(model.evaluate({ kind, dim: 'count', args: [un, k(1)] }, c).state, 'unavailable', kind);
   }
   const lk = { kind: 'lookup', dim: 'count', table_id: 't', keys: [un] };
   assert.equal(model.evaluate(lk, ctx({ tables: new Map([['t', { index: ['a'], dim: 'count', values: {} }]]) })).state, 'unavailable');
@@ -144,6 +147,21 @@ test('test_unavailable_propagates', () => {
   const pr = model.evaluate({ kind: 'price', dim: 'USD', unit: 'u', rule_id: 'r', quantity: un }, c);
   assert.equal(pr.state, 'unavailable');
   assert.equal(pr.value, null);
+});
+
+test('test_min_max_args_grammar_shared_with_the_validator', () => {
+  // The Python validator checks the same fixture (test_artifacts.test_worked_formula_examples_valid).
+  const registry = load('registry.json');
+  const node = load('example-min-max.json');
+  assert.deepEqual(model.checkDims(node, registry), []);
+  const at = (n) => model.evaluate(node, ctx({ inputs: new Map([['parts_inserted', n]]) })).value;
+  assert.equal(at(0), 1);
+  assert.equal(at(42), 42);
+  assert.equal(at(1e6), 500);
+  assert.equal(model.render(node, registry), 'max(1, min(parts_inserted, 10000, 500))');
+  const bad = { kind: 'min', dim: 'count', args: [k(1), inp('uncompressed_bytes_per_part', 'bytes')] };
+  assert.ok(model.checkDims(bad, registry).some((p) => /min operands/.test(p)));
+  assert.equal(model.evaluate({ kind: 'min', dim: 'count', args: [k(1), inp('absent')] }, ctx()).state, 'unavailable');
 });
 
 test('test_render_symbolic_fixture', () => {
