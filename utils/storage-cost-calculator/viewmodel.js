@@ -277,6 +277,7 @@
       card.deltas = deltaTexts(result, v, preset.currency);
       card.delta_texts = card.deltas.map((d) => d.text);
       card.bar_segments = barSegments(vr, preset);
+      card.sizing = buildSizing(v, vr, preset, inputs ? Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f])) : null, pageState);
       return card;
     });
   }
@@ -332,10 +333,15 @@
         const hint = pageState === 'ok' && c.money === 0 ? zeroHint(op, fields) : null;
         return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed), clickable: true, hint };
       });
-      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: op === 'storage' && pageState === 'ok' ? GIB_NOTE : null });
+      for (const c of cells) {
+        const vr = result.variants[c.variant];
+        c.notes = c.state === 'ok' ? (vr.notes || []).filter((n) => n.kind === 'cell' && n.operation === op).map((n) => cite(noteText(n), measuredBuild(contract))) : [];
+      }
+      rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: null });
     }
     const best = cheapestOf(result, contract);
-    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows };
+    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows,
+      column_notes: pageState === 'cannot_reproduce' ? {} : columnNotes(result, contract, preset, fields, pageState) };
   }
 
   // ---- drill ------------------------------------------------------------------------------------
@@ -575,6 +581,67 @@
     return { blocks: [...blocks.values()].filter((b) => b.fields.length || b.block === 'prices' || b.block === 'simple'), groups, lock_order: lockOrder.slice() };
   }
 
+  // ---- sizing (block volumes) -------------------------------------------------------------------------
+
+  // Per-replica volume sizing from the billing allocation: what the workload needs, what gp3 includes, what the
+  // layout provisions, and a one-line verdict. Every number comes from the Result; none is computed here.
+  function buildSizing(v, vr, preset, fields, pageState) {
+    const p = vr.provisioning;
+    if (vr.state !== 'ok' || !p || !p.per_replica) return null;
+    const g = preset && preset.block && preset.block.gp3;
+    const r = p.per_replica;
+    const val = (id) => (fields && fields[id] && typeof fields[id].value === 'number' ? fields[id].value : null);
+    const headroom = val('ebs_capacity_headroom');
+    const peak = val('peak_factor');
+    const d = p.demand || {};
+    const above = (vr.lines || []).filter((l) => l.rule_id === 'block_iops' || l.rule_id === 'block_mibps').reduce((s, l) => s + l.money, 0);
+    let verdict;
+    if (r.feasible === false) verdict = `no feasible gp3 layout: ${(r.notes || []).join('; ')}`;
+    else if (r.volumes > 1) verdict = `${r.volumes} gp3 volumes of ${fmtQuantity(r.size_gib, 'GiB')} (${r.layout})`;
+    else if (g && r.iops <= g.iops_baseline && r.mibps <= g.mibps_baseline) verdict = 'gp3 baseline sufficient';
+    else verdict = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${pageState === 'ok' && preset && !preset.structure_only ? ` (+${fmtMoney(above / p.replicas, preset.currency)}/month per replica)` : ''}`;
+    const components = [];
+    for (const [op, c] of Object.entries(vr.cells || {})) {
+      const q = (kind) => (c.rows || []).filter((x) => x.row_type === 'block_io' && x.op_kind === kind && x.state === 'ok').reduce((s, x) => s + x.quantity, 0);
+      const iops = q('iops');
+      const mibps = q('mibps');
+      if (iops > 0 || mibps > 0) components.push(`${OPERATION_LABELS[op] || op}: ${fmtQuantity(iops)} IOPS, ${fmtQuantity(mibps)} MiB/s`);
+    }
+    const need = `${fmtQuantity(d.peak_iops || 0)} IOPS, ${fmtQuantity(d.peak_mibps || 0)} MiB/s`;
+    const lines = [
+      `Volume size per replica: ${fmtQuantity(d.capacity_gib || 0, 'GiB')}${headroom !== null ? ` (stored data × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
+      `Peak demand per replica: ${need}${peak !== null ? ` (average × ${fmtQuantity(peak)} peak_factor)` : ''}`,
+      g ? `gp3 baseline per volume: ${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s included` : null,
+      `${r.manual ? 'Manual layout' : 'Cheapest feasible layout'}: ${r.volumes} × ${fmtQuantity(r.size_gib, 'GiB')}, ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s, on ${p.replicas} ${p.replicas === 1 ? 'replica' : 'replicas'}`,
+      `Verdict: ${verdict}`,
+      ...components.map((x) => `Demand from ${x}`),
+    ].filter(Boolean);
+    const instance = (vr.notes || []).find((n) => n.kind === 'instance_class');
+    return {
+      variant: v, replicas: p.replicas, capacity_gib: d.capacity_gib, peak_iops: d.peak_iops, peak_mibps: d.peak_mibps, headroom, peak_factor: peak,
+      volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
+      short: `${fmtQuantity(d.capacity_gib || 0, 'GiB')} per replica, needs ${need}: ${verdict}`,
+      instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
+    };
+  }
+
+  // Column-level notes for the bottom row of the breakdown table: short lines; the column dialog has the detail.
+  function columnNotes(result, contract, preset, fields, pageState) {
+    const out = {};
+    for (const v of contract.variants) {
+      const vr = result.variants[v];
+      const items = [];
+      const sz = vr ? buildSizing(v, vr, preset, fields, pageState) : null;
+      if (sz) items.push({ kind: 'sizing', text: `Volumes: ${sz.short}` });
+      if (sz && sz.instance_class) items.push({ kind: 'instance_class', text: `Instance: ${sz.instance_class} or larger for EBS bandwidth` });
+      if (vr && vr.state === 'ok' && (vr.lines || []).some((l) => l.rule_id === 'storage')) items.push({ kind: 'gib', text: GIB_NOTE });
+      const by = (contract.evidence_by_variant || {})[v];
+      if (by) items.push({ kind: 'evidence', text: `Evidence: ${by.fit_and_holdout} cells fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumption only` });
+      out[v] = items;
+    }
+    return out;
+  }
+
   // ---- evidence -----------------------------------------------------------------------------------
 
   // The measured build, the reports behind the numbers and, per column, how its cells are backed.
@@ -628,7 +695,7 @@
 
   // What the (i) dialog shows. `open` is {kind: 'input', id} (any registry row or coefficient id), {kind: 'cell',
   // variant, operation} or {kind: 'variant', variant}.
-  function buildInfo(result, contract, inputs, open, problems) {
+  function buildInfo(result, contract, inputs, open, problems, preset) {
     const commit = measuredBuild(contract);
     if (open.kind === 'input') {
       const q = contract.registry.find((x) => x.id === open.id);
@@ -650,9 +717,27 @@
         sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null, lines: [],
       };
     }
+    if (open.kind === 'evidence') {
+      const e = buildEvidence(contract);
+      return { kind: 'evidence', id: 'evidence', title: 'What these numbers rest on', name: null, description: contract.evidence_statement || null,
+        measured_by: null, lines: e.columns.map((c) => `${c.label}: ${c.fit_and_holdout} cells fit and hold-out, ${c.fit_only} fit only, ${c.assumption} assumption only`), links: e.reports.map((r) => ({ text: r.name, href: r.href })) };
+    }
+    if (open.kind === 'scenario') {
+      const s = presets().SCENARIOS[open.id];
+      if (!s) { problems.push(`info: no scenario ${open.id}`); return null; }
+      return { kind: 'scenario', id: open.id, title: s.label, name: null, description: s.description, measured_by: null, lines: [] };
+    }
     const vr = result.variants[open.variant];
     if (!vr) { problems.push(`info: no variant ${open.variant}`); return null; }
     const segs = reasonSegments(vr.reason);
+    if (open.kind === 'column') {
+      const fields = Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f]));
+      const sz = buildSizing(open.variant, vr, preset, fields, result.page_state);
+      const lines = [...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
+        ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing' && n.kind !== 'instance_class').map((n) => n.text)];
+      return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs),
+        measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
+    }
     if (open.kind === 'variant') {
       return { kind: 'variant', id: open.variant, title: variantLabel(open.variant), name: null, description: cardSentence(open.variant, vr, contract, inputs),
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`) };
@@ -774,12 +859,12 @@
     vm.table = buildTable(result, contract, preset, pageState, problems, fields);
     vm.evidence = buildEvidence(contract);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
-    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems);
+    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems, preset);
     // A chart of money has nothing to draw without prices.
     if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems, fields);
     return vm;
   }
 
-  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

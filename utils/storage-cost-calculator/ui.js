@@ -140,6 +140,14 @@
 
   // ---- left panel -------------------------------------------------------------------------------
 
+  // The first clause of a long explanation; the whole text is in the info dialog.
+  const shortText = (s) => {
+    const t = String(s || '');
+    if (t.length <= 60) return t;
+    const cut = t.indexOf(', ');
+    return cut > 0 && cut <= 60 ? t.slice(0, cut) : `${t.slice(0, 57).replace(/\s+\S*$/, '')}…`;
+  };
+
   function renderPresets(vm, page) {
     if (vm.page_state === 'cannot_reproduce') {
       return '<section class="panel-block"><h2>Start again</h2><p class="mute">This link cannot be shown with this version of the page.</p>'
@@ -150,7 +158,7 @@
     const pr = page.prices.map((p) => `<option value="${esc(p.id)}"${p.id === page.price_preset ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
     return '<section class="panel-block"><h2>Workload</h2>'
       + `<div class="pills" role="group" aria-label="Scenario">${sc}</div>`
-      + `${current ? `<p class="mute">${esc(current.description)}</p>` : ''}`
+      + `${current ? `<p class="mute scenario-short">${esc(shortText(current.description))}${infoButton({ 'info-kind': 'scenario', id: current.id }, current.label)}</p>` : ''}`
       + `<label class="field-row"><span class="field-label">Prices</span><select data-action="price">${pr}</select></label></section>`;
   }
 
@@ -254,8 +262,9 @@
     const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}${extrapolatedBadge(d.extrapolated)}</li>`), 'card-deltas');
     // With a total, "comparable" says nothing to the reader: the badges and deltas carry the comparison.
     const stateLine = c.total_text === null ? `<p class="card-state">${esc(c.state_text)}</p>` : '';
+    const sizing = c.sizing ? `<p class="card-sizing">${esc(`Volumes: ${c.sizing.short}`)}${infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} sizing`)}</p>` : '';
     return `<article class="card${c.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(c.variant)}" data-state="ok">${head}${total}`
-      + `${stateLine}${deltas}${bar(c.bar_segments, 'bar')}</article>`;
+      + `${stateLine}${deltas}${bar(c.bar_segments, 'bar')}${sizing}</article>`;
   }
 
   function renderCannotReproduce(vm) {
@@ -287,10 +296,18 @@
       if (!c.clickable) return `<td class="cell-off"${lab} data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
       return `<td${lab}><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
         + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}`
+        + `${c.notes && c.notes.length ? infoButton({ 'info-kind': 'cell', variant: c.variant, operation: c.operation }, `${colLabel.get(c.variant)} ${r.label} notes`) : ''}`
         + `${c.hint ? `<span class="zero-hint">${esc(c.hint)}</span>` : ''}</td>`;
     }).join('')}</tr>`).join('');
+    const notes = t.column_notes || {};
+    const notesRow = t.columns.some((c) => (notes[c.variant] || []).length)
+      ? `<tr class="notes-row" data-operation="notes"><th scope="row">Notes</th>${t.columns.map((c) => {
+        const items = notes[c.variant] || [];
+        return `<td data-label="${esc(c.label)}">${items.length ? `<ul class="col-notes">${items.map((n) => `<li data-kind="${esc(n.kind)}">${esc(n.text)}</li>`).join('')}</ul>`
+          + infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} notes`) : ''}</td>`;
+      }).join('')}</tr>` : '';
     return `<section class="section"><h2>Breakdown by workload type</h2><p class="mute">Select a cell to see how it is calculated.</p>`
-      + `<div class="tbl"><table class="breakdown"><thead><tr><th scope="col">Workload type</th>${head}</tr></thead><tbody>${body}</tbody></table></div></section>`;
+      + `<div class="tbl"><table class="breakdown"><thead><tr><th scope="col">Workload type</th>${head}</tr></thead><tbody>${body}${notesRow}</tbody></table></div></section>`;
   }
 
   function stageLine(l) {
@@ -321,22 +338,19 @@
 
   function renderNotes(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
-    const items = vm.notes.map((n) => `<li class="note note-${esc(n.kind)}">${esc(n.text)}${n.details && n.details.length ? list(n.details.map((x) => `<li>${esc(typeof x === 'string' ? x : JSON.stringify(x))}</li>`)) : ''}</li>`);
-    for (const p of vm.problems) items.push(`<li class="note note-problem">${esc(p)}</li>`);
+    // Notes live in the breakdown table; only what the reader typed wrong is said here (contract diagnostics are not).
+    const items = vm.notes.filter((n) => n.kind === 'problem').map((n) => `<li class="note note-problem">${esc(n.text)}</li>`);
     if (page.error) items.unshift(`<li class="note note-error" role="alert">${esc(page.error)}</li>`);
     if (!items.length) return '';
-    return `<section class="section"><h2>Notes</h2><ul class="notes">${items.join('')}</ul></section>`;
+    return `<section class="section alerts"><ul class="notes">${items.join('')}</ul></section>`;
   }
 
   function renderEvidence(vm) {
     if (vm.page_state === 'cannot_reproduce' || !vm.evidence_statement) return '';
     const e = vm.evidence || { reports: [], columns: [] };
-    const cols = e.columns.map((c) => `<tr data-variant="${esc(c.variant)}"><th scope="row">${esc(c.label)}</th><td>${num(c.fit_and_holdout)}</td><td>${num(c.fit_only)}</td><td>${num(c.assumption)}</td></tr>`).join('');
-    const table = cols ? `<div class="tbl"><table class="evidence-columns"><thead><tr><th scope="col">Column</th><th scope="col">Cells with fit and hold-out</th>`
-      + `<th scope="col">Fit only</th><th scope="col">Assumption only</th></tr></thead><tbody>${cols}</tbody></table></div>` : '';
-    const reports = list(e.reports.map((r) => `<li><a href="${esc(r.href)}">${esc(r.name)}</a></li>`), 'reports');
-    return `<section class="section evidence-statement"><h2>What these numbers rest on</h2><p>${esc(vm.evidence_statement)}</p>${table}`
-      + `${reports ? `<h4>Reports</h4>${reports}` : ''}</section>`;
+    const first = String(vm.evidence_statement).split(/(?<=\.) /)[0];
+    const line = e.build ? `Measured on ClickHouse ${e.build}, ${e.reports.length} ${e.reports.length === 1 ? 'report' : 'reports'}.` : first;
+    return `<section class="section evidence-statement"><p>${esc(line)}${infoButton({ 'info-kind': 'evidence', id: 'evidence' }, 'the evidence')}</p></section>`;
   }
 
   // Inline SVG. Points are spaced by their order (the sweep values are geometric), heights are proportional to the
@@ -412,7 +426,8 @@
     return `<div class="modal-body" data-info="${esc(i.kind)}:${esc(i.id)}"><header class="modal-head"><h2 id="modal-title">${esc(i.title)}</h2>`
       + '<button type="button" class="btn btn-small" data-action="close-info" aria-label="Close">Close</button></header>'
       + `${i.description ? `<p>${esc(i.description)}</p>` : ''}${facts ? `<div class="tbl"><table class="facts"><tbody>${facts}</tbody></table></div>` : ''}`
-      + `${i.lines && i.lines.length ? `<h4>Why</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}${sql}</div>`;
+      + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
+      + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
   }
 
   // Pure: view model + page chrome (selections, labels) -> HTML per container.
@@ -603,8 +618,8 @@
       case 'close-drill': s.openCell = null; break;
       case 'show-calc': u.showCalc = !u.showCalc; break;
       case 'info': {
-        const kind = known(['input', 'cell', 'variant'], d.infoKind, 'info kind');
-        u.info = kind === 'input' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
+        const kind = known(['input', 'cell', 'variant', 'column', 'evidence', 'scenario'], d.infoKind, 'info kind');
+        u.info = kind === 'input' || kind === 'evidence' || kind === 'scenario' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
         break;
       }
       case 'close-info': u.info = null; break;

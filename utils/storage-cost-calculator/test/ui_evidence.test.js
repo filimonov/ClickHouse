@@ -32,25 +32,33 @@ test('test_zero_cells_name_the_missing_work', () => {
   assert.ok(row(m, 'mutations').cells.every((c) => !c.hint));
 });
 
-test('test_storage_row_states_the_gib_assumption', () => {
+test('test_notes_live_in_the_table', () => {
   const { vm, parts } = page(load());
-  assert.equal(row(vm, 'storage').note, 'GB = binary GiB (assumption, no AWS statement found)');
-  assert.match(parts.table, /<th scope="row">Storage<span class="row-note">GB = binary GiB \(assumption, no AWS statement found\)<\/span><\/th>/);
-  assert.equal(row(vm, 'inserts').note, null);
+  // Column notes sit in the last row of the breakdown; the storage row itself carries no note.
+  assert.equal(row(vm, 'storage').note, null);
+  const s3 = vm.table.column_notes.s3.map((n) => n.kind);
+  assert.ok(s3.includes('gib'), JSON.stringify(vm.table.column_notes.s3));
+  assert.ok(vm.table.column_notes.s3.find((n) => n.kind === 'gib').text === 'GB = binary GiB (assumption, no AWS statement found)');
+  assert.match(parts.table, /<tr class="notes-row" data-operation="notes"><th scope="row">Notes<\/th>/);
+  assert.match(parts.table, /data-info-kind="column" data-variant="s3"/);
+  // No flat notes panel: with nothing typed wrong the part is empty.
+  assert.equal(parts.notes, '');
 });
 
-test('test_evidence_section_names_reports_and_counts_per_column', () => {
+test('test_evidence_line_and_dialog', () => {
   const c = load((x) => {
-    x.evidence_statement = 'Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store.';
+    x.evidence_statement = 'Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 1 report(s).';
     x.manifest.evidence = [{ report: '2026-10-24-storage-cost-s3', commit: '09d0772a842c5d73', raw_sha256sums: 'x' }];
     x.evidence_by_variant = { ebs: { fit_and_holdout: 2, fit_only: 1, assumption: 3 }, s3: { fit_and_holdout: 4, fit_only: 0, assumption: 0 } };
   });
   const { vm, parts } = page(c);
   assert.equal(vm.evidence.build, '09d0772a842');
-  assert.deepEqual(vm.evidence.columns.map((x) => x.variant), ['ebs', 's3']);
-  assert.match(parts.evidence, /Measured on ClickHouse commit 09d0772a842 \(release 26\.8\) against a RustFS S3 store\./);
-  assert.match(parts.evidence, /<tr data-variant="ebs"><th scope="row">EBS<\/th><td><span data-value="2">2<\/span><\/td><td><span data-value="1">1<\/span><\/td><td><span data-value="3">3<\/span><\/td><\/tr>/);
-  assert.match(parts.evidence, /<a href="\.\.\/\.\.\/docs\/superpowers\/reports\/2026-10-24-storage-cost-s3\/README\.md">2026-10-24-storage-cost-s3<\/a>/);
-  // A contract without per-column counts shows the statement only.
-  assert.equal(page(load()).parts.evidence.includes('evidence-columns'), false);
+  assert.match(parts.evidence, /<p>Measured on ClickHouse 09d0772a842, 1 report\.<button type="button" class="info-btn" data-action="info" data-info-kind="evidence"/);
+  assert.ok(vm.table.column_notes.ebs.some((n) => n.text === 'Evidence: 2 cells fit and hold-out, 1 fit only, 3 assumption only'));
+  const s = Object.assign(ui.defaultState(c, 'custom'), { inputs: {} });
+  const out = ui.compute(c, s, { info: { kind: 'evidence', id: 'evidence' } });
+  const modal = ui.renderParts(out.vm, out.page).modal;
+  assert.match(modal, /Measured on ClickHouse commit 09d0772a842 \(release 26\.8\) against a RustFS S3 store\./);
+  assert.match(modal, /<a href="\.\.\/\.\.\/docs\/superpowers\/reports\/2026-10-24-storage-cost-s3\/README\.md">2026-10-24-storage-cost-s3<\/a>/);
+  assert.match(modal, /EBS: 2 cells fit and hold-out, 1 fit only, 3 assumption only/);
 });

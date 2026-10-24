@@ -76,7 +76,9 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.match(parts.inputs, /type="number" step="1" data-action="input" data-id="inserts_per_month" value="1000"/);
   assert.match(parts.inputs, /class="field is-derived" data-field="data_bytes"/);
   assert.ok(parts.inputs.includes(`<p class="field-note">${esc('Derived from ingest_rate × retention_days')}</p>`), 'fixture labels equal the ids');
-  assert.ok(parts.evidence.includes(esc(MINIMAL.evidence_statement)));
+  // The evidence is one line with an (i); the statement is in the dialog.
+  assert.match(parts.evidence, /data-action="info" data-info-kind="evidence"/);
+  assert.equal(page(base(), { info: { kind: 'evidence', id: 'evidence' } }).vm.info.description, MINIMAL.evidence_statement);
   // An unknown state is an error, not a default rendering.
   const broken = JSON.parse(JSON.stringify(vm));
   broken.cards[0].state = 'mystery';
@@ -232,7 +234,9 @@ test('test_inputs_show_labels_fixed_values_and_view_model_ranges', () => {
   assert.equal(/type="range"|type="number"/.test(fixedField), false, fixedField);
   // A row without a label shows no id in its place and is reported.
   assert.ok(parts.inputs.includes('data-field="mutations_per_month"><div class="field-head"><span class="field-label"></span>'));
-  assert.match(parts.notes, /registry mutations_per_month has no label/);
+  // A contract defect is a view-model problem; the page does not render diagnostics.
+  assert.ok(vm.problems.some((p) => /registry mutations_per_month has no label/.test(p)));
+  assert.equal(parts.notes.includes('has no label'), false);
   assert.ok(vm.problems.length > 0);
 });
 
