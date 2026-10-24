@@ -263,8 +263,13 @@ class LifecycleCard(ManifestCard):
         return f"database = '{DATABASE}' AND table = '{self.table}'"
 
     def parts(self, ctx) -> list:
-        """Every part of the table in `system.parts`, inactive ones included, as JSON-typed values."""
-        rows = self.rows_json(ctx, f'SELECT {PART_COLUMNS} FROM system.parts WHERE {self.where()} ORDER BY name')
+        """Every part of the table in `system.parts`, inactive ones included, as JSON-typed values.
+
+        Ordered by level, then block range: inserted parts in insert order before their merge results (a name sort
+        would put `all_1_8_1` before `all_2_2_0`).
+        """
+        rows = self.rows_json(ctx, f'SELECT {PART_COLUMNS} FROM system.parts WHERE {self.where()} '
+                                   'ORDER BY level, min_block_number, max_block_number')
         return [{'name': r['name'], 'part_type': r['part_type'], 'rows': int(r['rows']), 'level': int(r['level']),
                  'data_uncompressed_bytes': int(r['data_uncompressed_bytes']), 'active': int(r['active'])}
                 for r in rows]
@@ -315,7 +320,11 @@ class Boundaries(LifecycleCard):
         for r in sorted((r for r in rows if r['op'] == 'UploadPart' and r.get('upload_id') in uploads),
                         key=lambda r: r['part_number']):
             uploads[r['upload_id']].append(r['req_payload_bytes'])
-        return {'parts': self.state(ctx)['parts'],
+        parts = self.state(ctx)['parts']
+        # Block numbers of one INSERT's parts need not follow squash order; sizes and types do not depend on it.
+        return {'parts': parts,
+                'active_parts_by_rows': sorted(([x['rows'], x['part_type'], x['level']] for x in parts if x['active']),
+                                               reverse=True),
                 'upload_part_sizes': sorted(uploads.values()),
                 'large_put_sizes': sorted(r['req_payload_bytes'] for r in rows
                                           if r['op'] == 'PutObject' and r['req_payload_bytes'] >= LARGE_PUT_BYTES)}

@@ -16,31 +16,22 @@
       }
     },
     "observations": {
-      "parts": [
-        {
-          "name": "all_1_1_0",
-          "part_type": "Wide",
-          "rows": 1111953,
-          "level": 0,
-          "data_uncompressed_bytes": 44478120,
-          "active": 1
-        },
-        {
-          "name": "all_2_2_0",
-          "part_type": "Wide",
-          "rows": 1111953,
-          "level": 0,
-          "data_uncompressed_bytes": 44478120,
-          "active": 1
-        },
-        {
-          "name": "all_3_3_0",
-          "part_type": "Wide",
-          "rows": 397216,
-          "level": 0,
-          "data_uncompressed_bytes": 15888640,
-          "active": 1
-        }
+      "active_parts_by_rows": [
+        [
+          1111953,
+          "Wide",
+          0
+        ],
+        [
+          1111953,
+          "Wide",
+          0
+        ],
+        [
+          397216,
+          "Wide",
+          0
+        ]
       ],
       "upload_part_sizes": []
     }
@@ -201,5 +192,5 @@
       "line": 2155
     }
   ],
-  "prediction_commit": "2d931d33a05"
+  "prediction_commit": "uncommitted"
 }

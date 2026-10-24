@@ -213,6 +213,13 @@ class CardsTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 card.measured(ctx_for(other, cluster, tmp, ledger))
 
+    def test_parts_are_ordered_inserts_before_their_merge_results(self):
+        m = manifest('merge-forced.default')
+        cluster = FakeCluster(n=1, answers={'FORMAT JSONEachRow': ''})
+        with tempfile.TemporaryDirectory() as tmp:
+            CARDS['merge-forced'].parts(ctx_for(m, cluster, tmp, os.path.join(tmp, 'l')))
+        self.assertIn('ORDER BY level, min_block_number, max_block_number', cluster.clients[0].log[-1])
+
     def test_insert_sql_carries_rows_seed_and_index(self):
         m = manifest('merge-natural.default')
         cluster = FakeCluster(n=1)
@@ -295,7 +302,12 @@ class CardsTest(unittest.TestCase):
             ctx = ctx_for(m, FakeCluster(n=1), tmp, ledger)
             card.state(ctx)['parts'] = []
             obs = card.observe(ctx, {})
+            card.state(ctx)['parts'] = [{'name': 'all_1_1_0', 'part_type': 'Wide', 'rows': 5, 'level': 0, 'active': 1},
+                                        {'name': 'all_2_2_0', 'part_type': 'Wide', 'rows': 9, 'level': 0, 'active': 1},
+                                        {'name': 'all_1_2_1', 'part_type': 'Wide', 'rows': 14, 'level': 1, 'active': 0}]
+            self.assertEqual(card.observe(ctx, {})['active_parts_by_rows'], [[9, 'Wide', 0], [5, 'Wide', 0]])
         self.assertEqual(obs['upload_part_sizes'], [[32 * MIB, 16 * MIB, 8]])
+        self.assertEqual(obs['active_parts_by_rows'], [])
         self.assertEqual(obs['large_put_sizes'], [2 * MIB])
 
     def test_assertions_compare_predicted_observations_both_directions(self):
