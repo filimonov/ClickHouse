@@ -135,7 +135,7 @@ rows; 4 192 704 rows give exactly 33 554 432 bytes.
   waiting, 450 with deduplication)). The first insert opens the buffer and every insert before the longest deadline
   joins it. Bursts share more (`async-inserts.bursty`: 100 concurrent inserts over about 1.9 flushes, where the
   mean rate of 50/s gives 11), a shorter adaptive timeout less. `async-inserts.steady` measured 4.8–5.0 inserts per
-  flush against 5. `insert_clients` counts clients waiting at once (`PendingAsyncInsert`), not query starts.
+  flush against 5, an observation from a cut case, not a hold-out: the rule form was adjusted after seeing it. `insert_clients` counts clients waiting at once (`PendingAsyncInsert`), not query starts.
 
 ### Merges and outdated parts {#merges}
 
@@ -214,8 +214,8 @@ lifecycle predictions bound them as an assumption. Values are identical in all t
 | `small-inserts.default` | fit | 1000 parts; 11 000–29 981 `PutObject` | 1000 parts, 194–197 merges, amplification 3.981–4.092; 13 150–13 175 |
 | `merge-natural.default` | fit | 64 parts; 704–1901 `PutObject` | 9 merges of 6 then 2 of 8, final parts 23, 23, 6, 6, 6, amplification 2.5522 (one repeat: final parts 27, 23, 6, 6, 1, 1, amplification 2.6142); 913 |
 | `merge-natural.wide` | hold-out | amplification 2.8030 ± 0.3474 (f = 6.1912 from the pre-run); fan-in TV ≤ 0.3426; result-size TV ≤ 0.3852; fan-in mean 5.06–7.36; 352–1871 `PutObject` | 5 merges of 6, 1 of 7, one final part; amplification 2.9094; TV 0.0503 and 0.0647; mean 6.17; 646 |
-| `async-inserts.steady` | cut, data only (P2, no edges) | 1000 async inserts at 20/s: 200–1000 parts | 205, 204, 205 parts |
-| `async-inserts.bursty` | cut, data only (P2, no edges) | 10 bursts of 100: 10–1000 parts | 19, 17, 17 parts |
+| `async-inserts.steady` | cut (D14): data only, no evidence edge | 1000 async inserts at 20/s: 200–1000 parts | 205, 204, 205 parts |
+| `async-inserts.bursty` | cut (D14): data only, no evidence edge | 10 bursts of 100: 10–1000 parts | 19, 17, 17 parts |
 
 Every merge case also asserts outdated byte-hours > 0: the objects of each merged-away part are reclassified
 `outdated` at its `MergeParts` time (`inventory.reclassified`, one entry per merge), and the replay reproduces them.
@@ -232,7 +232,9 @@ Observed for the other workstreams:
 `coefficients.json` holds the measured coefficients; the pinned values live as registry defaults with their source
 references. Fit domain of all three: 5 `UInt64` columns, inserts of 1000–100 000 rows, back-to-back, row-weighted
 final part sizes of 18–473 inserted parts; the hold-out extends it to 20 columns and 50 000 rows. Machine-readable validity
-(`merge_size_ratio`, `insert_rows`) and the record's `domain` field carry it.
+(`merge_size_ratio`, `insert_rows`) and the record's `domain` field carry it. The fit data cover `merge_size_ratio`
+18.21–20.82 (`merge-natural.default`) and 375.17–472.95 (`small-inserts.default`) only; the single point between
+them is the hold-out at 32, so the validity range spans an unmeasured gap.
 
 | Coefficient | Value | Fit | Hold-out | Tolerance |
 |---|---|---|---|---|
@@ -265,7 +267,7 @@ Median per pass on `s3` (window `wall_s` / whole pass from first server start to
 | `merge-natural.default` / `.wide` | 62.7 / 63.2 s | 65.3 / 67.1 s |
 | `small-inserts.default` | 67.0 s | 74.4 s |
 
-The natural-merge cases spend 60 s of each pass in the quiet period. A full run of the 15 cases took 16–17 min
+The natural-merge cases spend 60 s of each pass in the quiet period. A full run of the 13 evidence cases plus the 2 cut cases with data took 16–17 min
 (45 passes); the five runs together about 80 min. `coverage.json` keeps the 120 s planning floor as `duration_s`.
 
 ## Changes found while measuring {#changes}
@@ -276,7 +278,7 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
   397 216-row remainder was `all_1_1_0`). The prediction states sizes and types sorted by size
   (`active_parts_by_rows`), not names (`fcaec9179c7`, before every recorded run).
 - **Async flush count.** A buffer holds its first insert plus those arriving within the timeout, so
-  `inserts_per_async_flush` uses 1 + rate × timeout (5 at 20/s, measured 4.8–5.0).
+  `inserts_per_async_flush` uses 1 + rate × timeout (5 at 20/s, measured 4.8–5.0: an observation from a cut case, not a hold-out: the rule form was adjusted after seeing it).
 - **Rig hooks.** `closure_check.py` reads `raw/<card>/<run_id>/ledger.jsonl[.gz]` before `raw/<card>/…`, because
   every run restarts ledger seq numbers (`fd444e9f3a8`). The estimate's sample card `merge-natural` moved from
   `samples.py` to the lifecycle card of that name; the phase-0 sample manifest has no `params.replica` and no
@@ -299,7 +301,7 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
 - Merge `GetObject` counts are assumption ranges here. Measured: 16 for 2 and 64 for 8 Compact source parts, 8 per
   5-column Compact source part; Task 2 (R2) pins them exactly.
 - The async cases bound part counts broadly (one flush per burst up to one per insert); they do not test the flush
-  sharing estimate beyond the steady case's measured 4.8–5.0 inserts per flush.
+  sharing estimate: the steady case's 4.8–5.0 inserts per flush is an observation from a cut case, not a hold-out: the rule form was adjusted after seeing it.
 - No `DeleteObject` falls inside a window: outdated parts wait at least `old_parts_lifetime` (480 s), longer than
   every pass; the teardown drops the table.
 
@@ -327,7 +329,7 @@ wide hold-out tolerances reproduce from the pre-run data. Fixes are in `9dbe2112
 | 13 | MINOR: wrong citation anchors | Fixed in the predictions' `source_refs` and the README |
 | 14 | MINOR: `old_parts_lifetime` is an eligibility age | Fixed: label and README say minimum age |
 | 15 | MINOR: ladders differ past 12 levels | Fixed: the Python ladder caps at 12; test |
-| 16 | MINOR: async bounds do not test batching | Parked: P2 cases with honest bounds; stated under [Gaps](#gaps); a batching bound needs a new pre-registered case |
+| 16 | MINOR: async bounds do not test batching | Closed by D14 cut: the async cases are cut, data only |
 | 17 | MINOR: two coverage spans misdescribe their cases | Fixed: `level-cross` spans its merge result, `bursty` states burst size, pause and clients |
 | 18 | MINOR: the stated domain excludes the hold-out | Fixed: README and the coefficients' `domain` separate fit and hold-out |
 
@@ -371,7 +373,7 @@ replay, 647 retirement entries over 18 merge records replay, the nine raw checks
 | R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
 | R4-2 | the observation cutoff is not in the records | OPEN: the card records `quiet_cutoff_us` and `cutoff_us` (test `test_observation_cutoff_is_recorded`), but no lifecycle record carries them: the report run predates the change, and `amplification-run.2h` is cut. Placement: recorded by the next natural-merge run (Task 7 replacement hold-outs) |
 
-MINOR totals over the four rounds: 7 fixed, 1 parked (#16), 1 open (R4-2).
+MINOR totals over the four rounds: 7 fixed, 1 closed by the D14 cut (#16), 1 open (R4-2).
 
 **Cut by owner directive D14.** The campaign deadline cuts every P2 case (spec §5.5): `async-inserts.steady`,
 `async-inserts.bursty` and `amplification-run.2h` have `status: cut` in `coverage.json`. Their manifests and
