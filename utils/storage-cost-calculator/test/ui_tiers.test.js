@@ -116,3 +116,17 @@ test('test_cites_point_at_the_measured_build', () => {
   // Already cited text is left as it is.
   assert.equal(vm.cite('src/A.cpp:12 @ 09d0772a842', '09d0772a842'), 'src/A.cpp:12 @ 09d0772a842');
 });
+
+test('test_columns_field_has_narrow_and_wide_quick_picks', () => {
+  const c = load((x) => {
+    const q = JSON.parse(JSON.stringify(x.registry.find((r) => r.id === 'mutations_per_month')));
+    Object.assign(q, { id: 'columns', label: 'Columns of the table', default: 40, ui: { tier: 'setting', name: null, short: 'Columns', measured_by: 'x' } });
+    x.registry.push(q);
+  });
+  const { parts } = page({}, c);
+  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-value="5" aria-pressed="false">narrow \(5\)<\/button>/);
+  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-value="40" aria-pressed="true">wide \(40\)<\/button>/);
+  const s = Object.assign(ui.defaultState(c, 'custom'), { inputs: {} });
+  const r = ui.update(c, s, {}, { type: 'quick', data: { id: 'columns', value: '5' } }, {});
+  assert.equal(r.state.inputs.columns, 5);
+});

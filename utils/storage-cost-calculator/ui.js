@@ -196,6 +196,12 @@
       + `<span class="control">${num}${unit}</span>`;
   }
 
+  // Quick picks for a number with well-known shapes: the table widths the measurements used (registry `shape`).
+  const QUICK_PICKS = { columns: [['narrow', 5], ['wide', 40]] };
+  const quickPicks = (f, page) => (QUICK_PICKS[f.id] && f.editable && !page.cannot_reproduce
+    ? `<span class="quick">${QUICK_PICKS[f.id].map(([label, v]) => `<button type="button" class="pill pill-small" data-action="quick" data-id="${esc(f.id)}" data-value="${esc(v)}"`
+      + ` aria-pressed="${f.value === v}">${esc(label)} (${esc(v)})</button>`).join('')}</span>` : '');
+
   // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
   const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code></span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
 
@@ -209,7 +215,7 @@
     const price = f.kind === 'price' ? `<p class="field-note">as of ${esc(f.as_of || 'n/a')}${f.source_url ? ` · ${link(f.source_url)}` : ''}</p>` : '';
     return `<div class="field${f.derived ? ' is-derived' : ''}${f.overridden ? ' is-overridden' : ''}" data-field="${esc(f.id)}">`
       + `<div class="field-head">${fieldLabel(f)}${f.kind === 'price' ? '' : infoButton({ 'info-kind': 'input', id: f.id }, f.short || f.label || f.id)}${fieldTags(f)}${lock}${reset}</div>`
-      + `<div class="field-control">${control(f, page, simple)}</div>${derived}`
+      + `<div class="field-control">${control(f, page, simple)}</div>${quickPicks(f, page)}${derived}`
       + `${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
   }
 
@@ -598,8 +604,9 @@
         break;
       }
       case 'input':
-      case 'slider': {
-        const v = parseInput(q(d.id), action.value, s.units);
+      case 'slider':
+      case 'quick': {
+        const v = parseInput(q(d.id), action.type === 'quick' ? d.value : action.value, s.units);
         const f = fields[d.id];
         if (f && (f.derived || f.overridden)) s.overrides[d.id] = v;
         else s.inputs[d.id] = v;

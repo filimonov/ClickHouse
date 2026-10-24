@@ -274,3 +274,5 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .col-notes li { margin: 0 0 2px; }
 .card-sizing { font-size: 12px; color: var(--mute); margin: 8px 0 0; }
 .scenario-short .info-btn, .evidence-statement .info-btn, td .info-btn, .card-sizing .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
+.quick { grid-column: 1 / -1; display: flex; gap: 4px; }
+.pill-small { padding: 1px 8px; font-size: 12px; }
