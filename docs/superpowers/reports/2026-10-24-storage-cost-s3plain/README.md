@@ -19,7 +19,7 @@ mutations. Every measured request count reconciles exactly with the graph below 
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
 | Runs | report run `cost-20261024T142405Z` (rig `b7016f71689`); consumed hold-outs from `cost-20261024T103803Z`; `measurements.jsonl` holds 165 records (123 ok, 30 `UNSUPPORTED`, 12 `FAILED` of consumed hold-outs) |
-| Predictions | fit `0f1ad12f2a2`; hold-outs, validations and insert re-fits `2f20606ffe6`; each before the first run of its case |
+| Predictions | fit `0f1ad12f2a2`; hold-outs, validations and insert re-fits `2f20606ffe6`; fresh hold-outs `types-holdout-single` and `drop.partition-2` and the `types-fit` re-fit `6bc64458fd8`; each before the first run of its case |
 | Policies | `s3plain` (`plain_rewritable` metadata over the RustFS bucket) and `s3plain_cached` (a `cache` disk over it) |
 | Cuts | P2 cases (`detach-attach`, `cache-eviction`): cut by owner directive D14, no manifest |
 
@@ -91,11 +91,13 @@ Two hold-outs predicted from the first fit missed and were consumed; both correc
 - **Empty files are objects.** `DiskObjectStorageTransaction` creates a blob for an empty file unless the metadata
   storage supports empty files without blobs (`Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:313`, `:400`);
   the plain-rewritable storage does not, `s3` metadata does. A Wide part with two `JSON` columns of two typed paths
-  has 12 more objects than on `s3` (`objects-per-part.types-holdout`: 348 `PutObject` against 324 predicted; fresh
-  hold-out `types-holdout-single` exact at 174).
+  has 12 more objects than on `s3` (`objects-per-part.types-holdout`: 348 `PutObject` against 324 predicted). The
+  fresh hold-out `types-holdout-single` was exact at 174, but it backs no edge: `plain_objects_per_part` has no
+  `types` row (the blob count depends on the `JSON` columns), so the cells cannot evaluate a types-shape case.
 - **One empty covering part per dropped part.** `DROP PARTITION` over three parts wrote three empty parts of 11
   objects and removed all six (`drop.partition-3`: 45 `PutObject`, 75 `HeadObject`, 72 `CopyObject`, 150
-  `DeleteObject` against 17 / 51 / 50 / 104 predicted for one empty part; `Storages/StorageMergeTree.cpp:2949`);
+  `DeleteObject` against 17 / 51 / 50 / 104 predicted for one empty part). `initCoverageWithNewEmptyParts` makes one
+  empty part per covered part (`Storages/StorageMergeTree.cpp:2720`, called at `:3044`);
   fresh hold-out `drop.partition-2` exact.
 
 ## Cases and reconciliation {#reconciliation}
@@ -114,8 +116,8 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `drop.partition` | fit, validation | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 24 CopyObject, 50 DeleteObject, 25 HeadObject, 15 PutObject | within the fit ranges |
 | `drop.partition-2` | holdout, validation | 48 CopyObject, 100 DeleteObject, 50 HeadObject, 30 PutObject | 48 CopyObject, 100 DeleteObject, 50 HeadObject, 30 PutObject | exact |
 | `drop.partition-3` | consumed hold-out | 50 CopyObject, 104 DeleteObject, 51 HeadObject, 17 PutObject | 72 CopyObject, 150 DeleteObject, 75 HeadObject, 45 PutObject | falsified (consumed) |
-| `drop.table-sync` | fit | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 50 DeleteObject, 23 HeadObject, 4 PutObject | within the fit ranges |
-| `drop.ttl` | fit | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 48 DeleteObject, 24 HeadObject, 15 PutObject | within the fit ranges |
+| `drop.table-sync` | reported, no edge | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 50 DeleteObject, 23 HeadObject, 4 PutObject | within the fit ranges |
+| `drop.ttl` | reported, no edge | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 48 DeleteObject, 24 HeadObject, 15 PutObject | within the fit ranges |
 | `merge-only.narrow-compact-removal` | fit, holdout, validation | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | exact |
 | `merge-only.narrow-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 64 GetObject, 1 HeadObject, 21 PutObject / 24 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
 | `merge-only.narrow-wide-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 33 GetObject, 1 HeadObject, 21 PutObject / 18 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
@@ -129,9 +131,9 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `mutation.wide-update-one-column` | gate | `UNSUPPORTED` | `UNSUPPORTED` × 6 | refused with the cited reason |
 | `objects-per-part.narrow-compact` | fit, validation | 3 HeadObject, 39 PutObject | 3 HeadObject, 39 PutObject | exact |
 | `objects-per-part.narrow-wide` | fit, validation | 3 HeadObject, 63 PutObject | 3 HeadObject, 63 PutObject | exact |
-| `objects-per-part.types-fit` | fit | 4 HeadObject, 196 PutObject | 4 HeadObject, 196 PutObject | exact |
+| `objects-per-part.types-fit` | reported, no edge | 4 HeadObject, 196 PutObject | 4 HeadObject, 196 PutObject | exact |
 | `objects-per-part.types-holdout` | consumed hold-out | 4 HeadObject, 324 PutObject | 4 HeadObject, 348 PutObject | falsified (consumed) |
-| `objects-per-part.types-holdout-single` | fit | 2 HeadObject, 174 PutObject | 2 HeadObject, 174 PutObject | exact |
+| `objects-per-part.types-holdout-single` | reported, no edge | 2 HeadObject, 174 PutObject | 2 HeadObject, 174 PutObject | exact |
 | `objects-per-part.wide-compact` | fit, validation | 3 HeadObject, 39 PutObject | 3 HeadObject, 39 PutObject | exact |
 | `objects-per-part.wide-wide` | holdout, validation | 3 HeadObject, 273 PutObject | 3 HeadObject, 273 PutObject | exact |
 | `startup.intact` | fit, validation | 0–10 CopyObject, 0–20 DeleteObject, 0–4 DeleteObjects, 0–200 GetObject, 0–20 HeadObject, 1–40 ListObjectsV2, 0–10 PutObject | 1 CopyObject, 2 DeleteObject, 53 GetObject, 1 HeadObject, 9 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 39 GetObject, 2 HeadObject, 9 ListObjectsV2, 2 PutObject | within the fit ranges |
@@ -200,10 +202,9 @@ plain records add `validation` edges for them.
   the projection directory for `types`).
 - **Partitioned expired parts with one partition key column** (`plain_expired_part_extra_files` = 2). Reason: `DROP
   PARTITION` needs a partition key; a TTL-only table has `ttl.txt` instead (one file: `drop.ttl` measured 12).
-- **Validity of the measured tables.** `plain_objects_per_part` holds for `insert_rows` 1 000–400 000: the object
-  count of a part depends on its shape and part type only, and the part type comes from `part_type_predicate`
-  (measured 5 000–400 000 rows). `plain_startup_requests` is per replica (`replicas` 1–3): a start of a replicated
-  table sends no further S3 request (measured on one replica).
+- **Validity of the measured tables.** `plain_objects_per_part` holds for `insert_rows` 5 000–400 000, the
+  measured range. `plain_startup_requests` was measured on one replica; its validity `replicas` 1–3 is an
+  extrapolation: the counts are per replica, and a start of a replicated table adds Keeper requests, not S3 ones.
 - The `s3` cell assumptions (merge results Wide, local merges per replica, TTL path for expiry) carry over.
 
 ## Open items and limits {#open-items}
@@ -221,6 +222,10 @@ plain records add `validation` edges for them.
   tails after the window; `GetObject` 65 of 64: one retried GET). The cards wait for the outdated parts to leave
   `system.parts`, not for the copies' deletes. They are not in `measurements.jsonl`; §Reconciliation lists the edges
   they thin out.
+- **Types shape on s3plain.** `plain_objects_per_part` has no `types` row, so a types-shape workload evaluates
+  `unavailable` on `s3plain` (fail-closed) until the count is modelled per `JSON` column.
+- **Replication applicability** is recorded in §Replication and by `s3plain` in the replication cards'
+  `model_variants`; `coverage/1` has no per-card `variants` field with a source reference (`additionalProperties: false`).
 
 ## Review {#review}
 
