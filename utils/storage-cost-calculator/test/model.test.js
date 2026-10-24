@@ -215,3 +215,46 @@ test('test_evaluate_cell_formulas_example', () => {
   assert.equal(w.rows[0].quantity, null);
   assert.equal(w.states[0].active, true);
 });
+
+test('test_non_finite_and_invalid_values_unavailable', () => {
+  const run = (node, c) => model.evaluate(node, ctx(c));
+  const nan = run(inp('x'), { inputs: new Map([['x', NaN]]) });
+  assert.equal(nan.state, 'unavailable');
+  assert.equal(nan.value, null);
+  assert.match(nan.trace.reason, /input x: non-finite value NaN/);
+  assert.equal(run(inp('x'), { inputs: new Map([['x', null]]) }).state, 'unavailable');
+  assert.match(run(inp('x'), { inputs: new Map([['x', null]]) }).trace.reason, /input x: invalid value null/);
+  assert.equal(run(inp('x'), { inputs: new Map([['x', 'str']]) }).state, 'unavailable');
+  const coef = { kind: 'coef', id: 'c', dim: 'count' };
+  const inf = run(coef, { coefs: new Map([['c', { kind: 'scalar', value: Infinity, validity: null }]]) });
+  assert.equal(inf.state, 'unavailable');
+  assert.match(inf.trace.reason, /coef c: non-finite value Infinity/);
+  const tbl = (v) => ({ tables: new Map([['t', { index: ['a'], dim: 'count', values: { k: v } }]]) });
+  const lk = { kind: 'lookup', dim: 'count', table_id: 't', keys: [k('k', 'enum:a')] };
+  assert.equal(run(lk, tbl(null)).state, 'unavailable');
+  assert.match(run(lk, tbl(null)).trace.reason, /table t\[k\]/);
+  assert.equal(run(lk, tbl('x')).state, 'unavailable');
+  assert.equal(run(lk, tbl(5)).value, 5);
+  const z = run(bin('mul', k(0), k(Infinity)), {});
+  assert.equal(z.state, 'unavailable');
+  const zi = run(bin('mul', k(0), inp('i')), { inputs: new Map([['i', Infinity]]) });
+  assert.equal(zi.state, 'unavailable');
+  const big = run(bin('mul', k(1e308), k(10)), {});
+  assert.equal(big.state, 'unavailable');
+  assert.match(big.trace.reason, /non-finite result/);
+});
+
+test('test_lookup_arity', () => {
+  const c = ctx({ tables: new Map([['t', { index: ['a', 'b'], dim: 'count', values: { 'x|y': 1, x: 2 } }]]) });
+  const one = { kind: 'lookup', dim: 'count', table_id: 't', keys: [k('x', 'enum:a')] };
+  const r = model.evaluate(one, c);
+  assert.equal(r.state, 'unavailable');
+  assert.equal(r.trace.reason, 'lookup arity');
+  const two = { ...one, keys: [k('x', 'enum:a'), k('y', 'enum:b')] };
+  assert.equal(model.evaluate(two, c).value, 1);
+  const registry = load('registry.json');
+  const bad = { kind: 'lookup', dim: 'count', table_id: 'objects_per_part', keys: [inp('shape', 'enum:shape')] };
+  assert.deepEqual(model.checkDims(bad, registry),
+    ['$: lookup objects_per_part has 1 keys, table index has 2']);
+  assert.deepEqual(model.checkDims(load('example-objects-per-part.json'), registry), []);
+});

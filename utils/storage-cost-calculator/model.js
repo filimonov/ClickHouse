@@ -39,6 +39,13 @@
     return rs.some((r) => r.extrapolated);
   }
 
+  // A value is usable when it is a finite number, or a string where the node's dim is an enum.
+  function badValue(node, v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? null : `non-finite value ${v}`;
+    if (typeof v === 'string' && typeof node.dim === 'string' && node.dim.startsWith('enum:')) return null;
+    return `invalid value ${v === undefined ? 'undefined' : JSON.stringify(v)}`;
+  }
+
   function num(node, r) {
     if (typeof r.value !== 'number') {
       throw new Error(`${node.kind}: operand is not a number: ${JSON.stringify(r.value)}`);
@@ -80,6 +87,7 @@
         break;
       default: throw new Error(`unreachable arith kind ${node.kind}`);
     }
+    if (!Number.isFinite(v)) return unavailable(node, kids, ex, { reason: `non-finite result ${v}` });
     return ok(node, v, kids, ex);
   }
 
@@ -92,7 +100,9 @@
     const s = num(node, step);
     if (s === 0) return unavailable(node, kids, ex);
     const q = num(node, x) / s;
-    return ok(node, (node.kind === 'ceil_to' ? Math.ceil(q) : Math.floor(q)) * s, kids, ex);
+    const v = (node.kind === 'ceil_to' ? Math.ceil(q) : Math.floor(q)) * s;
+    if (!Number.isFinite(v)) return unavailable(node, kids, ex, { reason: `non-finite result ${v}` });
+    return ok(node, v, kids, ex);
   }
 
   function evalLookup(node, ctx) {
@@ -103,10 +113,16 @@
     const key = keys.map((k) => String(k.value)).join('|');
     const table = ctx.tables.get(node.table_id);
     const extra = { lookup_key: key };
+    if (table && table.index.length !== node.keys.length) {
+      return unavailable(node, kids, ex, { reason: 'lookup arity' });
+    }
     if (!table || !Object.prototype.hasOwnProperty.call(table.values, key)) {
       return unavailable(node, kids, ex, extra);
     }
-    return ok(node, table.values[key], kids, ex, extra);
+    const cell = table.values[key];
+    const bad = typeof cell === 'number' ? badValue({ dim: 'count' }, cell) : `invalid value ${JSON.stringify(cell)}`;
+    if (bad) return unavailable(node, kids, ex, Object.assign({ reason: `table ${node.table_id}[${key}]: ${bad}` }, extra));
+    return ok(node, cell, kids, ex, extra);
   }
 
   function evalBranch(node, ctx) {
@@ -145,17 +161,24 @@
     switch (node.kind) {
       case 'const':
         if (node.value === 'unavailable') return unavailable(node, []);
+        if (typeof node.value === 'number' && !Number.isFinite(node.value)) {
+          return unavailable(node, [], false, { reason: `const: non-finite value ${node.value}` });
+        }
         if (typeof node.value !== 'number' && !(typeof node.dim === 'string' && node.dim.startsWith('enum:'))) {
           throw new Error(`const: non-numeric value ${JSON.stringify(node.value)} needs an enum dim`);
         }
         return ok(node, node.value, []);
       case 'input': {
         const v = ctx.inputs.get(node.id);
-        return v === undefined ? unavailable(node, []) : ok(node, v, []);
+        if (v === undefined) return unavailable(node, []);
+        const bad = badValue(node, v);
+        return bad ? unavailable(node, [], false, { reason: `input ${node.id}: ${bad}` }) : ok(node, v, []);
       }
       case 'coef': {
         const c = ctx.coefs.get(node.id);
         if (!c || c.value === undefined || c.value === null) return unavailable(node, []);
+        const bad = badValue(node, c.value);
+        if (bad) return unavailable(node, [], false, { reason: `coef ${node.id}: ${bad}` });
         return ok(node, c.value, [], validityExtrapolated(c.validity, ctx));
       }
       case 'var':
@@ -242,6 +265,11 @@
           return n.dim;
         case 'lookup':
           if (!Array.isArray(n.keys) || n.keys.length === 0) bad(path, 'lookup needs keys');
+          else if (quantities.has(n.table_id) && quantities.get(n.table_id).table
+              && quantities.get(n.table_id).table.index.length !== n.keys.length) {
+            bad(path, `lookup ${n.table_id} has ${n.keys.length} keys, table index has ${quantities.get(n.table_id).table.index.length}`);
+            n.keys.forEach((k, i) => walk(k, `${path}/keys/${i}`, bound));
+          }
           else n.keys.forEach((k, i) => walk(k, `${path}/keys/${i}`, bound));
           return n.dim;
         case 'add': case 'sub': case 'min': case 'max': {
