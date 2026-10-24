@@ -220,7 +220,11 @@ class S3Card(LifecycleCard):
         """Local metadata of the `s3` disk for `parts`: one small file per object under `<replica>/s3_meta/`."""
         root = os.path.join(ctx.pass_dir, self.p(ctx)['replica'], 's3_meta')
         rels = [p['path'][p['path'].find('store/'):] for p in parts if 'store/' in p['path']]
-        return allocated(root, rels) if os.path.isdir(root) else None
+        if os.path.isdir(root):
+            return allocated(root, rels)
+        if ctx.policy in ('s3', 's3_cached'):
+            raise RuntimeError(f'{self.name}: the s3 disk keeps local metadata, but {root} (s3_meta) does not exist')
+        return None  # disks without local metadata files (cas, local; s3plain keeps none per object)
 
     def teardown(self, ctx):
         """Counts rows after the window: a count() over lightweight-deleted parts reads `_row_exists` from S3."""

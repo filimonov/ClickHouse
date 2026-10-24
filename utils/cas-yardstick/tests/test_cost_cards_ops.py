@@ -82,6 +82,12 @@ class DropTest(unittest.TestCase):
         self.assertNotEqual(*card.assertions(ctx, draft)['dropped_objects_deleted'])
 
 
+def no_metadata(card):
+    """No local metadata directory: completion tests run on a fake pass directory."""
+    from unittest import mock
+    return mock.patch.object(card, 'metadata_files', return_value=None)
+
+
 def no_ledger(card):
     """An empty ledger for card tests that run without a proxy."""
     import contextlib
@@ -152,7 +158,8 @@ class WindowContentsTest(unittest.TestCase):
         cluster = FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''})
         ctx = ctx_for(m, cluster)
         ctx.replay = lambda: type('B', (), {'upper': type('I', (), {'objects': {}})()})()
-        card.complete(ctx)
+        with no_metadata(card):
+            card.complete(ctx)
         self.assertFalse([q for q in cluster.clients[0].log if q.startswith('SELECT count() FROM yardstick.')])
         card.teardown(ctx)
         log = cluster.clients[0].log
@@ -190,7 +197,8 @@ class RemovalWaitTest(unittest.TestCase):
             inv.objects = {('bucket', k): None for k in next(views)}
             return type('B', (), {'upper': inv})()
         ctx.replay = replay
-        card.complete(ctx)
+        with no_metadata(card):
+            card.complete(ctx)
         self.assertEqual(st['live_keys'], set())
 
     def test_completion_gives_up_after_the_timeout_and_keeps_the_live_keys(self):
@@ -204,7 +212,8 @@ class RemovalWaitTest(unittest.TestCase):
             inv.objects = {('bucket', 'a'): None}
             return type('B', (), {'upper': inv})()
         ctx.replay = replay
-        card.complete(ctx, timeout_s=0)
+        with no_metadata(card):
+            card.complete(ctx, timeout_s=0)
         self.assertEqual(st['live_keys'], {'a'})
 
 
@@ -326,3 +335,14 @@ class SmallPartChecksTest(unittest.TestCase):
             card.last_seq(ctx)
         with self.assertRaises(RuntimeError):
             card.rows_after(ctx, 0)
+
+
+class MetadataFilesTest(unittest.TestCase):
+    def test_missing_s3_meta_is_an_error_only_where_the_disk_keeps_local_metadata(self):
+        card = CARDS['objects-per-part']
+        parts = [{'path': '/x/store/abc/all_1_1_0/', 'active': 1}]
+        for policy in ('s3', 's3_cached'):
+            with self.assertRaisesRegex(RuntimeError, 's3_meta'):
+                card.metadata_files(ctx_for(manifest('objects-per-part.narrow-compact'), FakeCluster(), policy=policy), parts)
+        for policy in ('cas', 'local'):
+            self.assertIsNone(card.metadata_files(ctx_for(manifest('objects-per-part.narrow-compact'), FakeCluster(), policy=policy), parts))
