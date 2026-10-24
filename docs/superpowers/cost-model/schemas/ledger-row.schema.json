@@ -172,6 +172,13 @@
         "expect_negotiated": {
           "type": "boolean"
         },
+        "wire_bytes_bound": {
+          "enum": [
+            "exact",
+            "upper"
+          ],
+          "description": "upper when expect_negotiated and the store did not answer ok: the proxy streamed a body a store that handles Expect itself would have refused"
+        },
         "downstream": {
           "type": "object",
           "properties": {
@@ -430,6 +437,7 @@
         "resp_wire_bytes",
         "payload_sha256",
         "expect_negotiated",
+        "wire_bytes_bound",
         "downstream",
         "upstream",
         "response_body",

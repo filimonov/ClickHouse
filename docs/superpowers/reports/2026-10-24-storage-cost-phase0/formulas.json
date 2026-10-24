@@ -13,6 +13,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 11,
@@ -27,6 +28,7 @@
             "category": "active",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_active_gib_months",
@@ -47,6 +49,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 11,
@@ -61,6 +64,7 @@
             "category": "active",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_r1_active_gib_months",
@@ -81,6 +85,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 11,
@@ -95,6 +100,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 11,
@@ -109,6 +115,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_r2_get_requests",
@@ -123,6 +130,7 @@
             "category": "active",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_r2_active_gib_months",
@@ -136,6 +144,7 @@
             "category": null,
             "route": "ec2_ec2_cross_az",
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_interserver_gib",
@@ -149,6 +158,7 @@
             "category": null,
             "route": "ec2_ec2_cross_az",
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_interserver_to_gib",
@@ -169,6 +179,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 1,
@@ -182,6 +193,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 2,
@@ -195,6 +207,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 1,
@@ -208,6 +221,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 4,
@@ -221,6 +235,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "predicted",
             "expr": {
               "kind": "const",
               "value": 4,
@@ -234,6 +249,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_put_requests",
@@ -247,6 +263,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_delete_requests",
@@ -260,6 +277,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_batch_delete_requests",
@@ -273,6 +291,7 @@
             "category": "incomplete",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_incomplete_gib_months",
@@ -286,6 +305,7 @@
             "category": "active",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_active_gib_months",
@@ -313,6 +333,7 @@
             "category": null,
             "route": null,
             "scope": "volume",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_block_capacity_gib",
@@ -326,6 +347,7 @@
             "category": null,
             "route": null,
             "scope": "volume",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_block_iops",
@@ -339,6 +361,7 @@
             "category": null,
             "route": null,
             "scope": "volume",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_block_mibps",
@@ -366,6 +389,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_put_requests",
@@ -379,6 +403,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_head_requests",
@@ -392,6 +417,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_head_error_requests",
@@ -406,6 +432,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_get_requests",
@@ -419,6 +446,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_get_error_requests",
@@ -434,6 +462,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_list_requests",
@@ -447,6 +476,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_delete_requests",
@@ -460,6 +490,7 @@
             "category": null,
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_batch_delete_requests",
@@ -473,6 +504,7 @@
             "category": "active",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_active_gib_months",
@@ -486,6 +518,7 @@
             "category": "garbage",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_garbage_gib_months",
@@ -499,6 +532,157 @@
             "category": "metadata",
             "route": null,
             "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_metadata_gib_months",
+              "dim": "GiB*month"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      },
+      "probe_cas_expect": {
+        "ledger_rows": [
+          {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_put_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "HeadObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_head_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "HeadObject",
+            "outcome_class": "client_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_head_error_requests",
+              "dim": "count"
+            },
+            "status": 404
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_get_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "GetObject",
+            "outcome_class": "client_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_get_error_requests",
+              "dim": "count"
+            },
+            "status": 404,
+            "s3_code": "NoSuchKey"
+          },
+          {
+            "row_type": "request",
+            "op_kind": "ListObjectsV2",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_list_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_delete_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "DeleteObjects",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_batch_delete_requests",
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
+            "expr": {
+              "kind": "input",
+              "id": "probe_active_gib_months",
+              "dim": "GiB*month"
+            }
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "metadata",
+            "outcome_class": "all",
+            "category": "metadata",
+            "route": null,
+            "scope": "variant",
+            "basis": "measured",
             "expr": {
               "kind": "input",
               "id": "probe_metadata_gib_months",

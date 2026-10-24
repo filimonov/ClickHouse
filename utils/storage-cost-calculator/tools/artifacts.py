@@ -160,7 +160,7 @@ _ATTEMPT = {
     "copy_source": nullable(obj({"bucket": string, "key": string, "range": nullable(string)})),
     "req_payload_bytes": integer, "req_wire_bytes": integer,
     "resp_payload_bytes": integer, "resp_wire_bytes": integer,
-    "payload_sha256": nullable(string), "expect_negotiated": boolean,
+    "payload_sha256": nullable(string), "expect_negotiated": boolean, "wire_bytes_bound": enum("exact", "upper"),
     "downstream": obj({"outcome": enum("delivered", "dropped", "injected", "rejected"),
                        "status": nullable(integer)}),
     "upstream": obj({"outcome": enum("ok", "error", "unknown", "not_sent"),
@@ -541,6 +541,9 @@ _ROW = {
     "category": nullable(enum(*CATEGORIES)),
     "route": nullable(enum("ec2_s3_same_region", "ec2_ec2_cross_az", "internet")),
     "scope": enum("variant", "replica", "volume"),
+    # `measured`: the expression reads a measured quantity, i.e. the record's own number; only `predicted` rows
+    # can be confirmed exactly by the ledger.
+    "basis": enum("predicted", "measured"),
     "expr": anything,
     # Optional outcome facts the billing preset's free list matches on, and the caller a request row reconciles with.
     "status": either(integer, _typed("status class like 4XX", lambda v: isinstance(v, str) and len(v) == 3
@@ -550,6 +553,23 @@ _ROW = {
     "caller": nullable(enum(*CALLERS)),
 }
 _ROW_OPTIONAL = ("status", "s3_code", "condition", "caller")
+
+
+def all_row_overlaps(cell, path):
+    """An `all` row bills every outcome of its op; another outcome row for the same row type, op and caller (a
+    null caller covers them all) would bill those requests twice."""
+    rows = [r for r in cell.get("ledger_rows") or [] if isinstance(r, dict)] if isinstance(cell, dict) else []
+    out = []
+    for i, a in enumerate(rows):
+        if a.get("outcome_class") != "all":
+            continue
+        for j, b in enumerate(rows):
+            if j != i and (b.get("row_type"), b.get("op_kind")) == (a.get("row_type"), a.get("op_kind")) \
+                    and (a.get("caller") is None or b.get("caller") is None or a.get("caller") == b.get("caller")) \
+                    and (b.get("outcome_class") != "all" or j > i):
+                out.append(f"{path}.ledger_rows[{j}]: {a.get('row_type')} {a.get('op_kind')} has both an all row "
+                           f"(ledger_rows[{i}]) and a {b.get('outcome_class')} row")
+    return out
 
 
 def _validate_cell(cell, path, tables):
@@ -571,6 +591,7 @@ def _validate_cell(cell, path, tables):
             out += validate_node(row["expr"], f"{rp}.expr", False, tables)
     if "ledger_rows" in cell and not isinstance(cell["ledger_rows"], list):
         out.append(f"{path}.ledger_rows: expected array")
+    out += all_row_overlaps(cell, path)
     alloc = cell.get("allocation")
     if "allocation" in cell and alloc is not None:
         if not isinstance(alloc, dict) or not isinstance(alloc.get("shares"), list):

@@ -45,7 +45,7 @@ def coef(qid):
 
 def formulas(row_scope, expr, variant='s3', op='insert'):
     row = {'row_type': 'request', 'op_kind': 'PutObject', 'outcome_class': 'ok', 'category': None, 'route': None,
-           'scope': row_scope, 'expr': expr}
+           'scope': row_scope, 'basis': 'predicted', 'expr': expr}
     return {'schema': 'formulas/1', 'owner': 'test', 'variant': variant,
             'cells': {op: {'ledger_rows': [row], 'allocation': None, 'states': [], 'notes': []}}}
 
@@ -345,10 +345,17 @@ class MainTest(unittest.TestCase):
             self.assertIn('measurements.jsonl:2: bad JSON line', text)
             self.assertIn('measurements.jsonl:3: expected a JSON object', text)
 
+    def test_default_reports_glob_takes_any_date(self):
+        import fnmatch
+        pattern = os.path.basename(cc.DEFAULT_REPORTS)
+        for name in ('2026-10-24-storage-cost-phase0', '2027-01-05-storage-cost-lifecycle', '2026-11-30-storage-cost-x'):
+            self.assertTrue(fnmatch.fnmatch(name, pattern), name)
+        self.assertFalse(fnmatch.fnmatch('2026-10-23-cas-yardstick', pattern))
+
     def test_report_formulas_file_may_hold_an_array(self):
         def formulas(variant, qid):
             row = {'row_type': 'request', 'op_kind': 'PutObject', 'outcome_class': 'ok', 'category': None,
-                   'route': None, 'scope': 'variant', 'expr': inp(qid)}
+                   'route': None, 'scope': 'variant', 'basis': 'predicted', 'expr': inp(qid)}
             return {'schema': 'formulas/1', 'owner': 'o', 'variant': variant,
                     'cells': {'c': {'ledger_rows': [row], 'allocation': None, 'states': [], 'notes': []}}}
         with tempfile.TemporaryDirectory() as d:

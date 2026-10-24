@@ -22,6 +22,7 @@
   "resp_wire_bytes": 312,
   "payload_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "expect_negotiated": true,
+  "wire_bytes_bound": "exact",
   "downstream": {"outcome": "delivered", "status": 200},
   "upstream": {"outcome": "ok", "http_status": 200, "s3_code": null},
   "response_body": {

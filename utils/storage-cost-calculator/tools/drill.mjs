@@ -22,7 +22,9 @@ const WORKLOAD = ['r1', 'r2', 'r3'];
 const EVIDENCE_STATEMENT = 'Measured on one workstation: a local RustFS store behind the ledger proxy and loopback '
   + 'interserver relays. Request counts are exact ledger counts; storage is a byte-hour bound; local I/O is syscall demand.';
 // Row outcome classes reconcile with ledger outcomes: client_error is an upstream 4XX, server_error any other
-// upstream error, not_sent an attempt the store never saw (injected without forwarding, rejected, no connection).
+// upstream error (a connect failure too: the proxy records it as upstream `error` with no status and answers 502
+// itself, unbilled like any 5XX), not_sent an attempt the proxy never forwarded (injected without forwarding,
+// rejected).
 const GROUP = { ok: 'ok', accepted_dropped: 'accepted_dropped', dropped: 'dropped', client_error: 'client_error', server_error: 'server_error', not_sent: 'not_sent', all: 'all' };
 const CLASSES = ['ok', 'accepted_dropped', 'dropped', 'client_error', 'server_error', 'not_sent'];
 const TRANSFER = { interserver_from_target: 'from_target', interserver_to_target: 'to_target' };
@@ -184,7 +186,7 @@ function evidenceOf(record) {
   const bounds = Object.fromEntries(Object.entries(inv.byte_hours || {}).filter(([, b]) => b.upper > 0));
   return {
     statement: EVIDENCE_STATEMENT, limitations: limitationsOf(record), mode: record.mode,
-    inventory_initial: inv.initial || null, inventory_note: inv.note || null,
+    inventory_initial: inv.initial || null, inventory_note: inv.note || null, uncertain_identities: inv.uncertain_identities || 0,
     ledger_complete: (record.ledger || {}).complete !== false, open_attempts: ((record.window || {}).open_attempts || []).length,
     bounds: { byte_hours: bounds },
   };
@@ -195,6 +197,9 @@ function evidenceOf(record) {
 function unavailableReasons(ev, rows, record) {
   const reasons = [];
   if (ev.state === 'unavailable') reasons.push(ev.reason);
+  // Objects whose size the replay could not establish sit in the bounds at 0 bytes: storage would be under-priced.
+  const unknownSizes = (record.inventory || {}).uncertain_identities || 0;
+  if (unknownSizes > 0 && rows.some((r) => r.row_type === 'storage')) reasons.push(`unknown object sizes (${unknownSizes})`);
   if (rows.some((r) => r.state !== 'ok')) reasons.push('a row is unavailable');
   for (const s of ev.states) {
     if (s.active === null) reasons.push(`state ${s.id} unknown: ${s.reason}`);
@@ -206,11 +211,35 @@ function unavailableReasons(ev, rows, record) {
   return reasons;
 }
 
-function evalCell(key, cell, ctx, problems) {
+function inputsOf(node, out = new Set()) {
+  if (!node || typeof node !== 'object') return out;
+  if (node.kind === 'input') out.add(node.id);
+  for (const v of Object.values(node)) {
+    if (Array.isArray(v)) v.forEach((x) => inputsOf(x, out));
+    else if (v && typeof v === 'object') inputsOf(v, out);
+  }
+  return out;
+}
+
+// A row's basis says whether its number is a prediction the ledger can confirm or the ledger's own number fed
+// back through a measured quantity; only predicted rows get an exactness verdict.
+function basisProblem(row, label, measuredIds) {
+  if (row.basis !== 'predicted' && row.basis !== 'measured') return `row "${label}" has no basis (predicted or measured)`;
+  const read = [...inputsOf(row.expr)].filter((id) => measuredIds.has(id));
+  if (row.basis === 'predicted' && read.length) return `row "${label}" has basis predicted but reads measured quantity ${read.join(', ')}`;
+  if (row.basis === 'measured' && !read.length) return `row "${label}" has basis measured but reads no measured quantity`;
+  return null;
+}
+
+function evalCell(key, cell, ctx, problems, measuredIds) {
   const ev = model.evaluateCell(cell, ctx);
   const rows = ev.rows.map((r, i) => {
+    const label = `${r.row_type} ${r.op_kind} ${r.outcome_class}${r.caller ? ` ${r.caller}` : ''}`;
+    const basis = cell.ledger_rows[i].basis;
+    const bad = basisProblem(cell.ledger_rows[i], label, measuredIds);
+    if (bad) problems.push(`${key}: ${bad}`);
     const out = {
-      row: `${r.row_type} ${r.op_kind} ${r.outcome_class}${r.caller ? ` ${r.caller}` : ''}`, row_type: r.row_type, op_kind: r.op_kind,
+      row: label, row_type: r.row_type, op_kind: r.op_kind, basis: basis || null,
       outcome_class: r.outcome_class, caller: r.caller || null, category: r.category, route: r.route, branch_taken: branches(r.trace), predicted: r.state === 'ok' ? r.quantity : null,
       measured: null, expected: null, exact: null, state: r.state,
     };
@@ -260,6 +289,9 @@ function expectedRange(prediction, caller, op) {
   return typeof want === 'number' ? { min: want, max: want } : want;
 }
 
+// A disagreement is a problem whatever the basis; `exact: true` is claimed only for predicted rows.
+const verdict = (row, exact) => (row.basis === 'measured' && exact ? null : exact);
+
 // Every request row group (caller or all, op, outcome class) must equal the ledger; every ledger usage must be
 // covered by a row or an explicit exclusion; prediction ranges hold within the prediction's tolerance.
 function reconcile(where, record, prediction, cells, problems) {
@@ -279,7 +311,7 @@ function reconcile(where, record, prediction, cells, problems) {
     const measured = callers.reduce((s, c) => s + (usage[c] && usage[c][op] ? classCount(usage[c][op], group) : 0), 0);
     const predicted = members.reduce((s, x) => s + x.r.predicted, 0);
     const exact = Math.abs(predicted - measured) <= EPS;
-    for (const x of members) Object.assign(x.r, { measured, group_predicted: predicted, exact });
+    for (const x of members) Object.assign(x.r, { measured, group_predicted: predicted, exact: verdict(x.r, exact) });
     if (!exact) problems.push(`${where}: rows "${members[0].r.row_type} ${op} ${group}${callerKey === '*' ? '' : ` ${callerKey}`}" predicted ${predicted} measured ${measured}`);
   }
   for (const [caller, ops] of Object.entries(usage)) {
@@ -320,7 +352,7 @@ function reconcile(where, record, prediction, cells, problems) {
       continue;
     }
     const exact = Math.abs(byCat[cat] - want) <= EPS * Math.max(1, want);
-    for (const r of storage.filter((y) => y.category === cat)) Object.assign(r, { measured: want, exact });
+    for (const r of storage.filter((y) => y.category === cat)) Object.assign(r, { measured: want, exact: verdict(r, exact) });
     if (!exact) problems.push(`${where}: storage ${cat} rows ${byCat[cat]} GiB-months, record upper bound ${want}`);
   }
   for (const cat of Object.keys(byCat)) {
@@ -342,7 +374,7 @@ function reconcile(where, record, prediction, cells, problems) {
       continue;
     }
     const exact = Math.abs(got - want) <= EPS * Math.max(1, want);
-    rows.forEach((r) => Object.assign(r, { measured: want, exact }));
+    rows.forEach((r) => Object.assign(r, { measured: want, exact: verdict(r, exact) }));
     if (!exact) problems.push(`${where}: transfer ${opKind} rows ${got} GiB, relays ${want} GiB`);
   }
 }
@@ -414,15 +446,17 @@ function summarize(rows) {
 
 function printCell(key, c) {
   const out = [`== ${key}`, '1. inputs', ...Object.entries(c.stage1_inputs.inputs).map(([k, v]) => `   ${k} = ${v}`)];
-  out.push('2. rows (branch | predicted | measured | expected | exact)');
+  out.push('2. rows (branch | predicted | measured | expected | exact, or measured for rows fed by the record)');
   for (const r of c.stage2_rows) {
-    out.push(`   ${r.row} | ${r.branch_taken.join(',') || '-'} | ${r.predicted} | ${r.measured} | ${JSON.stringify(r.expected)} | ${r.exact}`);
+    const check = r.basis === 'measured' && r.exact !== false ? 'measured' : r.exact;
+    out.push(`   ${r.row} | ${r.branch_taken.join(',') || '-'} | ${r.predicted} | ${r.measured} | ${JSON.stringify(r.expected)} | ${check}`);
   }
   out.push('3. ledger summary', ...Object.entries(c.stage3_ledger_summary.by_row).map(([t, v]) => `   ${t}: ${v.rows} rows, quantity ${v.quantity}`));
   if (c.state === 'unavailable') out.push(`4. billing: unavailable: ${c.unavailable_reasons.join('; ')}`);
   else out.push('4. billing (this cell\'s allocated share)', ...(c.stage4_billing_lines || []).map((l) => `   ${l.rule_id}: ${l.quantity} ${l.unit} = $${l.money}`), `   total = $${c.billing_total}`);
   const e = c.evidence;
-  out.push(`   evidence: ${e.mode}, inventory ${e.inventory_initial}, ledger ${e.ledger_complete ? 'complete' : 'incomplete'}`, ...e.limitations.map((l) => `   - ${l}`));
+  out.push(`   evidence: ${e.mode}, inventory ${e.inventory_initial}, ledger ${e.ledger_complete ? 'complete' : 'incomplete'}, `
+    + `${e.uncertain_identities} object(s) of unknown size`, ...e.limitations.map((l) => `   - ${l}`));
   return out.join('\n');
 }
 
@@ -485,9 +519,10 @@ function main(argv) {
     const samePolicy = records.filter((x) => x.policy === rec.policy).length > 1;
     const prefix = records.length === 1 ? '' : samePolicy ? `${rec.policy}/${rec.case_id}/` : `${rec.policy}/`;
     const { ctx, ignored } = buildCtx(c, prediction, rec, problems, rec.measurement_id);
+    const measuredIds = new Set(c.registry.filter((q) => q.kind === 'measured').map((q) => q.id));
     const evaluated = names.map((name) => {
       const key = prefix + name;
-      const { ev, rows } = evalCell(key, variantCells[name], ctx, problems);
+      const { ev, rows } = evalCell(key, variantCells[name], ctx, problems, measuredIds);
       return { key, name, cell: variantCells[name], ev, rows, unavailable: unavailableReasons(ev, rows, rec) };
     });
     reconcile(rec.measurement_id, rec, prediction, evaluated, problems);

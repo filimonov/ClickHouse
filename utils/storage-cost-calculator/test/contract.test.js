@@ -229,3 +229,19 @@ test('test_registry_missing_is_one_problem', () => {
   delete c.registry;
   assert.deepEqual(problemsOf(c), ['registry: expected array, got undefined']);
 });
+
+test('test_all_row_beside_another_outcome_of_the_same_op_rejected', () => {
+  // An `all` row bills every outcome; an `ok` row for the same op would bill the successful requests twice.
+  const c = minimal();
+  const cell = c.formulas.s3.insert;
+  const row = cell.ledger_rows[0];
+  cell.ledger_rows = [Object.assign({}, row, { outcome_class: 'all' }), Object.assign({}, row, { outcome_class: 'ok' })];
+  const problems = problemsOf(c);
+  assert.ok(problems.some((p) => /formulas\.s3\.insert\.ledger_rows\[1\]: request PutObject has both an all row/.test(p)), problems.join('\n'));
+  // Earlier tests leave malformed registry entries in the shared example; only row problems matter here.
+  const rowProblems = () => problemsOf(c).filter((p) => p.includes('ledger_rows'));
+  cell.ledger_rows = [Object.assign({}, row, { outcome_class: 'all', caller: 'r1' }), Object.assign({}, row, { outcome_class: 'ok', caller: 'r2' })];
+  assert.deepEqual(rowProblems(), []);
+  cell.ledger_rows = [Object.assign({}, row, { outcome_class: 'all' }), Object.assign({}, row, { outcome_class: 'all', op_kind: 'GetObject' })];
+  assert.deepEqual(rowProblems(), []);
+});

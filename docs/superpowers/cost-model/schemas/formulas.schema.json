@@ -86,6 +86,13 @@
               "op_kind": {
                 "type": "string"
               },
+              "basis": {
+                "enum": [
+                  "predicted",
+                  "measured"
+                ],
+                "description": "measured when the expression reads a measured registry quantity (the record's own number); only predicted rows get an exactness verdict"
+              },
               "outcome_class": {
                 "enum": [
                   "ok",
@@ -194,6 +201,7 @@
               "category",
               "route",
               "scope",
+              "basis",
               "expr"
             ],
             "additionalProperties": false

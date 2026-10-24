@@ -30,8 +30,10 @@
   function stage2(key, c) {
     const rows = (c.stage2_rows || []).map((r, i) => {
       const exact = r.exact === true ? 'true' : r.exact === false ? 'false' : 'n/a';
-      return `<tr data-row="${esc(key)}#${i}" data-exact="${exact}"><td>${esc(r.row)}</td><td>${esc((r.branch_taken || []).join(', ') || '-')}</td>`
-        + `<td>${num(r.predicted)}</td><td>${num(r.measured)}</td><td>${expectedText(r.expected)}</td><td>${exact === 'false' ? 'MISMATCH' : exact === 'true' ? 'exact' : '-'}</td></tr>`;
+      // A measured row feeds the record's own number back: it is labelled, never called exact.
+      const check = exact === 'false' ? 'MISMATCH' : r.basis === 'measured' ? 'measured' : exact === 'true' ? 'exact' : '-';
+      return `<tr data-row="${esc(key)}#${i}" data-basis="${esc(r.basis || 'n/a')}" data-exact="${exact}"><td>${esc(r.row)}</td><td>${esc((r.branch_taken || []).join(', ') || '-')}</td>`
+        + `<td>${num(r.predicted)}</td><td>${num(r.measured)}</td><td>${expectedText(r.expected)}</td><td>${check}</td></tr>`;
     }).join('');
     return `<section class="stage" data-stage="2"><h4>2. Rows: branch taken, predicted vs measured</h4>${table(['row', 'branch', 'predicted', 'measured', 'expected', 'check'], rows)}</section>`;
   }

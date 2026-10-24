@@ -67,9 +67,25 @@
         "note": "Outcomes not listed here are billed. Documented rule: 200 and 4XX are billed, 5XX is not; the listed 3XX/4XX codes are not billed.",
         "free": [
           {
+            "outcome_class": "server_error",
             "status": "5XX",
             "s3_code": null,
-            "condition": "any server error response"
+            "condition": "any server error response",
+            "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
+          },
+          {
+            "outcome_class": "dropped",
+            "status": null,
+            "s3_code": null,
+            "condition": "upstream outcome unknown: no response from the store was seen, so nothing shows the store did billable work (a model assumption, not a provider rule)",
+            "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
+          },
+          {
+            "outcome_class": "not_sent",
+            "status": null,
+            "s3_code": null,
+            "condition": "the request never reached the store (injected, rejected by the proxy, no connection)",
+            "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
           },
           {
             "status": 403,

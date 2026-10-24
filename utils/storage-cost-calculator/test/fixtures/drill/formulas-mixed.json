@@ -12,6 +12,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 3,
@@ -25,6 +26,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 2,
@@ -38,6 +40,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "mul",
             "dim": "count",
@@ -60,6 +63,7 @@
           "category": "active",
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 1000,
@@ -73,6 +77,7 @@
           "category": null,
           "route": "ec2_ec2_cross_az",
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 100,
@@ -86,6 +91,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 50,
@@ -99,6 +105,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 6000,
@@ -112,6 +119,7 @@
           "category": null,
           "route": null,
           "scope": "variant",
+          "basis": "predicted",
           "expr": {
             "kind": "const",
             "value": 200,

@@ -122,6 +122,21 @@
     return new Map([...owner].map(([id, o]) => [id, o.kind]));
   }
 
+  // An `all` row bills every outcome of its op; another outcome row for the same row type, op and caller (a null
+  // caller covers them all) would bill those requests twice.
+  function checkAllRows(cell, base, problems) {
+    const rows = (Array.isArray(cell.ledger_rows) ? cell.ledger_rows : []).filter(isObj);
+    rows.forEach((a, i) => {
+      if (a.outcome_class !== 'all') return;
+      rows.forEach((b, j) => {
+        if (j === i || b.row_type !== a.row_type || b.op_kind !== a.op_kind) return;
+        if (a.caller && b.caller && a.caller !== b.caller) return;
+        if (b.outcome_class === 'all' && j < i) return;
+        problems.push(`${base}.ledger_rows[${j}]: ${a.row_type} ${a.op_kind} has both an all row (ledger_rows[${i}]) and a ${b.outcome_class} row`);
+      });
+    });
+  }
+
   function checkFormulas(c, kinds, problems) {
     const registryArtifact = { quantities: c.registry.filter(isObj), sets: c.sets, precedence: c.precedence };
     for (const [variant, ops] of Object.entries(c.formulas)) {
@@ -129,6 +144,7 @@
       for (const [op, cell] of Object.entries(ops)) {
         const base = `formulas.${variant}.${op}`;
         if (!isObj(cell)) { problems.push(`${base}: expected object, got ${typeOf(cell)}`); continue; }
+        checkAllRows(cell, base, problems);
         eachNode(cell, base, (node, path) => {
           for (const p of model().checkDims(node, registryArtifact)) problems.push(path + p.slice(1));
           checkRefs(node, path, kinds, problems);

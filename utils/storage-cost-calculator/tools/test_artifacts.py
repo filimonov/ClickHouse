@@ -85,6 +85,12 @@ class LedgerRowTests(ArtifactTestCase):
         self.assert_rejects(artifacts.validate_ledger_row, with_value(row, ("delete_keys",), "x"), "delete_keys")
         self.assert_rejects(artifacts.validate_ledger_row, with_value(row, ("delete_keys",), [1]), "delete_keys")
 
+    def test_ledger_row_wire_bytes_bound(self):
+        attempt = load("ledger-row-attempt.json")
+        self.assert_valid(artifacts.validate_ledger_row, with_value(attempt, ("wire_bytes_bound",), "upper"))
+        self.assert_rejects(artifacts.validate_ledger_row, with_value(attempt, ("wire_bytes_bound",), "lower"),
+                            "wire_bytes_bound")
+
     def test_ledger_row_rejects_bad_enums_and_unknown_kind(self):
         attempt = load("ledger-row-attempt.json")
         self.assert_rejects(artifacts.validate_ledger_row, with_value(attempt, ("op",), "Frobnicate"), "op")
@@ -312,7 +318,7 @@ class FormulasTests(ArtifactTestCase):
             ("cells", cell, "ledger_rows", 0, "row_type"), ("cells", cell, "ledger_rows", 0, "op_kind"),
             ("cells", cell, "ledger_rows", 0, "outcome_class"), ("cells", cell, "ledger_rows", 0, "category"),
             ("cells", cell, "ledger_rows", 0, "route"), ("cells", cell, "ledger_rows", 0, "scope"),
-            ("cells", cell, "ledger_rows", 0, "expr"),
+            ("cells", cell, "ledger_rows", 0, "expr"), ("cells", cell, "ledger_rows", 0, "basis"),
             ("cells", cell, "ledger_rows", 0, "expr", "dim"),
             ("cells", cell, "states", 0, "id"), ("cells", cell, "states", 0, "cond"),
             ("cells", cell, "states", 0, "reason"),
@@ -337,6 +343,27 @@ class FormulasTests(ArtifactTestCase):
                             "reason")
         self.assert_rejects(artifacts.validate_formulas, with_value(
             f, ("cells", cell, "excluded"), [{"kind": "tier", "id": "x", "reason": "r"}]), "kind")
+
+    def test_formulas_row_basis_is_predicted_or_measured(self):
+        f = load("formulas.json")
+        cell = next(iter(f["cells"]))
+        self.assert_valid(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "basis"), "measured"))
+        self.assert_rejects(artifacts.validate_formulas, with_value(f, ("cells", cell, "ledger_rows", 0, "basis"), "guess"),
+                            "basis")
+
+    def test_formulas_reject_an_all_row_beside_another_outcome_of_the_same_op(self):
+        # An `all` row already bills every outcome; a second row for the same op would bill some requests twice.
+        f = load("formulas.json")
+        cell = next(iter(f["cells"]))
+        row = f["cells"][cell]["ledger_rows"][0]
+        both = with_value(f, ("cells", cell, "ledger_rows"), [dict(row, outcome_class="all"), dict(row, outcome_class="ok")])
+        self.assert_rejects(artifacts.validate_formulas, both, "has both an all row")
+        other_op = with_value(f, ("cells", cell, "ledger_rows"),
+                              [dict(row, outcome_class="all"), dict(row, op_kind="GetObject", outcome_class="ok")])
+        self.assert_valid(artifacts.validate_formulas, other_op)
+        callers = with_value(f, ("cells", cell, "ledger_rows"),
+                             [dict(row, outcome_class="all", caller="r1"), dict(row, outcome_class="ok", caller="r2")])
+        self.assert_valid(artifacts.validate_formulas, callers)
 
     def test_worked_formula_examples_valid(self):
         for name in ("example-part-type.json", "example-objects-per-part.json", "example-multipart-parts.json",

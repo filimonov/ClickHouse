@@ -231,3 +231,20 @@ test('test_outcome_mix_validation_and_unknown_outcome', () => {
   assert.throws(() => billing.bill([row('request', 'GetObject', 'all', 1)], P(), 'variant', { GetObject: { okay: 1 } }), /one of/);
   assert.throws(() => billing.bill([row('request', 'GetObject', 'weird', 1)], P()), /unknown outcome_class/);
 });
+
+test('test_unbilled_outcome_classes_come_from_the_preset_free_list', () => {
+  // Server errors, unknown outcomes and requests the store never saw are free because the preset says so, with a
+  // source; take an entry away and that class is billed.
+  const free = P().outcome_billing.free;
+  for (const cls of ['server_error', 'dropped', 'not_sent']) {
+    const entry = free.find((e) => e.outcome_class === cls);
+    assert.ok(entry, `preset lists ${cls}`);
+    assert.ok(entry.source_url || P().outcome_billing.source_url, cls);
+    assert.equal(line(billing.bill([row('request', 'GetObject', cls, 10)], P()), 'get_and_other').quantity, 0);
+    const without = P();
+    without.outcome_billing = Object.assign({}, without.outcome_billing, { free: free.filter((e) => e.outcome_class !== cls) });
+    assert.equal(line(billing.bill([row('request', 'GetObject', cls, 10)], without), 'get_and_other').quantity, 10, cls);
+    const mixed = billing.bill([row('request', 'GetObject', 'all', 100)], without, 'variant', { GetObject: { ok: 0.5, [cls]: 0.5 } });
+    assert.equal(line(mixed, 'get_and_other').quantity, 100, cls);
+  }
+});

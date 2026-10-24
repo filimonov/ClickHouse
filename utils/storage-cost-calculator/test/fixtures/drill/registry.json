@@ -67,6 +67,28 @@
       },
       "hint": null,
       "status": "ok"
+    },
+    {
+      "id": "observed_get_requests",
+      "block": "fixture",
+      "label": "observed_get_requests",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "fixture",
+        "version": "1"
+      },
+      "hint": null,
+      "status": "ok"
     }
   ],
   "sets": {},

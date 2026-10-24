@@ -19,7 +19,8 @@ import artifacts
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_COST_MODEL = ROOT / "docs/superpowers/cost-model"
-DEFAULT_REPORTS = str(ROOT / "docs/superpowers/reports/2026-10-*-storage-cost-*")
+# Any dated storage-cost report directory, so a report written in a later month is never skipped silently.
+DEFAULT_REPORTS = str(ROOT / "docs/superpowers/reports/*-storage-cost-*")
 NODE_TESTS = ROOT / "utils/storage-cost-calculator/test"
 YARDSTICK = ROOT / "utils/cas-yardstick"
 RENDER_CHECK = ROOT / "utils/storage-cost-calculator/tools/render_check.mjs"

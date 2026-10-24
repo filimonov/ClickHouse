@@ -324,3 +324,47 @@ test('test_not_sent_attempts_are_their_own_class', () => {
   assert.match(bad.r.stderr, /request PutObject server_error" predicted 2 measured 0/);
   assert.match(bad.r.stderr, /unmodelled residual: r1 PutObject not_sent x2/);
 });
+
+test('test_measured_rows_carry_no_exactness_claim', () => {
+  // A row filled from the record's own observation reconciles the ledger with itself: it is shown as measured.
+  const f = readFx('formulas.json');
+  f.cells.insert.ledger_rows[1].basis = 'measured';
+  f.cells.insert.ledger_rows[1].expr = { kind: 'input', id: 'observed_get_requests', dim: 'count' };
+  const rec = recordFx();
+  rec.observations.inputs = { observed_get_requests: 10 };
+  const { r, json, out } = drillWith('measured', { record: rec, formulas: f });
+  assert.equal(r.status, 0, r.stderr);
+  const rows = json.cells.insert.stage2_rows;
+  const get = rows.find((x) => x.op_kind === 'GetObject');
+  const put = rows.find((x) => x.op_kind === 'PutObject');
+  assert.deepEqual([get.basis, get.measured, get.exact], ['measured', 10, null]);
+  assert.deepEqual([put.basis, put.exact], ['predicted', true]);
+  assert.match(r.stdout, /GetObject ok \| - \| 10 \| 10 \| .* \| measured/);
+  const html = ui.renderDrillHtml(json);
+  assert.match(html, /data-basis="measured"[^>]*><td>request GetObject ok/);
+  assert.equal(node('render_check.mjs', [out, '--probe', 'probe_fixture']).status, 0);
+
+  // The label must match the expression: a predicted row may not read a measured quantity, and every row has one.
+  const lie = JSON.parse(JSON.stringify(f));
+  lie.cells.insert.ledger_rows[1].basis = 'predicted';
+  const bad = drillWith('measured-as-predicted', { record: rec, formulas: lie });
+  assert.equal(bad.r.status, 1);
+  assert.match(bad.r.stderr, /basis predicted but reads measured quantity observed_get_requests/);
+  const none = JSON.parse(JSON.stringify(f));
+  delete none.cells.insert.ledger_rows[0].basis;
+  const missing = drillWith('no-basis', { record: rec, formulas: none });
+  assert.equal(missing.r.status, 1);
+  assert.match(missing.r.stderr, /row "request PutObject ok" has no basis/);
+});
+
+test('test_unknown_object_sizes_make_storage_unavailable', () => {
+  const rec = recordFx();
+  rec.inventory.uncertain_identities = 2;
+  const { json, r } = drillWith('uncertain', { record: rec });
+  const c = json.cells.insert;
+  assert.equal(c.state, 'unavailable');
+  assert.ok(c.unavailable_reasons.includes('unknown object sizes (2)'), c.unavailable_reasons.join('; '));
+  assert.equal(c.evidence.uncertain_identities, 2);
+  assert.match(r.stdout, /unknown object sizes \(2\)/);
+  assert.equal(drillWith('certain').json.cells.insert.evidence.uncertain_identities, 0);
+});

@@ -6,7 +6,9 @@
   const UNITS = ['decimal', 'binary_gb'];
   const GIB_IN_DECIMAL_GB = 1.073741824; // 2^30 / 10^9
   // accepted_dropped: the store answered ok and the reply to the caller was lost, so the provider bills it.
-  // dropped: the store's outcome is unknown, so there is no billable fact. not_sent: the store never saw it.
+  // Every other class is billed unless the preset's `outcome_billing.free` list says otherwise: an entry with
+  // `outcome_class` frees that whole class (server errors, unknown outcomes, requests the store never saw); an
+  // entry without one is a client error matched by status and S3 code.
   const OUTCOMES = ['ok', 'accepted_dropped', 'client_error', 'server_error', 'dropped', 'not_sent'];
   const BILLED = new Set(['ok', 'accepted_dropped']);
   const EPS = 1e-9;
@@ -38,15 +40,22 @@
   // an entry with a condition applies only when the row states the same condition.
   function isFreeOutcome(r, free) {
     if (r.status === undefined || r.status === null) return false;
-    return free.some((e) => statusMatches(e.status, r.status)
+    return free.some((e) => (e.outcome_class === undefined || e.outcome_class === 'client_error') && statusMatches(e.status, r.status)
       && (e.s3_code === null || e.s3_code === r.s3_code)
       && (e.condition === null || e.condition === r.condition));
+  }
+
+  const classFree = (cls, free) => free.some((e) => e.outcome_class === cls);
+  function isBilled(cls, r, free) {
+    if (BILLED.has(cls)) return true;
+    if (cls === 'client_error') return !isFreeOutcome(r, free) && !classFree(cls, free);
+    return !classFree(cls, free);
   }
 
   function billedFractions(r, outcomeMix, free) {
     if (r.outcome_class !== 'all') {
       if (!OUTCOMES.includes(r.outcome_class)) throw new Error(`row ${rowName(r)}: unknown outcome_class`);
-      const billed = BILLED.has(r.outcome_class) || (r.outcome_class === 'client_error' && !isFreeOutcome(r, free));
+      const billed = isBilled(r.outcome_class, r, free);
       return { billed: billed ? 1 : 0, excluded: { [r.outcome_class]: billed ? 0 : 1 } };
     }
     const mix = (outcomeMix && outcomeMix[r.op_kind]) || { ok: 1 };
@@ -57,8 +66,9 @@
     }
     const sum = OUTCOMES.reduce((s, k) => s + (mix[k] || 0), 0);
     if (Math.abs(sum - 1) > 1e-6) throw new Error(`outcome mix for ${r.op_kind} must sum to 1, got ${sum}`);
-    const billed = (mix.ok || 0) + (mix.accepted_dropped || 0) + (isFreeOutcome(r, free) ? 0 : (mix.client_error || 0));
-    return { billed, excluded: { client_error: isFreeOutcome(r, free) ? (mix.client_error || 0) : 0, server_error: mix.server_error || 0, dropped: mix.dropped || 0 } };
+    const billed = OUTCOMES.reduce((s, k) => s + (isBilled(k, r, free) ? (mix[k] || 0) : 0), 0);
+    const excluded = Object.fromEntries(OUTCOMES.filter((k) => !isBilled(k, r, free)).map((k) => [k, mix[k] || 0]));
+    return { billed, excluded };
   }
 
   function requestLines(rows, preset, outcomeMix) {

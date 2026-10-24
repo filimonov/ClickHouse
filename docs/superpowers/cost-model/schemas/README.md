@@ -36,7 +36,7 @@ Every validator returns a list of `"<path>: <message>"` strings. An empty list m
 - **Strict keys.** Unknown keys are problems, except inside free-form objects (`effective_counts`, `observations`, `params`, settings, `inputs`, `tolerance` maps).
 - **Measurement id.** `measurement_id` must equal `<run_id>/<policy>/<card>/<case_id>/k<k>`. `experiment_id` must equal `<card>.<case_id>`. The same holds for experiments.
 - **Measurement status.** `ok` carries all result sections. `UNSUPPORTED` carries only `reason`. `FAILED` carries `reason` and `diagnostics`, and may carry `partial` with any subset of the `ok` sections. Each present section is validated.
-- **Ledger row.** `error` and `delete_keys` are optional. `delete_keys` lists the keys a `DeleteObjects` request names; the proxy parses it before forwarding.
+- **Ledger row.** `error` and `delete_keys` are optional. `delete_keys` lists the keys a `DeleteObjects` request names; the proxy parses it before forwarding. `wire_bytes_bound` is `exact`, or `upper` when `expect_negotiated` and the store did not answer `ok`: the proxy answered `100 Continue` itself and streamed a body that a store handling `Expect` would have refused, so `req_wire_bytes` only bounds the real bytes.
 - **Measurement identity.** `binary_sha256` is the executed binary, `binary_download_sha256` the downloaded one (null when no `SHA256SUMS` lists it); a self-extracting `clickhouse` differs between the two. `commit` is the binary's source commit, `rig_commit` the rig's.
 - **Measurement sections.** `window.open_attempts` lists workload attempts that had no row at the window end, and `ledger.complete` is false when it is non-empty. Counts include `accepted_dropped` (upstream ok, reply lost) and `upstream_4xx`. `inventory.note` (optional) says why `initial` is `declared`; `inventory.reclassified` lists the `reclassify` calls. A clipped `local.*.trace` carries `window`, `outside`, `files` and `crossing`.
 - **Prediction.** Each expected count is an integer or `{"min","max"}`; a range may add `basis` (`derived` or `assumption`) with the `reason`, so an assumed bound is never read as a source derivation. Callers and ops come from the ledger enums.
@@ -54,6 +54,8 @@ A node is `{"kind": K, "dim": str, ...}`. `K` is one of `input`, `coef`, `lookup
 - **Dims** are products of base units with integer exponents joined by `*` and `/` (`GiB*h`, `req/s`); `1` is the neutral unit. The evaluator expands these aliases first: `GiB_h` = `GiB*h`, `GiB_xfer` = `GiB`, `count` = `1`, `iops` = `req/s`, `mibps` = `MiB/s`. `checkDims` requires `add`/`sub`/`min`/`max`/`branch` operands to equal the declared dim, `mul` and `div` declared dims to equal the product or quotient of the operand dims, and `price` to declare `USD`.
 - `branch.cond` is `{"op": "<"|"<="|">"|">="|"=="|"!=", "a": node, "b": node}`.
 - `min` and `max` take `args[]` (one or more nodes); `add`, `sub`, `mul` and `div` take `a` and `b`.
+- **Basis.** Every row declares `basis`: `measured` when its expression reads a `measured` registry quantity (the record's own number, filled from `observations.inputs`), else `predicted`. The drill gives an exactness verdict only to `predicted` rows and shows `measured` rows as measured; it rejects a row whose label contradicts its expression.
+- **`all` rows.** A cell may not hold an `all` row and another outcome row for the same row type, op and caller (a null caller covers every caller): the `all` row already bills every outcome. `validate_formulas` and `contract.load` both reject it.
 - **Rows.** `outcome_class` is `ok`, `accepted_dropped`, `client_error` (upstream 4XX), `server_error` (other upstream errors), `dropped` (outcome unknown), `not_sent` (the store never saw it) or `all`. Request rows may carry `status` (integer or class such as `4XX`), `s3_code` and `condition`, which the billing preset's free list matches on, and `caller`, which the drill reconciles with.
 - **Exclusions.** A cell may list `excluded: [{kind: op|category, id, reason}]`: record usage it deliberately does not price. The drill reports any other usage the cells do not cover.
 
@@ -67,6 +69,10 @@ Worked examples, each a standalone node validated with `validate_node(node, "$",
 | `example-min-max.json` | `max(1, min(parts_inserted, 10000, 500))`; also evaluated by `model.test.js` |
 
 `coefficients.json` entries (`{id, kind: scalar|table, dim, value, validity, tolerance, evidence, status}`) are produced per report and have no validator here. A table value is `{"index": [...], "values": {"<k1>|<k2>": number}}`.
+
+## Billing contract free list {#billing-free}
+
+`outcome_billing.free` lists what a preset does not bill. An entry with `outcome_class` (`server_error`, `dropped`, `not_sent`) frees that whole class; an entry without one is a client error matched by `status` (a code or a class such as `4XX`), `s3_code` and `condition`. Every outcome the list does not free is billed, `ok` and `accepted_dropped` always.
 
 ## Billing contract `units` {#billing-units}
 
