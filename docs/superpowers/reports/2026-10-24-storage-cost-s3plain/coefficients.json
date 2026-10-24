@@ -206,7 +206,7 @@
     },
     "validity": {
       "insert_rows": [
-        5000,
+        1000,
         400000
       ]
     },
@@ -219,24 +219,24 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k1",
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k2",
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-compact/k3",
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k1",
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k2",
-        "cost-20261024T142405Z/s3plain/objects-per-part/narrow-wide/k3",
-        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k1",
-        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k2",
-        "cost-20261024T142405Z/s3plain/objects-per-part/wide-compact/k3",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k1",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k2",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-compact/k3",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k1",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k2",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/narrow-wide/k3",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k1",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k2",
-        "cost-20261024T142405Z/s3plain_cached/objects-per-part/wide-compact/k3"
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k1",
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k2",
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-compact/k3",
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k1",
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k2",
+        "cost-20261024T164541Z/s3plain/objects-per-part/narrow-wide/k3",
+        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k1",
+        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k2",
+        "cost-20261024T164541Z/s3plain/objects-per-part/wide-compact/k3",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-compact/k3",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/narrow-wide/k3",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T164541Z/s3plain_cached/objects-per-part/wide-compact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -322,12 +322,12 @@
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3plain",
       "version": "0.3.0",
       "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/startup/intact/k1",
-        "cost-20261024T142405Z/s3plain/startup/intact/k2",
-        "cost-20261024T142405Z/s3plain/startup/intact/k3",
-        "cost-20261024T142405Z/s3plain_cached/startup/intact/k1",
-        "cost-20261024T142405Z/s3plain_cached/startup/intact/k2",
-        "cost-20261024T142405Z/s3plain_cached/startup/intact/k3"
+        "cost-20261024T164541Z/s3plain/startup/intact/k1",
+        "cost-20261024T164541Z/s3plain/startup/intact/k2",
+        "cost-20261024T164541Z/s3plain/startup/intact/k3",
+        "cost-20261024T164541Z/s3plain_cached/startup/intact/k1",
+        "cost-20261024T164541Z/s3plain_cached/startup/intact/k2",
+        "cost-20261024T164541Z/s3plain_cached/startup/intact/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"

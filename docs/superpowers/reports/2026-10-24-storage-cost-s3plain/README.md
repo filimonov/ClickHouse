@@ -18,8 +18,8 @@ mutations. Every measured request count reconciles exactly with the graph below 
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Runs | report run `cost-20261024T142405Z` (rig `b7016f71689`); consumed hold-outs from `cost-20261024T103803Z`; `measurements.jsonl` holds 165 records (123 ok, 30 `UNSUPPORTED`, 12 `FAILED` of consumed hold-outs) |
-| Predictions | fit `0f1ad12f2a2`; hold-outs, validations and insert re-fits `2f20606ffe6`; fresh hold-outs `types-holdout-single` and `drop.partition-2` and the `types-fit` re-fit `6bc64458fd8`; each before the first run of its case |
+| Runs | report run `cost-20261024T164541Z` (rig `855db66b453`); consumed hold-outs from `cost-20261024T103803Z`; `measurements.jsonl` holds 179 records (137 ok, 30 `UNSUPPORTED`, 12 `FAILED` of consumed hold-outs) |
+| Predictions | fit `0f1ad12f2a2`; hold-outs, validations and insert re-fits `2f20606ffe6`; fresh hold-outs `types-holdout-single` and `drop.partition-2` and the `types-fit` re-fit `6bc64458fd8`; the 1 000-row validation `8679a5b7813`; each before the first run of its case |
 | Policies | `s3plain` (`plain_rewritable` metadata over the RustFS bucket) and `s3plain_cached` (a `cache` disk over it) |
 | Cuts | P2 cases (`detach-attach`, `cache-eviction`): cut by owner directive D14, no manifest |
 
@@ -121,7 +121,7 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `merge-only.narrow-compact-removal` | fit, holdout, validation | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | exact |
 | `merge-only.narrow-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 64 GetObject, 1 HeadObject, 21 PutObject / 24 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
 | `merge-only.narrow-wide-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 33 GetObject, 1 HeadObject, 21 PutObject / 18 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
-| `merge-only.wide-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 89–130 PutObject | 129 GetObject, 1 HeadObject, 91 PutObject or 130 GetObject, 1 HeadObject, 91 PutObject / 9 GetObject, 1 HeadObject, 91 PutObject | within the fit ranges |
+| `merge-only.wide-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 89–130 PutObject | 129 GetObject, 1 HeadObject, 91 PutObject / 9 GetObject, 1 HeadObject, 91 PutObject | within the fit ranges |
 | `merge-only.wide-wide-removal` | holdout, validation | 267 CopyObject, 537 DeleteObject, 243 GetObject, 268 HeadObject, 94 PutObject / 267 CopyObject, 537 DeleteObject, 123 GetObject, 268 HeadObject, 94 PutObject | 267 CopyObject, 537 DeleteObject, 243 GetObject, 268 HeadObject, 94 PutObject / 267 CopyObject, 537 DeleteObject, 123 GetObject, 268 HeadObject, 94 PutObject | exact |
 | `merge-only.wide-wide-sources-3` | holdout, validation | 243 GetObject, 1 HeadObject, 91 PutObject / 123 GetObject, 1 HeadObject, 91 PutObject | 243 GetObject, 1 HeadObject, 91 PutObject / 123 GetObject, 1 HeadObject, 91 PutObject | exact |
 | `mutation.compact-update-one-column` | gate | `UNSUPPORTED` | `UNSUPPORTED` × 6 | refused with the cited reason |
@@ -130,6 +130,7 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `mutation.wide-delete` | gate | `UNSUPPORTED` | `UNSUPPORTED` × 6 | refused with the cited reason |
 | `mutation.wide-update-one-column` | gate | `UNSUPPORTED` | `UNSUPPORTED` × 6 | refused with the cited reason |
 | `objects-per-part.narrow-compact` | fit, validation | 3 HeadObject, 39 PutObject | 3 HeadObject, 39 PutObject | exact |
+| `objects-per-part.narrow-compact-1k` | validation | 3 HeadObject, 39 PutObject | 3 HeadObject, 39 PutObject | exact |
 | `objects-per-part.narrow-wide` | fit, validation | 3 HeadObject, 63 PutObject | 3 HeadObject, 63 PutObject | exact |
 | `objects-per-part.types-fit` | reported, no edge | 4 HeadObject, 196 PutObject | 4 HeadObject, 196 PutObject | exact |
 | `objects-per-part.types-holdout` | consumed hold-out | 4 HeadObject, 324 PutObject | 4 HeadObject, 348 PutObject | falsified (consumed) |
@@ -139,23 +140,13 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `startup.intact` | fit, validation | 0–10 CopyObject, 0–20 DeleteObject, 0–4 DeleteObjects, 0–200 GetObject, 0–20 HeadObject, 1–40 ListObjectsV2, 0–10 PutObject | 1 CopyObject, 2 DeleteObject, 53 GetObject, 1 HeadObject, 9 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 39 GetObject, 2 HeadObject, 9 ListObjectsV2, 2 PutObject | within the fit ranges |
 | `startup.wide-parts` | holdout, validation | 1 CopyObject, 2 DeleteObject, 107 GetObject, 1 HeadObject, 8 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 28 GetObject, 2 HeadObject, 8 ListObjectsV2, 2 PutObject | 1 CopyObject, 2 DeleteObject, 107 GetObject, 1 HeadObject, 8 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 28 GetObject, 2 HeadObject, 8 ListObjectsV2, 2 PutObject | exact |
 
-**Edges on fewer than three passes.** The report run's timing misses leave these cases with fewer than K = 3 ok
-passes behind their edges; each remaining pass is exact:
+**Edges on fewer than three passes.** Timing misses of the report run leave these case-policy pairs with fewer than K = 3 passes behind their edges; each remaining pass is exact:
 
 | Case | Policy | Passes behind the edges | Missing passes |
 |---|---|---|---|
-| `drop.partition-2` | `s3plain_cached` | 1 | k1, k3 `window_crossing` |
-| `merge-only.wide-wide-removal` | `s3plain` / `s3plain_cached` | 2 / 1 | k2 `window_crossing` / k1 `window_crossing`, k2 `DeleteObject` 481 of 537 |
-| `merge-only.narrow-compact-removal` | both | 2 | `s3plain` k1 `GetObject` 65 of 64 (one retried GET, seq 30733 then 30734); `s3plain_cached` k3 `DeleteObject` 183 of 184 |
-| `cold-select.cache-on` | `s3plain_cached` | 2 | k2 `window_crossing` |
-| `merge-only.wide-compact-sources` | `s3plain` | 2 | k1 is ok against its fit range but sent 130 `GetObject` (one retried), so it backs no edge |
+| `merge-only.wide-wide-removal` | `s3plain_cached` | 2 | k2 `window_crossing` |
 
-`drop.ttl` (k2 `window_crossing` on `s3plain`) backs no edge: TTL removal is not the `deletes` cell's path.
-
-**Inputs edited after the run.** The prediction `inputs` (model inputs, not the expected counts) gained `insert_rows`
-and `merge_result_part_type` after the report run, and `drop.partition-2` changed `expired_parts_per_month` from 1 to
-2: its committed `expected` already encoded two dropped parts (30 `PutObject`, 50 `HeadObject`), the inputs did not.
-No expected count changed.
+**Inputs edited after the first runs.** The prediction `inputs` (model inputs, not the expected counts) gained `insert_rows` and `merge_result_part_type`, and `drop.partition-2` changed `expired_parts_per_month` from 1 to 2: its committed `expected` already encoded two dropped parts (30 `PutObject`, 50 `HeadObject`), the inputs did not. No expected count changed.
 
 ## Coefficients {#coefficients}
 
@@ -202,8 +193,8 @@ plain records add `validation` edges for them.
   the projection directory for `types`).
 - **Partitioned expired parts with one partition key column** (`plain_expired_part_extra_files` = 2). Reason: `DROP
   PARTITION` needs a partition key; a TTL-only table has `ttl.txt` instead (one file: `drop.ttl` measured 12).
-- **Validity of the measured tables.** `plain_objects_per_part` holds for `insert_rows` 5 000–400 000, the
-  measured range. `plain_startup_requests` was measured on one replica; its validity `replicas` 1–3 is an
+- **Validity of the measured tables.** `plain_objects_per_part` holds for `insert_rows` 1 000–400 000, the
+  measured range (the 1 000-row validation `objects-per-part.narrow-compact-1k` is exact). `plain_startup_requests` was measured on one replica; its validity `replicas` 1–3 is an
   extrapolation: the counts are per replica, and a start of a replicated table adds Keeper requests, not S3 ones.
 - The `s3` cell assumptions (merge results Wide, local merges per replica, TTL path for expiry) carry over.
 
@@ -217,11 +208,7 @@ plain records add `validation` edges for them.
 - **Replication** applicability is recorded here; its requests are measured by the replication report.
 - **Lifecycle seeds** (`small-inserts`, `merge-natural`, `merge-forced` with `s3plain` policies) stay `planned`: the
   `s3plain` merges are measured by `merge-only` cases instead.
-- **Removal at the window edge.** The report run has 9 `FAILED` passes, all timing: 6 `window_crossing` (an unlink or
-  cache read finished after the window) and 3 `assertions_failed` (`DeleteObject` 481 of 537 and 183 of 184: removal
-  tails after the window; `GetObject` 65 of 64: one retried GET). The cards wait for the outdated parts to leave
-  `system.parts`, not for the copies' deletes. They are not in `measurements.jsonl`; §Reconciliation lists the edges
-  they thin out.
+- **Removal at the window edge.** The report run has 1 `FAILED` passes, all timing: 1 `window_crossing`. A `window_crossing` is an unlink or cache read that finished after the window; an `assertions_failed` pass is a removal tail after the window or one retried request. The cards wait for the outdated parts to leave `system.parts`, not for the copies' deletes. They are not in `measurements.jsonl`; §Reconciliation lists the edges they thin out.
 - **Types shape on s3plain.** `plain_objects_per_part` has no `types` row, so a types-shape workload evaluates
   `unavailable` on `s3plain` (fail-closed) until the count is modelled per `JSON` column.
 - **Replication applicability** is recorded in §Replication and by `s3plain` in the replication cards'
