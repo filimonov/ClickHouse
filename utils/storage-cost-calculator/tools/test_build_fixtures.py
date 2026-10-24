@@ -155,6 +155,19 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual([e["edge_id"] for e in only["edges"]], ["evidence[3]"])
         self.assertIn(NAME, [p.name for p in self.out.iterdir()])
 
+    def test_domain_cell_referencing_the_coefficient_is_selected(self):
+        # Variant reports key cells by domain operation; such a cell joins the card's cells when it uses the coefficient.
+        reports, rep = self.copy_report()
+        f = rep / "formulas.json"
+        doc = json.loads(f.read_text())
+        doc["cells"]["insert"] = doc["cells"].pop("insert_basic.write")
+        doc["cells"]["merge"] = doc["cells"].pop("other_card.write")  # a domain cell without the coefficient
+        f.write_text(json.dumps(doc))
+        code, err = self.run_main(reports=reports / "*/")
+        self.assertEqual(code, 0, err)
+        fx = json.loads((self.out / NAME).read_text())
+        self.assertEqual(list(fx["cells"]), ["insert"])
+
     def test_cell_not_referencing_the_coefficient_fails(self):
         cov = self.coverage()
         cov["evidence"][0]["coefficient"] = "puts_per_wide_part"

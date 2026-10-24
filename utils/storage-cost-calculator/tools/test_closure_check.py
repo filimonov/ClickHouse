@@ -369,6 +369,7 @@ class MainTest(unittest.TestCase):
             cm, report = os.path.join(d, 'cm'), os.path.join(d, 'rep-1')
             os.makedirs(cm)
             os.makedirs(report)
+            open(os.path.join(report, 'README.md'), 'w').close()  # a report directory has a README
             with open(os.path.join(cm, 'formulas-s3.json'), 'w') as f:
                 f.write('{"schema": ')
             with open(os.path.join(cm, 'inputs-registry.json'), 'w') as f:
@@ -402,6 +403,7 @@ class MainTest(unittest.TestCase):
             cm, report = os.path.join(d, 'cm'), os.path.join(d, 'rep-1')
             os.makedirs(cm)
             os.makedirs(report)
+            open(os.path.join(report, 'README.md'), 'w').close()  # a report directory has a README
             with open(os.path.join(cm, 'inputs-registry.json'), 'w') as f:
                 json.dump(registry(quantity('x')), f)
             args = ['--mode', 'dev', '--cost-model', cm, '--reports', os.path.join(d, 'rep-*')]

@@ -57,6 +57,11 @@
     "states": [],
     "notes": []
    }
+  },
+  "applicability": {
+   "inserts": {
+    "write_path": "supported"
+   }
   }
  },
  {

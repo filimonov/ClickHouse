@@ -57,6 +57,10 @@ A node is `{"kind": K, "dim": str, ...}`. `K` is one of `input`, `coef`, `lookup
 - **Basis.** Every row declares `basis`: `measured` when its expression reads a `measured` registry quantity (the record's own number, filled from `observations.inputs`), else `predicted`. The drill gives an exactness verdict only to `predicted` rows and shows `measured` rows as measured; it rejects a row whose label contradicts its expression.
 - **`all` rows.** A cell may not hold an `all` row and another outcome row for the same row type, op and caller (a null caller covers every caller): the `all` row already bills every outcome. `validate_formulas` and `contract.load` both reject it.
 - **Rows.** `outcome_class` is `ok`, `accepted_dropped`, `client_error` (upstream 4XX), `server_error` (other upstream errors), `dropped` (outcome unknown), `not_sent` (the store never saw it) or `all`. Request rows may carry `status` (integer or class such as `4XX`), `s3_code` and `condition`, which the billing preset's free list matches on, and `caller`, which the drill reconciles with.
+- **Applicability.** A formulas file may carry the optional `applicability` field, added to `formulas/1` after the
+  grammar froze: `{operation: {family: supported | not_supported | unsupported_cut | not_applicable}}` for the
+  families that occur on its variant. `tools/generate_contract.py` sets every unlisted family to `not_applicable`,
+  which needs no evidence and adds nothing to a column. Only `supported` families need evidence.
 - **Exclusions.** A cell may list `excluded: [{kind: op|category, id, reason}]`: record usage it deliberately does not price. The drill reports any other usage the cells do not cover.
 
 Worked examples, each a standalone node validated with `validate_node(node, "$", False, tables={"objects_per_part": 2})`:

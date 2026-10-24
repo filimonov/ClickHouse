@@ -161,7 +161,7 @@
     if (c.families.length === 0) problems.push('families: must be non-empty');
     c.families.forEach((f, i) => { if (typeof f !== 'string') problems.push(`families[${i}]: expected string, got ${typeOf(f)}`); });
     const families = c.families.filter((f) => typeof f === 'string');
-    const allowed = new Set(['supported', 'not_supported', 'unsupported_cut']);
+    const allowed = new Set(['supported', 'not_supported', 'unsupported_cut', 'not_applicable']);
     for (const v of c.variants) {
       for (const op of c.operations) {
         for (const f of families) {

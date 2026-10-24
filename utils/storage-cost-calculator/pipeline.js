@@ -332,14 +332,22 @@
     const states = [];
     const cells = {};
     let extrapolated = false;
+    // With no family occurring anywhere the column would price nothing; a 0 total would read as "free".
+    const occurs = contract.operations.some((op) => contract.families.some((f) => {
+      const x = ((contract.applicability[v] || {})[op] || {})[f];
+      return x === 'supported' || x === 'unsupported_cut';
+    }));
+    if (!occurs) states.push({ id: 'unavailable', reason: `${v}: no operation has a supported family in this contract` });
     for (const op of contract.operations) {
       const app = (contract.applicability[v] || {})[op] || {};
-      const fams = contract.families.filter((f) => app[f] !== 'supported');
+      // A `not_applicable` family does not occur on this variant: it adds nothing and changes no state.
+      const fams = contract.families.filter((f) => app[f] !== 'supported' && app[f] !== 'not_applicable');
       const notSup = fams.filter((f) => app[f] === 'not_supported');
       if (notSup.length) states.push({ id: 'not_supported', reason: `${v}.${op}: not supported for ${notSup.join(', ')}` });
       const cell = (contract.formulas[v] || {})[op];
       if (!cell) {
-        if (!notSup.length) states.push({ id: 'unavailable', reason: `${v}.${op}: the contract has no cell for a supported operation` });
+        const occurs = contract.families.some((f) => app[f] === 'supported' || app[f] === 'unsupported_cut');
+        if (!notSup.length && occurs) states.push({ id: 'unavailable', reason: `${v}.${op}: the contract has no cell for a supported operation` });
         continue;
       }
       const zeroed = [];

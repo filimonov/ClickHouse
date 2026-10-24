@@ -25,7 +25,7 @@
       }
     },
     "applicability": {
-      "description": "Optional. Operation -> family -> applicability, only for the families that occur on this variant. `not_supported` means the variant cannot perform the operation; the contract generator rejects it on an operation whose cell performs it.",
+      "description": "Optional field added to formulas/1. Operation -> family -> applicability, listed only for the families that occur on this variant; the contract generator sets every unlisted family to `not_applicable`. `not_supported` means the variant cannot perform the operation, and the generator rejects it on an operation whose cell performs it. Only `supported` families need evidence.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -33,7 +33,8 @@
           "enum": [
             "supported",
             "not_supported",
-            "unsupported_cut"
+            "unsupported_cut",
+            "not_applicable"
           ]
         }
       }

@@ -43,6 +43,31 @@ test('test_not_supported_has_no_total_no_delta_not_cheapest', () => {
   assert.notEqual(rc.cheapest, 'cas');
 });
 
+test('test_not_applicable_family_contributes_nothing', () => {
+  const base = run();
+  // A family that does not occur on the variant leaves the column as it is.
+  const c = load((x) => { x.applicability.cas.replacement.lifecycle = 'not_applicable'; });
+  const r = run({}, c);
+  assert.equal(r.variants.cas.state, 'ok');
+  close(r.variants.cas.total, base.variants.cas.total);
+  // An operation with no cell needs one only when a family of it is supported.
+  const none = (value) => load((x) => {
+    delete x.formulas.cas.replacement;
+    for (const f of x.families) x.applicability.cas.replacement[f] = value;
+  });
+  assert.equal(run({}, none('not_applicable')).variants.cas.state, 'ok');
+  const missing = run({}, none('supported')).variants.cas;
+  assert.equal(missing.state, 'unavailable');
+  assert.match(missing.reason, /cas\.replacement: the contract has no cell for a supported operation/);
+  // A variant where no family occurs on any operation has nothing to price: unavailable, never a total of 0.
+  const empty = run({}, load((x) => {
+    for (const op of x.operations) for (const f of x.families) x.applicability.cas[op][f] = 'not_applicable';
+  })).variants.cas;
+  assert.equal(empty.state, 'unavailable');
+  assert.equal(empty.total, null);
+  assert.match(empty.reason, /cas: no operation has a supported family/);
+});
+
 test('test_backlog_grows_suppresses_total_deltas_cheapest', () => {
   assert.equal(run().cheapest, 'cas');
   const r = run({ inserts_per_month: 2000000 });

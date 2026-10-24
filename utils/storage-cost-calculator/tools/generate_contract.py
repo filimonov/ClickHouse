@@ -7,7 +7,8 @@ and writes the contract to the standalone copies, the page block and the formula
 when a problem is found. `check` renders the same outputs in memory, fails on any byte that differs from the files,
 then runs every closure check (tools/closure_check.py) in the same mode.
 
-`--mode dev` reports a missing report, raw digest or code file as a "pending" line; `--mode final` fails on it.
+`--mode dev` reports a missing report, raw digest or code file, and a stale generated file, as a "pending" line;
+`--mode final` fails on them.
 
     python3 utils/storage-cost-calculator/tools/generate_contract.py generate
     python3 utils/storage-cost-calculator/tools/generate_contract.py check --mode final
@@ -38,17 +39,13 @@ DEFAULTS = {
     "code_dir": CALC,
     "fixtures_out": CALC / "test/fixtures/measured",
 }
-CONTRACT = "model-contract.json"
-# What the page runs: the manifest hashes these, and the page must load them in this order before ui.js.
-CODE_FILES = ("model.js", "contract.js", "billing.js", "pipeline.js", "presets.js", "urlstate.js", "viewmodel.js")
+CONTRACT = closure_check.CONTRACT
+CODE_FILES = closure_check.CODE_FILES
 PAGE_SCRIPTS = CODE_FILES + ("ui.js",)
 STATE_IDS = ("ok", "not_supported", "backlog_grows", "unsupported_cut", "unavailable")
-PENDING = "pending"
 # A formulas cell outside the domain operations is a card or probe cell: kept for the drill, never evaluated.
 PROBE_PREFIX = "probe_"
-BLOCKS = {"page": ("<!-- contract:begin -->", "<!-- contract:end -->"),
-          "formulas": ("<!-- formulas:begin -->", "<!-- formulas:end -->"),
-          "inputs": ("<!-- inputs:begin -->", "<!-- inputs:end -->")}
+BLOCKS = closure_check.BLOCKS
 
 # Validates the assembled contract with the page's own loader and renders every expression with the page's renderer,
 # so the document shows exactly what "show calculation" shows.
@@ -99,78 +96,12 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def report_dirs(pattern):
-    """Report directories matching `pattern`; a matched directory without README.md is not a report (a ledger)."""
-    out, notes = [], []
-    for p in sorted(glob.glob(str(pattern))):
-        path = Path(p)
-        if not path.is_dir():
-            continue
-        if (path / "README.md").exists():
-            out.append(path)
-        else:
-            notes.append(f"note: {path} has no README.md and is not read as a report")
-    return out, notes
-
-
 def _json(path, problems):
     try:
         return json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:
         problems.append(f"{path}: cannot load: {e}")
         return None
-
-
-def _records(report, problems):
-    path = report / "measurements.jsonl"
-    rows = []
-    if path.exists():
-        for n, line in enumerate(path.read_text().splitlines(), 1):
-            if line.strip():
-                try:
-                    rows.append(json.loads(line))
-                except ValueError as e:
-                    problems.append(f"{path}:{n}: bad JSON line: {e}")
-    return rows
-
-
-def _identity(report, records, mode, problems, pending):
-    """The report's source commit, rig commit and executed binary, each single-valued over its ok records."""
-    ok = [m for m in records if isinstance(m, dict) and m.get("status") == "ok"]
-    if not ok:
-        (problems if mode == "final" else pending).append(f"{report.name}: no ok record in measurements.jsonl names its commit")
-        return {k: PENDING for k in ("commit", "rig_commit", "binary_sha256")}
-    out = {}
-    for key in ("commit", "rig_commit", "binary_sha256"):
-        seen = sorted({str(m.get(key)) for m in ok})
-        if len(seen) != 1:
-            problems.append(f"{report.name}: records name several {key} values: {', '.join(seen)}")
-        out[key] = seen[0]
-    if out["commit"] not in (report / "README.md").read_text():
-        problems.append(f"{report.name}: README.md does not name the records' source commit {out['commit']}")
-    return out
-
-
-def _raw_digest(report, mode, problems, pending):
-    sums = report / "raw/SHA256SUMS"
-    if sums.exists():
-        return sha256(sums.read_bytes())
-    if (report / "measurements.jsonl").exists():
-        (problems if mode == "final" else pending).append(f"{report.name}: raw/SHA256SUMS missing")
-    return PENDING
-
-
-def code_manifest(code_dir, mode, problems, pending):
-    """`code_sha256` is the digest of the sorted "<sha256>  <file>" lines of the code files that exist."""
-    files = {}
-    for name in sorted(CODE_FILES):
-        path = Path(code_dir) / name
-        if path.exists():
-            files[name] = sha256(path.read_bytes())
-        else:
-            (problems if mode == "final" else pending).append(f"code file {name} missing from {code_dir}")
-    listing = "".join(f"{h}  {n}\n" for n, h in files.items())
-    return sha256(listing.encode()), files, sorted(set(CODE_FILES) - set(files))
 
 
 def _families_on(coverage, variant):
@@ -183,16 +114,13 @@ def _families_on(coverage, variant):
     return out
 
 
-def _unconditional_not_supported(cell):
-    return any(s.get("cond") is True and s.get("id") == "not_supported" for s in cell.get("states", []))
-
-
 def applicability(coverage, files_by_variant, cells, problems):
-    """variant -> operation -> family -> supported | not_supported | unsupported_cut over the whole domain.
+    """variant -> operation -> family -> supported | not_supported | unsupported_cut | not_applicable, whole domain.
 
-    A cell that is unconditionally `not_supported` makes every family of its operation `not_supported`. Explicit
-    entries in a formulas file win next. Otherwise a family that occurs on the variant only through cut cases is
-    `unsupported_cut`, and every other family, including one that does not occur on the variant, is `supported`.
+    A cell that is unconditionally `not_supported` makes every family of its operation `not_supported`. Otherwise
+    the variant's formulas files list the families that occur: a listed `supported` family that coverage measures on
+    the variant only through cut cases becomes `unsupported_cut`. An unlisted family is `not_applicable`, never
+    `supported`, so a family needs evidence only where a report claims it.
     """
     domain = coverage["domain"]
     out = {}
@@ -214,7 +142,7 @@ def applicability(coverage, files_by_variant, cells, problems):
         out[v] = {}
         for op in domain["operations"]:
             cell = cells.get((v, op))
-            never = cell is not None and _unconditional_not_supported(cell)
+            never = cell is not None and closure_check.unconditional_not_supported(cell)
             row = {}
             for fam in domain["families"]:
                 if (op, fam) in explicit:
@@ -226,11 +154,11 @@ def applicability(coverage, files_by_variant, cells, problems):
                     if never and value != "not_supported":
                         problems.append(f"{owner}: applicability {v}.{op}.{fam} is {value} but the {v} cell of {op} "
                                         "is unconditionally not_supported")
-                    row[fam] = value
+                    row[fam] = "unsupported_cut" if value == "supported" and occurs.get(fam) else value
                 elif never:
                     row[fam] = "not_supported"
                 else:
-                    row[fam] = "unsupported_cut" if occurs.get(fam) else "supported"
+                    row[fam] = "not_applicable"
             out[v][op] = row
     return out
 
@@ -253,7 +181,8 @@ def build(opts, mode="dev"):
     """Returns (outputs {path: text}, fixtures (fixtures, coefficient_only), problems, pending, notes)."""
     problems, pending = [], []
     cm = Path(opts["cost_model"])
-    reports, notes = report_dirs(opts["reports"])
+    reports, found, notes = closure_check.report_dirs(opts["reports"])
+    problems += found
     reg = _json(cm / "inputs-registry.json", problems)
     cov = _json(cm / "coverage.json", problems)
     bil = _json(cm / "billing-contract.json", problems)
@@ -285,10 +214,10 @@ def build(opts, mode="dev"):
             coef_owner[cid] = r.name
             coefficients.append(c)
         tables.update(artifacts.table_arities_from_coefficients([c for c in loaded if isinstance(c, dict)]))
-        records = _records(r, problems)
-        measurement_ids |= {m.get("measurement_id") for m in records if isinstance(m, dict)}
-        evidence.append({"report": r.name, **_identity(r, records, mode, problems, pending),
-                         "raw_sha256sums": _raw_digest(r, mode, problems, pending)})
+        records = closure_check.report_records(r, problems)
+        measurement_ids |= {m.get("measurement_id") for m in records}
+        evidence.append({"report": r.name, **closure_check.report_identity(r, records, mode, problems, pending),
+                         "raw_sha256sums": closure_check.raw_digest(r, mode, problems, pending)})
     for r in reports:
         doc = _json(r / "formulas.json", problems) if (r / "formulas.json").exists() else []
         for i, f in enumerate(doc if isinstance(doc, list) else [doc]):
@@ -329,21 +258,25 @@ def build(opts, mode="dev"):
         problems += [f"missing report: variant {v} has no formulas.json" for v in domain["variants"] if v not in files_by_variant]
 
     # Static closure checks over exactly what the contract is built from; the full set runs in `check`.
+    app = applicability(cov, files_by_variant, cells, problems)
+    if mode == "dev":  # final mode: the support closure fails on it
+        pending += [f"variant {v}: no formulas file lists a supported family" for v in domain["variants"]
+                    if not any(x == "supported" for row in app[v].values() for x in row.values())]
     problems += closure_check.dependency(reg, formulas_list)
-    problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final")
+    problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final", applicability=app)
     # Counted here, not taken from `support`, so the evidence statement is the same in both modes.
-    support_pending = closure_check._pending_cells(cov, formulas_list)
-    problems += closure_check.evidence(cov, coefficients, measurement_ids, report_identity(coefficients, coef_owner, evidence))
+    support_pending = closure_check._pending_cells(cov, formulas_list, app)
+    problems += closure_check.evidence(cov, coefficients, measurement_ids, coefficient_identity(coefficients, coef_owner, evidence))
     problems += closure_check.billing(bil)
     if support_pending and mode == "dev":
         pending.append(f"{len(support_pending)} support cells have no evidence and no not_supported state")
 
-    code_sha, code_files, code_missing = code_manifest(opts["code_dir"], mode, problems, pending)
-    manifest = {
-        "code_sha256": code_sha, "code_files": code_files, "code_missing": code_missing,
-        "contract_version": "", "registry_version": reg["version"], "coverage_version": cov["version"],
-        "billing_version": bil["version"], "evidence": evidence,
-    }
+    code_sha, code_files, code_missing = closure_check.code_manifest(opts["code_dir"], mode, problems, pending)
+    manifest = {"code_sha256": code_sha, "code_files": code_files, "code_missing": code_missing, "contract_version": ""}
+    for (key, name), doc in zip(closure_check.INPUTS, (reg, cov, bil)):
+        manifest[f"{key}_version"] = doc["version"]
+        manifest[f"{key}_sha256"] = sha256((cm / name).read_bytes())
+    manifest["evidence"] = evidence
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
         "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending)),
@@ -351,7 +284,7 @@ def build(opts, mode="dev"):
         "coefficients": coefficients, "billing": bil,
         "variants": domain["variants"], "operations": domain["operations"], "families": domain["families"],
         "state_ids": list(STATE_IDS),
-        "applicability": applicability(cov, files_by_variant, cells, problems),
+        "applicability": app,
         "formulas": {}, "states": {}, "card_cells": {k: card_cells[k] for k in sorted(card_cells)},
         "owners": {"coefficients": {k: coef_owner[k] for k in sorted(coef_owner, key=str)},
                    "cells": {k: cell_owner[k] for k in sorted(cell_owner)}},
@@ -386,7 +319,7 @@ def build(opts, mode="dev"):
     return outputs, fixtures[:2], problems, pending, notes
 
 
-def report_identity(coefficients, coef_owner, evidence):
+def coefficient_identity(coefficients, coef_owner, evidence):
     """coefficient id -> identity of the report that owns it, for the evidence closure."""
     by_report = {e["report"]: e for e in evidence}
     return {c["id"]: by_report[coef_owner[c["id"]]] for c in coefficients
@@ -421,13 +354,6 @@ def replace_block(text, name, body, path, problems):
     tail = rest.split(end, 1)[1]
     sep = "" if name == "page" else "\n"
     return f"{head}{begin}{sep}{body}{sep}{end}{tail}"
-
-
-def extract_block(text, name):
-    begin, end = BLOCKS[name]
-    if text.count(begin) != 1 or text.count(end) != 1:
-        return None
-    return text.split(begin, 1)[1].split(end, 1)[0]
 
 
 def page_scripts(text, path):
@@ -555,22 +481,6 @@ def inputs_block(contract, rendered):
 
 # --- commands ----------------------------------------------------------------------------------
 
-def stale(outputs):
-    """Problems for every output file whose bytes differ from a fresh render, naming the block that differs."""
-    problems = []
-    for path, fresh in outputs.items():
-        try:
-            current = Path(path).read_text()
-        except OSError as e:
-            problems.append(f"stale: {path}: {e}")
-            continue
-        if current == fresh:
-            continue
-        names = [n for n in BLOCKS if extract_block(fresh, n) is not None and extract_block(current, n) != extract_block(fresh, n)]
-        problems.append(f"stale: {path} differs from a fresh render" + (f" (block {', '.join(names)})" if names else ""))
-    return problems
-
-
 def _report(cmd, mode, problems, pending, notes):
     for line in notes:
         print(line, file=sys.stderr)
@@ -603,12 +513,13 @@ def main(argv=None):
             build_fixtures.write(Path(opts["fixtures_out"]), *fixtures, Path(opts["cost_model"]) / "coverage.json")
         return _report("generate", args.mode, problems, pending, notes)
     if outputs is not None:
-        problems += stale(outputs)
+        closure_check.classify_stale(closure_check.stale_outputs(outputs), args.mode, problems, "generate_contract")
     code = _report("check", args.mode, problems, pending, notes)
     closure = ["--mode", args.mode, "--cost-model", opts["cost_model"], "--reports", opts["reports"],
                "--page", opts["page"], "--doc", opts["doc"], "--contract-copy", opts["copy"], "--code-dir", opts["code_dir"]]
     closure += ["--skip-node"] if args.skip_node else []
-    return max(code, closure_check.main(closure))
+    # The closure check compares the files with this same render instead of building a second one.
+    return max(code, closure_check.main(closure, fresh=outputs))
 
 
 if __name__ == "__main__":

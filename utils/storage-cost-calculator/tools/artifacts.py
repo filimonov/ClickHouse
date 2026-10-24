@@ -522,7 +522,7 @@ def table_arities_from_coefficients(coefficients):
             if c.get("kind") == "table" and isinstance(c.get("value"), dict)}
 
 
-APPLICABILITY = ("supported", "not_supported", "unsupported_cut")
+APPLICABILITY = ("supported", "not_supported", "unsupported_cut", "not_applicable")
 
 
 def validate_formulas(d, tables=None):

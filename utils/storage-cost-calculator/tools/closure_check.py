@@ -157,6 +157,12 @@ def dependency(registry, formulas_list):
 
 # --- 2. support closure ------------------------------------------------------------------------
 
+def unconditional_not_supported(cell):
+    """The cell's operation cannot be performed by the variant at all, whatever the workload."""
+    return isinstance(cell, dict) and any(isinstance(s, dict) and s.get("cond") is True and s.get("id") == "not_supported"
+                                          for s in cell.get("states") or [])
+
+
 def _cut_coefficients(coverage):
     cut_cases = {f"{c['name']}.{k['case_id']}" for c in coverage["cards"] for k in c["cases"] if k["status"] == "cut"}
     by_coef = {}
@@ -167,11 +173,12 @@ def _cut_coefficients(coverage):
             if all(r["status"] == "cut" or r["experiment_id"] in cut_cases for r in rows)}
 
 
-def _pending_cells(coverage, formulas_list):
+def _pending_cells(coverage, formulas_list, applicability=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
     A cell has evidence when every coefficient its formulas use has a completed (`done` or `consumed`) evidence
     row from a card of that family whose `model_variants` include the variant. A planned row backs nothing.
+    With the contract's `applicability`, only `supported` families need evidence; without it, every family does.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
@@ -182,14 +189,16 @@ def _pending_cells(coverage, formulas_list):
     for f in formulas_list:
         for op, cell in f.get("cells", {}).items():
             entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set()})
-            entry["unsupported"] |= any(s.get("cond") is True and s.get("id") == "not_supported" for s in cell.get("states", []))
+            entry["unsupported"] |= unconditional_not_supported(cell)
             entry["coefs"] |= {ref for kind, ref in _walk(cell, []) if kind in ("coef", "table")}
     pending = []
     for v in domain["variants"]:
         for op in domain["operations"]:
             entry = cells.get((v, op), {"unsupported": False, "coefs": set()})
+            app = (applicability or {}).get(v, {}).get(op, {})
             pending += [(v, op, fam) for fam in domain["families"]
-                        if not entry["unsupported"] and not (entry["coefs"] and all((c, fam, v) in backed for c in entry["coefs"]))]
+                        if (applicability is None or app.get(fam) == "supported")
+                        and not entry["unsupported"] and not (entry["coefs"] and all((c, fam, v) in backed for c in entry["coefs"]))]
     return pending
 
 
@@ -199,14 +208,14 @@ def _cells_on_cut(coverage, formulas_list):
     out = []
     for f in formulas_list:
         for op, cell in (f.get("cells") or {}).items():
-            unsupported = any(s.get("cond") is True and s.get("id") == "not_supported" for s in cell.get("states", []))
+            unsupported = unconditional_not_supported(cell)
             for kind, ref in sorted(set(_walk(cell, []))):
                 if kind in ("coef", "table") and ref in cut and not unsupported:
                     out.append(f"cell {f['variant']}/{op} depends on cut coefficient {ref} and is not marked not_supported")
     return out
 
 
-def support(registry, coverage, formulas_list, require_formulas=False, pending=None):
+def support(registry, coverage, formulas_list, require_formulas=False, pending=None, applicability=None):
     problems = [f"coverage {p}" for p in artifacts.validate_coverage(coverage)]
     if problems:
         return problems
@@ -225,7 +234,11 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
     problems += _cells_on_cut(coverage, formulas_list)
     if _cut_coefficients(coverage) and not PRESETS.exists():
         print(f"note: {PRESETS} absent; cut propagation to presets not checked", file=sys.stderr)
-    pending_cells = _pending_cells(coverage, formulas_list)
+    pending_cells = _pending_cells(coverage, formulas_list, applicability)
+    if require_formulas and applicability is not None:
+        # A variant whose reports claim no family would price nothing; that is missing work, not a free column.
+        problems += [f"variant {v}: no formulas file lists a supported family" for v in sorted(applicability)
+                     if not any(x == "supported" for row in applicability[v].values() for x in row.values())]
     if require_formulas:
         problems += [f"cell {v}/{op}/{fam}: no evidence and no unconditional not_supported state" for v, op, fam in pending_cells]
     elif pending is not None:
@@ -395,15 +408,17 @@ def replay_problems(record, raw_path):
     return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
 
 
-def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=None, contract=None, billing_contract=None):
+def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=None, contract=None, billing_contract=None,
+               stale=None):
     """`raw` maps measurement ids to raw ledger slices; each record is replayed from its slice.
 
     The pricing fixtures verify `billing-contract.json`; the page prices with the contract's embedded copy, so the
-    two must be the same document. `node_test_cmd=False` skips the Node suite.
+    two must be the same document; a difference goes to `stale` (a stale contract). `node_test_cmd=False` skips
+    the Node suite.
     """
     problems = [f"prediction {p}" for pr in predictions for p in artifacts.validate_prediction(pr)]
     if contract is not None and contract.get("billing") != billing_contract:
-        problems.append(f"model-contract.json billing (version {(contract.get('billing') or {}).get('version')}) differs from "
+        (stale if stale is not None else problems).append(f"model-contract.json billing (version {(contract.get('billing') or {}).get('version')}) differs from "
                         f"billing-contract.json (version {(billing_contract or {}).get('version')}): regenerate the contract")
     preds = {(p["experiment_id"], p["policy"]): p for p in predictions if isinstance(p, dict) and "policy" in p}
     for m in measurements:
@@ -517,45 +532,172 @@ def reproduction(copies=(), sums=()):
     return problems
 
 
-def manifest(contract, opts, mode):
-    """The contract's manifest names the code, artifact versions and report evidence that exist now."""
-    import generate_contract as gc  # generate_contract imports this module
+STALE_HINT = "run tools/generate_contract.py generate"
+PENDING = "pending"
+# What the page runs: the manifest hashes these, and the page loads them in this order before ui.js.
+CODE_FILES = ("model.js", "contract.js", "billing.js", "pipeline.js", "presets.js", "urlstate.js", "viewmodel.js")
+INPUTS = (("registry", "inputs-registry.json"), ("coverage", "coverage.json"), ("billing", "billing-contract.json"))
+REPORT_FILES = ("formulas.json", "coefficients.json", "measurements.jsonl")
 
-    problems, pending = [], []
+
+def report_dirs(pattern):
+    """(report directories, problems, notes) for the directories matching `pattern`.
+
+    A report has README.md. A directory with report files but no README is a problem; one with neither (the
+    calculator ledger) is noted and skipped.
+    """
+    dirs, problems, notes = [], [], []
+    for p in sorted(glob.glob(str(pattern))):
+        path = Path(p)
+        if not path.is_dir():
+            continue
+        if (path / "README.md").exists():
+            dirs.append(path)
+            continue
+        present = [n for n in REPORT_FILES if (path / n).exists()]
+        if present:
+            problems.append(f"{path}: has {', '.join(present)} but no README.md")
+        else:
+            notes.append(f"note: {path} has no README.md and no report files; not a report")
+    return dirs, problems, notes
+
+
+def report_records(report, problems):
+    return _load_jsonl(report / "measurements.jsonl", problems) if (report / "measurements.jsonl").exists() else []
+
+
+def report_identity(report, records, mode, problems, pending):
+    """The report's source commit, rig commit and executed binary, each single-valued over its valid ok records."""
+    ok = []
+    for m in records:
+        if m.get("status") != "ok":
+            continue
+        bad = artifacts.validate_measurement(m)
+        if bad:
+            problems.append(f"{report.name}: record {m.get('measurement_id')} is invalid: {bad[0]}")
+        else:
+            ok.append(m)
+    keys = ("commit", "rig_commit", "binary_sha256")
+    if not ok:
+        (problems if mode == "final" else pending).append(f"{report.name}: no valid ok record in measurements.jsonl names its commit")
+        return {k: PENDING for k in keys}
+    out = {}
+    for key in keys:
+        seen = sorted({m[key] for m in ok})
+        if len(seen) != 1:
+            problems.append(f"{report.name}: records name several {key} values: {', '.join(seen)}")
+        out[key] = seen[0]
+    if out["commit"] not in (report / "README.md").read_text():
+        problems.append(f"{report.name}: README.md does not name the records' source commit {out['commit']}")
+    return out
+
+
+def raw_digest(report, mode, problems, pending):
+    sums = report / "raw/SHA256SUMS"
+    if sums.exists():
+        return hashlib.sha256(sums.read_bytes()).hexdigest()
+    if (report / "measurements.jsonl").exists():
+        (problems if mode == "final" else pending).append(f"{report.name}: raw/SHA256SUMS missing")
+    return PENDING
+
+
+def code_manifest(code_dir, mode, problems, pending):
+    """(code_sha256, per-file sha256, missing files). The digest covers the sorted "<sha256>  <file>" lines."""
+    files = {}
+    for name in sorted(CODE_FILES):
+        path = Path(code_dir) / name
+        if path.exists():
+            files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        else:
+            (problems if mode == "final" else pending).append(f"code file {name} missing from {code_dir}")
+    listing = "".join(f"{h}  {n}\n" for n, h in files.items())
+    return hashlib.sha256(listing.encode()).hexdigest(), files, sorted(set(CODE_FILES) - set(files))
+
+
+def manifest(contract, opts, mode, fresh=None):
+    """Stale-contract problems: the manifest and the generated files against the code, inputs and reports now.
+
+    `fresh` maps output paths to a fresh render (generate_contract.build); None renders one here.
+    """
+    stale = []
     cm = Path(opts["cost_model"])
     m = contract.get("manifest") or {}
-    code_sha, files, _ = gc.code_manifest(opts["code_dir"], mode, problems, pending)
+    code_sha, files, _ = code_manifest(opts["code_dir"], mode, [], [])
     if (m.get("code_sha256"), m.get("code_files")) != (code_sha, files):
-        changed = sorted(n for n in set(files) | set(m.get("code_files") or {}) if files.get(n) != (m.get("code_files") or {}).get(n))
-        problems.append(f"manifest code_sha256 does not match the code files (changed: {', '.join(changed) or 'none'})")
-    for key, name in (("registry_version", "inputs-registry.json"), ("coverage_version", "coverage.json"),
-                      ("billing_version", "billing-contract.json")):
+        listed = m.get("code_files") or {}
+        changed = sorted(n for n in set(files) | set(listed) if files.get(n) != listed.get(n))
+        stale.append(f"manifest code_sha256 does not match the code files (changed: {', '.join(changed) or 'none'})")
+    for key, name in INPUTS:
         try:
-            current = json.loads((cm / name).read_text()).get("version")
+            data = (cm / name).read_bytes()
+            version = json.loads(data).get("version")
         except (OSError, ValueError) as e:
-            problems.append(f"manifest {key}: cannot read {name}: {e}")
+            stale.append(f"manifest {key}: cannot read {name}: {e}")
             continue
-        if m.get(key) != current:
-            problems.append(f"manifest {key} {m.get(key)} differs from {name} version {current}")
-    reports, _ = gc.report_dirs(opts["reports"])
+        if m.get(f"{key}_version") != version:
+            stale.append(f"manifest {key}_version {m.get(f'{key}_version')} differs from {name} version {version}")
+        if m.get(f"{key}_sha256") != hashlib.sha256(data).hexdigest():
+            stale.append(f"manifest {key}_sha256 differs from the sha256 of {name}")
+    reports, _, _ = report_dirs(opts["reports"])
     listed = {e.get("report"): e for e in m.get("evidence") or []}
     for r in reports:
         e = listed.pop(r.name, None)
         if e is None:
-            problems.append(f"manifest evidence does not list report {r.name}")
+            stale.append(f"manifest evidence does not list report {r.name}")
             continue
-        digest = gc._raw_digest(r, mode, [], [])
+        digest = raw_digest(r, mode, [], [])
         if e.get("raw_sha256sums") != digest:
-            problems.append(f"{r.name}: raw/SHA256SUMS digest {digest} differs from the manifest ({e.get('raw_sha256sums')})")
-        ident = gc._identity(r, gc._records(r, []), mode, [], [])
-        problems += [f"{r.name}: records' {k} {ident[k]} differs from the manifest ({e.get(k)})" for k in ident if e.get(k) != ident[k]]
-    problems += [f"manifest evidence lists {name}, which is not a report directory" for name in sorted(listed)]
-    outputs, _, _, _, _ = gc.build(opts, mode)
-    if outputs is None:
-        problems.append("cannot render a fresh contract to compare with the generated files")
+            stale.append(f"{r.name}: raw/SHA256SUMS digest {digest} differs from the manifest ({e.get('raw_sha256sums')})")
+        ident = report_identity(r, report_records(r, []), mode, [], [])
+        stale += [f"{r.name}: records' {k} {ident[k]} differs from the manifest ({e.get(k)})" for k in ident if e.get(k) != ident[k]]
+    stale += [f"manifest evidence lists {name}, which is not a report directory" for name in sorted(listed)]
+    if fresh is None:
+        import generate_contract  # imports this module; only the standalone run renders here
+
+        fresh = generate_contract.build(opts, mode)[0]
+    if fresh is None:
+        stale.append("cannot render a fresh contract to compare with the generated files")
     else:
-        problems += gc.stale(outputs)
-    return problems
+        stale += stale_outputs(fresh)
+    return stale
+
+
+BLOCKS = {"page": ("<!-- contract:begin -->", "<!-- contract:end -->"),
+          "formulas": ("<!-- formulas:begin -->", "<!-- formulas:end -->"),
+          "inputs": ("<!-- inputs:begin -->", "<!-- inputs:end -->")}
+
+
+def extract_block(text, name):
+    begin, end = BLOCKS[name]
+    if text.count(begin) != 1 or text.count(end) != 1:
+        return None
+    return text.split(begin, 1)[1].split(end, 1)[0]
+
+
+def stale_outputs(outputs):
+    """Every output file whose bytes differ from a fresh render, naming the block that differs."""
+    out = []
+    for path, fresh in outputs.items():
+        try:
+            current = Path(path).read_text()
+        except OSError as e:
+            out.append(f"{path}: {e}")
+            continue
+        if current == fresh:
+            continue
+        names = [n for n in BLOCKS if extract_block(fresh, n) is not None and extract_block(current, n) != extract_block(fresh, n)]
+        out.append(f"{path} differs from a fresh render" + (f" (block {', '.join(names)})" if names else ""))
+    return out
+
+
+def classify_stale(stale, mode, problems, label):
+    """A stale generated file is pending in dev mode and a failure in final mode."""
+    for line in stale:
+        msg = f"stale: {line}; {STALE_HINT}"
+        if mode == "final":
+            problems.append(msg)
+        else:
+            print(f"{label}: pending: {msg}", file=sys.stderr)
 
 
 def identities(measurements):
@@ -613,7 +755,8 @@ def _load_jsonl(path, problems):
     return rows
 
 
-def main(argv=None):
+def main(argv=None, fresh=None):
+    """`fresh`: the outputs of a fresh render, when the caller (generate_contract.py check) already built them."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--mode", choices=("dev", "final"), default="dev")
     ap.add_argument("--cost-model", default=str(DEFAULT_COST_MODEL))
@@ -640,7 +783,10 @@ def main(argv=None):
         problems.append(f"missing artifact: {cm / CONTRACT} (run tools/generate_contract.py generate)")
     else:
         print(f"note: pending: {cm / CONTRACT} not generated; evidence reads the reports' coefficients.json", file=sys.stderr)
-    reports = [Path(p) for p in sorted(glob.glob(args.reports)) if Path(p).is_dir()]
+    reports, found, notes = report_dirs(args.reports)
+    problems += found
+    for line in notes:
+        print(line, file=sys.stderr)
     if args.mode == "final" and not reports:
         problems.append(f"missing artifact: no report directory matches {args.reports}")
     paths = sorted(cm.glob("formulas*.json")) + [r / "formulas.json" for r in reports if (r / "formulas.json").exists()]
@@ -665,7 +811,9 @@ def main(argv=None):
         problems += dependency(reg, formulas)
     if cov is not None:
         pending = []
-        problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending)
+        # The generated contract says which families occur per variant; without it every family needs evidence.
+        problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending,
+                            applicability=(contract or {}).get("applicability"))
         if pending:
             print(f"note: {len(pending)} support cells pending (no evidence, no not_supported state)", file=sys.stderr)
         ids = {m.get("measurement_id") for m in measurements}
@@ -678,15 +826,17 @@ def main(argv=None):
             problems += evidence(cov, coefficients, ids)
     if bil is not None:
         problems += billing(bil)
+    stale = []
     problems += accounting(measurements, predictions, node_test_cmd=False if args.skip_node else None, mode=args.mode,
-                           raw=raw_slices(reports), contract=contract, billing_contract=bil)
+                           raw=raw_slices(reports), contract=contract, billing_contract=bil, stale=stale)
     if args.mode == "final":
         problems += [f"{r}: raw/SHA256SUMS missing" for r in reports if (r / "measurements.jsonl").exists() and not (r / "raw/SHA256SUMS").exists()]
     problems += reproduction([tuple(c.split("=", 1)) for c in args.copy], [r / "raw/SHA256SUMS" for r in reports if (r / "raw/SHA256SUMS").exists()])
     if contract is not None:
         opts = {"cost_model": str(cm), "reports": args.reports, "page": args.page, "doc": args.doc, "copy": args.contract_copy,
                 "code_dir": args.code_dir, "fixtures_out": None}
-        problems += manifest(contract, opts, args.mode)
+        stale += manifest(contract, opts, args.mode, fresh)
+    classify_stale(stale, args.mode, problems, "closure_check")
     for records in per_report:
         problems += identities(records)
     problems += rerender(reports)

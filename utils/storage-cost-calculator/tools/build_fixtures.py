@@ -3,7 +3,8 @@
 
 For every coverage evidence edge with status `done` and role `fit` or `holdout`, joins the report's prediction
 (`predictions/<experiment_id>.<policy>.json`), each cited measurement and the report's formulas cells for the
-measured variant, and writes one fixture per (edge, measurement). An edge whose report has no cell for the card on
+measured variant (named after the card, or a domain-operation cell that references the edge's coefficient), and
+writes one fixture per (edge, measurement). An edge whose report has no cell for the card on
 the measured variant is listed in `_coefficient_only.json` instead: the card reconciled its request rows itself and
 the record's status carries that verdict. The output directory is rebuilt from scratch so a fixture never outlives its
 evidence. Exit 1 with every problem listed when an edge does not resolve.
@@ -43,8 +44,9 @@ def _measurements(report):
     return out
 
 
-def _cells(report, variant, card):
-    """The report's formulas cells for `variant` that belong to `card` (named `card` or `card.<operation>`)."""
+def _cells(report, variant, card, coefficient, operations):
+    """The report's formulas cells for `variant` that belong to `card` (named `card` or `card.<operation>`), plus
+    its domain-operation cells that reference `coefficient`: a variant report keys its cells by operation."""
     path = report / "formulas.json"
     if not path.exists():
         return None, f"{report}: no formulas.json"
@@ -53,7 +55,8 @@ def _cells(report, variant, card):
     cells = {}
     for f in files:
         if f.get("variant") == variant:
-            cells.update({k: v for k, v in f.get("cells", {}).items() if k == card or k.startswith(card + ".")})
+            cells.update({k: v for k, v in f.get("cells", {}).items()
+                          if k == card or k.startswith(card + ".") or (k in operations and _references(v, coefficient))})
     return cells, None
 
 
@@ -129,7 +132,7 @@ def build(report_dirs, coverage):
             if (m["experiment_id"], m["policy"]) != (e["experiment_id"], e["policy"]):
                 problems.append(f"{where}: measurement {mid} is {m['experiment_id']}.{m['policy']}")
                 continue
-            cells, problem = _cells(report, m["variant"], m["card"])
+            cells, problem = _cells(report, m["variant"], m["card"], e["coefficient"], coverage["domain"]["operations"])
             if problem:
                 problems.append(f"{where}: {problem}")
                 continue
