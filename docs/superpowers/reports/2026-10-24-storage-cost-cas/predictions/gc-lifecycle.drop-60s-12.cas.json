@@ -1,0 +1,126 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-lifecycle.drop-60s-12",
+  "policy": "cas",
+  "inputs": {
+    "exact": false,
+    "role": "holdout",
+    "replaces": "gc-lifecycle.drop-60s (consumed: its assumed foreground PUT range 70-110 missed the derived 113)",
+    "rule": "as gc-lifecycle.drop-60s"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 108,
+          "max": 135,
+          "basis": "derived",
+          "reason": "derived: 12 inserts x (PUT 9, GET 7, HEAD 1) + the cold _ckpt GET + the drop of 12 parts (PUT 2 x 12 + 3, GET 2 x 12 + 2, HEAD 1, DELETE 1, LIST 2); a GC round that starts during the workload moves requests to maintenance, so the lower bound allows one round over the drop"
+        },
+        "GetObject": {
+          "min": 85,
+          "max": 111,
+          "basis": "derived",
+          "reason": "derived: 12 inserts x (PUT 9, GET 7, HEAD 1) + the cold _ckpt GET + the drop of 12 parts (PUT 2 x 12 + 3, GET 2 x 12 + 2, HEAD 1, DELETE 1, LIST 2); a GC round that starts during the workload moves requests to maintenance, so the lower bound allows one round over the drop"
+        },
+        "HeadObject": {
+          "min": 12,
+          "max": 13,
+          "basis": "derived",
+          "reason": "derived: 12 inserts x (PUT 9, GET 7, HEAD 1) + the cold _ckpt GET + the drop of 12 parts (PUT 2 x 12 + 3, GET 2 x 12 + 2, HEAD 1, DELETE 1, LIST 2); a GC round that starts during the workload moves requests to maintenance, so the lower bound allows one round over the drop"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 1,
+          "basis": "derived",
+          "reason": "derived: 12 inserts x (PUT 9, GET 7, HEAD 1) + the cold _ckpt GET + the drop of 12 parts (PUT 2 x 12 + 3, GET 2 x 12 + 2, HEAD 1, DELETE 1, LIST 2); a GC round that starts during the workload moves requests to maintenance, so the lower bound allows one round over the drop"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 2,
+          "basis": "derived",
+          "reason": "derived: 12 inserts x (PUT 9, GET 7, HEAD 1) + the cold _ckpt GET + the drop of 12 parts (PUT 2 x 12 + 3, GET 2 x 12 + 2, HEAD 1, DELETE 1, LIST 2); a GC round that starts during the workload moves requests to maintenance, so the lower bound allows one round over the drop"
+        }
+      }
+    },
+    "observations": {
+      "cohort_size": 24,
+      "cohort_manifests": 12,
+      "cohort_blobs": 12,
+      "reclaim_rounds.condemn": 1,
+      "reclaim_rounds.manifest_delete": 1,
+      "reclaim_rounds.blob_delete": 3,
+      "reclaim_rounds.total": 3,
+      "reclaim_periods.condemn": {
+        "min": 0.0,
+        "max": 1.1
+      },
+      "reclaim_periods.blob_delete": {
+        "min": 2.0,
+        "max": 3.1
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "cas_gc_interval_sec: seconds between GC rounds",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    },
+    {
+      "claim": "the scheduler loop waits a full interval after each round returns, so a round starts interval seconds after the previous one finished",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 349
+    },
+    {
+      "claim": "a condemned blob graduates to delete_pending in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 65
+    },
+    {
+      "claim": "a delete_pending blob is deleted with an exact-token delete in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 66
+    },
+    {
+      "claim": "cas_gc_log Finish rows carry the per-round counters",
+      "path": "tmp/src-26.8/src/Interpreters/ContentAddressedGarbageCollectionLog.cpp",
+      "line": 48
+    },
+    {
+      "claim": "blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "gc/hb is the advisory GC heartbeat",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 344
+    },
+    {
+      "claim": "the manifest body is one create-if-absent PUT, with no preliminary HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 646
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "then replaces it with If-Match (PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp",
+      "line": 195
+    }
+  ],
+  "prediction_commit": "pending"
+}

@@ -20,7 +20,7 @@ R = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-24-stor
 EXPERIMENTS = os.path.join(R, 'experiments')
 CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-peak', 'mix-holdout', 'mix-holdout-2'},
          'cas-drop': {'table-sync'},
-         'gc-lifecycle': {'drop', 'drop-60s', 'merge'}, 'gc-idle': {'populated'},
+         'gc-lifecycle': {'drop', 'drop-60s', 'drop-60s-12', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
          'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'

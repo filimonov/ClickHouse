@@ -1,0 +1,43 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "gc-lifecycle.drop-60s-12",
+  "card": "gc-lifecycle",
+  "case_id": "drop-60s-12",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "measure",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.cas_gc_interval_sec": "60"
+    }
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "rows": 1000,
+    "inserts": 12,
+    "retire": "drop",
+    "reclaim_timeout_s": 420,
+    "gc_interval_s": 60,
+    "expected_rows": 0
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Replacement hold-out for the reclaim delay at the default interval (drop-60s failed on its assumed foreground range): as gc-lifecycle.drop with cas_gc_interval_sec = 60 and 12 inserts."
+}
