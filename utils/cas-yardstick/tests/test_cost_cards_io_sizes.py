@@ -138,3 +138,48 @@ class IdleCardTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FitTest(unittest.TestCase):
+    """The pooling and hold-out rules of `ebs_fit`, on synthetic records."""
+
+    def record(self, mid, experiment_id, observations, **extra):
+        return {'status': 'ok', 'policy': 'local', 'measurement_id': mid, 'experiment_id': experiment_id,
+                'observations': observations, **extra}
+
+    def test_pooled_scalar_and_hold_out_slack(self):
+        from yardstick.cost import ebs_fit
+        fit = ebs_fit.pooled({'a': 1.0, 'b': 1.2, 'c': 1.4})
+        self.assertAlmostEqual(fit['value'], 1.2)
+        self.assertAlmostEqual(fit['spread'], 0.2)
+        # slack = 2 x 0.2 + 10 % of 1.2 = 0.52
+        self.assertTrue(ebs_fit.scalar_check(1.71, fit)['ok'])
+        self.assertFalse(ebs_fit.scalar_check(1.73, fit)['ok'])
+        with self.assertRaises(ValueError):
+            ebs_fit.pooled({})
+
+    def test_demand_fit_skips_a_direction_without_bytes(self):
+        from yardstick.cost import ebs_fit
+        dist = dict.fromkeys((label for label, _ in io_sizes.SIZE_BUCKETS), 0.0)
+        obs = lambda w: {'inserts.io_bytes.write': w, 'inserts.io_bytes.read': 0.0,  # noqa: E731
+                         'inserts.ebs_ios_per_mib.write': 4.0,
+                         'inserts.request_size_distribution.write': {**dist, '1MiB': 1.0}}
+        recs = [self.record('m1', 'io-sizes.narrow-compact', obs(1.0)), self.record('m2', 'io-sizes.narrow-wide', obs(1.1)),
+                self.record('m3', 'io-sizes.narrow-wide', obs(9.9), status='FAILED')]
+        got = ebs_fit.demand_fit(recs, {'io-sizes.narrow-compact', 'io-sizes.narrow-wide'})
+        self.assertAlmostEqual(got['io_bytes_per_op']['inserts.write']['value'], 1.05)
+        self.assertIn('inserts.read', got['io_bytes_per_op'])
+        self.assertNotIn('inserts.read', got['ebs_ios_per_mib'])  # no read bytes: no I/O size to count
+        self.assertEqual(got['io_request_size_distribution']['inserts.write']['max_tv'], 0.0)
+        self.assertEqual(got['measurement_ids'], ['m1', 'm2'])
+
+    def test_peak_factor_window_ends_at_the_last_merge(self):
+        from yardstick.cost import ebs_fit
+        series = [[t * 1_000_000, 7, 0, w] for t, w in enumerate([0, 1, 2, 7, 8, 8, 8])]
+        rec = self.record('m', 'merge-natural.default', {'quiet_cutoff_us': 6_000_000, 'proc_io_series': {'r1': series}},
+                          window={'t_start_us': 0})
+        got = ebs_fit.peak_factors([rec], {'merge-natural.default'}, 0.0, {'merge-natural.default': 2})
+        # Active period 0..4 s: 8 bytes in 4 s, peak 5 B/s; the quiet tail after the last merge is excluded.
+        self.assertAlmostEqual(got['m']['peak_factor'], 2.5)
+        with self.assertRaises(ValueError):
+            ebs_fit.active_window(self.record('x', 'merge-natural.default', {}, window={'t_start_us': 0}), 60)

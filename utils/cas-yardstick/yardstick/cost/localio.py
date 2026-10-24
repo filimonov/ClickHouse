@@ -12,7 +12,8 @@ import time
 PROC_IO_FIELDS = ('rchar', 'wchar', 'syscr', 'syscw', 'read_bytes', 'write_bytes')
 DISKSTATS_FIELDS = ('reads_completed', 'reads_merged', 'sectors_read', 'ms_reading', 'writes_completed',
                     'writes_merged', 'sectors_written', 'ms_writing', 'ios_in_progress', 'ms_io', 'weighted_ms_io')
-STRACE_SYSCALLS = 'write,pwrite64,writev,read,pread64,readv,fsync,fdatasync'
+# preadv2 carries the thread-pool reader's page-cache hits (RWF_NOWAIT); without it a warm scan looks like no reads.
+STRACE_SYSCALLS = 'write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2,fsync,fdatasync'
 REPLICA_SUBDIRS = ('data', 's3_meta', 'caches', 'cas_scratch')
 PTRACE_SCOPE = '/proc/sys/kernel/yama/ptrace_scope'
 DROP_CACHES = '/proc/sys/vm/drop_caches'
@@ -289,8 +290,8 @@ def parse_strace(paths, path_filter=None, window=None) -> dict:
     return out
 
 
-READ_SYSCALLS = ('read', 'pread64', 'readv')
-WRITE_SYSCALLS = ('write', 'pwrite64', 'writev')
+READ_SYSCALLS = ('read', 'pread64', 'readv', 'preadv', 'preadv2')
+WRITE_SYSCALLS = ('write', 'pwrite64', 'writev', 'pwritev', 'pwritev2')
 
 
 def ebs_ios(size: int, max_io_bytes: int) -> int:

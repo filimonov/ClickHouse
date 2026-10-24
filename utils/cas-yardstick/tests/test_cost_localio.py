@@ -390,6 +390,19 @@ class EbsDemandHelpersTest(unittest.TestCase):
         self.assertEqual(out['b']['crossing'], 1)
         self.assertNotIn('socket', json.dumps(out))
 
+    def test_vector_and_nowait_calls_are_traced_and_counted(self):
+        # The thread-pool reader serves page-cache hits with preadv2(RWF_NOWAIT); a miss returns EAGAIN, then pread.
+        self.assertTrue({'preadv2', 'preadv', 'pwritev', 'pwritev2'} <= set(localio.STRACE_SYSCALLS.split(',')))
+        with open(self.path, 'w') as f:
+            f.write('7 100.1 preadv2(5</d/t/p/a.bin>, [{iov_base="x"..., iov_len=1048576}], 1, 0, RWF_NOWAIT) '
+                    '= 1048576 <0.000100>\n'
+                    '7 100.2 preadv2(5</d/t/p/b.bin>, [{iov_base=0x1, iov_len=65536}], 1, 0, RWF_NOWAIT) '
+                    '= -1 EAGAIN (Resource temporarily unavailable) <0.000010>\n'
+                    '7 100.3 pwritev(6</d/t/p/c.bin>, [{iov_base="x"..., iov_len=4096}], 1, 0) = 4096 <0.000010>\n')
+        out = localio.parse_strace_by(self.path, self.classify, {'a': (100.0, 101.0)}, 262144)['a']['classes']['table']
+        self.assertEqual((out['read']['bytes'], out['read']['ebs_ios'], out['read']['count']), (1048576, 4, 1))
+        self.assertEqual(out['write']['bytes'], 4096)
+
     def test_parse_strace_unchanged_by_the_shared_reader(self):
         out = localio.parse_strace(self.path, window=(100.0, 101.0))
         self.assertEqual(out['syscalls']['write']['count'], 2)  # the socket write has no absolute path
