@@ -120,9 +120,10 @@ class SupportTest(unittest.TestCase):
         cov = {'schema': 'coverage/1', 'version': '1', 'domain': {'variants': ['s3', 'cas'], 'operations': ['x', 'y'], 'families': ['f', 'g']},
                'cards': [{'name': 'cf', 'family': 'f', 'model_variants': ['s3', 'cas'], 'cases': [case('c')]},
                          {'name': 'cg', 'family': 'g', 'model_variants': ['s3'], 'cases': [case('c', ('s3',))]}],
-               'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': 's3', 'span': {}, 'role': role,
+               'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': policy, 'span': {}, 'role': role,
                              'prediction_commit': 'abc1234' if role == 'holdout' else None,
-                             'measurement_ids': [], 'status': 'done'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))
+                             'measurement_ids': [], 'status': 'done'} for k, e, policy in (('kf', 'cf.c', 's3'), ('kf', 'cf.c', 'cas'),
+                                                                                         ('kg', 'cg.c', 's3'))
                             for role in ('fit', 'holdout')],
                'excluded': []}
         # Per-family backing: kf belongs to f, kg to g. s3/x uses both, so f is backed by kf and g by kg. s3/y and
@@ -293,6 +294,77 @@ class AccountingReplayTest(unittest.TestCase):
         self.assertTrue(list(cc.NODE_TESTS.glob('billing.test.js')))
 
 
+class ReplayExitTest(unittest.TestCase):
+    """Exit 1 lists mismatches on stdout; a crash (exit 1 with nothing printed, or exit >= 2) fails with its stderr."""
+
+    def replay(self, code, out='', err=''):
+        done = mock.Mock(returncode=code, stdout=out, stderr=err)
+        with mock.patch.object(cc.subprocess, 'run', return_value=done):
+            return cc.replay_problems({'measurement_id': 'm'}, __file__)
+
+    def test_mismatch_lines_are_reported(self):
+        self.assertEqual(self.replay(1, 'ledger x recorded 1, replayed 2\n'), ['m: ledger x recorded 1, replayed 2'])
+        self.assertEqual(self.replay(0), [])
+
+    def test_exit_1_with_empty_stdout_is_a_failure_with_the_stderr_tail(self):
+        found = self.replay(1, '', 'Traceback ...\nKeyError: marks\n')
+        self.assertEqual(len(found), 1)
+        self.assertIn('replay failed (exit 1)', found[0])
+        self.assertIn('KeyError: marks', found[0])
+
+    def test_exit_2_and_signals_are_failures(self):
+        self.assertIn('replay failed (exit 2)', self.replay(2, 'partial\n', 'boom')[0])
+        self.assertIn('replay failed (exit -9)', self.replay(-9)[0])
+
+
+class ProvenanceTest(unittest.TestCase):
+    """A hold-out or validation prediction must be an ancestor of the rig commit and older than the run."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = self.tmp.name
+        env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t')
+
+        def commit(msg, when):
+            env.update(GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
+            cc.subprocess.run(['git', '-C', self.repo, 'commit', '-q', '--allow-empty', '-m', msg], env=env, check=True)
+            return cc.subprocess.run(['git', '-C', self.repo, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+
+        cc.subprocess.run(['git', 'init', '-q', self.repo], check=True)
+        self.pred = commit('prediction', '2026-10-24T06:00:00Z')
+        self.rig = commit('rig', '2026-10-24T06:30:00Z')
+        self.late = commit('late prediction', '2026-10-24T09:00:00Z')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def check(self, pc, role='validation', run='cost-20261024T080000Z', rig=None):
+        cov = {'evidence': [{'coefficient': 'c', 'experiment_id': 'e.x', 'policy': 's3', 'role': role,
+                             'prediction_commit': pc, 'measurement_ids': [f'{run}/s3/e/x/k1', 'unresolved/k2']}]}
+        records = {f'{run}/s3/e/x/k1': {'run_id': run, 'rig_commit': rig or self.rig}}
+        return cc.provenance(cov, records, self.repo)
+
+    def test_prediction_before_the_run_on_the_rig_history_passes(self):
+        self.assertEqual(self.check(self.pred), [])
+        self.assertEqual(self.check(self.pred, role='holdout'), [])
+
+    def test_fit_rows_are_not_checked(self):
+        self.assertEqual(self.check(self.late, role='fit'), [])
+
+    def test_prediction_not_an_ancestor_of_the_rig_commit_fails(self):
+        found = self.check(self.late)
+        self.assertTrue(any('not an ancestor of rig commit' in p for p in found), found)
+
+    def test_prediction_later_than_the_run_fails(self):
+        found = self.check(self.late, run='cost-20261024T080000Z', rig=self.late)
+        self.assertEqual(found, [f'provenance c e.x/s3 validation: prediction commit {self.late} is later than run cost-20261024T080000Z'])
+
+    def test_unknown_prediction_commit_fails(self):
+        found = self.check('0' * 11)
+        self.assertEqual(len(found), 1)
+        self.assertIn('is not in the repository', found[0])
+
+
 class BillingTest(unittest.TestCase):
     def seed(self):
         with open(os.path.join(HERE, '..', '..', '..', 'docs', 'superpowers', 'cost-model', 'billing-contract.json')) as f:
@@ -456,8 +528,8 @@ class DerivationRefsTest(unittest.TestCase):
     COV = {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["cas_gc"]},
            "cards": [{"name": "gc-scale", "family": "cas_gc", "model_variants": ["cas"],
                       "cases": [{"case_id": "objects-1k"}]}],
-           "evidence": [{"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "role": "fit", "status": "done"},
-                        {"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "role": "holdout", "status": "done"}]}
+           "evidence": [{"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "policy": "cas", "role": "fit", "status": "done"},
+                        {"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "policy": "cas", "role": "holdout", "status": "done"}]}
     APP = {"cas": {"gc": {"cas_gc": "supported"}}}
 
     def registry(self):
@@ -488,7 +560,7 @@ class PerFamilyBackingTest(unittest.TestCase):
         cards = [{"name": "a-card", "family": "fam_a", "model_variants": ["cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]},
                  {"name": "b-card", "family": "fam_b", "model_variants": ["cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]}]
         return {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["fam_a", "fam_b"]}, "cards": cards,
-                "evidence": [{"coefficient": c, "experiment_id": e, "role": r, "status": st} for c, e, r, st in rows]}
+                "evidence": [{"coefficient": c, "experiment_id": e, "policy": "cas", "role": r, "status": st} for c, e, r, st in rows]}
 
     APP = {"cas": {"gc": {"fam_a": "supported", "fam_b": "supported"}}}
 
@@ -523,7 +595,7 @@ class PerFamilyBackingTest(unittest.TestCase):
     def test_support_passes_measured_ids_from_the_coefficients(self):
         seen = {}
 
-        def fake(coverage, formulas_list, applicability=None, registry=None, measured=None):
+        def fake(coverage, formulas_list, applicability=None, registry=None, measured=None, assumed=None):
             seen["measured"] = measured
             return []
         coefficients = [{"id": "orphan", "evidence": {"kind": "measured"}}, {"id": "pinned", "evidence": {"kind": "source"}}]
@@ -542,6 +614,53 @@ class PerFamilyBackingTest(unittest.TestCase):
         cov = self.cov([("ca", "a-card.x", "fit", "done"), ("ca", "a-card.y", "holdout", "done"),
                         ("ca", "b-card.x", "validation", "done")])
         self.assertEqual(cc._pending_cells(cov, self.files(expr), self.APP), [])
+
+
+class EvidenceScopeTest(unittest.TestCase):
+    """Evidence backs the variant of the row's policy only, never an assumed key, and owners come from the reports."""
+
+    COV = {"domain": {"variants": ["s3", "cas"], "operations": ["gc"], "families": ["fam"]},
+           "cards": [{"name": "card", "family": "fam", "model_variants": ["s3", "cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]}]}
+    APP = {"s3": {"gc": {"fam": "supported"}}, "cas": {"gc": {"fam": "supported"}}}
+
+    def rows(self, policy, **extra):
+        return [dict({"coefficient": "t", "experiment_id": "card.x", "policy": policy, "role": "fit", "status": "done"}, **extra),
+                dict({"coefficient": "t", "experiment_id": "card.y", "policy": policy, "role": "holdout", "status": "done"}, **extra)]
+
+    def files(self, key="k1"):
+        expr = {"kind": "lookup", "table_id": "t", "keys": [{"kind": "const", "value": key, "dim": "enum:k"}], "dim": "count"}
+        return [{"variant": v, "cells": {"gc": {"ledger_rows": [{"expr": expr}], "states": [], "notes": []}}} for v in ("s3", "cas")]
+
+    def pending(self, rows, key="k1", assumed=None):
+        return cc._pending_cells(dict(self.COV, evidence=rows), self.files(key), self.APP, assumed=assumed)
+
+    def test_a_row_backs_only_its_own_policy_variant(self):
+        self.assertEqual(self.pending(self.rows("s3")), [("cas", "gc", "fam")])
+        self.assertEqual(self.pending(self.rows("s3") + self.rows("cas", borrowed_from="s3")), [])
+
+    def test_an_assumed_key_is_not_backed_by_the_coefficient_rows(self):
+        rows = self.rows("s3") + self.rows("cas", borrowed_from="s3")
+        self.assertEqual(self.pending(rows, key="k2", assumed={"t": {"k2"}}), [("s3", "gc", "fam"), ("cas", "gc", "fam")])
+        self.assertEqual(self.pending(rows, key="k1", assumed={"t": {"k2"}}), [])
+        self.assertEqual(cc.assumed_keys([{"id": "t", "tolerance": {"rel": 0.1, "assumed_keys": ["k2"]}}, {"id": "u", "tolerance": {}}]),
+                         {"t": {"k2"}})
+
+    def test_a_non_constant_key_may_reach_an_assumed_one(self):
+        expr = {"kind": "lookup", "table_id": "t", "keys": [{"kind": "input", "id": "op", "dim": "enum:k"}], "dim": "count"}
+        self.assertEqual(cc._assumed_hits({"ledger_rows": [{"expr": expr}]}, None, {"t": {"k2"}}), {"t"})
+
+    def test_coverage_rows_cite_records_of_their_policy_or_say_what_they_borrow(self):
+        import artifacts
+        cov = {"schema": "coverage/1", "version": "1", "cards": [], "excluded": [],
+               "domain": {"variants": [], "operations": [], "families": []},
+               "evidence": [{"coefficient": "t", "experiment_id": "card.x", "policy": "cas", "span": {}, "role": "fit",
+                             "prediction_commit": None, "measurement_ids": ["cost-20261024T000000Z/s3/card/x/k1"], "status": "done"}]}
+        self.assertTrue(any("needs borrowed_from" in p for p in artifacts.validate_coverage(cov)))
+        cov["evidence"][0]["borrowed_from"] = "s3"
+        self.assertEqual(artifacts.validate_coverage(cov), [])
+        cov["evidence"][0]["borrowed_from"] = "cas"
+        self.assertTrue(any("equals the row's policy" in p for p in artifacts.validate_coverage(cov)))
+
 
 if __name__ == '__main__':
     unittest.main()

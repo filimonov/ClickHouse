@@ -251,7 +251,8 @@ def build(opts, mode="dev"):
             files.append({"schema": f["schema"], "owner": f"{f['owner']} ({r.name})", "variant": v, "cells": domain_cells})
 
     if mode == "final":
-        owned = set(coef_owner) | {q["id"] for q in reg["quantities"]} | {q["coef"] for q in reg["quantities"] if q["coef"]}
+        # A measured registry row is owned only through the report that holds its coefficient.
+        owned = set(coef_owner) | {q["id"] for q in reg["quantities"] if q["kind"] != "measured"}
         priority = {f"{c['name']}.{k['case_id']}": k["priority"] for c in cov["cards"] for k in c["cases"]}
         for coef in sorted({e["coefficient"] for e in cov["evidence"] if priority.get(e["experiment_id"]) == "P1" and e["status"] != "cut"}):
             if coef not in owned:
@@ -264,9 +265,10 @@ def build(opts, mode="dev"):
         pending += [f"variant {v}: no formulas file lists a supported family" for v in domain["variants"]
                     if not any(x == "supported" for row in app[v].values() for x in row.values())]
     problems += closure_check.dependency(reg, formulas_list)
-    problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final", applicability=app)
+    problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final", applicability=app,
+                                      coefficients=coefficients)
     # Counted here, not taken from `support`, so the evidence statement is the same in both modes.
-    support_pending = closure_check._pending_cells(cov, formulas_list, app, reg)
+    support_pending = closure_check._pending_cells(cov, formulas_list, app, reg, assumed=closure_check.assumed_keys(coefficients))
     problems += closure_check.evidence(cov, coefficients, measurement_ids, coefficient_identity(coefficients, coef_owner, evidence))
     problems += closure_check.billing(bil)
     if support_pending and mode == "dev":

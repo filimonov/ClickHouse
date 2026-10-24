@@ -376,12 +376,13 @@ def validate_coverage(d):
     })
     card = obj({"name": nonempty_string, "family": nonempty_string,
                 "model_variants": list_of(nonempty_string), "cases": list_of(case)})
-    evidence = obj({
+    # `borrowed_from` (optional): the policy whose records back this row; the row applies them to its own policy.
+    evidence = obj_optional({
         "coefficient": nonempty_string, "experiment_id": nonempty_string, "policy": nonempty_string,
         "span": dict_of(pair(number)), "role": enum("fit", "holdout", "validation"),
         "prediction_commit": nullable(nonempty_string), "measurement_ids": list_of(nonempty_string),
-        "status": enum("planned", "done", "consumed", "cut"),
-    })
+        "status": enum("planned", "done", "consumed", "cut"), "borrowed_from": nonempty_string,
+    }, {"borrowed_from"})
     spec = {
         "schema": literal("coverage/1"), "version": nonempty_string,
         "cards": list_of(card), "evidence": list_of(evidence),
@@ -400,6 +401,15 @@ def validate_coverage(d):
             # A held-out row is only honest if the prediction predates the measurement.
             if row["role"] == "holdout" and row["prediction_commit"] is None:
                 problems.append(f"$.evidence[{i}].prediction_commit: required for role holdout")
+            # Measurement ids are `<run>/<policy>/...`; a row backs its own policy unless it says what it borrows.
+            source = row.get("borrowed_from", row["policy"])
+            if source == row["policy"] and "borrowed_from" in row:
+                problems.append(f"$.evidence[{i}].borrowed_from: equals the row's policy {source}")
+            for m in row["measurement_ids"]:
+                parts = m.split("/")
+                if len(parts) > 2 and parts[1] != source:
+                    problems.append(f"$.evidence[{i}].measurement_ids: {m} is not a {source} record"
+                                    + ("" if "borrowed_from" in row else "; a row backed by another policy needs borrowed_from"))
     return problems
 
 

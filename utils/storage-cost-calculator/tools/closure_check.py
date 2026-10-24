@@ -5,6 +5,7 @@ exits 1 on any problem. `--mode dev` checks only what is present; `--mode final`
 Run: python3 utils/storage-cost-calculator/tools/closure_check.py --mode dev
 """
 import argparse
+import datetime
 import glob
 import hashlib
 import json
@@ -191,7 +192,39 @@ def derived_refs(node, registry):
     return out
 
 
-def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None):
+def assumed_keys(coefficients):
+    """Coefficient id -> the table keys its owner assumed rather than measured (`tolerance.assumed_keys`)."""
+    return {c["id"]: set(c["tolerance"]["assumed_keys"]) for c in coefficients or ()
+            if isinstance(c, dict) and isinstance(c.get("tolerance"), dict) and c["tolerance"].get("assumed_keys")}
+
+
+def _assumed_hits(node, registry, assumed):
+    """Ids of coefficients in `assumed` that a lookup below `node` may read at an assumed key.
+
+    A key that is not a constant may take any value, so it counts as a hit.
+    """
+    rules = {q["id"]: q["rule"] for q in (registry or {}).get("quantities", []) if q.get("kind") == "derivation" and q.get("rule")}
+    hits, seen, todo = set(), set(), [node]
+    while todo:
+        n = todo.pop()
+        if isinstance(n, list):
+            todo.extend(n)
+            continue
+        if not isinstance(n, dict):
+            continue
+        if n.get("kind") == "lookup" and n.get("table_id") in assumed:
+            keys = n.get("keys") or []
+            if not all(isinstance(k, dict) and k.get("kind") == "const" for k in keys) \
+                    or "|".join(str(k["value"]) for k in keys) in assumed[n["table_id"]]:
+                hits.add(n["table_id"])
+        if n.get("kind") == "input" and n.get("id") in rules and n["id"] not in seen:
+            seen.add(n["id"])
+            todo.append(rules[n["id"]])
+        todo.extend(v for v in n.values() if isinstance(v, (dict, list)))
+    return hits
+
+
+def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None, assumed=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
     A coefficient belongs to the families of the cards its fit and hold-out rows come from. A (cell, family) entry
@@ -205,16 +238,20 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
     ids of measured coefficients) with no fit or hold-out row belongs to no family, so every supported entry of a
     cell that reads it stays pending. With the contract's `applicability`, only `supported` families need evidence;
     without it, every family does.
+
+    A row backs only the variant of its own `policy` (a row with `borrowed_from` states that the value measured on
+    that policy carries over). A coefficient read at a key its owner assumed (`assumed`, from `assumed_keys`) has
+    no measurement behind that read, so the cell stays pending for the coefficient's families.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
     rows = {}
     for row in coverage["evidence"]:
         card = card_of.get(row["experiment_id"])
-        if card is None:
+        v = POLICY_VARIANT.get(str(row.get("policy")).removesuffix("_cached"))
+        if card is None or v not in card["model_variants"]:
             continue
-        for v in card["model_variants"]:
-            rows.setdefault((row["coefficient"], card["family"], v), set()).add((row.get("role"), row["status"]))
+        rows.setdefault((row["coefficient"], card["family"], v), set()).add((row.get("role"), row["status"]))
     families_of = {}
     for (coef, fam, _), got in rows.items():
         # Validation rows confirm a value; only fit and hold-out rows make the coefficient one of the family's.
@@ -231,14 +268,15 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
     cells = {}
     for f in formulas_list:
         for op, cell in f.get("cells", {}).items():
-            entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set(), "quantities": set()})
+            entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set(), "quantities": set(), "assumed": set()})
             entry["unsupported"] |= unconditional_not_supported(cell)
             entry["coefs"] |= {ref for kind, ref in derived_refs(cell, registry)}
             entry["quantities"] |= derived_inputs(cell, registry)
+            entry["assumed"] |= _assumed_hits(cell, registry, assumed or {})
     pending = []
     for v in domain["variants"]:
         for op in domain["operations"]:
-            entry = cells.get((v, op), {"unsupported": False, "coefs": set(), "quantities": set()})
+            entry = cells.get((v, op), {"unsupported": False, "coefs": set(), "quantities": set(), "assumed": set()})
             app = (applicability or {}).get(v, {}).get(op, {})
             for fam in domain["families"]:
                 if applicability is not None and app.get(fam) != "supported":
@@ -247,7 +285,7 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
                     continue
                 own = {c for c in entry["coefs"] if fam in families_of.get(c, set())}
                 orphans = {c for c in entry["coefs"] if c in (measured or ()) and c not in families_of}
-                backed = not orphans and (all(measured_ok(c, fam, v) for c in own) if own
+                backed = not orphans and (all(measured_ok(c, fam, v) and c not in entry["assumed"] for c in own) if own
                                           else pinned_ok(entry["quantities"] | entry["coefs"], fam, v))
                 if not backed:
                     pending.append((v, op, fam))
@@ -304,7 +342,7 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
     if _cut_coefficients(coverage) and not PRESETS.exists():
         print(f"note: {PRESETS} absent; cut propagation to presets not checked", file=sys.stderr)
     measured = {c.get("id") for c in coefficients or () if (c.get("evidence") or {}).get("kind") == "measured"}
-    pending_cells = _pending_cells(coverage, formulas_list, applicability, registry, measured)
+    pending_cells = _pending_cells(coverage, formulas_list, applicability, registry, measured, assumed_keys(coefficients))
     if require_formulas and applicability is not None:
         # A variant whose reports claim no family would price nothing; that is missing work, not a free column.
         problems += [f"variant {v}: no formulas file lists a supported family" for v in sorted(applicability)
@@ -387,6 +425,55 @@ def evidence(coverage, coefficients, measurement_ids=None, identity=None):
 def _distinct(h, f):
     same_data = h["experiment_id"] == f["experiment_id"] and h["policy"] == f["policy"] and h["span"] == f["span"]
     return not same_data and not set(h["measurement_ids"]) & set(f["measurement_ids"])
+
+
+RUN_TIME = re.compile(r"^cost-(\d{8}T\d{6}Z)")
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+
+
+def provenance(coverage, records, repo=ROOT):
+    """Hold-out and validation predictions must be committed before the run that tests them.
+
+    For every `holdout` and `validation` row, `prediction_commit` must be an ancestor of each cited record's
+    `rig_commit`, and its commit time must not be later than the record's run id time (`cost-YYYYMMDDTHHMMSSZ`).
+    Measurement ids that resolve to no record are left to the evidence closure.
+    """
+    problems, ancestor, ctime = [], {}, {}
+
+    def commit_time(c):
+        if c not in ctime:
+            done = _git(repo, "show", "-s", "--format=%ct", f"{c}^{{commit}}")
+            ctime[c] = int(done.stdout.strip()) if done.returncode == 0 and done.stdout.strip().isdigit() else None
+        return ctime[c]
+
+    for row in coverage.get("evidence") or []:
+        if row.get("role") not in ("holdout", "validation"):
+            continue
+        pc, label = row.get("prediction_commit"), f"{row.get('coefficient')} {row.get('experiment_id')}/{row.get('policy')} {row.get('role')}"
+        if commit_time(pc) is None:
+            problems.append(f"provenance {label}: prediction commit {pc} is not in the repository")
+            continue
+        found = set()
+        for mid in row.get("measurement_ids") or []:
+            rec = records.get(mid)
+            if rec is None:
+                continue
+            rig, run = rec.get("rig_commit"), RUN_TIME.match(str(rec.get("run_id") or mid))
+            if (pc, rig) not in ancestor:
+                ancestor[(pc, rig)] = bool(rig) and _git(repo, "merge-base", "--is-ancestor", pc, rig).returncode == 0
+            if not ancestor[(pc, rig)]:
+                found.add(f"prediction commit {pc} is not an ancestor of rig commit {rig}")
+            if run is None:
+                found.add(f"run id of {mid} has no cost-YYYYMMDDTHHMMSSZ time")
+            else:
+                at = datetime.datetime.strptime(run.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+                if commit_time(pc) > at.timestamp():
+                    found.add(f"prediction commit {pc} is later than run {run.group(0)}")
+        problems += [f"provenance {label}: {p}" for p in sorted(found)]
+    return problems
 
 
 # --- 4. accounting closure ---------------------------------------------------------------------
@@ -486,8 +573,9 @@ def replay_problems(record, raw_path):
                               cwd=YARDSTICK, capture_output=True, text=True)
     finally:
         Path(f.name).unlink()
-    if done.returncode not in (0, 1):
-        return [f"{record.get('measurement_id')}: replay failed: {done.stderr.strip()[-500:]}"]
+    # Exit 1 means mismatches, each printed on stdout; exit 1 with nothing printed is a crash, like any other code.
+    if done.returncode not in (0, 1) or (done.returncode == 1 and not done.stdout.strip()):
+        return [f"{record.get('measurement_id')}: replay failed (exit {done.returncode}): {done.stderr.strip()[-500:]}"]
     return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
 
 
@@ -909,6 +997,8 @@ def main(argv=None, fresh=None):
             problems += evidence(cov, contract.get("coefficients") or [], ids, identity)
         else:
             problems += evidence(cov, coefficients, ids)
+        if args.mode == "final":
+            problems += provenance(cov, {m.get("measurement_id"): m for m in measurements})
     if bil is not None:
         problems += billing(bil)
     stale = []
