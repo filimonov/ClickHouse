@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "5cdf6ce598e3c7d6",
+ "version": "7b8ecf7cc8fc20b7",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "5cdf6ce598e3c7d6",
+  "contract_version": "7b8ecf7cc8fc20b7",
   "registry_version": "0.3.0",
-  "registry_sha256": "474c184808e9a3836a954f92c0257b3c2ac2c48e069f0c2419b40984775d6694",
+  "registry_sha256": "a12f6388b881ff10d3524d2ee519658a7d20be8a2aa8f3cff1b8f4ea31d40428",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "9dce636a5419404b4d1bfb2b3ba0cd3817da9fe667bc4b175ab375ef7a808b1b",
+  "coverage_sha256": "b653e2eacc76f95470acea20a189173c9029f7855e14c73d4f6bc8a51c83fa4b",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -65,7 +65,7 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "f73e84533e05aacc5f2a47564ab03f902cbb96a5e84928bad0da17e7dd8a1f19"
+  "breakeven_sha256": "56c466fa7926cc93cd4738ae9c2372a35cc5844960372c5045729eacafefb1a2"
  },
  "evidence_statement": "Built from 6 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 46 coefficient(s): 37 measured, 9 pinned to source. 44 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -8143,17 +8143,17 @@
   {
    "id": "fault_class",
    "block": "replication",
-   "label": "Failed store request class: a 5XX answer the store never saw, or a response lost after the store accepted the request",
+   "label": "Failed request class: rejected before the store (a 5XX answer the store never saw, store_reached 0) or a response lost after the store accepted the request (store_reached 1); a 5XX the store itself returns is store_reached 1 and billed per the billing artifact",
    "kind": "pinned",
    "scope": "cluster",
    "unit": "",
    "value_type": "enum",
    "enum": [
-    "status_5xx",
+    "rejected_before_store",
     "lost_response"
    ],
    "table": null,
-   "default": "status_5xx",
+   "default": "rejected_before_store",
    "rule": null,
    "coef": null,
    "validity": null,
@@ -10429,7 +10429,7 @@
   {
    "id": "catchup_requests_per_missed_part",
    "block": "topology_recovery",
-   "label": "GetObject per part a restarted replica fetches to catch up (replication report)",
+   "label": "GetObject and PutObject (and the other S3 operations, keyed by replication_op) per part a restarted replica fetches to catch up, sender and receiver together",
    "kind": "measured",
    "scope": "cluster",
    "unit": "count",
@@ -10437,7 +10437,8 @@
    "enum": null,
    "table": {
     "index": [
-     "variant_id"
+     "variant_id",
+     "replication_op"
     ],
     "dim": "count"
    },
@@ -10450,7 +10451,12 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
     "version": "0.3.0"
    },
-   "hint": null,
+   "hint": {
+    "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_time >= (SELECT max(event_time) FROM system.text_log WHERE message LIKE '%Starting ClickHouse%') -- on the restarted replica; then the S3 events below",
+    "mapping": {
+     "catchup_requests_per_missed_part": "(S3GetObject, S3PutObject on both replicas since the restart, minus the restarted replica's requests before its first DownloadPart) / DownloadPart rows since the restart"
+    }
+   },
    "status": "ok"
   },
   {
@@ -11687,6 +11693,14 @@
     "inserts": [
      24,
      24
+    ],
+    "prefer_fetch_merged_part_time_threshold": [
+     3600,
+     3600
+    ],
+    "prefer_fetch_merged_part_size_threshold": [
+     10737418240,
+     10737418240
     ]
    },
    "tolerance": {
@@ -11777,6 +11791,8 @@
     "values": {
      "cas|GetObject": 7.2,
      "cas|PutObject": 5.8,
+     "ebs|GetObject": 0,
+     "ebs|PutObject": 0,
      "s3plain|GetObject": 21.6,
      "s3plain|HeadObject": 1.0,
      "s3plain|PutObject": 14.6,
@@ -11809,7 +11825,7 @@
    },
    "status": "ok",
    "fit": {
-    "method": "requests of both replicas after the follower's first catch-up fetch / parts it fetched; K=1"
+    "method": "requests of both replicas after the follower's first catch-up fetch / parts it fetched, from the raw ledger with maintenance excluded; K=1; an absent key is 0"
    }
   },
   {
@@ -11827,6 +11843,8 @@
      "cas|HeadObject": 1,
      "cas|ListObjectsV2": 5,
      "cas|PutObject": 6,
+     "ebs|GetObject": 0,
+     "ebs|PutObject": 0,
      "s3plain|CopyObject": 1,
      "s3plain|DeleteObject": 2,
      "s3plain|GetObject": 53,
@@ -11863,7 +11881,7 @@
    },
    "status": "ok",
    "fit": {
-    "method": "the follower's requests from its start to its first catch-up fetch; K=1"
+    "method": "the follower's requests from its start to its first catch-up fetch, maintenance excluded; K=1; an absent key is 0"
    }
   },
   {
@@ -11880,15 +11898,15 @@
     "values": {
      "cas|lost_response|GetObject|attempts": 1,
      "cas|lost_response|GetObject|store_reached": 1,
-     "cas|status_5xx|GetObject|attempts": 1,
-     "cas|status_5xx|GetObject|store_reached": 1,
-     "cas|status_5xx|PutObject|attempts": 1,
+     "cas|rejected_before_store|GetObject|attempts": 1,
+     "cas|rejected_before_store|GetObject|store_reached": 1,
+     "cas|rejected_before_store|PutObject|attempts": 1,
      "s3plain|lost_response|PutObject|attempts": 1,
      "s3plain|lost_response|PutObject|store_reached": 1,
-     "s3plain|status_5xx|PutObject|attempts": 1,
+     "s3plain|rejected_before_store|PutObject|attempts": 1,
      "s3|lost_response|PutObject|attempts": 1,
      "s3|lost_response|PutObject|store_reached": 1,
-     "s3|status_5xx|PutObject|attempts": 1
+     "s3|rejected_before_store|PutObject|attempts": 1
     }
    },
    "validity": {
