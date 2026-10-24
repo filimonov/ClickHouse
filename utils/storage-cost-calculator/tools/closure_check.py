@@ -8,6 +8,7 @@ import argparse
 import glob
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -333,7 +334,11 @@ def _node_fixtures(cmd, mode):
         else:
             print(f"note: node pricing tests skipped (node or {NODE_TESTS}/*.test.js absent)", file=sys.stderr)
             return []
-    done = subprocess.run(cmd, capture_output=True, text=True)
+    # Dev mode runs before the measured fixtures are built; final mode needs them (pipeline_eval.test.js).
+    env = {k: v for k, v in os.environ.items() if k != "SCC_DEV"}
+    if mode == "dev":
+        env["SCC_DEV"] = "1"
+    done = subprocess.run(cmd, capture_output=True, text=True, env=env)
     tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-15:])
     return [] if done.returncode == 0 else [f"node fixtures failed ({' '.join(cmd)}):\n{tail}"]
 

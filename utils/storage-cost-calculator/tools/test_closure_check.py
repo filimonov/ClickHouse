@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import closure_check as cc
 
@@ -330,6 +331,31 @@ class ReproductionTest(unittest.TestCase):
                 json.dump({'probe': 'p', 'cells': {}, 'mismatches': ['x']}, f)
             self.assertTrue(any('render' in p for p in cc.rerender([d])))
         self.assertEqual(cc.rerender([REPORT]), [])
+
+
+class NodeEnvTest(unittest.TestCase):
+    """Dev mode lets the Node suite run before measured fixtures exist; final mode requires them."""
+
+    def env_for(self, mode, outer):
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen.update(kw.get("env") or {})
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with mock.patch.dict(os.environ, outer, clear=False), mock.patch.object(cc.subprocess, "run", fake_run):
+            if "SCC_DEV" not in outer:
+                os.environ.pop("SCC_DEV", None)
+            self.assertEqual(cc._node_fixtures(["node", "--test"], mode), [])
+        return seen
+
+    def test_dev_mode_sets_scc_dev(self):
+        self.assertEqual(self.env_for("dev", {}).get("SCC_DEV"), "1")
+
+    def test_final_mode_clears_scc_dev(self):
+        env = self.env_for("final", {"SCC_DEV": "1"})
+        self.assertIn("PATH", env)
+        self.assertNotIn("SCC_DEV", env)
 
 
 class MainTest(unittest.TestCase):
