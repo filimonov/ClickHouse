@@ -19,12 +19,14 @@
     // many columns: wide shape.
     logs: {
       label: 'Logs',
-      description: '500 GiB/day of logs kept 30 days on 2 replicas, one 100,000-row batch per second',
+      description: '500 GiB/day of logs kept 30 days on 2 replicas, one 100,000-row batch per second; append-only, no ALTER UPDATE/DELETE',
       values: {
         ingest_rate: 500, retention_days: 30, replicas: 2,
         insert_rows: 100000, insert_rate: 1, insert_bytes_uncompressed: 62914560, insert_clients: 4,
         // Ratio 256 merges ~5.9 MiB inserts into ~1.5 GiB parts.
         async_insert: '0', shape: 'wide', merge_size_ratio: 256,
+        // Append-only: logs are never updated or deleted in place, so no mutation of any kind runs.
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
     },
@@ -33,11 +35,13 @@
     // compressed per insert, ~5 B per row (Delta/Gorilla codecs); 100 KiB uncompressed is ~20x compression. Small inserts go through the async queue. Few columns: narrow shape.
     metrics: {
       label: 'Metrics',
-      description: '20 GiB/day of metrics kept 90 days on 2 replicas, 50 small async inserts per second',
+      description: '20 GiB/day of metrics kept 90 days on 2 replicas, 50 small async inserts per second; append-only, no ALTER UPDATE/DELETE',
       values: {
         ingest_rate: 20, retention_days: 90, replicas: 2,
         insert_rows: 1000, insert_rate: 50, insert_bytes_uncompressed: 102400, insert_clients: 50,
         async_insert: '1', shape: 'narrow', merge_size_ratio: 256,
+        // Append-only: samples are never rewritten; expiry is by TTL or partition drop, not by mutation.
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the EBS write-bytes validity; the page shows the dependent EBS numbers as extrapolated.
@@ -62,12 +66,14 @@
     // compressed per insert; 100 MiB uncompressed is ~12x compression.
     single_replica_archive: {
       label: 'Single replica archive',
-      description: '50 TiB kept two years on 1 replica, one 100,000-row insert every 10 seconds',
+      description: '50 TiB kept two years on 1 replica, one 100,000-row insert every 10 seconds; append-only, no ALTER UPDATE/DELETE',
       values: {
         data_bytes: 51200, retention_days: 730, replicas: 1,
         insert_rows: 100000, insert_rate: 0.1, insert_bytes_uncompressed: 104857600, insert_clients: 1,
         // Ratio 450 merges ~8.3 MiB inserts into ~3.7 GiB parts, the largest a measured ratio allows.
         async_insert: '0', shape: 'wide', merge_size_ratio: 450,
+        // Append-only: an archive is written once and expires by partition drop.
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: ['data_bytes', 'retention_days'],
     },
