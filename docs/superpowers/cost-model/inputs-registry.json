@@ -1536,7 +1536,7 @@
     {
       "id": "inserts_per_async_flush",
       "block": "inserts",
-      "label": "Async inserts sharing one flush: the inserts arriving within the longest busy timeout, at most a full buffer, at least one",
+      "label": "Async inserts sharing one flush: the first insert plus those arriving within the longest busy timeout, at most a full buffer",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -1558,27 +1558,36 @@
             "dim": "1",
             "args": [
               {
-                "kind": "div",
+                "kind": "add",
                 "dim": "1",
-                "on_zero": "unavailable",
                 "a": {
-                  "kind": "mul",
-                  "dim": "ms/s",
-                  "a": {
-                    "kind": "input",
-                    "id": "insert_rate",
-                    "dim": "1/s"
-                  },
-                  "b": {
-                    "kind": "input",
-                    "id": "async_insert_busy_timeout_max_ms",
-                    "dim": "ms"
-                  }
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
                 },
                 "b": {
-                  "kind": "const",
-                  "value": 1000,
-                  "dim": "ms/s"
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "mul",
+                    "dim": "ms/s",
+                    "a": {
+                      "kind": "input",
+                      "id": "insert_rate",
+                      "dim": "1/s"
+                    },
+                    "b": {
+                      "kind": "input",
+                      "id": "async_insert_busy_timeout_max_ms",
+                      "dim": "ms"
+                    }
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 1000,
+                    "dim": "ms/s"
+                  }
                 }
               },
               {

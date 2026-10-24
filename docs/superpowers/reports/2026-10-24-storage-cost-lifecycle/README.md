@@ -9,6 +9,21 @@ doc_type: 'reference'
 
 # Storage cost calculator — lifecycle rules (R5) {#lifecycle}
 
+Every lifecycle rule below reconciles on the `s3` policy of the pinned binary: 15 cases × K=3, 45 records, all ok.
+Part types, part sizes and upload part sequences match their predictions exactly, including both source hold-outs
+(`boundaries.merge-cross`, `boundaries.multipart-equal`). The fitted hold-out `merge-natural.wide` lands inside its
+committed bounds. The write amplification rule fits with effective fan-in 6.11.
+
+| Item | Value |
+|---|---|
+| Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
+| Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
+| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Report run | `cost-20261024T045917Z`, rig commit `5e8f5165369`; `measurements.jsonl` holds its 45 records |
+| Pre-run | `cost-20261024T044126Z`, rig commit `199348a48f3`: the fit data of the `merge-natural.wide` prediction, kept as `raw/runs/cost-20261024T044126Z/measurements.jsonl.gz` (42 records, all ok) |
+| Predictions | source-only `2d931d33a05` (+ `fcaec9179c7` for `insert-split`), fitted `b652973295f`; each before every run that it predicts |
+| Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
+
 Shared lifecycle definitions every variant's cost cells build on: which part type an insert or a merge produces,
 how a part file is split into upload requests, how many parts an insert creates, how merges grow parts and rewrite
 bytes, and when a replica fetches a result instead of producing it. Each rule cites `tmp/src-26.8` at
@@ -82,8 +97,9 @@ rows; 4 192 704 rows give exactly 33 554 432 bytes.
   on, or at its deadline (`AsynchronousInsertQueue.cpp:663`, `:680`). The deadline is the buffer's first insert plus
   an adaptive timeout between `async_insert_busy_timeout_min_ms` (50) and `_max_ms` (200) that grows while inserts
   are frequent (`:623`, `:758`; `Settings.cpp:7249`, `:7252`). With `wait_for_async_insert = 1` (`:7228`) a client
-  waits for its flush, so only concurrent inserts share one. Registry: `async_insert_flush_rule`,
-  `inserts_per_async_flush`.
+  waits for its flush, so only concurrent inserts share one. Registry: `async_insert_flush_rule`, and
+  `inserts_per_async_flush` = max(1, min(1 + rate × `async_insert_busy_timeout_max_ms`, buffer size / insert size)):
+  the first insert opens the buffer and every insert before its deadline joins it.
 
 ### Merges and outdated parts {#merges}
 
@@ -115,3 +131,106 @@ A mutation follows the same rule with `always_fetch_mutated_part` (`MutateFromLo
 its single-replica branch never fires because the picker accepts merge entries only. A replica that already has the
 part or a covering one skips the entry (`StorageReplicatedMergeTree.cpp:2695`). Registry: `acquisition_rule` and its
 settings. Measuring the split is Task 5 (`replication-*` cards).
+
+## Cases and reconciliation {#reconciliation}
+
+Deterministic cases (`mode: deterministic`) are compared exactly: every request op of the window and every
+predicted observation. Merge reads are the only ranges: the `s3` graph (R2) owns exact `GetObject` counts, so the
+lifecycle predictions bound them as an assumption. Values are identical in all three repeats unless a range is shown.
+
+| Case | Role | Predicted | Measured (K=3) |
+|---|---|---|---|
+| `boundaries.compact-below-bytes` | fit | 235 929 rows, 9 437 160 B: Compact; 11 `PutObject` | Compact, 9 437 160 B; 11 |
+| `boundaries.wide-equal-bytes` | fit | exactly 10 485 760 B: Wide (strict `<`); 19 `PutObject` | Wide; 19 |
+| `boundaries.wide-above-bytes` | fit | 11 534 360 B: Wide; 19 `PutObject` | Wide; 19 |
+| `boundaries.level-cross` | fit | `min_level_for_wide_part = 1`: 2 × Compact at level 0 (11 534 360 B each), merge Wide at level 1; 41 `PutObject`, 4–40 `GetObject` | as predicted; 41, 16 |
+| `boundaries.merge-cross` | hold-out | 2 × Compact (6 291 480 B each), merge Wide (12 582 960 B); 41 `PutObject`, 4–40 `GetObject` | as predicted; 41, 16 |
+| `boundaries.multipart-below` | fit | `x.bin` 33 554 424 B: one `PutObject`; 10 `PutObject` | one `PutObject` of 33 554 424 B; 10 |
+| `boundaries.multipart-equal` | hold-out | `x.bin` 33 554 432 B: one `PutObject`; 10 `PutObject` | one `PutObject` of 33 554 432 B; 10 |
+| `boundaries.multipart-above` | fit | `x.bin` 50 331 656 B: parts 33 554 432, 16 777 216, 8; 9 `PutObject` + create, 3 `UploadPart`, complete | exactly that sequence |
+| `boundaries.insert-split` | fit | 2 621 122 rows: parts of 1 111 953, 1 111 953, 397 216 rows, all Wide; 57 `PutObject` | as predicted; 57 |
+| `merge-forced.default` | fit | 8 × Compact, one merge of fan-in 8 to a level-1 Wide part, row amplification 2; 107 `PutObject`, 16–160 `GetObject` | as predicted; 107, 64 |
+| `small-inserts.default` | fit | 1000 parts; 11 000–29 981 `PutObject` | 1000 parts, 195–197 merges, amplification 3.951–3.990; 13 161–13 175 |
+| `merge-natural.default` | fit | 64 parts; 704–1901 `PutObject` | 9 merges of 6 then 2 of 8, final parts 23, 23, 6, 6, 6; amplification 2.5522; 913 |
+| `merge-natural.wide` | hold-out | amplification 2.8030 ± 0.3474 (f = 6.1912 from the pre-run); fan-in TV ≤ 0.3426; result-size TV ≤ 0.3852; fan-in mean 5.06–7.36; 352–1871 `PutObject` | 5 merges of 6, 1 of 7, one final part; amplification 2.9094; TV 0.0503 and 0.0647; mean 6.17; 646 |
+| `async-inserts.steady` | fit (P2) | 1000 async inserts at 20/s: 200–1000 parts | 204, 204, 212 parts |
+| `async-inserts.bursty` | hold-out (P2) | 10 bursts of 100: 10–1000 parts | 19 parts each |
+
+Merge reads observed for R2: a merge reads 8 `GetObject` per 5-column Compact source part (16 for 2 parts, 64 for
+8), on top of the Compact or Wide result's writes.
+
+## Coefficients {#coefficients}
+
+`coefficients.json` holds the measured coefficients; the pinned values live as registry defaults with their source
+references. Validity of all three: final part sizes 6–653 inserted parts (`merge_size_ratio`), inserts of
+1000–100 000 rows (`insert_rows`), 5 `UInt64` columns, back-to-back inserts.
+
+| Coefficient | Value | Fit | Hold-out | Tolerance |
+|---|---|---|---|---|
+| `merge_effective_fan_in` | 6.1097 | `small-inserts.default`, `merge-natural.default` (6 records); residuals −0.168…−0.119 and +0.169 | `merge-natural.wide`: residual +0.080 (+0.106 against the committed f = 6.1912) | abs 0.3474, rel 0 |
+| `merge_fan_in_distribution` | 6: 0.880, 7–8: 0.116, 9–12: 0.004 | same 6 records | TV 0.0503 | TV ≤ 0.3426 |
+| `merge_result_size_distribution` | 5–8: 0.828, 17–32: 0.097, 65–128: 0.035, 33–64: 0.021, 129–256: 0.010, 257–512: 0.006, 513+: 0.003 | same 6 records | TV 0.0647 | TV ≤ 0.3852 |
+
+- **Amplification is on bytes on disk.** Row amplification is higher (5.26–5.31 against 3.95–3.99 on
+  `small-inserts`): a 1000-row Compact part carries fixed-size metadata files, and merged parts compress better.
+- **Tolerances come from the model, not K.** Merge structure was identical across repeats (`merge-natural.*`) or
+  nearly so (`small-inserts`), so K=3 spread alone would give a zero band. The rules are in the hold-out prediction's
+  `inputs.tolerance_rules`: amplification abs = largest fit residual + half the largest K=3 range; distribution
+  TV = 2 × largest fit TV + 1 / predicted merges.
+- **Validation.** `amplification-run.2h` (one 1000-row insert per second for 2 h) has its manifest and prediction
+  (`b652973295f`); Task 7 runs it (`coverage.json` status `planned`).
+
+## Pass durations {#durations}
+
+Median per pass on `s3` (window `wall_s` / whole pass from first server start to last stop), K=3:
+
+| Case | `wall_s` | Pass |
+|---|---|---|
+| `boundaries.*`, `merge-forced.default` | 0.1–0.6 s | 2.4–3.8 s |
+| `async-inserts.bursty` / `.steady` | 20.2 / 50.1 s | 22.4 / 53.5 s |
+| `merge-natural.default` / `.wide` | 62.6 / 63.6 s | 65.0 / 66.2 s |
+| `small-inserts.default` | 65.6 s | 71.1 s |
+
+The natural-merge cases spend 60 s of each pass in the quiet period. The report run took 16 min for 45 passes; the
+pre-run 13 min for 42. `coverage.json` keeps the 120 s planning floor as `duration_s`.
+
+## Changes found while measuring {#changes}
+
+- **Part order.** `system.parts` sorted by name puts `all_1_8_1` before `all_2_2_0`; the cards list parts by level,
+  then block range (`fcaec9179c7`). Found in a smoke pass of `merge-forced.default` (fit).
+- **Block numbers of one INSERT.** The parts of `boundaries.insert-split` got block numbers out of squash order (the
+  397 216-row remainder was `all_1_1_0`). The prediction now states sizes and types sorted by size
+  (`active_parts_by_rows`), not names (`fcaec9179c7`, before both runs).
+- **Async flush count.** A buffer holds its first insert plus those arriving within the timeout, so
+  `inserts_per_async_flush` is 1 + rate × timeout (5 at 20/s, measured 4.7–4.9), not rate × timeout.
+- **Rig hooks.** `closure_check.py` reads `raw/<card>/<run_id>/ledger.jsonl[.gz]` before `raw/<card>/…`, because
+  every run restarts ledger seq numbers (`fd444e9f3a8`). The estimate's sample card `merge-natural` moved from
+  `samples.py` to the lifecycle card of that name; the phase-0 sample manifest has no `params.replica` and no
+  prediction, so a re-run of it fails closed.
+
+## Gaps and limitations {#gaps}
+
+- Only `s3` is measured; `coverage.json` keeps planned cases for `local`, `s3plain` and `cas` (each variant
+  validates the shared rules in its own task).
+- The hold-out `merge-natural.wide` was predicted after the pre-run, not before every run: its prediction needs the
+  fit. The report run (`cost-20261024T045917Z`) started after `b652973295f`, and the pre-run never ran that case.
+- The fit covers fast back-to-back inserts only: fan-in sits at 6 to 9, and parts stop merging once their sizes
+  diverge (final parts of 23 and 6 inserted parts after 64 inserts). Slower inserts and larger final sizes are the
+  validation run's domain.
+- Merge `GetObject` counts are assumption ranges here; R2 derives them.
+- No `DeleteObject` falls inside a window: outdated parts wait `old_parts_lifetime` (480 s), longer than every pass;
+  the teardown drops the table.
+
+## How to re-run {#rerun}
+
+```bash
+utils/cas-yardstick/rustfs-bin.sh ensure
+YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+  --manifests docs/superpowers/reports/2026-10-24-storage-cost-lifecycle --policies s3 --repeats 3 \
+  --cases <experiment ids> --runs-dir tmp/cas-yardstick/cost-runs
+utils/cas-yardstick/rustfs-bin.sh stop
+python3 utils/storage-cost-calculator/tools/closure_check.py --mode dev
+```
+
+The deterministic cases alone: `YARDSTICK_LIVE=1 python3 -m unittest tests.live_lifecycle -v` from
+`utils/cas-yardstick`.
