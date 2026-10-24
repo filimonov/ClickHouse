@@ -1050,7 +1050,7 @@
       "notes": [
         {
           "kind": "const",
-          "value": "Reads: a full scan per part read, assumed; page-cache hits not modelled; EBS reads priced as IOPS only (owner decision)",
+          "value": "Reads: a full scan per part read, assumed; page-cache hits not modelled; EBS reads priced as IOPS only, read throughput not added (assumption)",
           "dim": "enum:note"
         }
       ]
