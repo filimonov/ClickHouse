@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "e0a9818e600086bd",
+ "version": "2f2b8f2383e90f77",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,7 +14,7 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "e0a9818e600086bd",
+  "contract_version": "2f2b8f2383e90f77",
   "registry_version": "0.3.0",
   "registry_sha256": "c812d046947a07a18cee9a8158f9d7b4aa2d6061c50aaf55582918b517a52298",
   "coverage_version": "0.2.0",
@@ -79,7 +79,7 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "fdd8c51cb5642147cbc023a98fda893b72fd1f6f001892bbe905f0700b8de550"
+  "breakeven_sha256": "5027d986122aa7113fbe9842e5d66cb7a3b1445e8f84017dc9a35c6884f10b95"
  },
  "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 60 coefficient(s): 42 measured, 18 pinned to source. 57 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -15771,7 +15771,7 @@
    "inserts": {
     "objects_per_part_by_shape": "supported",
     "thresholds": "not_applicable",
-    "multipart_graph": "unsupported_cut",
+    "multipart_graph": "supported",
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
@@ -15786,7 +15786,7 @@
    "merges": {
     "objects_per_part_by_shape": "not_applicable",
     "thresholds": "supported",
-    "multipart_graph": "not_applicable",
+    "multipart_graph": "supported",
     "lifecycle": "supported",
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
@@ -22858,9 +22858,18 @@
            "dim": "count"
           },
           "b": {
-           "kind": "const",
-           "value": 2,
-           "dim": "1"
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 2,
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "multipart_upload",
+            "dim": "count"
+           },
+           "dim": "count"
           },
           "dim": "count"
          },
@@ -22980,6 +22989,219 @@
        },
        "dim": "count"
       }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CreateMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "insert_rate",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "parts_per_insert",
+           "dim": "1"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_upload",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_blob_uploads_per_part",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_hash_hit_fraction",
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "multipart_upload",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_parts",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "insert_rate",
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "parts_per_insert",
+           "dim": "1"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_upload",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
      }
     ],
     "allocation": null,
@@ -22994,11 +23216,6 @@
       "kind": "input",
       "id": "cas_hash_hit_fraction",
       "dim": "1"
-     },
-     {
-      "kind": "const",
-      "dim": "enum:note",
-      "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
      }
     ]
    },
@@ -23079,9 +23296,18 @@
             "dim": "count"
            },
            "b": {
-            "kind": "const",
-            "value": 2,
-            "dim": "1"
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 2,
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "multipart_upload",
+             "dim": "count"
+            },
+            "dim": "count"
            },
            "dim": "count"
           },
@@ -23282,6 +23508,276 @@
        },
        "dim": "count"
       }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CreateMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "div",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "coef",
+            "id": "merge_effective_fan_in",
+            "dim": "1"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "1/s",
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_merge_result_blob_uploads",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_upload",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "UploadPart",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "div",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "insert_rate",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "parts_per_insert",
+             "dim": "1"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "coef",
+             "id": "merge_effective_fan_in",
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "1/s",
+           "on_zero": "unavailable"
+          },
+          "b": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_merge_result_blob_uploads",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "sub",
+            "a": {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_hash_hit_fraction",
+             "dim": "1"
+            },
+            "dim": "1"
+           },
+           "dim": "count"
+          },
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "input",
+          "id": "multipart_upload",
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_parts",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "CompleteMultipartUpload",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "div",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "coef",
+            "id": "merge_effective_fan_in",
+            "dim": "1"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "1/s",
+          "on_zero": "unavailable"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_merge_result_blob_uploads",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "sub",
+           "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_hash_hit_fraction",
+            "dim": "1"
+           },
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "input",
+         "id": "multipart_upload",
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
      }
     ],
     "allocation": null,
@@ -23296,11 +23792,6 @@
       "kind": "input",
       "id": "cas_merge_result_blob_uploads",
       "dim": "count"
-     },
-     {
-      "kind": "const",
-      "dim": "enum:note",
-      "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
      }
     ]
    },
@@ -27661,13 +28152,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "dim": "enum:note",
-      "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
-     }
-    ],
+    "notes": [],
     "excluded": [
      {
       "kind": "category",
