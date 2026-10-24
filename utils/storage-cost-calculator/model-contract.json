@@ -1,8 +1,8 @@
 {
  "schema": "contract/1",
- "version": "41a77f922bb1fec7",
+ "version": "f1e28441d109c4b8",
  "manifest": {
-  "code_sha256": "e29c1bfa4ce2c0212b98ba35c9636270512297d1c486b4116cc11b07c00a1903",
+  "code_sha256": "57709ee82f52f63de0b252a86b90d3353a0693ea4abbfab80fd4d7402bdae652",
   "code_files": {
    "billing.js": "190a45779f3bed307410d6ffc0998593bff5c193d3090cd54caf15757d4be0fc",
    "contract.js": "ab36253ad853095547580b9c4f0918b535630b1158d58a3822102295f39eff82",
@@ -11,10 +11,10 @@
    "presets.js": "2b389a93cc7e34340c64e6c45dc19093472e79697cd748ab6bced2952df2c325",
    "ui.js": "6ef4af7239c8cea574c3387de2c2e57a170b7c78e3923562fdfd9cc921e2987c",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
-   "viewmodel.js": "23ea3fb2148c0ee7e1dd73f9deed90cee2d2e778118ec1c8614ed4547c7ef37f"
+   "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "41a77f922bb1fec7",
+  "contract_version": "f1e28441d109c4b8",
   "registry_version": "0.3.0",
   "registry_sha256": "340db1dfa01aa209bbdb768fa3973d758f843fe8886a9bdccb8abe762549137c",
   "coverage_version": "0.2.0",
@@ -58,9 +58,9 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "3815a2d7ef8c4c5a0d91bc12fe53fb501622726a205cee91703ec3cb1376f5c5"
+  "breakeven_sha256": "de05ae581292f48da604511fdd870201e5a81b0084ee356ea1dcc5ec74fdad5a"
  },
- "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 10 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 9 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",

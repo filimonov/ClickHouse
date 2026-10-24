@@ -482,19 +482,24 @@
         else notes.push({ kind: n.kind, variant: v, text: `${variantLabel(v)}: ${n.text}`, details: n.notes || null });
       }
     }
-    // Several coefficients often share one parameter and range: one note per (param, range) names them all.
-    const byDomain = new Map();
+    // One note per parameter: coefficients may bound it with different ranges, so the note lists each violated owner with its range.
+    const byParam = new Map();
     for (const d of presets().validityDomains(contract)) {
-      const key = `${d.param}|${d.range[0]}|${d.range[1]}`;
-      if (!byDomain.has(key)) byDomain.set(key, { param: d.param, range: d.range, owners: [] });
-      byDomain.get(key).owners.push(d.owner);
+      if (!byParam.has(d.param)) byParam.set(d.param, []);
+      byParam.get(d.param).push(d);
     }
-    for (const d of byDomain.values()) {
-      const x = fields[d.param] ? fields[d.param].value : undefined;
-      if (typeof x === 'number' && (x < d.range[0] || x > d.range[1])) {
-        notes.push({ kind: 'out_of_range', param: d.param, range: d.range, owners: d.owners,
-          text: `${d.param} = ${fmtQuantity(x)} is outside the measured range [${fmtQuantity(d.range[0])}, ${fmtQuantity(d.range[1])}] of ${d.owners.join(', ')}; dependent numbers are ${EXTRAPOLATED}` });
-      }
+    for (const [param, domains] of byParam) {
+      const x = fields[param] ? fields[param].value : undefined;
+      if (typeof x !== 'number') continue;
+      const hit = domains.filter((d) => x < d.range[0] || x > d.range[1]);
+      if (!hit.length) continue;
+      const fmtRange = (r) => `[${fmtQuantity(r[0])}, ${fmtQuantity(r[1])}]`;
+      const same = hit.every((d) => d.range[0] === hit[0].range[0] && d.range[1] === hit[0].range[1]);
+      const where = same
+        ? `${fmtRange(hit[0].range)} of ${hit.map((d) => d.owner).join(', ')}`
+        : hit.map((d) => `${d.owner} ${fmtRange(d.range)}`).join(', ');
+      notes.push({ kind: 'out_of_range', param, range: same ? hit[0].range : null, ranges: hit.map((d) => ({ owner: d.owner, range: d.range })), owners: hit.map((d) => d.owner),
+        text: `${param} = ${fmtQuantity(x)} is outside the measured range ${same ? '' : 'of '}${where}; dependent numbers are ${EXTRAPOLATED}` });
     }
     return notes;
   }

@@ -373,6 +373,14 @@ function predictedAttempts(fx) {
   return { groups, problems, excluded };
 }
 
+// Zero-tolerance comparisons still allow 1e-9 relative: the model sums JS doubles over contract nodes
+// (11.999999999999998 for 12), while measured counts are integers.
+const EXACT_REL_SLACK = 1e-9;
+function toleranceSlack(predicted, tolerance, op) {
+  const slack = ((tolerance.abs || {})[op] || 0) + ((tolerance.rel || {})[op] || 0) * Math.abs(predicted);
+  return slack || EXACT_REL_SLACK * Math.abs(predicted);
+}
+
 function compareFixture(fx) {
   const { groups, problems, excluded } = predictedAttempts(fx);
   const measured = new Map(fx.measured_rows.map((r) => [`${r.caller}|${r.op_kind}`, r.quantity]));
@@ -381,7 +389,7 @@ function compareFixture(fx) {
     const [caller, op] = k.split('|');
     const callers = caller === '*' ? fx.measured_rows.filter((r) => r.op_kind === op && !explicit(op).has(r.caller)).map((r) => r.caller) : [caller];
     const got = callers.reduce((s, c) => s + (measured.get(`${c}|${op}`) || 0), 0);
-    const slack = ((fx.tolerance.abs || {})[op] || 0) + ((fx.tolerance.rel || {})[op] || 0) * Math.abs(predicted);
+    const slack = toleranceSlack(predicted, fx.tolerance, op);
     if (Math.abs(got - predicted) > slack) problems.push(`${caller} ${op}: measured ${got}, model ${predicted}` + (slack ? ` within ${slack}` : ' exactly'));
   }
   for (const r of fx.measured_rows) {
@@ -392,6 +400,13 @@ function compareFixture(fx) {
   }
   return problems;
 }
+
+test('test_exact_comparison_allows_float_residue_only', () => {
+  const slack = toleranceSlack(12, {}, 'GET');
+  assert.ok(Math.abs(11.999999999999998 - 12) <= slack);
+  assert.ok(Math.abs(11.9 - 12) > slack);
+  assert.equal(toleranceSlack(12, { abs: { GET: 2 } }, 'GET'), 2);
+});
 
 test('test_measured_fixtures_within_tolerance', (t) => {
   const files = fs.existsSync(MEASURED) ? fs.readdirSync(MEASURED).filter((f) => f.endsWith('.json')).sort() : [];

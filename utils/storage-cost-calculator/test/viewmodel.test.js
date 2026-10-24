@@ -294,19 +294,29 @@ test('test_fmt_money_thousands_and_currency', () => {
 });
 
 test('test_out_of_range_note_once_per_param', () => {
-  // insert_rows bounds three lifecycle coefficients with the same range: one note names all three.
+  // insert_rows is bounded by many coefficients with different ranges: one note per param names each violated owner with its range.
   const live = contract.load(LIVE_JSON);
   const s = presets.SCENARIOS.logs;
-  const r0 = pipeline.resolveInputs(live, Object.assign({}, s.values, { insert_rows: 1000000 }), s.locks, {});
   const preset = presets.resolvePrice(live, 'aws-us-east-1');
-  const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
-  const notes = vm.notes.filter((n) => n.kind === 'out_of_range' && n.param === 'insert_rows');
-  assert.equal(notes.length, 1, JSON.stringify(notes));
-  const owners = presets.validityDomains(live).filter((d) => d.param === 'insert_rows').map((d) => d.owner);
-  assert.ok(owners.length >= 3);
-  assert.deepEqual(notes[0].owners, owners);
-  assert.equal(notes[0].text, `insert_rows = 1,000,000 is outside the measured range [1,000, 100,000] of ${owners.join(', ')}; dependent numbers are extrapolated`);
-  assert.equal(vm.notes.filter((n) => n.kind === 'out_of_range').length, 1);
+  const notesFor = (rows) => {
+    const r0 = pipeline.resolveInputs(live, Object.assign({}, s.values, { insert_rows: rows }), s.locks, {});
+    const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
+    return vm.notes.filter((n) => n.kind === 'out_of_range');
+  };
+  const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows');
+  const fmt = (n) => n.toLocaleString('en-US');
+  const range = (d) => `[${fmt(d.range[0])}, ${fmt(d.range[1])}]`;
+  // 10,000 is below 20,000-400,000 and 100,000-400,000 only: two owners with two different ranges, one note.
+  const low = notesFor(10000);
+  assert.equal(low.length, 1, JSON.stringify(low));
+  const hit = domains.filter((d) => 10000 < d.range[0] || 10000 > d.range[1]);
+  assert.ok(new Set(hit.map((d) => d.range.join())).size >= 2);
+  assert.deepEqual(low[0].owners, hit.map((d) => d.owner));
+  assert.equal(low[0].text, `insert_rows = 10,000 is outside the measured range of ${hit.map((d) => `${d.owner} ${range(d)}`).join(', ')}; dependent numbers are extrapolated`);
+  // Outside every range: still one note, one shared-range-free list naming all owners.
+  const all = notesFor(10000000);
+  assert.equal(all.length, 1);
+  assert.deepEqual(all[0].owners, domains.map((d) => d.owner));
 });
 
 test('test_field_display_values_ranges_and_steps', () => {
