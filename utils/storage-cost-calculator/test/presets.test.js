@@ -52,7 +52,7 @@ test('test_structure_only_prices_set_prices_missing', () => {
       assert.deepEqual(card.bar_segments, []);
     }
     const s3 = vm.table.rows.find((r) => r.operation === 'storage').cells.find((c) => c.variant === 's3');
-    assert.match(s3.text, /stored: 1,000 GiB/);
+    assert.match(s3.text, /Stored data 1,000 GiB/);
     assert.equal(vm.chart, null);
     assert.deepEqual(vm.drill.stages[3].lines, []);
     assert.match(vm.drill.stages[3].note, /provides no values/);

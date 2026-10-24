@@ -28,7 +28,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; overflow-x: hidden; }
+/* clip, not hidden: hidden makes body a scroll container and the sticky inputs panel stops sticking. */
+html, body { margin: 0; overflow-x: clip; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 0 24px 48px; }
 h1, h2, h3, h4 { margin: 0 0 8px; line-height: 1.25; }
 h1 { font-size: 22px; }
@@ -130,7 +131,10 @@ button, input, select { font: inherit; color: inherit; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 thead th { font-size: 13px; color: var(--mute); font-weight: 600; }
-.breakdown td { min-width: 7em; }
+/* Long quantity texts wrap; the workload column stays in view while the table scrolls sideways. */
+.breakdown td { min-width: 9em; white-space: normal; overflow-wrap: anywhere; }
+.breakdown th[scope="row"], .breakdown thead th:first-child { position: sticky; left: 0; background: var(--card); z-index: 1; }
+.breakdown th[scope="row"] { box-shadow: 1px 0 0 var(--line); }
 .cell-btn { border: 1px solid transparent; background: none; padding: 2px 6px; margin: -2px -6px; border-radius: 6px; cursor: pointer; text-align: left; }
 .cell-btn:hover { border-color: var(--accent); background: var(--soft); }
 .cell-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: var(--accent); }
@@ -156,7 +160,8 @@ thead th { font-size: 13px; color: var(--mute); font-weight: 600; }
 
 /* Chart */
 .chart-svg { width: 100%; height: auto; display: block; margin-top: 8px; }
-.chart-svg .axis { stroke: var(--line); }
+.chart-svg .axis { stroke: var(--mute); }
+.chart-svg .grid { stroke: var(--line); stroke-dasharray: 3 3; }
 .chart-svg .tick, .chart-svg .axis-label { fill: var(--mute); font-size: 12px; }
 .chart-svg .line { fill: none; stroke-width: 2; }
 .chart-svg .pt { stroke-width: 2; }
@@ -182,9 +187,30 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
 }
 @media (max-width: 900px) {
   body { padding: 0 16px 32px; }
-  .layout { grid-template-columns: minmax(0, 1fr); }
-  .panel-inputs { position: static; max-height: none; overflow: visible; padding-right: 0; }
+  /* One column, money first: the panels dissolve so the cards can be ordered before the inputs. */
+  .layout { display: flex; flex-direction: column; gap: 20px; }
+  .panel-inputs, .panel-results { display: contents; }
+  #cards { order: -2; }
+  #presets { order: -1; }
+  #presets .panel-block, #inputs .panel-block { margin-bottom: 0; }
+  #inputs .block { margin-bottom: 8px; }
   .top { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  /* The breakdown stacks: one block per workload type, each cell labelled with its column. */
+  .breakdown thead { display: none; }
+  .breakdown, .breakdown tbody, .breakdown tr, .breakdown th, .breakdown td { display: block; width: 100%; }
+  .breakdown tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  .breakdown th[scope="row"] { border: 0; padding: 4px 0; }
+  .breakdown td { border: 0; padding: 2px 0; display: flex; justify-content: space-between; gap: 12px; min-width: 0; white-space: normal; }
+  .breakdown td::before { content: attr(data-label); color: var(--mute); flex: 0 0 auto; }
+  .breakdown td > .cell-btn { margin: 0; text-align: right; }
+  .breakdown th[scope="row"] { position: static; box-shadow: none; }
+  /* The SVG scales to about half its 640-unit width here: larger units keep the ticks readable. */
+  .chart-svg .tick, .chart-svg .axis-label { font-size: 22px; }
+  /* Every other x label: nine ladder labels do not fit side by side at this size. */
+  .chart-svg .tick-odd { display: none; }
+  .chart-svg .pt { r: 7; }
 }
 @media (max-width: 520px) {
   .cards { grid-template-columns: minmax(0, 1fr); }

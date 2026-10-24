@@ -21,6 +21,11 @@
     return value * PER_DAY[unit];
   }
 
+  // The inverse of normaliseRate: a per-day rate shown per `unit`.
+  function denormaliseRate(perDay, unit) {
+    return perDay / normaliseRate(1, unit);
+  }
+
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
   const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -522,6 +527,6 @@
     return { input: inputId, points, breakEven };
   }
 
-  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, lockMember, DAYS_PER_MONTH, run, sweep });
+  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

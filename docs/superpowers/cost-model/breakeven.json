@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "1e443600bf11eb3a",
+ "contract_version": "d5c179abe16d03df",
  "price_preset": "aws-us-east-1",
  "ladders": {
   "data_bytes": [

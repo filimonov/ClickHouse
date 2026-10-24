@@ -15,16 +15,8 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// Geometric ladders, so a crossing is bracketed at any scale. Each is `start * ratio^k`.
-//  data_bytes  64 GiB x 4^k, k = 0..8       64 GiB .. 4 PiB
-//  ingest_rate 1 GiB/day x 4^k, k = 0..7    1 .. 16,384 GiB/day
-//  replicas    1 x 2^k, k = 0..3            1, 2, 4, 8 (8 lies outside the measured replicas validity [1, 6])
-const geometric = (start, ratio, n) => Array.from({ length: n }, (_, k) => start * ratio ** k);
-const LADDERS = {
-  data_bytes: geometric(64, 4, 9),
-  ingest_rate: geometric(1, 4, 8),
-  replicas: geometric(1, 2, 4),
-};
+// The page's chart sweeps the same ladders (presets.js), so its break-even intervals match this document.
+const { LADDERS } = require('../presets.js');
 const PRICE_PRESET = 'aws-us-east-1';
 
 function uniq(list) {

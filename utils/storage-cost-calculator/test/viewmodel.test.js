@@ -50,7 +50,7 @@ test('test_card_text_for_each_state', () => {
     ['unsupported_cut', 'cas', { mutations_per_month: 5 }, /cut for lifecycle/],
   ];
   const unavailable = load((x) => { for (const op of x.operations) for (const f of x.families) x.applicability.cas[op][f] = 'not_applicable'; });
-  const all = [...cases.map(([st, v, raw, re]) => [st, v, view(raw).vm, re]), ['unavailable', 'cas', view({}, { contract: unavailable }).vm, /no operation has a supported family/]];
+  const all = [...cases.map(([st, v, raw, re]) => [st, v, view(raw).vm, re]), ['unavailable', 'cas', view({}, { contract: unavailable }).vm, /^No measured model for this column yet$/]];
   for (const [state, v, vm, re] of all) {
     const k = card(vm, v);
     assert.equal(k.state, state, v);
@@ -66,7 +66,9 @@ test('test_card_text_for_each_state', () => {
       assert.equal(c.clickable, false);
       assert.equal(/\$/.test(c.text), false, `${state}: no money in ${row.operation}`);
     }
-    assert.ok(vm.notes.some((n) => n.kind === state && n.variant === v && re.test(n.text)), `${state} note`);
+    // The card says why; the notes do not repeat it.
+    assert.equal(vm.notes.some((n) => n.kind === state && n.variant === v), false, `${state} note repeats the card`);
+    assert.equal(/^[a-z0-9]+\.[a-z_]+: /.test(k.reason), false, k.reason);
   }
   assert.equal(vmod.STATE_TEXT.backlog_grows, 'backlog grows; steady-state monthly cost unavailable');
   assert.equal(vmod.STATE_TEXT.not_supported, 'not supported for this workload');
@@ -76,10 +78,15 @@ test('test_card_text_for_each_state', () => {
   assert.ok(card(cut, 'cas').delta_texts.includes('vs EBS: not comparable (EBS unsupported)'));
   // An extrapolated total keeps its number and says "extrapolated" on the card, its deltas and its cells.
   const ex = view({ inserts_per_month: 60000 }).vm;
-  assert.equal(card(ex, 's3').state_text, 'comparable (extrapolated)');
+  // The flag is carried by `extrapolated` (the page's badge), not baked into the texts.
+  assert.equal(card(ex, 's3').state_text, 'comparable');
+  assert.equal(card(ex, 's3').extrapolated, true);
   assert.ok(card(ex, 's3').total_text.startsWith('$'));
-  assert.ok(card(ex, 'cas').delta_texts.find((t) => t.startsWith('vs S3')).endsWith('(extrapolated)'));
-  assert.match(cell(ex, 'inserts', 's3').text, /^\$[\d,.]+ \(extrapolated\)$/);
+  const vsS3 = card(ex, 'cas').deltas.find((d) => d.text.startsWith('vs S3'));
+  assert.match(vsS3.text, /^vs S3: [−+]\$[\d,.]+$/);
+  assert.equal(vsS3.extrapolated, true, 'a delta against an extrapolated reference is flagged');
+  assert.match(cell(ex, 'inserts', 's3').text, /^\$[\d,.]+$/);
+  assert.equal(cell(ex, 'inserts', 's3').extrapolated, true);
   assert.ok(ex.notes.some((n) => n.kind === 'out_of_range' && /inserts_per_month = 60,000 is outside the measured range \[0, 50,000\]/.test(n.text)));
   // A state the view model does not know is an error, not a default text.
   const { res } = view();
@@ -297,4 +304,74 @@ test('test_out_of_range_note_once_per_param', () => {
   assert.deepEqual(notes[0].owners, owners);
   assert.equal(notes[0].text, `insert_rows = 1,000,000 is outside the measured range [1,000, 100,000] of ${owners.join(', ')}; dependent numbers are extrapolated`);
   assert.equal(vm.notes.filter((n) => n.kind === 'out_of_range').length, 1);
+});
+
+test('test_field_display_values_ranges_and_steps', () => {
+  const live = contract.load(LIVE_JSON);
+  const s = presets.SCENARIOS.logs;
+  const r0 = pipeline.resolveInputs(live, s.values, s.locks, {});
+  const aws = presets.resolvePrice(live, 'aws-us-east-1');
+  const build = (units) => vmod.build(pipeline.run(live, r0.inputs, aws, {}), live, r0.fields, r0.lockOrder, { pricePreset: aws, units });
+  const f = (vm, id) => vm.inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === id);
+  const day = build(undefined);
+  const hour = build('hour');
+  // Labels come from the registry, never the id.
+  assert.equal(f(day, 'data_bytes').label, 'Data size');
+  // A rate is shown in the chosen unit, rounded; the exact per-day value stays in `value`.
+  assert.equal(f(day, 'ingest_rate').display_value, 500);
+  assert.equal(f(day, 'ingest_rate').display_unit, 'GiB/day');
+  assert.equal(f(hour, 'ingest_rate').display_value, 20.8333);
+  assert.equal(f(hour, 'ingest_rate').display_unit, 'GiB/hour');
+  assert.equal(f(hour, 'ingest_rate').value, 500);
+  // Counts step by one; a one-value range is fixed.
+  assert.equal(f(day, 'replicas').step, 1);
+  assert.equal(f(day, 'replicas').fixed, false);
+  assert.equal(f(day, 'replicas').range_text, 'measured for 1 to 6');
+  assert.equal(f(day, 'shards').fixed, true);
+  assert.equal(f(day, 'data_bytes').step, 'any');
+  const fan = f(day, 'merge_effective_fan_in');
+  assert.match(fan.range_text, /measured for .*1,000 to 100,000/);
+  // A row without a label is reported, and its field has no label instead of the id.
+  const { vm } = view({}, { contract: load((x) => { delete x.registry[0].label; }) });
+  assert.equal(vm.inputs.blocks[0].fields.find((x) => x.id === 'data_bytes').label, null);
+  assert.match(vm.problems.join('\n'), /registry data_bytes has no label/);
+});
+
+test('test_chart_y_ticks_are_round_money', () => {
+  const { vm } = view({}, { run: { sweep: { inputId: 'data_bytes', values: [250, 1000, 8000] } }, ui: { sweepInput: 'data_bytes' } });
+  const t = vm.chart.y_ticks;
+  assert.ok(t.length >= 3 && t.length <= 6, JSON.stringify(t));
+  assert.equal(t[0].value, 0);
+  const top = Math.max(...vm.chart.points.filter((p) => p.y !== null).map((p) => p.y));
+  assert.ok(t[t.length - 1].value >= top && t[t.length - 2].value < top);
+  for (const x of t) assert.match(x.text, /^\$[\d,]+$/, 'whole-dollar ticks');
+  assert.deepEqual(vm.chart.x_ticks.map((x) => x.text), ['250', '1,000', '8,000']);
+});
+
+test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
+  assert.equal(vmod.plainReason('ebs: no operation has a supported family in this contract'), 'No measured model for this column yet');
+  assert.equal(vmod.plainReason('price preset gcs has no prices (structure only)'), 'This price list has no prices yet; quantities are shown without money');
+  assert.equal(vmod.plainReason('s3plain.replacement: cannot replace a replica; s3plain.storage: cannot replace a replica'), 'cannot replace a replica');
+  const gcs = presets.resolvePrice(C, 'gcs');
+  const { vm } = view({}, { preset: gcs });
+  assert.equal(vm.page_reason, 'This price list has no prices yet; quantities are shown without money');
+  assert.equal(vm.notes.some((n) => n.kind === 'prices_missing'), false, 'the banner says it once');
+  assert.equal(cell(vm, 'storage', 's3').text, 'Stored data 1,000 GiB; Replica transfer 1,217 GiB');
+  assert.equal(cell(vm, 'storage', 'ebs').text, 'Volume capacity 1,000 GiB; IOPS 3,000; Throughput 125 MiB/s');
+  assert.equal(cell(vm, 'inserts', 's3').text, 'PUT requests 5,000; Stored data 10 GiB');
+  // Derivations read with registry labels.
+  const live = contract.load(LIVE_JSON);
+  const r0 = pipeline.resolveInputs(live, presets.SCENARIOS.logs.values, presets.SCENARIOS.logs.locks, {});
+  const aws = presets.resolvePrice(live, 'aws-us-east-1');
+  const lv = vmod.build(pipeline.run(live, r0.inputs, aws, {}), live, r0.fields, r0.lockOrder, { pricePreset: aws, units: 'hour' });
+  const f = (id) => lv.inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === id);
+  assert.equal(f('data_bytes').derived_text, 'Derived from ingest rate × retention');
+  assert.equal(lv.cards[0].reason, 'No measured model for this column yet');
+  // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
+  assert.deepEqual(f('ingest_rate').slider, { min: 0.0416667, max: 682.667 });
+  assert.deepEqual(f('replicas').slider, { min: 1, max: 6 });
+  assert.equal(f('shards').slider, null);
+  // Drill composition and card bars carry words, not rule ids.
+  const d = view({}, { ui: { openCell: { variant: 'cas', operation: 'storage' } } }).vm.drill;
+  assert.deepEqual(d.composition.map((x) => x.label), ['Stored data']);
 });

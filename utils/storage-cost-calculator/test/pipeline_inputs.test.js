@@ -203,3 +203,12 @@ test('test_manual_provisioning_inputs_reach_allocator', () => {
   assert.ok(bad.problems.some((p) => /volumes_per_replica.*many/.test(p)));
   assert.ok(pipeline.resolveInputs(c, { volumes_per_replica: 1.5 }, [], {}).problems.some((p) => /volumes_per_replica.*1\.5/.test(p)));
 });
+
+test('test_denormalise_rate_inverts_normalise_rate', () => {
+  for (const unit of ['second', 'minute', 'hour', 'day', 'month']) {
+    const perDay = pipeline.normaliseRate(3, unit);
+    assert.ok(Math.abs(pipeline.denormaliseRate(perDay, unit) - 3) < 1e-12, unit);
+  }
+  assert.equal(pipeline.denormaliseRate(48, 'hour'), 2);
+  assert.throws(() => pipeline.denormaliseRate(1, 'week'), /unknown rate unit week/);
+});

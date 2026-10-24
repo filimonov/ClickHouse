@@ -7,6 +7,7 @@
   const SCC = root.SCC || (root.SCC = {});
   const model = () => root.SCC.model || require('./model.js');
   const presets = () => root.SCC.presets || require('./presets.js');
+  const pipeline = () => root.SCC.pipeline || require('./pipeline.js');
 
   const VARIANT_LABELS = { ebs: 'EBS', s3: 'S3', s3plain: 'S3 plain rewritable', cas: 'CAS' };
   const OPERATION_LABELS = {
@@ -89,6 +90,28 @@
 
   const withExtrapolated = (text, ex) => (ex ? `${text} (${EXTRAPOLATED})` : text);
 
+  // Words for the reader. Pipeline reasons name ids and contract terms; the page says what they mean.
+  const UNIT_CLASS_LABELS = { bytes: 'Stored data', put: 'Write requests', get: 'Read requests', transfer: 'Transfer', block: 'Block storage' };
+  const OP_KIND_LABELS = {
+    stored: 'Stored data', capacity: 'Volume capacity', iops: 'IOPS', mibps: 'Throughput', interserver_from_target: 'Replica transfer',
+    PutObject: 'PUT requests', GetObject: 'GET requests', HeadObject: 'HEAD requests', DeleteObjects: 'Delete requests', ListObjectsV2: 'LIST requests',
+    CopyObject: 'COPY requests', CreateMultipartUpload: 'Multipart starts', UploadPart: 'Multipart parts', CompleteMultipartUpload: 'Multipart completions',
+  };
+  const UNIT_WORDS = { mibps: 'MiB/s', iops: 'IOPS', count: '', 1: '' };
+  const REASONS = [
+    [/no operation has a supported family in this contract/, 'No measured model for this column yet'],
+    [/^price preset \S+ has no prices \(structure only\)$/, 'This price list has no prices yet; quantities are shown without money'],
+  ];
+  // One reason per distinct cause; the "<variant>.<operation>: " prefix is dropped because the card names the column.
+  function plainReason(text) {
+    if (!text) return text;
+    const parts = String(text).split('; ').map((t) => {
+      const hit = REASONS.find(([re]) => re.test(t));
+      return hit ? hit[1] : t.replace(/^[a-z0-9_]+(\.[a-z0-9_]+)?: /, '');
+    });
+    return [...new Set(parts)].join('; ');
+  }
+
   // Unit class of a billing line, shared by card bars and composition bars (styles.css --cls-*).
   function unitClassOf(ruleId, preset) {
     if (ruleId === 'storage') return 'bytes';
@@ -144,7 +167,7 @@
       const cls = unitClassOf(l.rule_id, preset);
       by.set(cls, (by.get(cls) || 0) + l.money);
     }
-    return [...by].filter(([, m]) => m > 0).map(([cls, m]) => ({ class: cls, money: m, fraction: m / vr.total }));
+    return [...by].filter(([, m]) => m > 0).map(([cls, m]) => ({ class: cls, money: m, money_text: fmtMoney(m, preset.currency), label: UNIT_CLASS_LABELS[cls], fraction: m / vr.total }));
   }
 
   function deltaTexts(result, v, currency) {
@@ -153,8 +176,9 @@
       if (v === ref || !result.variants[ref]) continue;
       const d = (result.deltas[v] || {})[key];
       const name = `vs ${variantLabel(ref)}`;
-      if (d) out.push(withExtrapolated(`${name}: ${fmtMoney(d.value, currency, { sign: true })}`, d.extrapolated));
-      else out.push(`${name}: not comparable (${variantLabel(ref)} ${result.variants[ref].state === 'ok' ? 'has no total' : cellText(result.variants[ref].state)})`);
+      // The flag travels beside the text for the page's badge; a delta is extrapolated when either total is.
+      if (d) out.push({ text: `${name}: ${fmtMoney(d.value, currency, { sign: true })}`, extrapolated: !!d.extrapolated });
+      else out.push({ text: `${name}: not comparable (${variantLabel(ref)} ${result.variants[ref].state === 'ok' ? 'has no total' : cellText(result.variants[ref].state)})`, extrapolated: false });
     }
     return out;
   }
@@ -165,18 +189,20 @@
       if (!vr) throw new Error(`result has no variant ${v}`);
       const cheapest = result.cheapest === v;
       if (cheapest && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
-      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: vr.reason, extrapolated: !!vr.extrapolated, cheapest, total_text: null, state_text: null, delta_texts: [], bar_segments: [] };
+      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: plainReason(vr.reason), extrapolated: !!vr.extrapolated, cheapest, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
       if (vr.state !== 'ok') {
         card.state_text = stateText(vr.state);
         return card;
       }
       if (pageState === 'prices_missing') {
-        card.state_text = `prices not provided by ${presets().PRICES[preset.id] ? presets().PRICES[preset.id].label : preset.id}`;
+        // The page banner says why; the card only says what it shows.
+        card.state_text = 'quantities only, no prices';
         return card;
       }
       card.total_text = fmtMoney(vr.total, preset.currency);
-      card.state_text = withExtrapolated(cheapest ? 'cheapest' : 'comparable', vr.extrapolated);
-      card.delta_texts = deltaTexts(result, v, preset.currency);
+      card.state_text = cheapest ? 'cheapest' : 'comparable';
+      card.deltas = deltaTexts(result, v, preset.currency);
+      card.delta_texts = card.deltas.map((d) => d.text);
       card.bar_segments = barSegments(vr, preset);
       return card;
     });
@@ -187,8 +213,16 @@
     return cell ? cell.ledger_rows.map((r) => r.expr.dim) : [];
   }
 
-  function quantitySummary(cell, units) {
-    return cell.quantities.map((q, i) => (q.state === 'ok' ? `${q.op_kind}: ${fmtQuantity(q.quantity, units[i])}` : `${q.op_kind}: not available`)).join('; ');
+  // "Replica transfer 1,217 GiB; Throughput 125 MiB/s". An op kind without a label is reported and shown as is.
+  function quantitySummary(cell, units, problems) {
+    return cell.quantities.map((q, i) => {
+      if (!OP_KIND_LABELS[q.op_kind] && !problems.includes(`op kind ${q.op_kind} has no label in viewmodel.js`)) problems.push(`op kind ${q.op_kind} has no label in viewmodel.js`);
+      const label = OP_KIND_LABELS[q.op_kind] || q.op_kind;
+      const unit = Object.prototype.hasOwnProperty.call(UNIT_WORDS, units[i]) ? UNIT_WORDS[units[i]] : units[i];
+      // "IOPS 3,000", not "IOPS 3,000 IOPS": a unit that repeats the label is dropped.
+      const u = unit === label ? '' : unit;
+      return q.state === 'ok' ? `${label} ${fmtQuantity(q.quantity, u)}` : `${label} not available`;
+    }).join('; ');
   }
 
   function operationShown(contract, op) {
@@ -206,8 +240,8 @@
         const c = vr.cells[op];
         if (!c) return { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
-        const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op)) : fmtMoney(c.money, preset.currency);
-        return { variant: v, operation: op, text: withExtrapolated(text, c.extrapolated), state: 'ok', extrapolated: !!c.extrapolated, clickable: true };
+        const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: !!c.extrapolated, clickable: true };
       });
       rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells });
     }
@@ -303,7 +337,7 @@
         for (const n of vr.notes.filter((x) => x.kind === 'allocation' || x.kind === 'instance_class')) allocationLines.push({ kind: n.kind, text: n.text });
       }
       composition = cell.lines.map((l) => ({
-        rule_id: l.rule_id, op_kind: opKindsOf(l.rule_id, cell.rows, preset).join(', '), unit_class: unitClassOf(l.rule_id, preset), money: l.money,
+        rule_id: l.rule_id, op_kind: opKindsOf(l.rule_id, cell.rows, preset).join(', '), unit_class: unitClassOf(l.rule_id, preset), label: UNIT_CLASS_LABELS[unitClassOf(l.rule_id, preset)], money: l.money,
         money_text: fmtMoney(l.money, cur), fraction: cell.money > 0 ? l.money / cell.money : null,
       }));
     }
@@ -329,8 +363,29 @@
     return typeof value === 'number' ? fmtQuantity(value, q.unit) : String(value);
   }
 
+  // Rounded for an input box: six significant digits keep 1.66667 GiB/hour readable; the exact value stays in `value`.
+  // Whole numbers are exact and stay as they are.
+  const roundDisplay = (v) => (typeof v === 'number' && Number.isFinite(v) && !Number.isInteger(v) ? Number(v.toPrecision(6)) : v);
+
+  // "measured for 1 to 6" for an input's own range; a validity map names each parameter by its registry label.
+  function rangeText(f, byId) {
+    if (f.display_range) return `measured for ${fmtQuantity(f.display_range[0])} to ${fmtQuantity(f.display_range[1], f.display_unit)}`;
+    if (!f.validity) return null;
+    return Object.entries(f.validity).map(([p, r]) => {
+      const q = byId.get(p);
+      return `measured for ${q && q.label ? `${q.label.toLowerCase()} ` : ''}${fmtQuantity(r[0])} to ${fmtQuantity(r[1], q && q.unit)}`;
+    }).join('; ');
+  }
+
   function buildInputs(contract, fields, lockOrder, preset, ui, pageState, problems) {
     const R = model();
+    const byId = new Map(contract.registry.map((q) => [q.id, q]));
+    // Rates are stored per day; `ui.units` only changes how they are shown and entered.
+    const per = ui.units || 'day';
+    const shown = (q, v) => (typeof v === 'number' && typeof q.unit === 'string' && q.unit.endsWith('/day') ? pipeline().denormaliseRate(v, per) : v);
+    // "ingest_rate × retention_days" read as "ingest rate × retention": registry ids become their labels.
+    const ids = contract.registry.filter((q) => q.label).map((q) => q.id).sort((a, b) => b.length - a.length);
+    const worded = (text) => (text ? ids.reduce((t, id) => t.replace(new RegExp(`\\b${id}\\b`, 'g'), byId.get(id).label.toLowerCase()), text) : text);
     const coefById = new Map(contract.coefficients.map((c) => [c.id, c]));
     const blocks = new Map(BLOCKS.map(([id, label]) => [id, { block: id, label, advanced: id !== 'simple', fields: [], hints: [] }]));
     for (const q of contract.registry) {
@@ -341,7 +396,9 @@
         blocks.set(q.block, { block: q.block, label: q.block, advanced: true, fields: [], hints: [] });
       }
       const b = blocks.get(q.block);
-      const f = { id: q.id, label: q.label || q.id, unit: q.unit || null, kind: q.kind, value_type: q.value_type, enum: q.enum || null, evidence_kind: q.evidence ? q.evidence.kind : null,
+      // A missing label is a contract defect: the page shows no raw id in its place.
+      if (!q.label) problems.push(`registry ${q.id} has no label`);
+      const f = { id: q.id, label: q.label || null, unit: q.unit || null, kind: q.kind, value_type: q.value_type, enum: q.enum || null, evidence_kind: q.evidence ? q.evidence.kind : null,
         rate: typeof q.unit === 'string' && q.unit.endsWith('/day'), editable: q.kind === 'input', locked: null, derived: false, overridden: false, out_of_range: false, range: null, validity: null, rule_text: null, hint: q.hint || null, value: null };
       if (q.kind === 'input') {
         const fl = fields[q.id];
@@ -365,6 +422,19 @@
         }
       }
       if (!f.value_text) f.value_text = f.kind === 'derivation' ? `derived: ${f.rule_text}` : valueText(f.value, q);
+      f.display_unit = f.rate ? q.unit.replace(/\/day$/, `/${per}`) : f.unit;
+      f.display_value = roundDisplay(shown(q, f.value));
+      f.display_range = f.range ? f.range.map((x) => roundDisplay(shown(q, x))) : null;
+      if (f.rule_text) f.derived_text = `Derived from ${worded(f.rule_text)}`;
+      if (f.kind === 'derivation') f.value_text = f.derived_text;
+      // Slider bounds in the shown unit: the measured range, else the sweep ladder's span, else no slider.
+      const ladder = presets().LADDERS[q.id];
+      f.slider = f.display_range && f.display_range[1] > f.display_range[0] ? { min: f.display_range[0], max: f.display_range[1] }
+        : ladder ? { min: roundDisplay(shown(q, ladder[0])), max: roundDisplay(shown(q, ladder[ladder.length - 1])) } : null;
+      // Counts move in whole steps; a range of one value is fixed, not a control.
+      f.step = q.unit === 'count' ? 1 : 'any';
+      f.fixed = !!f.range && f.range[0] === f.range[1];
+      f.range_text = rangeText(f, byId);
       b.fields.push(f);
       if (q.hint && q.hint.sql) {
         const h = b.hints.find((x) => x.sql === q.hint.sql);
@@ -396,12 +466,13 @@
 
   function buildNotes(result, contract, fields, pageState) {
     const notes = [];
-    if (result.page_reason) notes.push({ kind: pageState, text: result.page_reason });
+    // prices_missing is said by the page banner and a column state by its card; neither repeats here.
+    if (result.page_reason && pageState === 'cannot_reproduce') notes.push({ kind: pageState, text: result.page_reason });
     for (const p of result.problems || []) notes.push({ kind: 'problem', text: p });
     if (pageState === 'cannot_reproduce') return notes;
     for (const v of contract.variants) {
       const vr = result.variants[v];
-      if (vr.state !== 'ok') { notes.push({ kind: vr.state, variant: v, text: `${variantLabel(v)}: ${stateText(vr.state)}: ${vr.reason}` }); continue; }
+      if (vr.state !== 'ok') continue;
       for (const n of vr.notes) {
         if (n.kind === 'cell') notes.push({ kind: 'cell', variant: v, operation: n.operation, text: `${variantLabel(v)} ${n.operation}: ${n.text} = ${typeof n.value === 'number' ? fmtQuantity(n.value) : 'not available'}` });
         else notes.push({ kind: n.kind, variant: v, text: `${variantLabel(v)}: ${n.text}`, details: n.notes || null });
@@ -424,6 +495,19 @@
     return notes;
   }
 
+  // Four or five round money ticks from zero to the first round value at or above the largest total.
+  function yTicks(points, currency) {
+    const top = Math.max(0, ...points.filter((p) => p.y !== null).map((p) => p.y));
+    if (!(top > 0)) return [];
+    const raw = top / 4;
+    const mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= raw);
+    const n = Math.ceil(top / step - 1e-9);
+    // Whole-currency ticks once the step is a unit or more: "$4,000", not "$4,000.00".
+    const whole = step >= 1 ? nf(`tick:${currency}`, { style: 'currency', currency, maximumFractionDigits: 0 }) : null;
+    return Array.from({ length: n + 1 }, (_, i) => ({ value: i * step, text: whole ? whole.format(i * step) : fmtMoney(i * step, currency) }));
+  }
+
   function buildChart(result, contract, preset, ui, problems) {
     const s = result.sweep;
     if (!s) return null;
@@ -443,7 +527,7 @@
       text: withExtrapolated(`${variantLabel(b.a)} and ${variantLabel(b.b)} cross between ${fmtQuantity(b.x_between[0], q.unit)} and ${fmtQuantity(b.x_between[1], q.unit)}`, b.extrapolated),
     }));
     return {
-      input: s.input, points, breakEven,
+      input: s.input, points, breakEven, y_ticks: yTicks(points, preset.currency), x_ticks: [...new Set(points.map((p) => p.x))].map((x) => ({ x, text: fmtQuantity(x) })),
       labels: { x: `${q.label || q.id}${q.unit ? ` (${q.unit})` : ''}`, y: `Monthly total (${preset.currency})`, series: contract.variants.map((v) => ({ variant: v, label: variantLabel(v) })) },
       extrapolated_points: points.filter((p) => p.extrapolated).map((p) => ({ variant: p.variant, x: p.x })),
     };
@@ -461,7 +545,7 @@
     if (pageState !== 'cannot_reproduce' && (!preset || typeof preset !== 'object')) throw new Error('viewmodel.build: ui.pricePreset (the preset object the result was priced with) is required');
     const problems = [];
     const vm = {
-      page_state: pageState, page_reason: result.page_reason || null, evidence_statement: result.evidence_statement,
+      page_state: pageState, page_reason: pageState === 'cannot_reproduce' ? result.page_reason || null : plainReason(result.page_reason) || null, evidence_statement: result.evidence_statement,
       currency: preset && !preset.structure_only ? preset.currency : null, theme: u.theme || null,
       cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, problems,
     };
@@ -476,6 +560,6 @@
     return vm;
   }
 
-  SCC.viewmodel = { build, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, plainReason, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

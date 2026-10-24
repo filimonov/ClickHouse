@@ -118,7 +118,6 @@
   const VARIANT_STATES = ['ok', 'not_supported', 'unavailable', 'backlog_grows', 'unsupported_cut'];
   const CELL_STATES = [...VARIANT_STATES, 'not_applicable'];
   const UNITS = [['second', 'per second'], ['minute', 'per minute'], ['hour', 'per hour'], ['day', 'per day'], ['month', 'per month']];
-  const CLASS_LABELS = { bytes: 'Stored data', put: 'Write requests', get: 'Read requests', transfer: 'Transfer', block: 'Block storage' };
   const DEFAULT_SCENARIO = 'logs';
   const DEFAULT_PRICE = 'aws-us-east-1';
   const THEME_KEY = 'scc-theme';
@@ -133,11 +132,6 @@
   const list = (items, cls) => (items.length ? `<ul${attr('class', cls)}>${items.join('')}</ul>` : '');
   const link = (ref) => (/^https?:\/\//.test(ref) ? `<a href="${esc(ref)}" rel="noopener" target="_blank">${esc(ref)}</a>` : esc(ref));
 
-  // Rates are stored per day; the unit selector only changes how they are shown and entered. The factor is the
-  // pipeline's own (normaliseRate), so a value entered per hour and normalised back reproduces the same total.
-  function rateIn(perDay, unit) {
-    return perDay / pipeline().normaliseRate(1, unit);
-  }
   const rateUnit = (unit, per) => unit.replace(/\/day$/, `/${per}`);
 
   // ---- left panel -------------------------------------------------------------------------------
@@ -156,12 +150,6 @@
       + `<label class="field-row"><span class="field-label">Prices</span><select data-action="price">${pr}</select></label></section>`;
   }
 
-  function rangeText(f) {
-    if (f.range) return `measured for ${f.range[0]} to ${f.range[1]}`;
-    if (f.validity) return Object.entries(f.validity).map(([p, r]) => `measured for ${p} ${r[0]} to ${r[1]}`).join('; ');
-    return '';
-  }
-
   function fieldTags(f) {
     const tags = [];
     if (f.derived && f.kind === 'input') tags.push(badge('derived'));
@@ -172,14 +160,6 @@
     return tags.join('');
   }
 
-  // Slider bounds are control geometry, not a displayed number: the measured range when there is one, otherwise
-  // a span around the current value.
-  function sliderBounds(f, v) {
-    if (f.range && f.range[1] > f.range[0]) return [f.range[0], f.range[1]];
-    const top = v > 0 ? v * 4 : 100;
-    return [0, top];
-  }
-
   function control(f, page, simple) {
     const busy = page.cannot_reproduce;
     if (f.kind === 'price') {
@@ -187,23 +167,22 @@
       // A rule the preset does not price (value null) starts empty; its value_text says so.
       const v = f.value === null ? '' : f.value;
       return `<span class="control"><input type="number" step="any" min="0" data-action="price-field" data-path="${esc(f.path)}" value="${esc(v)}"`
-        + `${f.value === null ? ` placeholder="${esc(f.value_text)}"` : ''} aria-label="${esc(f.label)}"><span class="unit">${esc(f.per)}</span></span>`;
+        + `${f.value === null ? ` placeholder="${esc(f.value_text)}"` : ''} aria-label="${esc(f.label || '')}"><span class="unit">${esc(f.per)}</span></span>`;
     }
-    if (!f.editable || busy) return `<span class="value">${esc(f.value_text)}</span>`;
+    if (!f.editable || busy || f.fixed) return `<span class="value">${esc(f.value_text)}</span>`;
     if (f.value_type === 'enum') {
       if (f.enum.includes('auto')) {
-        return `<input type="text" inputmode="numeric" data-action="input" data-id="${esc(f.id)}" value="${esc(f.value === null ? '' : f.value)}" aria-label="${esc(f.label)}" placeholder="auto or a number">`;
+        return `<input type="text" inputmode="numeric" data-action="input" data-id="${esc(f.id)}" value="${esc(f.value === null ? '' : f.value)}" aria-label="${esc(f.label || '')}" placeholder="auto or a number">`;
       }
       const opts = f.enum.map((e) => `<option value="${esc(e)}"${e === f.value ? ' selected' : ''}>${esc(e)}</option>`).join('');
-      return `<select data-action="input" data-id="${esc(f.id)}" aria-label="${esc(f.label)}">${opts}</select>`;
+      return `<select data-action="input" data-id="${esc(f.id)}" aria-label="${esc(f.label || '')}">${opts}</select>`;
     }
-    const v = f.value === null ? null : f.rate ? rateIn(f.value, page.units) : f.value;
-    const num = `<input type="number" step="any" data-action="input" data-id="${esc(f.id)}" value="${esc(v === null ? '' : v)}" aria-label="${esc(f.label)}">`;
+    const v = f.display_value === null || f.display_value === undefined ? null : f.display_value;
+    const num = `<input type="number" step="${esc(f.step)}" data-action="input" data-id="${esc(f.id)}" value="${esc(v === null ? '' : v)}" aria-label="${esc(f.label || '')}">`;
     const unit = f.rate ? `<select class="unit" data-action="units" aria-label="Rate unit">${UNITS.map(([u, l]) => `<option value="${u}"${u === page.units ? ' selected' : ''}>${esc(rateUnit(f.unit, u))}</option>`).join('')}</select>`
-      : f.unit && f.unit !== 'count' ? `<span class="unit">${esc(f.unit)}</span>` : '';
-    if (!simple || v === null) return `<span class="control">${num}${unit}</span>`;
-    const [lo, hi] = sliderBounds(f, v);
-    return `<input type="range" min="${esc(lo)}" max="${esc(hi)}" step="any" data-action="slider" data-id="${esc(f.id)}" value="${esc(v)}" aria-label="${esc(f.label)}">`
+      : f.display_unit && f.display_unit !== 'count' ? `<span class="unit">${esc(f.display_unit)}</span>` : '';
+    if (!simple || v === null || !f.slider) return `<span class="control">${num}${unit}</span>`;
+    return `<input type="range" min="${esc(f.slider.min)}" max="${esc(f.slider.max)}" step="${esc(f.step)}" data-action="slider" data-id="${esc(f.id)}" value="${esc(v)}" aria-label="${esc(f.label || '')}">`
       + `<span class="control">${num}${unit}</span>`;
   }
 
@@ -211,11 +190,11 @@
     const lock = f.locked === null || f.locked === undefined || page.cannot_reproduce ? ''
       : `<button type="button" class="btn btn-small" data-action="lock" data-id="${esc(f.id)}" aria-pressed="${f.locked}">${f.locked ? 'Locked' : 'Lock'}</button>`;
     const reset = f.overridden ? `<button type="button" class="btn btn-small" data-action="reset" data-id="${esc(f.id)}">Reset</button>` : '';
-    const derived = f.derived && f.rule_text ? `<p class="field-note">Derived: <code>${esc(f.rule_text)}</code></p>` : '';
-    const range = rangeText(f);
+    const derived = f.derived && f.derived_text && f.kind === 'input' ? `<p class="field-note">${esc(f.derived_text)}</p>` : '';
+    const range = f.range_text || '';
     const price = f.kind === 'price' ? `<p class="field-note">as of ${esc(f.as_of || 'n/a')}${f.source_url ? ` · ${link(f.source_url)}` : ''}</p>` : '';
     return `<div class="field${f.derived ? ' is-derived' : ''}${f.overridden ? ' is-overridden' : ''}" data-field="${esc(f.id)}">`
-      + `<div class="field-head"><span class="field-label">${esc(f.label)}</span>${fieldTags(f)}${lock}${reset}</div>`
+      + `<div class="field-head"><span class="field-label">${esc(f.label || '')}</span>${fieldTags(f)}${lock}${reset}</div>`
       + `<div class="field-control">${control(f, page, simple)}</div>${derived}`
       + `${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
   }
@@ -247,10 +226,10 @@
 
   // ---- right panel ------------------------------------------------------------------------------
 
-  function bar(segments, currency, cls) {
+  function bar(segments, cls) {
     if (!segments.length) return '';
-    const segs = segments.map((s) => `<span class="seg cls-${esc(s.class)}" style="flex-grow:${esc(s.fraction)}" title="${esc(`${CLASS_LABELS[s.class] || s.class}: ${viewmodel().fmtMoney(s.money, currency)}`)}"></span>`).join('');
-    const legend = segments.map((s) => `<li><span class="dot cls-${esc(s.class)}"></span>${esc(CLASS_LABELS[s.class] || s.class)} <span class="mute">${esc(viewmodel().fmtMoney(s.money, currency))}</span></li>`).join('');
+    const segs = segments.map((s) => `<span class="seg cls-${esc(s.class)}" style="flex-grow:${esc(s.fraction)}" title="${esc(`${s.label}: ${s.money_text}`)}"></span>`).join('');
+    const legend = segments.map((s) => `<li><span class="dot cls-${esc(s.class)}"></span>${esc(s.label)} <span class="mute">${esc(s.money_text)}</span></li>`).join('');
     return `<div class="${cls}" role="img" aria-label="Cost by kind">${segs}</div><ul class="legend">${legend}</ul>`;
   }
 
@@ -263,23 +242,25 @@
         + `<p class="card-state">${esc(c.state_text)}</p>${c.reason ? `<p class="card-reason">${esc(c.reason)}</p>` : ''}</article>`;
     }
     const total = c.total_text === null ? '' : `<p class="card-total" data-kind="money">${esc(c.total_text)}</p><p class="card-per">per month</p>`;
-    const deltas = list(c.delta_texts.map((t) => `<li>${esc(t)}</li>`), 'card-deltas');
+    const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}${extrapolatedBadge(d.extrapolated)}</li>`), 'card-deltas');
+    // With a total, "comparable" says nothing to the reader: the badges and deltas carry the comparison.
+    const stateLine = c.total_text === null ? `<p class="card-state">${esc(c.state_text)}</p>` : '';
     return `<article class="card${c.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(c.variant)}" data-state="ok">${head}${total}`
-      + `<p class="card-state">${esc(c.state_text)}</p>${deltas}${bar(c.bar_segments, vm.currency, 'bar')}</article>`;
+      + `${stateLine}${deltas}${bar(c.bar_segments, 'bar')}</article>`;
   }
 
   function renderCannotReproduce(vm) {
     const reason = vm.notes.find((n) => n.kind === 'cannot_reproduce');
     const items = vm.notes.filter((n) => n.kind === 'problem').map((n) => `<li>${esc(n.text)}</li>`);
     return '<section class="cannot-reproduce" role="alert"><h2>Cannot reproduce this link</h2>'
-      + `<p>${esc(reason ? reason.text : vm.page_reason)}</p>`
-      + '<p class="mute">The link was made with other model or price versions. Showing its numbers with this page would show different numbers, so none are shown.</p>'
-      + `${list(items, 'mismatches')}</section>`;
+      + `<p class="reason">${esc(reason ? reason.text : vm.page_reason)}</p>`
+      + '<p class="mute">No numbers are shown: this page would compute different ones.</p>'
+      + `${items.length ? '<h4>What differs</h4>' : ''}${list(items, 'mismatches')}</section>`;
   }
 
   function renderCards(vm) {
     if (vm.page_state === 'cannot_reproduce') return renderCannotReproduce(vm);
-    const banner = vm.page_state === 'prices_missing' ? `<p class="banner">${esc(vm.page_reason)}. Quantities are shown without money.</p>` : '';
+    const banner = vm.page_state === 'prices_missing' ? `<p class="banner">${esc(vm.page_reason)}.</p>` : '';
     return `${banner}<div class="cards">${vm.cards.map((c) => renderCard(c, vm)).join('')}</div>`;
   }
 
@@ -288,11 +269,14 @@
     const t = vm.table;
     if (!t.rows.length) return '<section class="section"><h2>Breakdown</h2><p class="mute">No workload type has a model yet, so there is nothing to break down.</p></section>';
     const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}${c.cheapest ? ` ${badge('cheapest', 'ok')}` : ''}</th>`).join('');
+    const colLabel = new Map(t.columns.map((c) => [c.variant, c.label]));
     const body = t.rows.map((r) => `<tr data-operation="${esc(r.operation)}"><th scope="row">${esc(r.label)}</th>${r.cells.map((c) => {
       known(CELL_STATES, c.state, 'cell state');
       const key = `${c.variant}.${c.operation}`;
-      if (!c.clickable) return `<td class="cell-off" data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
-      return `<td><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
+      // data-label names the column when narrow screens stack the cells under their row.
+      const lab = ` data-label="${esc(colLabel.get(c.variant))}"`;
+      if (!c.clickable) return `<td class="cell-off"${lab} data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
+      return `<td${lab}><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
         + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}</td>`;
     }).join('')}</tr>`).join('');
     return `<section class="section"><h2>Breakdown by workload type</h2><p class="mute">Select a cell to see how it is calculated.</p>`
@@ -301,15 +285,15 @@
 
   function stageLine(l) {
     const formula = l.formula ? `<div class="formula"><code>${esc(l.formula)}</code></div>` : '';
-    return `<li>${esc(l.text)}${extrapolatedBadge(l.extrapolated)}${formula}</li>`;
+    // Ledger texts already end in "(extrapolated)"; no badge repeats it.
+    return `<li>${esc(l.text)}${formula}</li>`;
   }
 
   function renderDrillPart(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
     const d = vm.drill;
     if (!d) return '';
-    const comp = d.composition.map((x) => `<li><span class="dot cls-${esc(x.unit_class)}"></span>${esc(CLASS_LABELS[x.unit_class] || x.unit_class)}`
-      + ` <span class="mute">${esc(x.rule_id)}${x.op_kind ? `, ${esc(x.op_kind)}` : ''}</span> <span class="money">${esc(x.money_text)}</span></li>`);
+    const comp = d.composition.map((x) => `<li><span class="dot cls-${esc(x.unit_class)}"></span>${esc(x.label)} <span class="money">${esc(x.money_text)}</span></li>`);
     const compBar = d.composition.filter((x) => x.fraction !== null && x.fraction > 0)
       .map((x) => `<span class="seg cls-${esc(x.unit_class)}" style="flex-grow:${esc(x.fraction)}"></span>`).join('');
     const stages = page.show_calc ? `<ol class="stages">${d.stages.map((s, i) => `<li class="stage" data-stage="${i + 1}"><h4>${esc(s.name)}</h4>`
@@ -337,14 +321,13 @@
   }
 
   // Inline SVG. Points are spaced by their order (the sweep values are geometric), heights are proportional to the
-  // largest total; both are drawing geometry. Axis labels are view-model values formatted by the view model.
-  function renderChartSvg(ch, currency) {
+  // top tick; both are drawing geometry. Tick values and texts come from the view model.
+  function renderChartSvg(ch) {
     const W = 640;
     const H = 260;
-    const pad = { l: 16, r: 16, t: 16, b: 40 };
+    const pad = { l: 120, r: 24, t: 16, b: 48 };
     const xs = [...new Set(ch.points.map((p) => p.x))];
-    const ys = ch.points.filter((p) => p.y !== null).map((p) => p.y);
-    const top = Math.max(...ys);
+    const top = ch.y_ticks.length ? ch.y_ticks[ch.y_ticks.length - 1].value : 0;
     const px = (x) => pad.l + (xs.length > 1 ? (xs.indexOf(x) * (W - pad.l - pad.r)) / (xs.length - 1) : (W - pad.l - pad.r) / 2);
     const py = (y) => H - pad.b - (top > 0 ? (y * (H - pad.t - pad.b)) / top : 0);
     const series = ch.labels.series.map((s) => {
@@ -359,10 +342,11 @@
       const dots = pts.filter((p) => p.y !== null).map((p) => `<circle class="pt v-${esc(s.variant)}${p.extrapolated ? ' is-extrapolated' : ''}" cx="${px(p.x)}" cy="${py(p.y)}" r="4"><title>${esc(p.label)}</title></circle>`).join('');
       return `<g data-variant="${esc(s.variant)}">${lines}${dots}</g>`;
     }).join('');
-    const ticks = xs.map((x) => `<text class="tick" x="${px(x)}" y="${H - pad.b + 18}" text-anchor="middle">${esc(viewmodel().fmtQuantity(x))}</text>`).join('');
+    const ticks = ch.x_ticks.map((t, i) => `<text class="tick tick-x${i % 2 ? ' tick-odd' : ''}" x="${px(t.x)}" y="${H - pad.b + 18}" text-anchor="middle">${esc(t.text)}</text>`).join('');
+    const grid = ch.y_ticks.map((t) => `<line class="grid" x1="${pad.l}" y1="${py(t.value)}" x2="${W - pad.r}" y2="${py(t.value)}"/>`
+      + `<text class="tick" x="${pad.l - 8}" y="${py(t.value) + 4}" text-anchor="end">${esc(t.text)}</text>`).join('');
     return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${ch.labels.y} against ${ch.labels.x}`)}">`
-      + `<line class="axis" x1="${pad.l}" y1="${H - pad.b}" x2="${W - pad.r}" y2="${H - pad.b}"/>`
-      + `<text class="tick" x="${pad.l}" y="${pad.t - 4}">${esc(viewmodel().fmtMoney(top, currency))}</text>${series}${ticks}`
+      + `${grid}<line class="axis" x1="${pad.l}" y1="${H - pad.b}" x2="${W - pad.r}" y2="${H - pad.b}"/>${series}${ticks}`
       + `<text class="axis-label" x="${W / 2}" y="${H - 4}" text-anchor="middle">${esc(ch.labels.x)}</text></svg>`;
   }
 
@@ -378,9 +362,10 @@
     else {
       const legend = ch.labels.series.map((s) => `<li><span class="dot v-${esc(s.variant)}"></span>${esc(s.label)}</li>`).join('');
       const ex = ch.extrapolated_points.length ? `<p class="field-note">${badge('extrapolated', 'warn')} Hollow points lie outside a measured range.</p>` : '';
-      const be = list(ch.breakEven.map((b) => `<li>${esc(b.text)}${extrapolatedBadge(b.extrapolated)}</li>`), 'break-even');
-      const pts = ch.points.map((p) => `<li>${esc(p.label)}${extrapolatedBadge(p.extrapolated)}</li>`).join('');
-      body = `${renderChartSvg(ch, vm.currency)}<ul class="legend">${legend}</ul>${ex}${be ? `<h4>Break-even</h4>${be}` : ''}`
+      // Point and crossing texts end in "(extrapolated)" when flagged: they double as SVG tooltips.
+      const be = list(ch.breakEven.map((b) => `<li>${esc(b.text)}</li>`), 'break-even');
+      const pts = ch.points.map((p) => `<li>${esc(p.label)}</li>`).join('');
+      body = `${renderChartSvg(ch)}<ul class="legend">${legend}</ul>${ex}${be ? `<h4>Break-even</h4>${be}` : ''}`
         + `<details class="hint"><summary>Chart values</summary><ul class="points">${pts}</ul></details>`;
     }
     return `<section class="section"><h2>How the totals move</h2>${pick}${body}</section>`;
@@ -422,7 +407,8 @@
     return { variant: key.slice(0, i), operation: key.slice(i + 1) };
   };
 
-  const isSweepable = (q) => q.kind === 'input' && q.value_type === 'number';
+  // Only inputs with a shared ladder are swept, so the chart agrees with the break-even document.
+  const isSweepable = (q) => q.kind === 'input' && q.value_type === 'number' && Object.prototype.hasOwnProperty.call(presetsLib().LADDERS, q.id);
 
   function sweepInputOf(contract, state) {
     if (state.sweepInput) return state.sweepInput;
@@ -430,26 +416,32 @@
     return q ? q.id : null;
   }
 
-  // The swept x values are model inputs the page picks, as a user would: the measured range in six even steps,
-  // otherwise multiples of the current value. The totals at each x come from the pipeline.
-  function sweepValues(field, current) {
-    const r = field && field.validity;
-    if (r && r[1] > r[0]) return [0, 1, 2, 3, 4, 5].map((i) => r[0] + ((r[1] - r[0]) * i) / 5);
-    if (typeof current === 'number' && current > 0) return [0.25, 0.5, 1, 2, 4, 8].map((k) => current * k);
-    return [1, 10, 100, 1000, 10000];
+  const isVersion = (field) => /(^|_)version$/.test(field || '');
+  const val = (v) => (v === null || v === undefined ? 'none' : String(v));
+  function fieldWord(field) {
+    if (isVersion(field)) return 'version';
+    if (/sha256$/.test(field)) return 'content digest';
+    if (field === 'code_missing') return 'missing code files';
+    if (/^code_files\./.test(field)) return field.slice('code_files.'.length);
+    return field;
   }
 
   function mismatchText(m) {
     if (m.artifact === 'url_format') return 'the link is not a calculator link';
-    const val = (v) => (v === null || v === undefined ? 'nothing' : String(v));
-    return `${m.artifact} ${m.field}: the link has ${val(m.url_value)}, this page has ${val(m.loaded_value)}`;
+    return `${m.artifact}: ${fieldWord(m.field)} ${val(m.url_value)} in the link, ${val(m.loaded_value)} here`;
   }
 
   // A Result that renders no number: the link names versions this page does not carry (spec §4.5).
   function cannotReproduceResult(contract, problem) {
     const missing = problem.missing || [];
-    const names = [...new Set(missing.filter((m) => m.artifact !== 'url_format').map((m) => (m.version ? `${m.artifact} version ${m.version}` : m.artifact)))];
-    const reason = problem.kind === 'cannot_reproduce' ? `cannot reproduce: ${names.join(', ')} not present` : `cannot reproduce: ${problem.reason}`;
+    // One sentence names the versions; the list below gives every differing entry once.
+    const versions = missing.filter((m) => isVersion(m.field));
+    let reason;
+    if (problem.kind !== 'cannot_reproduce') reason = `This is not a calculator link (${problem.reason}).`;
+    else if (versions.length) {
+      reason = `This link was built with ${versions.map((m) => `${m.artifact} ${val(m.url_value)}`).join(', ')}; `
+        + `this page has ${versions.map((m) => `${m.artifact} ${val(m.loaded_value)}`).join(', ')}.`;
+    } else reason = 'This link was built with a different version of this page.';
     return {
       page_state: 'cannot_reproduce', page_reason: reason, problems: missing.map(mismatchText), evidence_statement: contract.evidence_statement,
       manifest: contract.manifest, variants: {}, cheapest: null, deltas: {}, sweep: null,
@@ -486,12 +478,16 @@
     const r0 = pipeline().resolveInputs(contract, state.inputs, state.locks, state.overrides);
     const sweepId = sweepInputOf(contract, state);
     const opts = { lockOrder: r0.lockOrder };
-    if (sweepId) opts.sweep = { inputId: sweepId, values: sweepValues(r0.fields[sweepId], r0.inputs.get(sweepId)) };
+    if (sweepId) {
+      const ladder = presetsLib().LADDERS[sweepId];
+      if (!ladder) throw new Error(`ui: ${sweepId} has no sweep ladder in presets.js`);
+      opts.sweep = { inputId: sweepId, values: ladder.slice() };
+    }
     const res = pipeline().run(contract, r0.inputs, preset, opts);
     // Input problems are page notes; none is dropped.
     res.problems = [...(res.problems || []), ...r0.problems];
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
-      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null,
+      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units,
     });
     return { vm, page: chrome(contract, state, u, sweepId), fields: r0.fields };
   }
@@ -530,6 +526,8 @@
       case 'price': known(Object.keys(presetsLib().PRICES), action.value, 'price preset'); s.price_preset = action.value; break;
       case 'edit-prices': s.price_preset = 'custom'; break;
       case 'price-field': {
+        // An emptied box returns the field to the preset's own price.
+        if (String(action.value).trim() === '') { delete s.custom_prices[d.path]; break; }
         const v = Number(action.value);
         if (String(action.value).trim() === '' || !Number.isFinite(v) || v < 0) throw new Error(`price ${d.path}: enter a number of 0 or more, got ${JSON.stringify(action.value)}`);
         s.custom_prices[d.path] = v;

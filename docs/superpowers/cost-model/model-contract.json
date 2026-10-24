@@ -1,20 +1,20 @@
 {
  "schema": "contract/1",
- "version": "2aece3539cf0bd26",
+ "version": "d5c179abe16d03df",
  "manifest": {
-  "code_sha256": "e2bd5508f2ca072376f8de3e49c5762becf4187d2066c9b43508fb5fef4fe082",
+  "code_sha256": "8328c19a53c53918b954de552c0e91be94732217f160dfce302979a230ea9589",
   "code_files": {
    "billing.js": "6264020b8a3a25b7eb96d857344cfc85408082ce202b3a1d73f47fcd549d1a1c",
    "contract.js": "1fab9f01cefb29e12234670db214089a13331c94b6868c39d0a4909dd2d2ad0f",
    "model.js": "377b8e98df76c529ff445ac3a98e632834d15f6a5e3c8978be932138fa89598a",
-   "pipeline.js": "b7fd9a16b91c9f5cf6031b5cabe02db91ddce5dede9b542aa30c4ff982770b51",
-   "presets.js": "dba996e4e247ce48090a6115e4b420a7247abb2f04213c40858bf19e195d7fcf",
-   "ui.js": "4049ffc4f1675a9de92dce79e18515d86b6fb09d9ec5ec27d16378a40e749229",
+   "pipeline.js": "2ea980bdcc6dfe4595844995eebfa4ed2437a0ce80a98068247a8371f6f1dc54",
+   "presets.js": "44a9b224a5c1bc28b1f70eab36ca82b161299e533817366e6f866a19e0768e82",
+   "ui.js": "dd60ffe8d28022775c644944ebcc50fd561e2fde1e788043e1958495815356e7",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
-   "viewmodel.js": "ff54fdb075460b1558025c8156397e865a1754c3e4d717a6a6412b0e9a49a81f"
+   "viewmodel.js": "3160cb72c9300406a4758a4332bffc81913e272e2a8f32c2ca28bd16c1eadfe5"
   },
   "code_missing": [],
-  "contract_version": "2aece3539cf0bd26",
+  "contract_version": "d5c179abe16d03df",
   "registry_version": "0.2.0",
   "registry_sha256": "c175bfc5b3bbf3695a9983c5897a129634a685c313187043ef7bba0448e1cb6d",
   "coverage_version": "0.2.0",
@@ -37,7 +37,7 @@
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    }
   ],
-  "breakeven_sha256": null
+  "breakeven_sha256": "2377b43440c2c162e0d2c9e85589988dfbae1e2035c1c16780c338e333a78a22"
  },
  "evidence_statement": "Built from 2 report(s): 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0. 8 coefficient(s): 3 measured, 5 pinned to source. 6 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.2.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [

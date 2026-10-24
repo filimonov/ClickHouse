@@ -23,7 +23,8 @@
       values: {
         ingest_rate: 500, retention_days: 30, replicas: 2,
         insert_rows: 100000, insert_rate: 1, insert_bytes_uncompressed: 62914560, insert_clients: 4,
-        async_insert: '0', shape: 'wide', merge_size_ratio: 512,
+        // Ratio 256 merges ~5.9 MiB inserts into ~1.5 GiB parts.
+        async_insert: '0', shape: 'wide', merge_size_ratio: 256,
       },
       locks: ['ingest_rate', 'retention_days'],
     },
@@ -49,7 +50,8 @@
       values: {
         data_bytes: 10240, retention_days: 365, replicas: 2,
         insert_rows: 100000, insert_rate: 0.05, insert_bytes_uncompressed: 104857600, insert_clients: 1,
-        async_insert: '0', shape: 'wide', merge_size_ratio: 640,
+        // Ratio 400 merges ~6.6 MiB inserts into ~2.6 GiB parts.
+        async_insert: '0', shape: 'wide', merge_size_ratio: 400,
       },
       locks: ['data_bytes', 'retention_days'],
     },
@@ -62,7 +64,8 @@
       values: {
         data_bytes: 51200, retention_days: 730, replicas: 1,
         insert_rows: 100000, insert_rate: 0.1, insert_bytes_uncompressed: 104857600, insert_clients: 1,
-        async_insert: '0', shape: 'wide', merge_size_ratio: 700,
+        // Ratio 450 merges ~8.3 MiB inserts into ~3.7 GiB parts, the largest a measured ratio allows.
+        async_insert: '0', shape: 'wide', merge_size_ratio: 450,
       },
       locks: ['data_bytes', 'retention_days'],
     },
@@ -73,6 +76,18 @@
       values: {},
       locks: [],
     },
+  };
+
+  // Sweep ladders, shared by the page's chart and tools/sweeps.mjs, so both report the same break-even intervals.
+  // Geometric, so a crossing is bracketed at any scale; count inputs get whole numbers.
+  //  data_bytes  64 GiB x 4^k, k = 0..8       64 GiB .. 4 PiB
+  //  ingest_rate 1 GiB/day x 4^k, k = 0..7    1 .. 16,384 GiB/day
+  //  replicas    1 x 2^k, k = 0..3            1, 2, 4, 8 (8 lies outside the measured replicas validity [1, 6])
+  const geometric = (start, ratio, n) => Array.from({ length: n }, (_, k) => start * ratio ** k);
+  const LADDERS = {
+    data_bytes: geometric(64, 4, 9),
+    ingest_rate: geometric(1, 4, 8),
+    replicas: geometric(1, 2, 4),
   };
 
   // Price preset ids are the billing contract's. `contract` presets are taken from the contract as they are;
@@ -192,6 +207,6 @@
     return problems;
   }
 
-  SCC.presets = { SCENARIOS, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
+  SCC.presets = { SCENARIOS, LADDERS, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

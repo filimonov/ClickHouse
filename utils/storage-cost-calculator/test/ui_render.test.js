@@ -42,11 +42,13 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   // Totals, state texts and deltas of the cards.
   const cas = cardHtml(parts.cards, 'cas');
   assert.ok(cas.includes('<p class="card-total" data-kind="money">$23.01</p>'), cas);
-  assert.ok(cas.includes('<p class="card-state">cheapest</p>'));
+  // A priced card carries badges and deltas; "comparable"/"cheapest" state lines would say nothing more.
+  assert.equal(cas.includes('class="card-state"'), false);
   assert.ok(cas.includes('badge-ok">cheapest'));
+  assert.ok(cas.includes('title="Stored data: $23.00"'), cas);
   assert.ok(cas.includes('<li>vs EBS: −$56.99</li>') && cas.includes('<li>vs S3: −$12.41</li>'));
   const ebs = cardHtml(parts.cards, 'ebs');
-  assert.ok(ebs.includes('<p class="card-state">comparable</p>'));
+  assert.equal(ebs.includes('comparable'), false);
   assert.ok(ebs.includes('<li>vs S3: +$44.58</li>'));
   assert.equal(ebs.includes('cheapest'), false);
   // Table cell money, and the cell is a drill button.
@@ -67,9 +69,12 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   // Every container has its part, in page order.
   assert.deepEqual([...html.matchAll(/<div data-part="(\w+)">/g)].map((m) => m[1]), ui.PARTS);
   // Simple inputs: a slider and an editable number per numeric input, the derived member greyed with its rule.
-  assert.match(parts.inputs, /type="range"[^>]*data-id="inserts_per_month" value="1000"/);
+  // Sliders span the view model's bounds: the sweep ladder for data_bytes; no ladder and no range means no slider.
+  assert.match(parts.inputs, /type="range" min="64" max="4194304" step="any" data-action="slider" data-id="data_bytes" value="1000"/);
+  assert.equal(/type="range"[^>]*data-id="inserts_per_month"/.test(parts.inputs), false);
+  assert.match(parts.inputs, /type="number" step="1" data-action="input" data-id="inserts_per_month" value="1000"/);
   assert.match(parts.inputs, /class="field is-derived" data-field="data_bytes"/);
-  assert.ok(parts.inputs.includes(`Derived: <code>${esc(page(base()).fields.data_bytes.rule_text)}</code>`));
+  assert.ok(parts.inputs.includes(`<p class="field-note">${esc('Derived from ingest_rate × retention_days')}</p>`), 'fixture labels equal the ids');
   assert.ok(parts.evidence.includes(esc(MINIMAL.evidence_statement)));
   // An unknown state is an error, not a default rendering.
   const broken = JSON.parse(JSON.stringify(vm));
@@ -87,7 +92,7 @@ test('test_render_not_supported_card_has_no_money', () => {
   assert.equal(/\$|data-kind="money"|card-total|card-deltas|class="bar"/.test(s3plain), false, s3plain);
   assert.equal(s3plain.includes('cheapest'), false);
   // Its table cells say why and do not open a drill.
-  const cells = [...parts.table.matchAll(/<td class="cell-off" data-state="not_supported">([^<]*)/g)].map((m) => m[1]);
+  const cells = [...parts.table.matchAll(/<td class="cell-off" data-label="S3 plain rewritable" data-state="not_supported">([^<]*)/g)].map((m) => m[1]);
   assert.ok(cells.length > 0 && cells.every((t) => t === 'not supported'), cells.join('|'));
   assert.equal(/data-variant="s3plain" data-operation=/.test(parts.table), false);
 });
@@ -121,12 +126,13 @@ test('test_render_cannot_reproduce_shows_mismatch_and_no_numbers', () => {
   const parts = ui.renderParts(out.vm, out.page);
   assert.equal(out.vm.page_state, 'cannot_reproduce');
   assert.match(parts.cards, /<h2>Cannot reproduce this link<\/h2>/);
-  assert.ok(parts.cards.includes('cannot reproduce: billing version 9.9.9-gone not present'), parts.cards);
+  // Said once: one sentence with the versions, then each differing entry without repeating the artifact word.
+  assert.ok(parts.cards.includes(`<p class="reason">This link was built with billing 9.9.9-gone; this page has billing ${C.manifest.billing_version}.</p>`), parts.cards);
   const items = [...parts.cards.matchAll(/<ul class="mismatches">(.*?)<\/ul>/gs)][0][1];
-  assert.ok(items.includes(`billing billing_version: the link has 9.9.9-gone, this page has ${C.manifest.billing_version}`), items);
+  assert.equal(items, `<li>billing: version 9.9.9-gone in the link, ${C.manifest.billing_version} here</li>`);
   // No number anywhere: only the mismatch list and its reason name versions; every other part is digit-free.
   const html = ui.render(out.vm, out.page);
-  const outside = html.replace(/<ul class="mismatches">.*?<\/ul>/s, '').replace(/<p>cannot reproduce: [^<]*<\/p>/, '');
+  const outside = html.replace(/<ul class="mismatches">.*?<\/ul>/s, '').replace(/<p class="reason">[^<]*<\/p>/, '');
   // Text content only: tag names such as h2 carry digits of their own.
   const text = outside.replace(/<[^>]*>/g, ' ');
   assert.equal(/\d/.test(text), false, text);
@@ -149,7 +155,8 @@ test('test_render_prices_missing_shows_quantities_without_money', () => {
   const { vm, parts, html } = page(base({ price_preset: 'gcs' }));
   assert.equal(vm.page_state, 'prices_missing');
   assert.equal(/\$|data-kind="money"|card-total/.test(html), false);
-  assert.ok(parts.cards.includes('price preset gcs has no prices (structure only). Quantities are shown without money.'));
+  assert.ok(parts.cards.includes('<p class="banner">This price list has no prices yet; quantities are shown without money.</p>'));
+  assert.equal(/note-prices_missing/.test(parts.notes), false, 'said once, in the banner');
   for (const c of vm.cards.filter((k) => k.state === 'ok')) assert.ok(cardHtml(parts.cards, c.variant).includes(`<p class="card-state">${esc(c.state_text)}</p>`));
   // The table shows the quantities each cell bills, e.g. S3 storage in GiB-months.
   const qty = vm.table.rows.flatMap((r) => r.cells).filter((c) => c.state === 'ok');
@@ -203,4 +210,99 @@ test('test_render_custom_prices_editable_and_unpriced_rule_empty', () => {
   assert.equal(parts.inputs.includes('value="null"'), false);
   // Another preset shows prices as text, not inputs.
   assert.equal(/data-action="price-field"/.test(page(base()).parts.inputs), false);
+});
+
+test('test_inputs_show_labels_fixed_values_and_view_model_ranges', () => {
+  const c = load((x) => {
+    const q = x.registry.find((r) => r.id === 'replacement_rate');
+    q.label = 'Replica replacements';
+    q.validity = { replacement_rate: [0, 0] };
+    x.registry.find((r) => r.id === 'inserts_per_month').label = 'Inserts per month';
+    x.registry.find((r) => r.id === 'inserts_per_month').validity = { inserts_per_month: [0, 50000] };
+    delete x.registry.find((r) => r.id === 'mutations_per_month').label;
+  });
+  const { parts, vm } = page(base(), {}, c);
+  assert.ok(parts.inputs.includes('<span class="field-label">Inserts per month</span>'));
+  assert.ok(parts.inputs.includes('<p class="field-note">measured for 0 to 50,000</p>'));
+  // A one-value range is a fixed value, shown as text without a slider or a box.
+  const fixed = parts.inputs.slice(parts.inputs.indexOf('data-field="replacement_rate"'));
+  const fixedField = fixed.slice(0, fixed.indexOf('data-field=', 1));
+  assert.ok(fixedField.includes('<span class="value">0</span>'), fixedField);
+  assert.equal(/type="range"|type="number"/.test(fixedField), false, fixedField);
+  // A row without a label shows no id in its place and is reported.
+  assert.ok(parts.inputs.includes('data-field="mutations_per_month"><div class="field-head"><span class="field-label"></span>'));
+  assert.match(parts.notes, /registry mutations_per_month has no label/);
+  assert.ok(vm.problems.length > 0);
+});
+
+test('test_chart_has_y_ticks_and_gridlines', () => {
+  const { parts, vm } = page(base({ sweepInput: 'data_bytes' }));
+  const ticks = vm.chart.y_ticks;
+  assert.ok(ticks.length >= 3);
+  for (const t of ticks) assert.ok(parts.chart.includes(`text-anchor="end">${esc(t.text)}</text>`), t.text);
+  assert.equal((parts.chart.match(/<line class="grid"/g) || []).length, ticks.length);
+  for (const t of vm.chart.x_ticks) assert.ok(parts.chart.includes(`text-anchor="middle">${esc(t.text)}</text>`), t.text);
+});
+
+test('test_clearing_a_custom_price_returns_to_the_preset_value', () => {
+  const s = base({ price_preset: 'custom', custom_prices: { 'block.gp3.price_per_gib_month': 1 } });
+  const r = ui.update(C, s, {}, { type: 'price-field', data: { path: 'block.gp3.price_per_gib_month' }, value: '  ' }, {});
+  assert.deepEqual(r.state.custom_prices, {});
+  assert.throws(() => ui.update(C, s, {}, { type: 'price-field', data: { path: 'block.gp3.price_per_gib_month' }, value: '-1' }, {}), /enter a number of 0 or more/);
+});
+
+// A document with only what mount touches: containers, delegated listeners, the hash and history.
+function fakeDocument(hash) {
+  const boxes = Object.fromEntries(ui.PARTS.map((id) => [id, { id, innerHTML: '' }]));
+  const listeners = {};
+  const attrs = {};
+  const replaced = [];
+  const win = {
+    location: { hash },
+    history: { replaceState: (a, b, url) => { replaced.push(url); win.location.hash = url; } },
+    localStorage: { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } },
+    matchMedia: () => ({ matches: false, addEventListener: () => {} }),
+  };
+  const doc = {
+    defaultView: win, activeElement: null,
+    documentElement: { getAttribute: (k) => attrs[k] || null, setAttribute: (k, v) => { attrs[k] = v; } },
+    body: { setAttribute: (k, v) => { attrs[`body:${k}`] = v; } },
+    getElementById: (id) => boxes[id] || null,
+    querySelector: () => null,
+    addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+  };
+  const fire = (type, el) => (listeners[type] || []).forEach((fn) => fn({ target: { closest: (sel) => (sel.startsWith('button') === (el.tagName === 'BUTTON') || sel === '[data-action]' ? el : null) } }));
+  return { doc, boxes, attrs, replaced, fire };
+}
+
+test('test_mount_delegated_click_opens_cell_and_rewrites_hash', () => {
+  const s = base();
+  const f = fakeDocument(urlstate.encode(Object.assign({}, s, { manifest: C.manifest })));
+  ui.mount(f.doc, C);
+  assert.ok(f.boxes.cards.innerHTML.includes('$23.01'));
+  assert.equal(f.boxes.drill.innerHTML, '');
+  assert.equal(f.attrs['body:data-page-state'], 'ok');
+  f.fire('click', { tagName: 'BUTTON', dataset: { action: 'cell', variant: 'cas', operation: 'storage' } });
+  assert.match(f.boxes.drill.innerHTML, /data-cell="cas\.storage"/);
+  const last = urlstate.decode(f.replaced[f.replaced.length - 1], C);
+  assert.equal(last.state.openCell, 'cas.storage');
+  // A failing action shows its message as a page note instead of breaking the page.
+  f.fire('change', { tagName: 'INPUT', dataset: { action: 'price-field', path: 'block.gp3.price_per_gib_month' }, value: 'abc' });
+  assert.match(f.boxes.notes.innerHTML, /note-error[^>]*>price block\.gp3\.price_per_gib_month: enter a number/);
+  // A missing container is an error.
+  const g = fakeDocument('');
+  g.doc.getElementById = (id) => (id === 'chart' ? null : { innerHTML: '' });
+  assert.throws(() => ui.mount(g.doc, C), /container #chart is missing/);
+});
+
+test('test_page_and_breakeven_document_sweep_the_same_ladder', async () => {
+  const presets = require('../presets.js');
+  const { LADDERS } = await import('../tools/sweeps.mjs');
+  assert.equal(LADDERS, presets.LADDERS);
+  const { vm, page: chrome } = page(base({ sweepInput: 'ingest_rate' }));
+  assert.deepEqual([...new Set(vm.chart.points.map((p) => p.x))], presets.LADDERS.ingest_rate);
+  // Only laddered inputs are offered for the chart.
+  assert.deepEqual(chrome.sweep_inputs.map((s) => s.id), Object.keys(presets.LADDERS).filter((id) => C.registry.some((q) => q.id === id)));
+  for (const xs of Object.values(presets.LADDERS)) assert.ok(xs.every((x) => x > 0));
+  assert.ok(presets.LADDERS.replicas.every(Number.isInteger));
 });
