@@ -177,6 +177,333 @@
     return { inputs: resolved, fields, lockOrder: persisted, problems };
   }
 
-  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, lockMember, DAYS_PER_MONTH });
+  // ---- evaluation: cells -> variant aggregate -> billing -> allocation (spec §4.1, §4.4) -----------------------
+
+  const billingMod = () => root.SCC.billing || require('./billing.js');
+  // Precedence when several states hold for one variant: a column that cannot run the workload says so first.
+  const STATE_ORDER = ['not_supported', 'unsupported_cut', 'backlog_grows', 'unavailable'];
+
+  // References a cut card or an unsupported registry row leaves without a usable value.
+  function unsupportedRefs(contract) {
+    const coefs = new Set();
+    const inputs = new Set();
+    for (const c of contract.coefficients) if (c && c.status === 'unsupported') coefs.add(c.id);
+    for (const qr of contract.registry) {
+      if (!qr || qr.status !== 'unsupported') continue;
+      if (qr.coef) coefs.add(qr.coef);
+      if (qr.kind === 'input') inputs.add(qr.id);
+    }
+    return { coefs, inputs };
+  }
+
+  function buildCtx(contract, inputs, cut) {
+    const values = new Map(inputs);
+    const coefs = new Map();
+    for (const c of contract.coefficients) {
+      if (c.kind === 'table' || cut.coefs.has(c.id) || c.value === null || c.value === undefined) continue;
+      coefs.set(c.id, { value: c.value, validity: c.validity || null });
+    }
+    const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
+    const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null };
+    // Registry derivations may read each other; evaluate until no new value appears (they are acyclic, §4.2).
+    const pending = contract.registry.filter((x) => x.kind === 'derivation' && x.rule && !values.has(x.id));
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const x of pending) {
+        if (values.has(x.id)) continue;
+        const r = model().evaluate(x.rule, ctx);
+        if (r.state === 'ok') { values.set(x.id, r.value); changed = true; }
+      }
+    }
+    return ctx;
+  }
+
+  function walk(node, fn) {
+    if (!node || typeof node !== 'object') return;
+    fn(node);
+    for (const v of Object.values(node)) {
+      if (Array.isArray(v)) v.forEach((x) => walk(x, fn));
+      else if (v && typeof v === 'object') walk(v, fn);
+    }
+  }
+
+  const refOf = (n, cut) => (n.kind === 'coef' && cut.coefs.has(n.id) ? n.id
+    : n.kind === 'lookup' && cut.coefs.has(n.table_id) ? n.table_id
+      : n.kind === 'input' && cut.inputs.has(n.id) ? n.id : null);
+  function hasCut(node, cut) {
+    let found = false;
+    walk(node, (n) => { if (refOf(n, cut)) found = true; });
+    return found;
+  }
+  function inputIds(node) {
+    const ids = new Set();
+    walk(node, (n) => { if (n.kind === 'input') ids.add(n.id); });
+    return [...ids];
+  }
+  function hasVar(node) {
+    let found = false;
+    walk(node, (n) => { if (n.kind === 'var') found = true; });
+    return found;
+  }
+  // Only var-free subtrees are evaluated on their own: a var is bound by an enclosing sum_over.
+  function isZero(node, ctx) {
+    if (hasVar(node)) return false;
+    const r = model().evaluate(node, ctx);
+    return r.state === 'ok' && r.value === 0;
+  }
+
+  // A cut term contributes nothing when its dependent workload is zero (spec §5.5): rewrites such a term to a zero
+  // const of the same dim. Returns {node, tainted: {refs, dependents} | null}; a tainted result is a cut that the
+  // workload needs. Product structure decides the term: a zero factor (or numerator) zeroes the whole product.
+  function rewriteCut(node, ctx, cut, zeroed) {
+    if (!node || typeof node !== 'object' || !hasCut(node, cut)) return { node, tainted: null };
+    const ref = refOf(node, cut);
+    if (ref) {
+      if (node.kind === 'input') {
+        const v = ctx.inputs.get(ref);
+        if (v === 0) { zeroed.push({ refs: [ref], by: [ref] }); return { node: { kind: 'const', value: 0, dim: node.dim }, tainted: null }; }
+        return { node, tainted: { refs: [ref], dependents: [ref] } };
+      }
+      return { node, tainted: { refs: [ref], dependents: [] } };
+    }
+    const merge = (ts) => {
+      const live = ts.filter(Boolean);
+      if (!live.length) return null;
+      return { refs: [...new Set(live.flatMap((t) => t.refs))], dependents: [...new Set(live.flatMap((t) => t.dependents))] };
+    };
+    const zero = (t, by) => {
+      zeroed.push({ refs: t.refs, by });
+      return { node: { kind: 'const', value: 0, dim: node.dim }, tainted: null };
+    };
+    if (node.kind === 'mul' || node.kind === 'div') {
+      const a = rewriteCut(node.a, ctx, cut, zeroed);
+      const b = rewriteCut(node.b, ctx, cut, zeroed);
+      const t = merge([a.tainted, b.tainted]);
+      if (!t) return { node: Object.assign({}, node, { a: a.node, b: b.node }), tainted: null };
+      if (!a.tainted && isZero(a.node, ctx)) return zero(t, inputIds(a.node));
+      if (node.kind === 'mul' && !b.tainted && isZero(b.node, ctx)) return zero(t, inputIds(b.node));
+      const clean = [a, b].filter((x) => !x.tainted).map((x) => x.node);
+      return { node, tainted: { refs: t.refs, dependents: [...new Set([...t.dependents, ...clean.flatMap(inputIds)])] } };
+    }
+    if (node.kind === 'branch' && !hasCut(node.cond, cut) && !hasVar(node.cond)) {
+      // Only the taken side is evaluated, so only its cut terms matter. The probe evaluates the condition alone.
+      const probe = model().evaluate(Object.assign({}, node, { then: { kind: 'const', value: 1, dim: '1' }, else: { kind: 'const', value: 0, dim: '1' } }), ctx);
+      if (probe.state === 'ok') {
+        const side = probe.value === 1 ? 'then' : 'else';
+        const r = rewriteCut(node[side], ctx, cut, zeroed);
+        return r.tainted ? { node, tainted: r.tainted } : { node: Object.assign({}, node, { [side]: r.node }), tainted: null };
+      }
+    }
+    // Any other node needs every operand: rewrite each child; a remaining cut child taints the node.
+    const outNode = {};
+    const ts = [];
+    for (const [k, v] of Object.entries(node)) {
+      if (Array.isArray(v)) {
+        outNode[k] = v.map((x) => { const r = rewriteCut(x, ctx, cut, zeroed); ts.push(r.tainted); return r.node; });
+      } else if (v && typeof v === 'object') {
+        const r = rewriteCut(v, ctx, cut, zeroed);
+        ts.push(r.tainted);
+        outNode[k] = r.node;
+      } else outNode[k] = v;
+    }
+    const t = merge(ts);
+    return t ? { node, tainted: t } : { node: outNode, tainted: null };
+  }
+
+  function cutReason(variant, op, t, ctx) {
+    const deps = t.dependents.map((id) => `${id} = ${JSON.stringify(ctx.inputs.has(id) ? ctx.inputs.get(id) : null)}`);
+    return `${variant}.${op}: ${t.refs.join(', ')} is unsupported (card cut)` + (deps.length ? ` and its dependent input ${deps.join(', ')} is non-zero` : ' and the cell needs it unconditionally');
+  }
+
+  // Inputs, coefficients and tables a node reads that the context does not hold.
+  function missingRefs(node, ctx) {
+    const out = new Set();
+    walk(node, (n) => {
+      if (n.kind === 'input' && !ctx.inputs.has(n.id)) out.add(`input ${n.id}`);
+      if (n.kind === 'coef' && !ctx.coefs.has(n.id)) out.add(`coef ${n.id}`);
+      if (n.kind === 'lookup' && !ctx.tables.has(n.table_id)) out.add(`table ${n.table_id}`);
+    });
+    return [...out];
+  }
+
+  // Evaluates one variant's cells. Returns {cells, states: [{id, reason}], extrapolated}.
+  function evaluateVariant(contract, v, ctx, cut) {
+    const states = [];
+    const cells = {};
+    let extrapolated = false;
+    for (const op of contract.operations) {
+      const app = (contract.applicability[v] || {})[op] || {};
+      const fams = contract.families.filter((f) => app[f] !== 'supported');
+      const notSup = fams.filter((f) => app[f] === 'not_supported');
+      if (notSup.length) states.push({ id: 'not_supported', reason: `${v}.${op}: not supported for ${notSup.join(', ')}` });
+      const cell = (contract.formulas[v] || {})[op];
+      if (!cell) {
+        if (!notSup.length) states.push({ id: 'unavailable', reason: `${v}.${op}: the contract has no cell for a supported operation` });
+        continue;
+      }
+      const zeroed = [];
+      const taints = [];
+      const rw = (e) => { const r = rewriteCut(e, ctx, cut, zeroed); if (r.tainted) taints.push(r.tainted); return r.node; };
+      const effective = Object.assign({}, cell, {
+        ledger_rows: cell.ledger_rows.map((r) => Object.assign({}, r, { expr: rw(r.expr) })),
+        allocation: cell.allocation && { shares: cell.allocation.shares.map((sh) => Object.assign({}, sh, { weight: rw(sh.weight) })) },
+        states: (cell.states || []).map((st) => (st.cond === true ? st : Object.assign({}, st, { cond: rw(st.cond) }))),
+        notes: (cell.notes || []).map(rw),
+      });
+      for (const t of taints) states.push({ id: 'unsupported_cut', reason: cutReason(v, op, t, ctx) });
+      const ev = model().evaluateCell(effective, ctx);
+      extrapolated = extrapolated || ev.extrapolated;
+      const cutFams = fams.filter((f) => app[f] === 'unsupported_cut');
+      if (cutFams.length) {
+        const live = ev.rows.filter((r) => r.state !== 'ok' || r.quantity !== 0);
+        if (live.length) states.push({ id: 'unsupported_cut', reason: `${v}.${op}: cut for ${cutFams.join(', ')} and the workload needs ${live.map((r) => `${r.row_type} ${r.op_kind}`).join(', ')}` });
+      }
+      for (const st of ev.states) if (st.active) states.push({ id: st.id, reason: `${v}.${op}: ${st.reason}` });
+      const unavailableRows = ev.rows.map((r, i) => (r.state === 'ok' ? null : `${r.row_type} ${r.op_kind}: unavailable (${missingRefs(effective.ledger_rows[i].expr, ctx).join(', ') || 'see trace'})`)).filter(Boolean);
+      if (!taints.length && (unavailableRows.length || ev.state !== 'ok')) {
+        states.push({ id: 'unavailable', reason: `${v}.${op}: ${[...unavailableRows, ev.reason].filter(Boolean).join('; ')}` });
+      }
+      cells[op] = {
+        ev, zeroed,
+        rows: ev.rows,
+        quantities: ev.rows.map(({ trace, ...rest }) => rest),
+        extrapolated: ev.extrapolated,
+        trace: ev.rows.map((r) => r.trace),
+        notes: ev.notes.map((n, i) => ({ text: model().render(effective.notes[i], contract.registry), value: n.value, state: n.state })),
+        money: null, lines: null,
+      };
+    }
+    return { cells, states, extrapolated };
+  }
+
+  function lookupPreset(contract, pricePreset) {
+    if (pricePreset && typeof pricePreset === 'object') return { preset: pricePreset };
+    const p = ((contract.billing && contract.billing.presets) || []).find((x) => x.id === pricePreset);
+    return p ? { preset: p } : { problem: `price preset ${JSON.stringify(pricePreset)} is not present in billing version ${contract.manifest.billing_version}` };
+  }
+
+  // Manual provisioning needs all of its inputs; `volumes_per_replica = auto` (or no such input) means automatic.
+  function manualOf(inputs) {
+    const n = inputs.get('volumes_per_replica');
+    if (n === undefined || n === 'auto') return { manual: null };
+    const m = { volumes: n, size_gib: inputs.get('provisioned_size_gib'), iops: inputs.get('provisioned_iops'), mibps: inputs.get('provisioned_mibps') };
+    const missing = ['provisioned_size_gib', 'provisioned_iops', 'provisioned_mibps'].filter((id) => inputs.get(id) === undefined);
+    return missing.length ? { problem: `manual provisioning with volumes_per_replica = ${n} needs ${missing.join(', ')}` } : { manual: m };
+  }
+
+  function billVariantResult(out, ev, preset, options, inputs) {
+    const B = billingMod();
+    const ops = Object.keys(ev.cells);
+    const rows = ops.flatMap((op) => ev.cells[op].rows.map((r) => Object.assign({}, r, { cell: op })));
+    const m = manualOf(inputs);
+    if (m.problem) return { problem: m.problem };
+    let b;
+    try {
+      b = B.billVariant(rows, preset, options.outcome_mix || null, m.manual);
+    } catch (e) {
+      return { problem: `billing failed: ${e.message}` };
+    }
+    const a = B.allocate(b.lines, ops.map((op) => ({ key: op, name: op, rows: ev.cells[op].rows, shares: ev.cells[op].ev.allocation })), preset);
+    if (a.problems.length) return { problem: a.problems.join('; ') };
+    for (const op of ops) Object.assign(out.cells[op], { money: a.byCell[op].money, lines: a.byCell[op].lines });
+    out.total = b.total;
+    out.lines = b.lines;
+    out.allocation = a.allocation;
+    out.provisioning = b.provisioning;
+    if (b.provisioning) {
+      const p = b.provisioning;
+      out.notes.push({ kind: 'allocation', text: `${p.manual ? 'manual' : p.layout}: ${p.volumes} x (${p.size_gib} GiB, ${p.iops} IOPS, ${p.mibps} MiB/s)`, notes: p.notes });
+      const ic = B.instanceClass(p, preset);
+      out.notes.push({ kind: 'instance_class', text: ic.instance_class ? `smallest instance class for ${ic.throughput_mibps} MiB/s of EBS bandwidth: ${ic.instance_class}` : ic.reason, instance_class: ic.instance_class });
+    }
+    return {};
+  }
+
+  // Display arithmetic only (spec §4.5): a delta is the difference of two contract totals already computed.
+  function delta(a, ref) {
+    if (!a || !ref || a.state !== 'ok' || ref.state !== 'ok' || a.total === null || ref.total === null) return null;
+    return { value: a.total - ref.total, extrapolated: a.extrapolated || ref.extrapolated };
+  }
+
+  function run(contract, inputs, pricePreset, options) {
+    const opts = options || {};
+    const base = { evidence_statement: contract.evidence_statement, manifest: contract.manifest, problems: [] };
+    const found = lookupPreset(contract, pricePreset);
+    if (found.problem) {
+      // A preset the contract does not carry cannot be priced faithfully: show no number at all (spec §4.5).
+      return Object.assign(base, { page_state: 'cannot_reproduce', page_reason: found.problem, variants: {}, cheapest: null, deltas: {}, sweep: null, problems: [found.problem] });
+    }
+    const preset = found.preset;
+    const pricesMissing = !!preset.structure_only;
+    const cut = unsupportedRefs(contract);
+    const ctx = buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), cut);
+    const variants = {};
+    for (const v of contract.variants) {
+      const ev = evaluateVariant(contract, v, ctx, cut);
+      const out = { state: 'ok', reason: null, extrapolated: ev.extrapolated, cells: {}, total: null, lines: null, allocation: null, provisioning: null, notes: [] };
+      for (const [op, c] of Object.entries(ev.cells)) {
+        out.cells[op] = { money: null, quantities: c.quantities, lines: null, rows: c.rows, extrapolated: c.extrapolated, trace: c.trace, notes: c.notes, zeroed_cut_terms: c.zeroed, ev: c.ev };
+        for (const n of c.notes) out.notes.push({ kind: 'cell', operation: op, text: n.text, value: n.value });
+      }
+      const top = STATE_ORDER.find((id) => ev.states.some((s) => s.id === id));
+      if (top) {
+        out.state = top;
+        out.reason = ev.states.filter((s) => s.id === top).map((s) => s.reason).join('; ');
+      } else if (!pricesMissing) {
+        const billed = billVariantResult(out, ev, preset, opts, ctx.inputs);
+        if (billed.problem) { out.state = 'unavailable'; out.reason = `${v}: ${billed.problem}`; }
+      }
+      for (const c of Object.values(out.cells)) delete c.ev;
+      variants[v] = out;
+    }
+    let cheapest = null;
+    if (!pricesMissing) {
+      for (const v of contract.variants) {
+        const x = variants[v];
+        if (x.state === 'ok' && x.total !== null && (cheapest === null || x.total < variants[cheapest].total)) cheapest = v;
+      }
+    }
+    const deltas = {};
+    for (const v of contract.variants) deltas[v] = { vs_ebs: delta(variants[v], variants.ebs), vs_s3: delta(variants[v], variants.s3) };
+    const result = Object.assign(base, { page_state: pricesMissing ? 'prices_missing' : 'ok', page_reason: pricesMissing ? `price preset ${preset.id} has no prices (structure only)` : null, variants, cheapest, deltas, sweep: null });
+    if (opts.sweep) result.sweep = sweep(contract, inputs, pricePreset, opts.sweep.inputId, opts.sweep.values);
+    return result;
+  }
+
+  // Totals per variant against one swept input. The input is set in the resolved inputs; the caller re-resolves
+  // precedence groups if the swept input has derived partners.
+  function sweep(contract, inputs, preset, inputId, values) {
+    const baseInputs = inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {}));
+    const points = values.map((x) => {
+      const r = run(contract, new Map([...baseInputs, [inputId, x]]), preset, {});
+      const totals = {};
+      for (const v of contract.variants) {
+        const vr = r.variants[v];
+        totals[v] = vr ? { value: vr.state === 'ok' ? vr.total : null, state: vr.state, extrapolated: vr.extrapolated } : { value: null, state: r.page_state, extrapolated: false };
+      }
+      return { x, totals, page_state: r.page_state };
+    });
+    // Display arithmetic only (spec §4.5): a crossing is a sign change of total_a - total_b between consecutive ok
+    // points; a point where the totals are equal carries no sign and does not end the run.
+    const breakEven = [];
+    const vs = contract.variants;
+    for (let i = 0; i < vs.length; i++) {
+      for (let j = i + 1; j < vs.length; j++) {
+        let last = null;
+        for (const p of points) {
+          const a = p.totals[vs[i]];
+          const b = p.totals[vs[j]];
+          if (a.state !== 'ok' || b.state !== 'ok' || a.value === null || b.value === null) { last = null; continue; }
+          const d = a.value - b.value;
+          if (d === 0) continue;
+          if (last && Math.sign(d) !== last.sign) breakEven.push({ a: vs[i], b: vs[j], x_between: [last.x, p.x], extrapolated: a.extrapolated || b.extrapolated || last.extrapolated });
+          last = { x: p.x, sign: Math.sign(d), extrapolated: a.extrapolated || b.extrapolated };
+        }
+      }
+    }
+    return { input: inputId, points, breakEven };
+  }
+
+  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, lockMember, DAYS_PER_MONTH, run, sweep });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

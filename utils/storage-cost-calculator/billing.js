@@ -254,7 +254,81 @@
     return { lines, total: lines.reduce((s, l) => s + l.money, 0), allocation: block.allocation, skipped: rows.length - mine.length };
   }
 
-  const billing = { bill, allocateVolumes, toPresetGb, UNITS };
+  // Bills each scope present in `rows` once, so tiers, free allowances and baselines see the variant's aggregate.
+  function billVariant(rows, preset, outcomeMix, manual) {
+    const lines = [];
+    let provisioning = null;
+    for (const scope of [...new Set(rows.map((r) => r.scope))]) {
+      const b = bill(rows, preset, scope, outcomeMix, manual);
+      lines.push(...b.lines);
+      if (b.allocation) {
+        if (provisioning) throw new Error('block rows in more than one scope');
+        provisioning = Object.assign({ scope }, b.allocation);
+      }
+    }
+    return { lines, total: lines.reduce((s, l) => s + l.money, 0), provisioning };
+  }
+
+  // Quantity a cell contributes to one aggregate billing line; allocation is proportional to it.
+  function cellQuantity(line, rows, preset) {
+    const mine = rows.filter((r) => r.scope === line.scope);
+    const sum = (xs) => xs.reduce((s, r) => s + r.quantity, 0);
+    if (line.rule_id === 'storage') return sum(mine.filter((r) => r.row_type === 'storage'));
+    if (line.rule_id === 'block_capacity') return sum(mine.filter((r) => r.op_kind === 'capacity'));
+    if (line.rule_id === 'block_iops') return sum(mine.filter((r) => r.op_kind === 'iops'));
+    if (line.rule_id === 'block_mibps') return sum(mine.filter((r) => r.op_kind === 'mibps'));
+    const transfer = mine.filter((r) => r.row_type === 'transfer' && r.route === line.rule_id);
+    if (transfer.length) return sum(transfer);
+    const req = mine.filter((r) => r.row_type === 'request');
+    if (!req.length) return 0;
+    const own = bill(req, preset, line.scope, null).lines.find((l) => l.rule_id === line.rule_id);
+    return own ? own.quantity : 0;
+  }
+
+  // Allocates each aggregate line's money back to `cells` ([{key, name, rows, shares}]): by the cells' declared
+  // `shares` (cell name -> weight) when any cell declares them, else by each cell's own quantity of the line.
+  function allocate(lines, cells, preset) {
+    const problems = [];
+    const declared = {};
+    for (const c of cells) Object.assign(declared, c.shares || {});
+    const shareKeys = Object.keys(declared);
+    for (const k of shareKeys) if (!cells.some((c) => c.name === k)) problems.push(`allocation share for unknown cell ${k}`);
+    const basis = shareKeys.length ? 'allocation.shares' : 'quantity';
+    const allocation = lines.map((l) => {
+      const weights = Object.fromEntries(cells.map((c) => [c.key, shareKeys.length ? (declared[c.name] || 0) : cellQuantity(l, c.rows, preset)]));
+      const sum = Object.values(weights).reduce((s, w) => s + w, 0);
+      if (sum <= 0 && l.money > EPS) problems.push(`${l.rule_id} money ${l.money} has no cell to allocate to`);
+      const shares = Object.fromEntries(Object.entries(weights).map(([k, w]) => [k, { weight: w, fraction: sum > 0 ? w / sum : 0, money: sum > 0 ? l.money * w / sum : 0 }]));
+      return { rule_id: l.rule_id, scope: l.scope, money: l.money, basis, shares };
+    });
+    const byCell = {};
+    for (const c of cells) {
+      const mine = allocation.map((a, i) => {
+        const line = lines[i];
+        const share = a.shares[c.key];
+        return { rule_id: a.rule_id, scope: a.scope, unit: line.unit, quantity: line.quantity * share.fraction, money: share.money,
+          share: share.fraction, aggregate_quantity: line.quantity, aggregate_money: a.money, basis: a.basis, note: line.note };
+      }).filter((l) => l.share > 0);
+      byCell[c.key] = { lines: mine, money: mine.reduce((s, l) => s + l.money, 0) };
+    }
+    return { allocation, byCell, problems };
+  }
+
+  // The smallest instance class (lowest max_mibps, list order on ties) whose EBS bandwidth carries the allocated
+  // throughput of all volumes; null class with a reason when none does or the preset lists none.
+  function instanceClass(provisioning, preset) {
+    const classes = preset.ec2_ebs_bandwidth;
+    if (!Array.isArray(classes) || classes.length === 0) return { instance_class: null, throughput_mibps: null, reason: `preset ${preset.id} lists no ec2_ebs_bandwidth` };
+    const throughput = provisioning.volumes * provisioning.mibps;
+    const fit = classes.filter((c) => c.max_mibps >= throughput);
+    if (!fit.length) {
+      return { instance_class: null, throughput_mibps: throughput, reason: `no instance class in preset ${preset.id} carries ${throughput} MiB/s of EBS bandwidth` };
+    }
+    const best = fit.reduce((a, c) => (c.max_mibps < a.max_mibps ? c : a));
+    return { instance_class: best.instance_class, max_mibps: best.max_mibps, throughput_mibps: throughput, source_url: best.source_url, reason: null };
+  }
+
+  const billing = { bill, billVariant, allocate, instanceClass, allocateVolumes, toPresetGb, UNITS };
   root.SCC = root.SCC || {};
   root.SCC.billing = billing;
   if (typeof module !== 'undefined' && module.exports) module.exports = billing;

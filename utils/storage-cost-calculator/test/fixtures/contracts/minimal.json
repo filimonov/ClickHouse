@@ -1,0 +1,1402 @@
+{
+ "schema": "contract/1",
+ "version": "fixture-1",
+ "manifest": {
+  "code_sha256": "fixture",
+  "contract_version": "fixture-1",
+  "registry_version": "fixture-1",
+  "coverage_version": "fixture-1",
+  "billing_version": "0.1.0",
+  "evidence": [
+   {
+    "report": "fixture",
+    "commit": "fixture",
+    "raw_sha256sums": "fixture"
+   }
+  ]
+ },
+ "evidence_statement": "Hand-written fixture contract: one variable per state, not measured.",
+ "registry": [
+  {
+   "id": "data_gib",
+   "block": "fixture",
+   "label": "data_gib",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "inserts_per_month",
+   "block": "fixture",
+   "label": "inserts_per_month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "replacement_rate",
+   "block": "fixture",
+   "label": "replacement_rate",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  }
+ ],
+ "sets": {},
+ "precedence": [],
+ "coefficients": [
+  {
+   "id": "puts_per_insert_s3",
+   "kind": "scalar",
+   "value": 5,
+   "dim": "count",
+   "validity": {
+    "inserts_per_month": [
+     0,
+     50000
+    ]
+   },
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:puts_per_insert_s3"
+   }
+  },
+  {
+   "id": "puts_per_insert_cas",
+   "kind": "scalar",
+   "value": 2,
+   "dim": "count",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:puts_per_insert_cas"
+   }
+  },
+  {
+   "id": "puts_per_insert_s3plain",
+   "kind": "scalar",
+   "value": 6,
+   "dim": "count",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:puts_per_insert_s3plain"
+   }
+  },
+  {
+   "id": "temp_gib_per_insert",
+   "kind": "scalar",
+   "value": 0.01,
+   "dim": "GiB",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:temp_gib_per_insert"
+   }
+  },
+  {
+   "id": "requests_per_replacement",
+   "kind": "scalar",
+   "value": 1234,
+   "dim": "count",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:requests_per_replacement"
+   }
+  },
+  {
+   "id": "gc_inserts_capacity",
+   "kind": "scalar",
+   "value": 1000000,
+   "dim": "count",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:gc_inserts_capacity"
+   }
+  },
+  {
+   "id": "ebs_iops_demand",
+   "kind": "scalar",
+   "value": 3000,
+   "dim": "iops",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:ebs_iops_demand"
+   }
+  },
+  {
+   "id": "ebs_mibps_demand",
+   "kind": "scalar",
+   "value": 125,
+   "dim": "mibps",
+   "validity": null,
+   "status": "ok",
+   "evidence": {
+    "kind": "measured",
+    "ref": "fixture:ebs_mibps_demand"
+   }
+  },
+  {
+   "id": "ebs_replacement_gib",
+   "kind": "scalar",
+   "value": null,
+   "dim": "GiB",
+   "validity": null,
+   "status": "unsupported",
+   "evidence": {
+    "kind": "measured",
+    "ref": "cut: replacement card"
+   }
+  }
+ ],
+ "billing": {
+  "schema": "billing/1",
+  "version": "0.1.0",
+  "presets": [
+   {
+    "id": "aws-us-east-1",
+    "as_of": "2026-10-24",
+    "currency": "USD",
+    "units": "binary_gb",
+    "units_evidence": {
+     "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+     "checked": "2026-10-24",
+     "note": "tier boundaries 51200 GB and 512000 GB are exact multiples of 1024; no explicit AWS statement found"
+    },
+    "assumptions": [
+     "Tier 1 assumes: S3 Standard, unversioned general-purpose buckets, bucket-owner pays, no unrelated usage, no credits, no KMS, no VPC-endpoint or NAT charges; EBS gp3 only; in-region EC2↔S3 transfer free; cross-AZ EC2↔EC2 per GB per direction; internet egress 0 by default.",
+     "Other configurations are unsupported, not approximated."
+    ],
+    "request_classes": [
+     {
+      "id": "put_copy_post_list",
+      "ops": [
+       "PutObject",
+       "CopyObject",
+       "CreateMultipartUpload",
+       "UploadPart",
+       "UploadPartCopy",
+       "CompleteMultipartUpload",
+       "ListObjectsV2",
+       "ListMultipartUploads",
+       "ListParts",
+       "CreateBucket"
+      ],
+      "price_per_1000": 0.005,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "price list: '$0.005 per 1,000 PUT, COPY, POST, or LIST requests' (usagetype Requests-Tier1). The pricing page does not say whether ListParts is a LIST; it is treated as one."
+     },
+     {
+      "id": "get_and_other",
+      "ops": [
+       "GetObject",
+       "HeadObject",
+       "HeadBucket"
+      ],
+      "price_per_1000": 0.0004,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "price list: '$0.004 per 10,000 GET and all other requests' (usagetype Requests-Tier2)"
+     },
+     {
+      "id": "delete_cancel",
+      "ops": [
+       "DeleteObject",
+       "DeleteObjects",
+       "AbortMultipartUpload"
+      ],
+      "price_per_1000": 0,
+      "source_url": "https://aws.amazon.com/s3/pricing/",
+      "checked": "2026-10-24",
+      "note": "pricing page: 'DELETE and CANCEL requests are free'"
+     }
+    ],
+    "outcome_billing": {
+     "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html",
+     "checked": "2026-10-24",
+     "note": "Outcomes not listed here are billed. Documented rule: 200 and 4XX are billed, 5XX is not; the listed 3XX/4XX codes are not billed.",
+     "free": [
+      {
+       "outcome_class": "server_error",
+       "status": "5XX",
+       "s3_code": null,
+       "condition": "any server error response",
+       "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
+      },
+      {
+       "outcome_class": "dropped",
+       "status": null,
+       "s3_code": null,
+       "condition": "upstream outcome unknown: no response from the store was seen, so nothing shows the store did billable work (a model assumption, not a provider rule)",
+       "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
+      },
+      {
+       "outcome_class": "not_sent",
+       "status": null,
+       "s3_code": null,
+       "condition": "the request never reached the store (injected, rejected by the proxy, no connection)",
+       "source_url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/ErrorCodeBilling.html"
+      },
+      {
+       "status": 403,
+       "s3_code": "AccessDenied",
+       "condition": "request initiated outside the bucket owner's AWS account or organization"
+      },
+      {
+       "status": 301,
+       "s3_code": "PermanentRedirect",
+       "condition": null
+      },
+      {
+       "status": 301,
+       "s3_code": "PermanentRedirectControlError",
+       "condition": null
+      },
+      {
+       "status": 307,
+       "s3_code": "TemporaryRedirect",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "AuthorizationHeaderMalformed",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "AuthorizationQueryParametersError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "ConnectionClosedByRequester",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "DeviceNotActiveError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "EndpointNotFound",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "ExpiredToken",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "IllegalLocationConstraintException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidArgument",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidBucketOwnerAWSAccountID",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidDigest",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidEncryptionAlgorithmError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidHostHeader",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidHttpMethod",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidRequest",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidSessionException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidSignature",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidSOAPRequest",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidStorageClass",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidTag",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidToken",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "InvalidURI",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "KeyTooLongError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "KMS.DisabledException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "KMS.InvalidKeyUsageException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "KMS.KMSInvalidStateException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "KMS.NotFoundException",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "LambdaInvalidResponse",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "LambdaInvocationFailed",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MalformedACLError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MalformedPOSTRequest",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MalformedXML",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MaxPostPreDataLengthExceededError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MetadataTooLarge",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MissingAttachment",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MissingRequestBodyError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "MissingSecurityHeader",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "NoLoggingStatusForKey",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "NotDeviceOwnerError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "ResponseInterrupted",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "RequestHeaderSectionTooLarge",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "TokenCodeInvalidError",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "UnexpectedContent",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "UnsupportedArgument",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "UnsupportedSignature",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "UserKeyMustBeSpecified",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "IncorrectEndpoint",
+       "condition": null
+      },
+      {
+       "status": 400,
+       "s3_code": "ValidationError",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "RequestTimeTooSkewed",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "SignatureDoesNotMatch",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "NotSignedUp",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "InvalidSecurity",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "InvalidPayer",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "InvalidAccessKeyId",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "AccountProblem",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "UnauthorizedAccessError",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "UnexpectedIPError",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "MissingAuthenticationToken",
+       "condition": null
+      },
+      {
+       "status": 403,
+       "s3_code": "LambdaPermissionError",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "LambdaNotFound",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "NoSuchAsyncRequest",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "NoSuchObjectLockConfiguration",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "NoSuchUpload",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "NoSuchWebsiteConfiguration",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "NoTransformationDefined",
+       "condition": null
+      },
+      {
+       "status": 404,
+       "s3_code": "ObjectLockConfigurationNotFoundError",
+       "condition": null
+      },
+      {
+       "status": 405,
+       "s3_code": "MethodNotAllowed",
+       "condition": null
+      },
+      {
+       "status": 409,
+       "s3_code": "BucketAlreadyExists",
+       "condition": null
+      },
+      {
+       "status": 409,
+       "s3_code": "InvalidBucketState",
+       "condition": null
+      },
+      {
+       "status": 409,
+       "s3_code": "OperationAborted",
+       "condition": null
+      },
+      {
+       "status": 411,
+       "s3_code": "MissingContentLength",
+       "condition": null
+      },
+      {
+       "status": 412,
+       "s3_code": "RequestIsNotMultiPartContent",
+       "condition": null
+      },
+      {
+       "status": 416,
+       "s3_code": "InvalidRange",
+       "condition": null
+      }
+     ]
+    },
+    "storage": {
+     "tiers": [
+      {
+       "up_to_gb": 51200,
+       "price_per_gb_month": 0.023
+      },
+      {
+       "up_to_gb": 512000,
+       "price_per_gb_month": 0.022
+      },
+      {
+       "up_to_gb": null,
+       "price_per_gb_month": 0.021
+      }
+     ],
+     "incomplete_multipart": "as_storage",
+     "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+     "checked": "2026-10-24",
+     "note": "S3 Standard first 50 TB / next 450 TB / over 500 TB"
+    },
+    "transfer": [
+     {
+      "id": "ec2_s3_same_region",
+      "price_per_gb": 0,
+      "direction": "both",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "price list lists S3 data transfer to AWS services (S3-DT-AWS Outbound) at $0; the pricing page prices only inter-region transfer"
+     },
+     {
+      "id": "ec2_ec2_cross_az",
+      "price_per_gb": 0.01,
+      "direction": "each_direction",
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "price list: '$0.010 per GB Regional Data Transfer - in/out/between AZs'"
+     },
+     {
+      "id": "internet",
+      "price_per_gb": null,
+      "direction": "out",
+      "source_url": null,
+      "checked": null,
+      "note": "Tier 1 assumes 0 egress by default; the tiered internet price was not looked up"
+     }
+    ],
+    "block": {
+     "gp3": {
+      "price_per_gib_month": 0.08,
+      "iops_baseline": 3000,
+      "iops_price": 0.005,
+      "mibps_baseline": 125,
+      "mibps_price": 0.04,
+      "iops_per_gib_max": 500,
+      "mibps_per_iops_max": 0.25,
+      "size_gib": [
+       1,
+       65536
+      ],
+      "iops": [
+       3000,
+       80000
+      ],
+      "mibps": [
+       125,
+       2000
+      ],
+      "source_url": "https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html",
+      "checked": "2026-10-24",
+      "note": "prices from the EC2 price list (EBS:VolumeUsage.gp3, EBS:VolumeP-IOPS.gp3 per IOPS-month, EBS:VolumeP-Throughput.gp3 '$0.04 per provisioned MiBps-month'): https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json; limits from the gp3 documentation page"
+     }
+    },
+    "allocation": {
+     "layouts": [
+      {
+       "id": "single",
+       "volumes": 1
+      },
+      {
+       "id": "stripe2",
+       "volumes": 2
+      },
+      {
+       "id": "stripe4",
+       "volumes": 4
+      }
+     ],
+     "objective": "min_monthly_cost",
+     "tie_break": [
+      "fewest_volumes",
+      "smallest_total_iops"
+     ]
+    },
+    "ec2_ebs_bandwidth": [
+     {
+      "instance_class": "m6i.large",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m6i.xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m6i.2xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m6i.4xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m7i.large",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m7i.xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m7i.2xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     },
+     {
+      "instance_class": "m7i.4xlarge",
+      "max_mbps": 10000,
+      "max_mibps": 1192.09,
+      "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json",
+      "checked": "2026-10-24",
+      "note": "dedicatedEbsThroughput 'Up to 10000 Mbps' (burst maximum); the price list has no baseline column"
+     }
+    ],
+    "multipart": {
+     "abort_days_after_initiation_default": 7,
+     "residence_time_assumption": "measured_or_assumed",
+     "note": "plan default; configure per bucket lifecycle rule"
+    }
+   },
+   {
+    "id": "gcs",
+    "structure_only": true
+   },
+   {
+    "id": "azure",
+    "structure_only": true
+   }
+  ]
+ },
+ "variants": [
+  "ebs",
+  "s3",
+  "s3plain",
+  "cas"
+ ],
+ "operations": [
+  "storage",
+  "inserts",
+  "replacement"
+ ],
+ "families": [
+  "lifecycle",
+  "startup_recovery"
+ ],
+ "applicability": {
+  "ebs": {
+   "storage": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "replacement": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   }
+  },
+  "s3": {
+   "storage": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "replacement": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   }
+  },
+  "s3plain": {
+   "storage": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "replacement": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   }
+  },
+  "cas": {
+   "storage": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "inserts": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   },
+   "replacement": {
+    "lifecycle": "supported",
+    "startup_recovery": "supported"
+   }
+  }
+ },
+ "formulas": {
+  "ebs": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "block_capacity",
+      "op_kind": "capacity",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "input",
+       "id": "data_gib",
+       "dim": "GiB"
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "coef",
+       "id": "ebs_iops_demand",
+       "dim": "iops"
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "coef",
+       "id": "ebs_mibps_demand",
+       "dim": "mibps"
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "inserts": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "replacement": {
+    "ledger_rows": [
+     {
+      "row_type": "block_capacity",
+      "op_kind": "capacity",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB",
+       "a": {
+        "kind": "input",
+        "id": "replacement_rate",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "ebs_replacement_gib",
+        "dim": "GiB"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   }
+  },
+  "s3": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "storage",
+      "op_kind": "stored",
+      "outcome_class": "ok",
+      "category": "active",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "input",
+       "id": "data_gib",
+       "dim": "GiB"
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "inserts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "puts_per_insert_s3",
+        "dim": "count"
+       }
+      }
+     },
+     {
+      "row_type": "storage",
+      "op_kind": "stored",
+      "outcome_class": "ok",
+      "category": "temporary",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "GiB",
+       "a": {
+        "kind": "input",
+        "id": "inserts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "temp_gib_per_insert",
+        "dim": "GiB"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "replacement": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "replacement_rate",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "requests_per_replacement",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   }
+  },
+  "s3plain": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "storage",
+      "op_kind": "stored",
+      "outcome_class": "ok",
+      "category": "active",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "input",
+       "id": "data_gib",
+       "dim": "GiB"
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "inserts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "puts_per_insert_s3plain",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "replacement": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [
+     {
+      "id": "not_supported",
+      "cond": {
+       "kind": "branch",
+       "dim": "count",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "replacement_rate",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       }
+      },
+      "reason": "s3_plain_rewritable cannot replace a replica"
+     }
+    ],
+    "notes": []
+   }
+  },
+  "cas": {
+   "storage": {
+    "ledger_rows": [
+     {
+      "row_type": "storage",
+      "op_kind": "stored",
+      "outcome_class": "ok",
+      "category": "active",
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "input",
+       "id": "data_gib",
+       "dim": "GiB"
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [
+     {
+      "id": "backlog_grows",
+      "cond": {
+       "kind": "branch",
+       "dim": "count",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "inserts_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "coef",
+         "id": "gc_inserts_capacity",
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       }
+      },
+      "reason": "GC reclaims fewer objects than the inserts retire"
+     }
+    ],
+    "notes": [
+     {
+      "kind": "coef",
+      "id": "gc_inserts_capacity",
+      "dim": "count"
+     }
+    ]
+   },
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "inserts_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "puts_per_insert_cas",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "replacement": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "replacement_rate",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "requests_per_replacement",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   }
+  }
+ },
+ "states": {
+  "ebs": [],
+  "s3": [],
+  "s3plain": [
+   {
+    "id": "not_supported",
+    "cond": {
+     "kind": "branch",
+     "dim": "count",
+     "cond": {
+      "op": ">",
+      "a": {
+       "kind": "input",
+       "id": "replacement_rate",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "const",
+       "value": 0,
+       "dim": "count"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "count"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "count"
+     }
+    },
+    "reason": "s3_plain_rewritable cannot replace a replica",
+    "operation": "replacement"
+   }
+  ],
+  "cas": [
+   {
+    "id": "backlog_grows",
+    "cond": {
+     "kind": "branch",
+     "dim": "count",
+     "cond": {
+      "op": ">",
+      "a": {
+       "kind": "input",
+       "id": "inserts_per_month",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "coef",
+       "id": "gc_inserts_capacity",
+       "dim": "count"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "count"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "count"
+     }
+    },
+    "reason": "GC reclaims fewer objects than the inserts retire",
+    "operation": "storage"
+   }
+  ]
+ }
+}

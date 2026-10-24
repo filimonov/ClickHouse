@@ -381,54 +381,22 @@ function reconcile(where, record, prediction, cells, problems) {
 
 // ---- billing and allocation -------------------------------------------------------------------
 
-// Quantity a cell contributes to one aggregate billing line; allocation is proportional to it.
-function cellQuantity(line, rows, preset) {
-  const mine = rows.filter((r) => r.scope === line.scope);
-  if (line.rule_id === 'storage') return mine.filter((r) => r.row_type === 'storage').reduce((s, r) => s + r.quantity, 0);
-  if (line.rule_id === 'block_capacity') return mine.filter((r) => r.op_kind === 'capacity').reduce((s, r) => s + r.quantity, 0);
-  if (line.rule_id === 'block_iops') return mine.filter((r) => r.op_kind === 'iops').reduce((s, r) => s + r.quantity, 0);
-  if (line.rule_id === 'block_mibps') return mine.filter((r) => r.op_kind === 'mibps').reduce((s, r) => s + r.quantity, 0);
-  const transfer = mine.filter((r) => r.row_type === 'transfer' && r.route === line.rule_id);
-  if (transfer.length) return transfer.reduce((s, r) => s + r.quantity, 0);
-  const req = mine.filter((r) => r.row_type === 'request');
-  if (!req.length) return 0;
-  const own = billing.bill(req, preset, line.scope, null).lines.find((l) => l.rule_id === line.rule_id);
-  return own ? own.quantity : 0;
-}
-
 // Bills the record's available cells once per scope (tiers and baselines see the aggregate), then allocates
 // each line's money back to the cells: by the cells' `allocation.shares` when declared, else by quantity.
 function billGroup(where, cells, preset, problems) {
   const billed = cells.filter((c) => !c.unavailable.length);
   const rows = billed.flatMap((c) => c.ev.rows.map((r) => Object.assign({}, r, { cell: c.key })));
-  if (!rows.length) return { lines: null, total: null, provisioning: null, allocation: [] };
-  let lines = [];
-  let provisioning = null;
+  if (!rows.length) return { lines: null, total: null, provisioning: null, allocation: [], byCell: {} };
+  let b;
   try {
-    for (const scope of [...new Set(rows.map((r) => r.scope))]) {
-      const b = billing.bill(rows, preset, scope, null);
-      lines.push(...b.lines);
-      if (b.allocation) {
-        if (provisioning) throw new Error('block rows in more than one scope');
-        provisioning = Object.assign({ scope }, b.allocation);
-      }
-    }
+    b = billing.billVariant(rows, preset, null);
   } catch (e) {
     problems.push(`${where}: billing failed: ${e.message}`);
-    return { lines: null, total: null, provisioning: null, allocation: [] };
+    return { lines: null, total: null, provisioning: null, allocation: [], byCell: {} };
   }
-  const declared = {};
-  for (const c of billed) Object.assign(declared, c.ev.allocation || {});
-  const shareKeys = Object.keys(declared);
-  for (const k of shareKeys) if (!billed.some((c) => c.name === k)) problems.push(`${where}: allocation share for unknown cell ${k}`);
-  const allocation = lines.map((l) => {
-    const weights = Object.fromEntries(billed.map((c) => [c.key, shareKeys.length ? (declared[c.name] || 0) : cellQuantity(l, c.ev.rows, preset)]));
-    const sum = Object.values(weights).reduce((s, w) => s + w, 0);
-    if (sum <= 0 && l.money > EPS) problems.push(`${where}: ${l.rule_id} money ${l.money} has no cell to allocate to`);
-    const shares = Object.fromEntries(Object.entries(weights).map(([k, w]) => [k, { weight: w, fraction: sum > 0 ? w / sum : 0, money: sum > 0 ? l.money * w / sum : 0 }]));
-    return { rule_id: l.rule_id, scope: l.scope, money: l.money, basis: shareKeys.length ? 'allocation.shares' : 'quantity', shares };
-  });
-  return { lines, total: lines.reduce((s, l) => s + l.money, 0), provisioning, allocation };
+  const a = billing.allocate(b.lines, billed.map((c) => ({ key: c.key, name: c.name, rows: c.ev.rows, shares: c.ev.allocation })), preset);
+  problems.push(...a.problems.map((p) => `${where}: ${p}`));
+  return { lines: b.lines, total: b.total, provisioning: b.provisioning, allocation: a.allocation, byCell: a.byCell };
 }
 
 function summarize(rows) {
@@ -532,19 +500,14 @@ function main(argv) {
     const pick = (m) => Object.fromEntries([...m].map(([k, v]) => [k, v && typeof v === 'object' && 'value' in v ? v.value : v]));
     for (const x of evaluated) {
       const unavailable = x.unavailable.length > 0;
-      const mine = unavailable || !g.lines ? null : g.allocation.map((a) => {
-        const line = g.lines.find((l) => l.rule_id === a.rule_id && l.scope === a.scope);
-        const share = a.shares[x.key];
-        return { rule_id: a.rule_id, scope: a.scope, unit: line.unit, quantity: line.quantity * share.fraction, money: share.money,
-          share: share.fraction, aggregate_quantity: line.quantity, aggregate_money: a.money, basis: a.basis, note: line.note };
-      }).filter((l) => l.share > 0);
+      const mine = unavailable || !g.lines ? null : g.byCell[x.key].lines;
       cells[x.key] = {
         group: groupKey, measurement_id: rec.measurement_id, state: unavailable ? 'unavailable' : 'ok', unavailable_reasons: x.unavailable,
         stage1_inputs: { inputs: pick(ctx.inputs), coefs: pick(ctx.coefs), observations: rec.observations || {}, prediction_parameters: ignored },
         stage2_rows: x.rows,
         stage3_ledger_summary: { by_row: summarize(x.ev.rows), states: x.ev.states, extrapolated: x.ev.extrapolated, allocation: x.ev.allocation, notes: x.ev.notes.map((n) => n.value) },
         stage4_billing_lines: mine,
-        billing_total: mine ? mine.reduce((s, l) => s + l.money, 0) : null,
+        billing_total: mine ? g.byCell[x.key].money : null,
         stage5_allocation: unavailable ? null : { group: groupKey, provisioning: g.provisioning },
         evidence: evidenceOf(rec),
       };
