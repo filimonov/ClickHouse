@@ -444,14 +444,16 @@ def _git(repo, *args):
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
 
 
-def provenance(coverage, records, repo=ROOT):
+def provenance(coverage, records, repo=ROOT, head="HEAD"):
     """Hold-out and validation predictions must be committed before the run that tests them.
 
-    For every `holdout` and `validation` row, `prediction_commit` must be an ancestor of each cited record's
-    `rig_commit`, and its commit time must not be later than the record's run id time (`cost-YYYYMMDDTHHMMSSZ`).
-    Measurement ids that resolve to no record are left to the evidence closure.
+    For every `holdout` and `validation` row, `prediction_commit` must be reachable from `head` (the branch, not a
+    rewritten or dropped commit), and its committer time must not be later than each cited record's run id time
+    (`cost-YYYYMMDDTHHMMSSZ`). A record's `rig_commit` is the checkout the run used, which can predate predictions
+    committed later on the branch, so it is not the reference. Ids that resolve to no record are left to the
+    evidence closure.
     """
-    problems, ancestor, ctime = [], {}, {}
+    problems, reachable, ctime = [], {}, {}
 
     def commit_time(c):
         if c not in ctime:
@@ -466,16 +468,16 @@ def provenance(coverage, records, repo=ROOT):
         if commit_time(pc) is None:
             problems.append(f"provenance {label}: prediction commit {pc} is not in the repository")
             continue
+        if pc not in reachable:
+            reachable[pc] = _git(repo, "merge-base", "--is-ancestor", pc, head).returncode == 0
+        if not reachable[pc]:
+            problems.append(f"provenance {label}: prediction commit {pc} is not reachable from {head}")
         found = set()
         for mid in row.get("measurement_ids") or []:
             rec = records.get(mid)
             if rec is None:
                 continue
-            rig, run = rec.get("rig_commit"), RUN_TIME.match(str(rec.get("run_id") or mid))
-            if (pc, rig) not in ancestor:
-                ancestor[(pc, rig)] = bool(rig) and _git(repo, "merge-base", "--is-ancestor", pc, rig).returncode == 0
-            if not ancestor[(pc, rig)]:
-                found.add(f"prediction commit {pc} is not an ancestor of rig commit {rig}")
+            run = RUN_TIME.match(str(rec.get("run_id") or mid))
             if run is None:
                 found.add(f"run id of {mid} has no cost-YYYYMMDDTHHMMSSZ time")
             else:

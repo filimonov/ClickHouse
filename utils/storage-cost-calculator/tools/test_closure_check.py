@@ -318,46 +318,51 @@ class ReplayExitTest(unittest.TestCase):
 
 
 class ProvenanceTest(unittest.TestCase):
-    """A hold-out or validation prediction must be an ancestor of the rig commit and older than the run."""
+    """A hold-out or validation prediction must be reachable from HEAD and committed before the run."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = self.tmp.name
-        env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t')
-
-        def commit(msg, when):
-            env.update(GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
-            cc.subprocess.run(['git', '-C', self.repo, 'commit', '-q', '--allow-empty', '-m', msg], env=env, check=True)
-            return cc.subprocess.run(['git', '-C', self.repo, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
-
+        self.env = dict(os.environ, GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t')
         cc.subprocess.run(['git', 'init', '-q', self.repo], check=True)
-        self.pred = commit('prediction', '2026-10-24T06:00:00Z')
-        self.rig = commit('rig', '2026-10-24T06:30:00Z')
-        self.late = commit('late prediction', '2026-10-24T09:00:00Z')
+        # The run's checkout predates the prediction, as in a report whose sparse worktree pinned an older commit.
+        self.rig = self.commit('rig', '2026-10-24T05:00:00Z')
+        self.pred = self.commit('prediction', '2026-10-24T06:00:00Z')
+        self.late = self.commit('late prediction', '2026-10-24T09:00:00Z')
+        tree = self.git('rev-parse', 'HEAD^{tree}')
+        self.dropped = self.git('commit-tree', tree, '-p', self.rig, '-m', 'rewritten away', when='2026-10-24T06:00:00Z')
+
+    def git(self, *args, when=None):
+        env = dict(self.env, GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when) if when else self.env
+        return cc.subprocess.run(['git', '-C', self.repo, *args], env=env, capture_output=True, text=True, check=True).stdout.strip()
+
+    def commit(self, msg, when):
+        self.git('commit', '-q', '--allow-empty', '-m', msg, when=when)
+        return self.git('rev-parse', 'HEAD')
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def check(self, pc, role='validation', run='cost-20261024T080000Z', rig=None):
+    def check(self, pc, role='validation', run='cost-20261024T080000Z'):
         cov = {'evidence': [{'coefficient': 'c', 'experiment_id': 'e.x', 'policy': 's3', 'role': role,
                              'prediction_commit': pc, 'measurement_ids': [f'{run}/s3/e/x/k1', 'unresolved/k2']}]}
-        records = {f'{run}/s3/e/x/k1': {'run_id': run, 'rig_commit': rig or self.rig}}
+        records = {f'{run}/s3/e/x/k1': {'run_id': run, 'rig_commit': self.rig}}
         return cc.provenance(cov, records, self.repo)
 
-    def test_prediction_before_the_run_on_the_rig_history_passes(self):
+    def test_prediction_after_the_rig_commit_and_before_the_run_passes(self):
         self.assertEqual(self.check(self.pred), [])
         self.assertEqual(self.check(self.pred, role='holdout'), [])
 
     def test_fit_rows_are_not_checked(self):
         self.assertEqual(self.check(self.late, role='fit'), [])
 
-    def test_prediction_not_an_ancestor_of_the_rig_commit_fails(self):
-        found = self.check(self.late)
-        self.assertTrue(any('not an ancestor of rig commit' in p for p in found), found)
+    def test_prediction_not_reachable_from_head_fails(self):
+        self.assertEqual(self.check(self.dropped),
+                         [f'provenance c e.x/s3 validation: prediction commit {self.dropped} is not reachable from HEAD'])
 
     def test_prediction_later_than_the_run_fails(self):
-        found = self.check(self.late, run='cost-20261024T080000Z', rig=self.late)
-        self.assertEqual(found, [f'provenance c e.x/s3 validation: prediction commit {self.late} is later than run cost-20261024T080000Z'])
+        self.assertEqual(self.check(self.late),
+                         [f'provenance c e.x/s3 validation: prediction commit {self.late} is later than run cost-20261024T080000Z'])
 
     def test_unknown_prediction_commit_fails(self):
         found = self.check('0' * 11)
