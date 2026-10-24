@@ -18,7 +18,7 @@ A follower acquires every inserted part by fetch and, with default settings, exe
 | Report runs | `cost-20261024T115147Z`, `cost-20261024T121344Z`, `cost-20261024T123232Z`; `measurements.jsonl` holds their 174 records, 168 ok and 6 FAILED (kept: they are open reconciliation items) |
 | Rig | every run executes the cards from a detached worktree at `f35fd96a730`, so all records name one rig commit; manifests and predictions are read from this directory |
 | Earlier runs | `cost-20261024T093949Z` (smoke, s3, K=1: found the zero-copy receiver `HeadObject`); `cost-20261024T113828Z` (stopped after 66 records: local had no window start, CAS windows crossed, s3plain sent `HeadObject` the assumed ranges missed, CAS republishes a failed blob 8 times). Neither is in `measurements.jsonl` |
-| Predictions | hold-out `replication-natural-holdout.wide` first at `630bc885ee4`; all cases `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs |
+| Predictions | hold-out `replication-natural-holdout.wide` first at `630bc885ee4`; all cases `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs; after the report runs `bac037b336d` turns the s3 `fetch.merge` sender read into a range and adds the fresh hold-out `faults.multipart-abort-part3c` |
 | Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
 | Cuts | `replacement.default` and `faults.fetch` (P2), owner directive D14: no manifest; `replacement_requests_per_part` and `fetch_retry_rate` are `unsupported` |
 
@@ -191,7 +191,8 @@ accepts, and the incomplete inventory is 0 with no rig action. CAS republishes t
 | `faults.multipart-abort` | `s3plain` | 3 / 0 | fit |
 | `faults.multipart-abort-part3` | `s3` | 3 / 0 | holdout |
 | `faults.multipart-abort-part3` | `s3plain` | 3 / 0 | holdout (consumed) |
-| `faults.multipart-abort-part3b` | `cas` | 0 / 3 | — |
+| `faults.multipart-abort-part3b` | `cas` | 0 / 3 | holdout (consumed) |
+| `faults.multipart-abort-part3c` | `cas` | not run | holdout (planned, Task 7) |
 | `faults.none` | `cas` | 3 / 0 | fit |
 | `faults.none` | `s3` | 3 / 0 | fit |
 | `faults.none` | `s3plain` | 3 / 0 | fit |
@@ -317,15 +318,26 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
 
 ## Gaps and limitations {#gaps}
 
-- **s3 `replication-fetch.merge` k2 (FAILED, open).** The sender read the merged `data.bin` twice: the first
-  `GetObject` was closed by the reader after 792 KB (downstream `dropped`, no rule installed) and reissued from
-  offset 0. One of three repeats; cause not identified. `acquire_requests` carries `abs` tolerance 1 for it.
-- **CAS `faults.multipart-abort` k2, k3 (FAILED, open).** After the 8 aborts, 32 MiB (one upload part) is still
-  incomplete in the replay after a 30 s wait: an `UploadPart` that lands after its upload's abort, or an abort
-  the store did not apply. `failed_upload_residue` has no CAS value; CAS residue of a failed upload is unpriced.
+- **s3 sender re-read, `replication-fetch.merge` k2 (FAILED; now a range).** The sender's first `GetObject` of
+  the merged `data.bin` was closed by the reader after 792 823 bytes (ledger seq 8999: downstream `dropped`,
+  upstream `unknown`, no fault rule installed) and reissued from offset 0 (seq 9000, 4 318 512 bytes): r1
+  `GetObject` 44 against 43, in 1 of 3 repeats. The cause in the reader is not identified. The prediction is now
+  43..44 (`basis: assumption`, `bac037b336d`); `acquire_requests` carries `abs` tolerance 1 for it.
+- **CAS `faults.multipart-abort` k2, k3 (FAILED by a too strict card; resolved as a timing bound).** In each of the
+  8 publications the server aborts its own upload: `WriteBufferFromS3::tryToAbortMultipartUpload` waits for every
+  part task (`task_tracker->safeWaitAll`, `IO/WriteBufferFromS3.cpp:273`) and then sends `AbortMultipartUpload`
+  (`:274`, `:469`), which the store answered ok every time (8 per repeat). In k2 and k3 the relay saw the response of the last
+  publication's part 1 finish 2.2 ms after that abort started (k3: seq 1503), so the bounded replay keeps the
+  32 MiB part in its upper inventory and retires it in the lower: residue lower 0, upper 33 554 432 bytes, after
+  the 30 s wait. The server had the part's answer before aborting, so the store holds no residue. Had it kept one,
+  the server would not abort again, and neither would the rig: the runner's cleanup aborts only uploads without an
+  ok abort (`yardstick/cost/runner.py` `open_uploads`); only a bucket lifecycle rule would clean it. The card now
+  asserts the lower bound and records the upper (`bac037b336d`); the old records keep their FAILED status, so
+  `failed_upload_residue` has no CAS value until a rerun.
 - **CAS `faults.multipart-abort-part3b` (FAILED, consumed).** The fresh CAS hold-out predicted 3 upload parts per
-  publication; 72 MB is 4 parts (32 + 16 + 16 + 8 MiB), so `UploadPart` is 56, not 48. A prediction arithmetic
-  error, not a graph change; no fresh CAS hold-out of the residue was run.
+  publication; 72 MB is 4 parts (32 + 16 + 16 + 8 MiB), and part 4 is sent although part 3 fails: `UploadPart` 56
+  (8 × 7), not 48 (8 × 6). A prediction arithmetic error. `faults.multipart-abort-part3c` (75 000 rows, 4 parts,
+  `UploadPart` 56) is the fresh hold-out, committed at `bac037b336d` before its first run (planned, Task 7).
 - **CAS and s3plain hold-outs consumed.** Their assumed ranges were revised (`0bc1e557850`) after the stopped run
   `cost-20261024T113828Z` had already run those cases, so their hold-out edges are `consumed`. The done hold-outs
   of every coefficient are on `s3` and `ebs`. Fresh CAS and s3plain hold-outs belong to Task 7.

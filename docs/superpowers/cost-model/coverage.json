@@ -1682,6 +1682,19 @@
           "timeout_s": 900,
           "duration_s": 60,
           "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "multipart-abort-part3c",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
           "status": "planned"
         },
         {
@@ -8894,7 +8907,7 @@
         ]
       },
       "role": "fit",
-      "prediction_commit": "2c006846dbc",
+      "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
@@ -8912,7 +8925,7 @@
         ]
       },
       "role": "fit",
-      "prediction_commit": "2c006846dbc",
+      "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
@@ -10241,6 +10254,25 @@
         "cost-20261024T115147Z/s3plain/faults/multipart-abort-part3/k1",
         "cost-20261024T115147Z/s3plain/faults/multipart-abort-part3/k2",
         "cost-20261024T115147Z/s3plain/faults/multipart-abort-part3/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "failed_upload_residue",
+      "experiment_id": "faults.multipart-abort-part3b",
+      "policy": "cas",
+      "span": {
+        "upload_parts": [
+          4,
+          4
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T115147Z/cas/faults/multipart-abort-part3b/k1",
+        "cost-20261024T115147Z/cas/faults/multipart-abort-part3b/k2",
+        "cost-20261024T115147Z/cas/faults/multipart-abort-part3b/k3"
       ],
       "status": "consumed"
     },
