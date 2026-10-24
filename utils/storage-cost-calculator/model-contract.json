@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "ebcd9cc8a2a51754",
+ "version": "46b6da316e7ada06",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "ebcd9cc8a2a51754",
+  "contract_version": "46b6da316e7ada06",
   "registry_version": "0.3.0",
   "registry_sha256": "23e6f1faa18f25e5e9c23fd710609180f5ac77afd0c1d8eaa9b69b3eaf49663e",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "4939abd40bb3d852b3e30c11eb69472870348c4a3dc28a2da9ee46854a6291fd",
+  "coverage_sha256": "ef33a60a893743e037b991d2f7d6b7abd3eaf1b1d10069c5050492bb3f150fa1",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -70,11 +70,18 @@
     "rig_commit": "b7016f71689d4cc68231c533b4ac6f83ae369cd2",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "e5cc75973a3622968a3eed6ffb66f5ea1e11a711fac881f9447c5479122e970f"
+   },
+   {
+    "report": "2026-10-24-storage-cost-validation",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "9ed2efcd450dc096a11766631d40b73ebef7f4fe",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "5c5fa8123571dc5f72279bd08a058334ba340039f14ccff8709258c56a9e94d8"
    }
   ],
-  "breakeven_sha256": "1b6e8e9ce18c56bcfc280761f872c841fb8d75c0e51b2f9e21e8d95106ce9c41"
+  "breakeven_sha256": "7c39111b3beed99d6a5630892a6e0e3b934b26c7986314e7a5ad09b74cae35a3"
  },
- "evidence_statement": "Built from 7 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 59 coefficient(s): 41 measured, 18 pinned to source. 56 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 4 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 59 coefficient(s): 41 measured, 18 pinned to source. 56 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -11062,7 +11069,11 @@
     ],
     "values": {
      "narrow|compact": 1,
-     "narrow|wide": 10
+     "narrow|wide": 10,
+     "wide|compact": 1,
+     "wide|wide": 80,
+     "types|compact": 2,
+     "types|wide": 135
     }
    },
    "validity": {
@@ -11080,25 +11091,67 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
     "version": "0.3.0",
     "measurement_ids": [
+     "cost-20261024T104750Z/cas/cas-branches/adoption/k1",
+     "cost-20261024T104750Z/cas/cas-branches/adoption/k2",
+     "cost-20261024T104750Z/cas/cas-branches/adoption/k3",
      "cost-20261024T104750Z/cas/cas-branches/fresh/k1",
      "cost-20261024T104750Z/cas/cas-branches/fresh/k2",
      "cost-20261024T104750Z/cas/cas-branches/fresh/k3",
-     "cost-20261024T104750Z/cas/cas-branches/adoption/k1",
-     "cost-20261024T104750Z/cas/cas-branches/adoption/k2",
-     "cost-20261024T104750Z/cas/cas-branches/adoption/k3"
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-compact/k3",
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/narrow-wide/k3",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-compact/k3",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/types-fit-wide/k3",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-compact/k3",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k1",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k2",
+     "cost-20261024T154049Z/cas/objects-per-part/wide-wide/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-compact/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/narrow-wide/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-compact/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/types-fit-wide/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-compact/k3",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k1",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k2",
+     "cost-20261024T154049Z/cas_cached/objects-per-part/wide-wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
    },
    "status": "ok",
-   "rule": "distinct blob uploads per part: Compact 1 (data.bin; data.cmrk4 and primary.cidx are inline); Wide 2 per substream (.bin and .cmrk2), files with equal bytes collapsing into one upload; a String column has 2 substreams (.bin, .size.bin), Nullable 2, Array 2, LowCardinality 2",
+   "rule": "distinct blob uploads per part, as an upper bound: Compact 1 (data.bin) plus 1 per projection; Wide 2 per substream (.bin and .cmrk2); a file whose bytes equal an earlier file of the pool is not uploaded again. The bound holds with equality when no two blob files are byte-equal (narrow Compact and Wide, wide and types Compact); mark files of streams with equal compressed block sizes coincide, so the measured uploads of the wide and types Wide cases are 0.52 and 0.56 of the bound (validation report)",
    "holdout_measurements": [
     "cost-20261024T104750Z/cas/cas-branches/inline/k1",
     "cost-20261024T104750Z/cas/cas-branches/inline/k2",
     "cost-20261024T104750Z/cas/cas-branches/inline/k3",
     "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k1",
     "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k2",
-    "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k3"
+    "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k3",
+    "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k1",
+    "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k2",
+    "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k3",
+    "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k1",
+    "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k2",
+    "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k3"
    ]
   },
   {
@@ -12832,13 +12885,14 @@
     ],
     "values": {
      "s3": 0,
-     "s3plain": 0
+     "s3plain": 0,
+     "cas": 0
     }
    },
    "validity": {
     "upload_parts": [
      2,
-     3
+     4
     ]
    },
    "tolerance": {
@@ -12855,7 +12909,10 @@
      "cost-20261024T115147Z/s3/faults/multipart-abort/k3",
      "cost-20261024T115147Z/s3plain/faults/multipart-abort/k1",
      "cost-20261024T115147Z/s3plain/faults/multipart-abort/k2",
-     "cost-20261024T115147Z/s3plain/faults/multipart-abort/k3"
+     "cost-20261024T115147Z/s3plain/faults/multipart-abort/k3",
+     "cost-20261024T154049Z/cas/faults/multipart-abort/k1",
+     "cost-20261024T154049Z/cas/faults/multipart-abort/k2",
+     "cost-20261024T154049Z/cas/faults/multipart-abort/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
