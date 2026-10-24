@@ -194,17 +194,17 @@ def derived_refs(node, registry):
 def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
-    A coefficient belongs to the families of the cards its fit and hold-out rows come from. A (cell, family) entry is backed
-    when every coefficient the cell references (through registry derivations too) that belongs to that family has a
-    completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the variant; the
-    cell's coefficients of other families are checked under their own entries. An entry with no coefficient of its
-    family is backed by a `done` validation row (or fit and hold-out rows) of that family for a quantity or coefficient
-    the cell references (source-derived evidence exercised by a fixture). One such row backs the entry even when the cell
-    reads several pinned quantities: pinned values are source facts, and the row shows the fixture exercises the
-    cell on that variant. A planned row backs nothing. A coefficient in `measured` (the ids of measured
-    coefficients) with no evidence row at all belongs to no family, so every supported entry of a cell that reads
-    it stays pending. With the contract's `applicability`, only `supported` families need evidence; without it,
-    every family does.
+    A coefficient belongs to the families of the cards its fit and hold-out rows come from. A (cell, family) entry
+    is backed when every coefficient the cell references (through registry derivations too) that belongs to that
+    family has a completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the
+    variant; the cell's coefficients of other families are checked under their own entries. An entry with no
+    coefficient of its family is backed by a `done` validation row (or fit and hold-out rows) of that family for a
+    quantity or coefficient the cell references (source-derived evidence exercised by a fixture). One such row backs
+    the entry even when the cell reads several pinned quantities: pinned values are source facts, and the row shows
+    the fixture exercises the cell on that variant. A planned row backs nothing. A coefficient in `measured` (the
+    ids of measured coefficients) with no fit or hold-out row belongs to no family, so every supported entry of a
+    cell that reads it stays pending. With the contract's `applicability`, only `supported` families need evidence;
+    without it, every family does.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
