@@ -430,7 +430,8 @@ test('test_measured_fixtures_within_tolerance', (t) => {
   const coverage = JSON.parse(fs.readFileSync(only.coverage, 'utf8'));
   const withCells = new Set(fixtures.map(([, fx]) => fx.edge_id));
   const without = coverage.evidence.map((e, i) => [`evidence[${i}]`, e])
-    .filter(([id, e]) => e.status === 'done' && ['fit', 'holdout'].includes(e.role) && !withCells.has(id)).map(([id]) => id);
+    // A borrowed row reuses its source edge's records, so it has no fixture of its own (tools/build_fixtures.py).
+    .filter(([id, e]) => e.status === 'done' && ['fit', 'holdout'].includes(e.role) && !e.borrowed_from && !withCells.has(id)).map(([id]) => id);
   assert.deepEqual(only.edges.map((e) => e.edge_id).sort(), without.sort());
 });
 
