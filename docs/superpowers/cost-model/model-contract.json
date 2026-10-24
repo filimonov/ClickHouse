@@ -36,7 +36,8 @@
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    }
-  ]
+  ],
+  "breakeven_sha256": "e11c2f873734c3066e484ba605f2b493dd1b1663c0871de7bec592b1903a6ccd"
  },
  "evidence_statement": "Built from 2 report(s): 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0. 8 coefficient(s): 3 measured, 5 pinned to source. 6 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.2.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [

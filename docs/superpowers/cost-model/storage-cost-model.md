@@ -12,7 +12,7 @@ doc_type: 'reference'
 The calculator's formulas and inputs, rendered from `model-contract.json`. The page evaluates the same contract, so a
 number on the page and a formula here come from one expression.
 
-The `Formulas` and `Inputs` sections are generated. Edit the reports and the registry, then regenerate:
+The `Formulas`, `Inputs` and `Break-even` sections are generated. Edit the reports and the registry, then regenerate:
 
 ```bash
 python3 utils/storage-cost-calculator/tools/generate_contract.py generate
@@ -40,22 +40,97 @@ Every coefficient and input carries one evidence kind:
 
 ## Known inaccuracies {#known-inaccuracies}
 
+<!-- known-inaccuracies: refresh after Plan 2 -->
+
+### Model limits {#model-limits}
+
 - Operations without evidence: the closure check lists every variant × operation × family cell that has neither
   evidence nor a `not_supported` state. The page shows such a column as `unavailable`.
 - Card and probe cells (`card_cells` in the contract) reconcile single cards. The page does not evaluate them.
+- Break-even sweeps need priced cells. Until the research reports land, every sweep total is `unavailable` and
+  every crossing is `none`.
+
+### Blog claims against the model {#blog-claims}
+
+Source: `docs/superpowers/blog/2026-cas-storage-model/part4-cheap-self-sufficient.md` on branch `cas-blog-article`
+(`git show cas-blog-article:<path>`). The table lists each quantitative or categorical claim about storage cost.
+"Model: no priced cell yet (Plan 2 pending)" means the contract has no formulas cell for it, so the model gives no
+number. Request prices come from the billing preset `aws-us-east-1` (AWS price list, checked 2026-10-24).
+
+| Line | Blog claim | Model's current answer |
+|---|---|---|
+| 75-76 | `GET` or `HEAD` costs about $0.0004 per thousand | Agrees. `get_and_other` is $0.0004 per 1,000 (`GetObject`, `HeadObject`, `HeadBucket`). |
+| 76-77 | `PUT`, `COPY` or `LIST` costs about $0.005 per thousand | Agrees. `put_copy_post_list` is $0.005 per 1,000. It also bills multipart calls and `POST`, and treats `ListParts` as a `LIST`. |
+| 77-78 | The write tier is about 12.5× the read tier | Agrees. 0.005 / 0.0004 = 12.5. |
+| 78 | `DELETE` is free | Agrees. `delete_cancel` is $0 and also covers `DeleteObjects` and `AbortMultipartUpload`. |
+| 79-81 | Writes scale to about 3,500 requests per second per prefix; bursts past that get `503 Slow Down` | Not modelled. The calculator prices request counts and has no rate limits. |
+| 88-93 | The collector never `LIST`s the pool on the normal path | Partly contradicted by `probe_cas_gc_cohort`: 14 `LIST` requests in the priced cell (20 inserts, `DROP TABLE`, 3 GC rounds). The probe does not show whether they scan the pool. Model: no priced cell yet (Plan 2 pending). |
+| 95-99 | A naive commit takes four to six sequential round trips and adds over a second to every insert | Not modelled. The calculator has no latency. |
+| 121-123 | An early configuration issued about 5,100 `HEAD` per second, two-thirds of reads failing | Not modelled. This is a soak observation, not a steady-state rate. |
+| 163-172 | A commit costs the new blob `PUT`s, one tree `PUT` and exactly one manifest CAS `PUT`; at most two control writes under contention | Model: no priced cell yet (Plan 2 pending). `probe_cas_expect` (phase-0 report) recorded 27 foreground `PUT` for 3 inserts: 3 blobs and 24 conditional writes, which is 8 per insert, and 3 `HEAD` (one per blob). It does not split the conditional writes into tree, manifest and control. |
+| 169-172 | No Keeper operation at all | Not modelled. The ledger counts object-store requests only. |
+| 198-199 | A beta RustFS build leaked about 74 GB across 18 keys in an hour | Not modelled. This is a backend defect on the test store. |
+| 268-275 | The read path issues no `HEAD` and no `LIST` | Model: no priced cell yet (Plan 2 pending). No `reads` cell exists for `cas`. |
+| 293-294 | A part marked in round R is deleted in round R+1 | Not checked. `probe_cas_gc_cohort` reclaimed all 40 cohort objects 14.3 s after `DROP TABLE` with rounds every 5 s; it does not record the round of each mark and delete. |
+| 305-306 | About 80,000 audit events in twenty minutes at two writers | Not modelled. This is a soak observation. |
 
 ## Reproduce {#reproduce}
 
-1. Run the rig cards of a report: `utils/cas-yardstick` writes `measurements.jsonl` and `raw/` into the report directory.
-2. Regenerate the contract, the page copy, the measured fixtures and this document:
-   `python3 utils/storage-cost-calculator/tools/generate_contract.py generate`.
-3. Check that every generated file matches a fresh render and that all closure checks pass:
-   `python3 utils/storage-cost-calculator/tools/generate_contract.py check --mode final`.
-4. Run the tests: `node --test utils/storage-cost-calculator/test/` and
-   `python3 -m unittest discover -s utils/storage-cost-calculator/tools -p 'test_*.py'`.
+Pinned inputs, from `docs/superpowers/reports/2026-10-24-storage-cost-phase0/README.md`:
+
+| Item | Value |
+|---|---|
+| Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
+| Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (the download decompresses itself on first start) |
+| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Store | RustFS behind the ledger proxy, bucket `yardstick-cost` |
+
+1. Run the rig gate. It runs the six acceptance probes, then the drill and render checks, and exits 2 on a failure:
+
+   ```bash
+   utils/cas-yardstick/rustfs-bin.sh ensure
+   YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost probe \
+       --binary tmp/bin/26.8/clickhouse --runs-dir tmp/cas-yardstick/cost-runs
+   ```
+
+2. Run the experiments of a research report. `measurements.jsonl` and `raw/` are written to the report directory:
+
+   ```bash
+   python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+       --runs-dir tmp/cas-yardstick/cost-runs --manifests <report directory> --cases all
+   ```
+
+   The manifests are the report's `experiments` directory. Reports: `docs/superpowers/reports/2026-10-24-storage-cost-phase0`
+   and `docs/superpowers/reports/2026-10-24-storage-cost-lifecycle`.
+
+3. Regenerate the contract, the page copy, the measured fixtures and the `Formulas` and `Inputs` blocks. Sweep the
+   new contract, then generate again so the manifest hashes the sweep. The sweep does not change the contract version:
+
+   ```bash
+   python3 utils/storage-cost-calculator/tools/generate_contract.py generate
+   node utils/storage-cost-calculator/tools/sweeps.mjs \
+       --contract utils/storage-cost-calculator/model-contract.json \
+       --out docs/superpowers/cost-model/breakeven.json
+   python3 utils/storage-cost-calculator/tools/generate_contract.py generate
+   ```
+
+4. Check that every generated file matches a fresh render, then run the closure checks:
+
+   ```bash
+   python3 utils/storage-cost-calculator/tools/generate_contract.py check --mode final
+   python3 utils/storage-cost-calculator/tools/closure_check.py --mode final
+   ```
+
+5. Run the tests:
+
+   ```bash
+   SCC_DEV=1 node --test 'utils/storage-cost-calculator/test/*.test.js'
+   cd utils/storage-cost-calculator/tools && python3 -m unittest discover -p 'test_*.py'
+   ```
 
 The contract's `manifest` names what a page URL reproduces: the sha256 of every code file, the registry, coverage and
-billing versions, and per report the source commit, rig commit, binary and the sha256 of `raw/SHA256SUMS`.
+billing versions, the sha256 of `breakeven.json`, and per report the source commit, rig commit, binary and the sha256
+of `raw/SHA256SUMS`.
 
 ## Formulas {#formulas}
 
@@ -297,3 +372,63 @@ Registry version `0.2.0`. Generated; do not edit.
 |---|---|---|
 | `data_bytes`, `ingest_rate`, `retention_days` | `ingest_rate`, `retention_days` | `data_bytes` = `ingest_rate × retention_days`; `ingest_rate` = `data_bytes / retention_days`; `retention_days` = `data_bytes / ingest_rate` |
 <!-- inputs:end -->
+
+## Break-even {#break-even}
+
+<!-- breakeven:begin -->
+Generated from `breakeven.json` (`tools/sweeps.mjs`), swept on contract version `fda3adfe7f2b17bd` with price preset `aws-us-east-1`. Do not edit.
+
+A crossing is a sign change of the difference of two totals between consecutive ladder values, so the break-even lies inside the interval, not at a point. A variant that is not `ok` at a value has no total there and no crossing is drawn through it.
+
+Ladders: `data_bytes`: 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304; `ingest_rate`: 1, 4, 16, 64, 256, 1024, 4096, 16384; `replicas`: 1, 2, 4, 8.
+
+### Scenario `logs` {#breakeven-logs}
+
+Logs.
+
+| Input | Variants compared | Crossing | States |
+|---|---|---|---|
+| `data_bytes` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `ingest_rate` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+
+### Scenario `metrics` {#breakeven-metrics}
+
+Metrics.
+
+| Input | Variants compared | Crossing | States |
+|---|---|---|---|
+| `data_bytes` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `ingest_rate` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+
+### Scenario `analytics_batch` {#breakeven-analytics-batch}
+
+Analytics batch.
+
+| Input | Variants compared | Crossing | States |
+|---|---|---|---|
+| `data_bytes` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `ingest_rate` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+
+### Scenario `single_replica_archive` {#breakeven-single-replica-archive}
+
+Single replica archive.
+
+| Input | Variants compared | Crossing | States |
+|---|---|---|---|
+| `data_bytes` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `ingest_rate` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+
+### Scenario `custom` {#breakeven-custom}
+
+Custom.
+
+| Input | Variants compared | Crossing | States |
+|---|---|---|---|
+| `data_bytes` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `ingest_rate` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable; `s3plain`: unavailable; `cas`: unavailable |
+<!-- breakeven:end -->

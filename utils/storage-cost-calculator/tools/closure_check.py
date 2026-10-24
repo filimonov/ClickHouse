@@ -664,7 +664,8 @@ def manifest(contract, opts, mode, fresh=None):
 
 BLOCKS = {"page": ("<!-- contract:begin -->", "<!-- contract:end -->"),
           "formulas": ("<!-- formulas:begin -->", "<!-- formulas:end -->"),
-          "inputs": ("<!-- inputs:begin -->", "<!-- inputs:end -->")}
+          "inputs": ("<!-- inputs:begin -->", "<!-- inputs:end -->"),
+          "breakeven": ("<!-- breakeven:begin -->", "<!-- breakeven:end -->")}
 
 
 def extract_block(text, name):

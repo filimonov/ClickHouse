@@ -45,6 +45,7 @@ PAGE_SCRIPTS = CODE_FILES
 STATE_IDS = ("ok", "not_supported", "backlog_grows", "unsupported_cut", "unavailable")
 # A formulas cell outside the domain operations is a card or probe cell: kept for the drill, never evaluated.
 PROBE_PREFIX = "probe_"
+BREAKEVEN = "breakeven.json"
 BLOCKS = closure_check.BLOCKS
 
 # Validates the assembled contract with the page's own loader and renders every expression with the page's renderer,
@@ -295,9 +296,13 @@ def build(opts, mode="dev"):
         return None, None, problems, pending, notes
     problems += rendered["problems"]
     contract["formulas"], contract["states"] = rendered["formulas"], rendered["states"]
-    # The version names the content: two builds from the same inputs carry the same version.
+    # The version names the content: two builds from the same inputs carry the same version. The break-even file
+    # records this version (it is swept on the contract), so its own hash joins the manifest after the version is
+    # fixed; otherwise sweeping would change the version it must name.
     version = sha256(_canonical(contract).encode())[:16]
     contract["version"] = manifest["contract_version"] = version
+    breakeven, breakeven_body = breakeven_input(cm / BREAKEVEN, version, mode, problems, pending)
+    manifest["breakeven_sha256"] = sha256((cm / BREAKEVEN).read_bytes()) if breakeven is not None else None
 
     fixtures = build_fixtures.build(reports, cov)
     problems += [f"measured fixtures: {p}" for p in fixtures[2]]
@@ -305,7 +310,8 @@ def build(opts, mode="dev"):
     outputs = {Path(cm / CONTRACT): standalone, Path(opts["copy"]): standalone}
     page, doc = Path(opts["page"]), Path(opts["doc"])
     for path, blocks in ((page, {"page": embed(contract)}),
-                         (doc, {"formulas": formulas_block(contract, rendered), "inputs": inputs_block(contract, rendered)})):
+                         (doc, {"formulas": formulas_block(contract, rendered), "inputs": inputs_block(contract, rendered),
+                                  "breakeven": breakeven_body})):
         try:
             text = path.read_text()
         except OSError as e:
@@ -477,6 +483,56 @@ def inputs_block(contract, rendered):
             out.append(f"| {', '.join(_code(m) for m in g['group'])} | {', '.join(_code(m) for m in g['default_locked'])} | "
                        + "; ".join(f"{_code(k)} = {_code(t)}" for k, t in rules.items()) + " |")
     return "\n".join(out)
+
+
+def _money(v):
+    return "none" if v is None else f"{v:,.2f}"
+
+
+def _num(x):
+    return f"{int(x):,}" if float(x).is_integer() else f"{x:g}"
+
+
+def breakeven_block(doc):
+    out = [f"Generated from `{BREAKEVEN}` (`tools/sweeps.mjs`), swept on contract version `{doc['contract_version']}` with price "
+           f"preset `{doc['price_preset']}`. Do not edit.", "",
+           "A crossing is a sign change of the difference of two totals between consecutive ladder values, so the "
+           "break-even lies inside the interval, not at a point. A variant that is not `ok` at a value has no total there "
+           "and no crossing is drawn through it.", ""]
+    ladders = "; ".join(f"`{k}`: {', '.join(f'{x:g}' if x < 1e6 else f'{int(x)}' for x in v)}" for k, v in doc["ladders"].items())
+    out += [f"Ladders: {ladders}.", ""]
+    for sid, sc in doc["scenarios"].items():
+        out += [f"### Scenario `{sid}` {{#breakeven-{_anchor(sid)}}}", "",
+                f"{_cell_text(sc['label'])}.", "",
+                "| Input | Variants compared | Crossing | States |", "|---|---|---|---|"]
+        for inp, e in sc["sweeps"].items():
+            priced = [v for v, st in e["states"].items() if "ok" in st]
+            compared = ", ".join(_code(v) for v in priced) if len(priced) >= 2 else "none, fewer than two variants have a total"
+            if e["crossing"] is None:
+                crossing = "none"
+            else:
+                crossing = "; ".join(f"{_code(c['a'])} / {_code(c['b'])} between {_num(c['x_between'][0])} and {_num(c['x_between'][1])}"
+                                     + (" (extrapolated)" if c["extrapolated"] else "") for c in e["crossing"])
+            states = "; ".join(f"{_code(v)}: {' / '.join(st)}" for v, st in e["states"].items())
+            out.append(f"| {_code(inp)} | {compared} | {crossing} | {states} |")
+        out.append("")
+    return "\n".join(out).rstrip("\n")
+
+
+def breakeven_input(path, version, mode, problems, pending):
+    """(parsed file or None, block body). A missing or stale file is pending in dev mode and a failure in final mode."""
+    target = problems if mode == "final" else pending
+    if not path.exists():
+        target.append(f"{path} is missing; run node utils/storage-cost-calculator/tools/sweeps.mjs")
+        return None, "Not generated: run `node utils/storage-cost-calculator/tools/sweeps.mjs`, then `generate`."
+    doc = _json(path, problems)
+    if not isinstance(doc, dict) or doc.get("schema") != "breakeven/1":
+        problems.append(f"{path}: expected a breakeven/1 object")
+        return None, ""
+    if doc.get("contract_version") != version:
+        target.append(f"{path} was swept on contract version {doc.get('contract_version')}, not {version}; run tools/sweeps.mjs")
+        return None, f"Stale: swept on contract version `{doc.get('contract_version')}`, not `{version}`. Run `tools/sweeps.mjs`."
+    return doc, breakeven_block(doc)
 
 
 # --- commands ----------------------------------------------------------------------------------

@@ -1,0 +1,3121 @@
+{
+ "schema": "breakeven/1",
+ "contract_version": "fda3adfe7f2b17bd",
+ "price_preset": "aws-us-east-1",
+ "ladders": {
+  "data_bytes": [
+   64,
+   256,
+   1024,
+   4096,
+   16384,
+   65536,
+   262144,
+   1048576,
+   4194304
+  ],
+  "ingest_rate": [
+   1,
+   4,
+   16,
+   64,
+   256,
+   1024,
+   4096,
+   16384
+  ],
+  "replicas": [
+   1,
+   2,
+   4,
+   8
+  ]
+ },
+ "scenarios": {
+  "logs": {
+   "label": "Logs",
+   "sweeps": {
+    "data_bytes": {
+     "values": [
+      64,
+      256,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      4194304
+     ],
+     "points": [
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 65536,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 262144,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1048576,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4194304,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "ingest_rate": {
+     "values": [
+      1,
+      4,
+      16,
+      64,
+      256,
+      1024,
+      4096,
+      16384
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "replicas": {
+     "values": [
+      1,
+      2,
+      4,
+      8
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 2,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 8,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    }
+   }
+  },
+  "metrics": {
+   "label": "Metrics",
+   "sweeps": {
+    "data_bytes": {
+     "values": [
+      64,
+      256,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      4194304
+     ],
+     "points": [
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 65536,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 262144,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1048576,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4194304,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "ingest_rate": {
+     "values": [
+      1,
+      4,
+      16,
+      64,
+      256,
+      1024,
+      4096,
+      16384
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "replicas": {
+     "values": [
+      1,
+      2,
+      4,
+      8
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 2,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 8,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    }
+   }
+  },
+  "analytics_batch": {
+   "label": "Analytics batch",
+   "sweeps": {
+    "data_bytes": {
+     "values": [
+      64,
+      256,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      4194304
+     ],
+     "points": [
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 65536,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 262144,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1048576,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4194304,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "ingest_rate": {
+     "values": [
+      1,
+      4,
+      16,
+      64,
+      256,
+      1024,
+      4096,
+      16384
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "replicas": {
+     "values": [
+      1,
+      2,
+      4,
+      8
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 2,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 8,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    }
+   }
+  },
+  "single_replica_archive": {
+   "label": "Single replica archive",
+   "sweeps": {
+    "data_bytes": {
+     "values": [
+      64,
+      256,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      4194304
+     ],
+     "points": [
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 65536,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 262144,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1048576,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4194304,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "ingest_rate": {
+     "values": [
+      1,
+      4,
+      16,
+      64,
+      256,
+      1024,
+      4096,
+      16384
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "replicas": {
+     "values": [
+      1,
+      2,
+      4,
+      8
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 2,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 8,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    }
+   }
+  },
+  "custom": {
+   "label": "Custom",
+   "sweeps": {
+    "data_bytes": {
+     "values": [
+      64,
+      256,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      4194304
+     ],
+     "points": [
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 65536,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 262144,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1048576,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4194304,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "ingest_rate": {
+     "values": [
+      1,
+      4,
+      16,
+      64,
+      256,
+      1024,
+      4096,
+      16384
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 64,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 256,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 1024,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4096,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 16384,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    },
+    "replicas": {
+     "values": [
+      1,
+      2,
+      4,
+      8
+     ],
+     "points": [
+      {
+       "x": 1,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 2,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 4,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      },
+      {
+       "x": 8,
+       "totals": {
+        "ebs": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "s3plain": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        },
+        "cas": {
+         "value": null,
+         "state": "unavailable",
+         "extrapolated": false
+        }
+       }
+      }
+     ],
+     "states": {
+      "ebs": [
+       "unavailable"
+      ],
+      "s3": [
+       "unavailable"
+      ],
+      "s3plain": [
+       "unavailable"
+      ],
+      "cas": [
+       "unavailable"
+      ]
+     },
+     "crossing": null,
+     "problems": []
+    }
+   }
+  }
+ }
+}

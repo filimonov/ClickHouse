@@ -128,6 +128,50 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(code, 0, log)
         self.assertNotIn("stale:", log)
 
+    def write_breakeven(self, version, crossing):
+        state = lambda *xs: {v: list(xs) for v in ("ebs", "s3")}
+        doc = {"schema": "breakeven/1", "contract_version": version, "price_preset": "aws-us-east-1",
+               "ladders": {"data_bytes": [64, 256]},
+               "scenarios": {"logs": {"label": "Logs", "sweeps": {
+                   "data_bytes": {"values": [64, 256], "points": [], "states": state("ok"), "crossing": crossing, "problems": []},
+                   "replicas": {"values": [1, 2], "points": [], "states": state("unavailable"), "crossing": None, "problems": []}}}}}
+        (self.cm / "breakeven.json").write_text(json.dumps(doc, indent=1))
+
+    def test_breakeven_block_rendered_and_checked(self):
+        version = self.generate()["version"]
+        # Absent file: pending in dev mode, a failure in final mode; the block says so.
+        code, log = self.run_gc("check")
+        self.assertEqual(code, 0, log)
+        self.assert_pending(log, "breakeven.json is missing")
+        self.assertIn("Not generated", self.doc.read_text())
+        code, log = self.run_gc("check", mode="final")
+        self.assert_failure(log, "breakeven.json is missing")
+
+        crossing = [{"a": "ebs", "b": "s3", "x_between": [64, 256], "extrapolated": True}]
+        self.write_breakeven(version, crossing)
+        contract = self.generate()
+        self.assertEqual(contract["version"], version, "sweeping must not change the version it names")
+        self.assertEqual(contract["manifest"]["breakeven_sha256"], hashlib.sha256((self.cm / "breakeven.json").read_bytes()).hexdigest())
+        doc = self.doc.read_text()
+        self.assertIn("### Scenario `logs` {#breakeven-logs}", doc)
+        self.assertIn("| `data_bytes` | `ebs`, `s3` | `ebs` / `s3` between 64 and 256 (extrapolated) | `ebs`: ok; `s3`: ok |", doc)
+        self.assertIn("| `replicas` | none, fewer than two variants have a total | none | `ebs`: unavailable; `s3`: unavailable |", doc)
+        code, log = self.run_gc("check", mode="final")
+        self.assertNotIn("breakeven", log, log)
+
+        # An edited file no longer matches the manifest or the rendered block.
+        self.write_breakeven(version, None)
+        code, log = self.run_gc("check", mode="final")
+        self.assertEqual(code, 1, log)
+        self.assert_failure(log, "differs from a fresh render")
+        # A file swept on another contract version is rejected, not rendered.
+        self.write_breakeven("0000000000000000", crossing)
+        code, log = self.run_gc("check", mode="final")
+        self.assertEqual(code, 1, log)
+        self.assert_failure(log, "was swept on contract version 0000000000000000")
+        code, log = self.run_gc("generate", mode="final")
+        self.assertEqual(code, 1, log)
+
     def test_check_renders_once(self):
         self.generate()
         calls = []
