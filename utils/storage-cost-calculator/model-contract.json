@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "c562605f3d1d735a",
+ "version": "e0a9818e600086bd",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,9 +14,9 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "c562605f3d1d735a",
+  "contract_version": "e0a9818e600086bd",
   "registry_version": "0.3.0",
-  "registry_sha256": "65ef930dd93df5904e984024c56b9fa203088b0f20f5f3dee5a67945a03f54f0",
+  "registry_sha256": "c812d046947a07a18cee9a8158f9d7b4aa2d6061c50aaf55582918b517a52298",
   "coverage_version": "0.2.0",
   "coverage_sha256": "1c4833b22a9f292ef43245cdadee2c0b9e60a97f9ebd6b54eac47cb100d3ef7c",
   "billing_version": "0.1.0",
@@ -79,7 +79,7 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "75724999ee987bcc78d5a28cf694162b7774b78935571cd77afe63d469a65742"
+  "breakeven_sha256": "fdd8c51cb5642147cbc023a98fda893b72fd1f6f001892bbe905f0700b8de550"
  },
  "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 60 coefficient(s): 42 measured, 18 pinned to source. 57 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -7828,7 +7828,12 @@
    "default": null,
    "rule": null,
    "coef": "acquire_requests",
-   "validity": null,
+   "validity": {
+    "insert_rows": [
+     1000,
+     200000
+    ]
+   },
    "evidence": {
     "kind": "measured",
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
