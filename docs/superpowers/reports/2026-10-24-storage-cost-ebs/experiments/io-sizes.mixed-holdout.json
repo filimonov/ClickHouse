@@ -1,0 +1,46 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "io-sizes.mixed-holdout",
+  "card": "io-sizes",
+  "case_id": "mixed-holdout",
+  "policies": [
+    "local"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "trace": true,
+    "ebs_max_io_bytes": 262144,
+    "baseline_s": 10,
+    "phases": [
+      "insert",
+      "merge",
+      "select"
+    ],
+    "columns": "k UInt64, s String, a Array(UInt32), n Nullable(UInt64), l LowCardinality(String), d DateTime, f Float64, mp Map(String, UInt64)",
+    "order_by": "k",
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, concat('v', toString(sipHash64(k, {seed}) % 100000)) AS s, arrayMap(x -> toUInt32(x + k), range(k % 5)) AS a, if(k % 9 = 0, NULL, k * 3) AS n, concat('c', toString(k % 30)) AS l, toDateTime(1700000000 + k) AS d, k / 7 AS f, map('x', k, 'y', k % 11) AS mp FROM numbers({rows})",
+    "rows": 120000,
+    "inserts": 80,
+    "optimize": "OPTIMIZE TABLE {table} FINAL",
+    "select": "SELECT * FROM {table} FORMAT Null"
+  },
+  "scale": 0.05,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Replacement hold-out (types-holdout was consumed by the I/O-per-MiB envelope): 8 columns of mixed types (String, Array(UInt32), Nullable(UInt64), LowCardinality(String), DateTime, Float64, Map(String, UInt64)), 4 inserts (80 x scale 0.05) of 120 000 rows, OPTIMIZE FINAL, full scan."
+}

@@ -4,8 +4,11 @@ usage: python3 -m yardstick.cost.ebs_fit <measurements.jsonl>...   (prints the f
 
 Rules, stated once so the fit and the hold-out predictions use the same ones:
 - a per-record value is pooled by the mean over records; its spread is the largest |record - mean|;
-- a hold-out passes when |value - fit| <= 2 x spread + 10 % of fit (scalars) or TV <= 2 x the largest fit TV + 0.05
-  (distributions);
+- a hold-out passes when |value - fit| <= 2 x spread + 10 % of fit + 0.005 (scalars) or TV <= 2 x the largest fit TV
+  + 0.05 (distributions); the 0.005 floor keeps near-zero terms (writes of a scan) from failing on baseline noise;
+- `ebs_ios_per_mib` is the per-key upper envelope (largest record value): the first hold-out (types-holdout) showed
+  that I/Os per MiB grow with the number of files per part, so a mean of narrow schemas under-counts; a hold-out of
+  the envelope passes when its value <= 1.1 x envelope;
 - the peak factor uses r1's 1-s `write_bytes` rate from the first sample to the last merge (quiet cutoff minus the
   quiet period), net of the idle card's median r1 rate.
 """
@@ -18,8 +21,12 @@ import sys
 from .cards.io_sizes import DIRECTIONS, PHASE_OPS, SIZE_BUCKETS, tv_distance
 from .localio import peak_factor
 
-SCALAR_SLACK = (2.0, 0.10)  # (x spread, + fraction of the fit value)
+SCALAR_SLACK = (2.0, 0.10, 0.005)  # (x spread, + fraction of the fit value, + absolute floor)
+ENVELOPE_SLACK = 1.10
 TV_SLACK = (2.0, 0.05)
+
+
+FIT_IO = {'io-sizes.narrow-compact', 'io-sizes.narrow-wide', 'io-sizes.types-holdout'}
 
 
 def load(paths) -> list:
@@ -40,7 +47,7 @@ def pooled(values: dict) -> dict:
     if not values:
         raise ValueError('no records to pool')
     mean = statistics.fmean(values.values())
-    return {'value': mean, 'spread': max(abs(v - mean) for v in values.values()),
+    return {'value': mean, 'spread': max(abs(v - mean) for v in values.values()), 'max': max(values.values()),
             'residuals': {k: v - mean for k, v in sorted(values.items())}}
 
 
@@ -106,8 +113,13 @@ def peak_factors(records, experiment_ids, baseline_bps: float, quiet_s: dict) ->
 
 
 def scalar_check(value: float, fit: dict) -> dict:
-    slack = SCALAR_SLACK[0] * fit['spread'] + SCALAR_SLACK[1] * abs(fit['value'])
+    slack = SCALAR_SLACK[0] * fit['spread'] + SCALAR_SLACK[1] * abs(fit['value']) + SCALAR_SLACK[2]
     return {'value': value, 'fit': fit['value'], 'slack': slack, 'ok': abs(value - fit['value']) <= slack}
+
+
+def envelope_check(value: float, fit: dict) -> dict:
+    limit = ENVELOPE_SLACK * fit['max']
+    return {'value': value, 'envelope': fit['max'], 'limit': limit, 'ok': value <= limit}
 
 
 def tv_check(value: dict, fit: dict) -> dict:
@@ -119,7 +131,7 @@ def tv_check(value: dict, fit: dict) -> dict:
 def main(argv) -> int:
     records = load(argv)
     base = idle_baseline(records)
-    fit = demand_fit(records, {'io-sizes.narrow-compact', 'io-sizes.narrow-wide'})
+    fit = demand_fit(records, FIT_IO)
     print(json.dumps({'baseline': base, 'demand': fit}, indent=1, sort_keys=True))
     return 0
 

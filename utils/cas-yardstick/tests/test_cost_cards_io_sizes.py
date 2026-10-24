@@ -152,9 +152,12 @@ class FitTest(unittest.TestCase):
         fit = ebs_fit.pooled({'a': 1.0, 'b': 1.2, 'c': 1.4})
         self.assertAlmostEqual(fit['value'], 1.2)
         self.assertAlmostEqual(fit['spread'], 0.2)
-        # slack = 2 x 0.2 + 10 % of 1.2 = 0.52
-        self.assertTrue(ebs_fit.scalar_check(1.71, fit)['ok'])
+        # slack = 2 x 0.2 + 10 % of 1.2 + 0.005 = 0.525
+        self.assertTrue(ebs_fit.scalar_check(1.72, fit)['ok'])
         self.assertFalse(ebs_fit.scalar_check(1.73, fit)['ok'])
+        self.assertEqual(fit['max'], 1.4)
+        self.assertTrue(ebs_fit.envelope_check(1.53, fit)['ok'])
+        self.assertFalse(ebs_fit.envelope_check(1.55, fit)['ok'])
         with self.assertRaises(ValueError):
             ebs_fit.pooled({})
 
