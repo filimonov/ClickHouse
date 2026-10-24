@@ -68,6 +68,29 @@ class ReproduceTest(unittest.TestCase):
                 f.writelines(json.dumps(r) + '\n' for r in raw)
             self.assertEqual(reproduce.main([rp, lp]), 0)
 
+    def test_replay_that_raises_exits_2_with_a_line_on_stdout(self):
+        import contextlib
+        import io
+        import subprocess
+        import sys
+        raw = rows()
+        no_marks = [r for r in raw if r['kind'] != 'mark']
+        with tempfile.TemporaryDirectory() as tmp:
+            rp, lp = os.path.join(tmp, 'r.json'), os.path.join(tmp, 'l.jsonl')
+            with open(rp, 'w') as f:
+                json.dump(record_for(raw), f)
+            with open(lp, 'w') as f:
+                f.writelines(json.dumps(r) + '\n' for r in no_marks)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(reproduce.main([rp, lp]), 2)
+            self.assertTrue(out.getvalue().startswith('replay failed: '), out.getvalue())
+            # The closure check runs it as a module: the exit code and the stdout line must survive that path.
+            done = subprocess.run([sys.executable, '-m', 'yardstick.cost.reproduce', rp, lp], capture_output=True,
+                                  text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.assertEqual(done.returncode, 2, done.stderr)
+            self.assertTrue(done.stdout.startswith('replay failed: '), done.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

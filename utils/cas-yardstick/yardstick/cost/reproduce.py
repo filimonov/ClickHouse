@@ -1,7 +1,7 @@
 """Recompute a measurement record's ledger counts and byte-hour bounds from its raw ledger slice.
 
 `python3 -m yardstick.cost.reproduce <record.json> <ledger.jsonl[.gz]>` prints the differences and exits 1 if
-there are any. The closure check runs it for every gate record, so an exported summary cannot drift from the rows
+there are any; a replay that raises prints `replay failed: <type>: <message>` and exits 2. The closure check runs it for every gate record, so an exported summary cannot drift from the rows
 it came from. Foreground and maintenance are compared as their sum: the split can rest on evidence outside the
 ledger (CAS GC round windows), the integrated usage cannot.
 """
@@ -76,9 +76,14 @@ def main(argv=None) -> int:
     if len(argv) != 2:
         print('usage: python3 -m yardstick.cost.reproduce <record.json> <ledger.jsonl[.gz]>', file=sys.stderr)
         return 2
-    with open(argv[0], encoding='utf-8') as f:
-        record = json.load(f)
-    found = problems(record, read(argv[1]))
+    try:
+        with open(argv[0], encoding='utf-8') as f:
+            record = json.load(f)
+        found = problems(record, read(argv[1]))
+    except Exception as e:
+        # A crash would otherwise exit 1 with nothing on stdout, which reads like a replay with no differences.
+        print(f'replay failed: {type(e).__name__}: {e}')
+        return 2
     for p in found:
         print(p)
     return 1 if found else 0
