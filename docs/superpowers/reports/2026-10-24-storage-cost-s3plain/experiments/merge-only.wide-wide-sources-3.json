@@ -1,0 +1,53 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "merge-only.wide-wide-sources-3",
+  "card": "merge-only",
+  "case_id": "wide-wide-sources-3",
+  "policies": [
+    "s3plain",
+    "s3plain_cached"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "t",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64, u4 UInt64, u5 UInt64, u6 UInt64, u7 UInt64, u8 UInt64, u9 UInt64, u10 UInt64, u11 UInt64, u12 UInt64, u13 UInt64, u14 UInt64, u15 UInt64, u16 UInt64, u17 UInt64, u18 UInt64, u19 UInt64, u20 UInt64, u21 UInt64, u22 UInt64, u23 UInt64, u24 UInt64, u25 UInt64, u26 UInt64, u27 UInt64, u28 UInt64, u29 UInt64, u30 UInt64, u31 UInt64, u32 UInt64, u33 UInt64, u34 UInt64, u35 UInt64, u36 UInt64, u37 UInt64, u38 UInt64",
+        "order_by": "k",
+        "row_bytes": 320
+      }
+    ],
+    "inserts": [
+      {
+        "table": "t",
+        "rows": 50000,
+        "count": 3,
+        "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}, 0) AS u0, sipHash64(k, {seed}, 1) AS u1, sipHash64(k, {seed}, 2) AS u2, sipHash64(k, {seed}, 3) AS u3, sipHash64(k, {seed}, 4) AS u4, sipHash64(k, {seed}, 5) AS u5, sipHash64(k, {seed}, 6) AS u6, sipHash64(k, {seed}, 7) AS u7, sipHash64(k, {seed}, 8) AS u8, sipHash64(k, {seed}, 9) AS u9, sipHash64(k, {seed}, 10) AS u10, sipHash64(k, {seed}, 11) AS u11, sipHash64(k, {seed}, 12) AS u12, sipHash64(k, {seed}, 13) AS u13, sipHash64(k, {seed}, 14) AS u14, sipHash64(k, {seed}, 15) AS u15, sipHash64(k, {seed}, 16) AS u16, sipHash64(k, {seed}, 17) AS u17, sipHash64(k, {seed}, 18) AS u18, sipHash64(k, {seed}, 19) AS u19, sipHash64(k, {seed}, 20) AS u20, sipHash64(k, {seed}, 21) AS u21, sipHash64(k, {seed}, 22) AS u22, sipHash64(k, {seed}, 23) AS u23, sipHash64(k, {seed}, 24) AS u24, sipHash64(k, {seed}, 25) AS u25, sipHash64(k, {seed}, 26) AS u26, sipHash64(k, {seed}, 27) AS u27, sipHash64(k, {seed}, 28) AS u28, sipHash64(k, {seed}, 29) AS u29, sipHash64(k, {seed}, 30) AS u30, sipHash64(k, {seed}, 31) AS u31, sipHash64(k, {seed}, 32) AS u32, sipHash64(k, {seed}, 33) AS u33, sipHash64(k, {seed}, 34) AS u34, sipHash64(k, {seed}, 35) AS u35, sipHash64(k, {seed}, 36) AS u36, sipHash64(k, {seed}, 37) AS u37, sipHash64(k, {seed}, 38) AS u38 FROM numbers({rows})"
+      }
+    ],
+    "statements": [
+      {
+        "sql": "OPTIMIZE TABLE {db}.t FINAL"
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "Hold-out: three Wide parts of 40 columns (50 000 rows) in the setup; the window is OPTIMIZE FINAL. Same parameters as the s3 case; on s3_plain_rewritable."
+}

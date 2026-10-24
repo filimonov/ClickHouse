@@ -295,9 +295,12 @@ class ObjectsPerPart(S3Card):
         parts = [p for p in st['parts'] if p['active']]
         counts = self.object_counts(st['layout'], parts)
         rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok']
-        put_sizes = sorted(r['req_payload_bytes'] for r in rows if r['op'] == 'PutObject')
+        # On s3plain a part directory is an object too (create and rename); it is not a part file.
+        dir_puts = sum(1 for r in rows if r['op'] == 'PutObject' and s3plain.is_directory_object(r['key']))
+        put_sizes = sorted(r['req_payload_bytes'] for r in rows
+                           if r['op'] == 'PutObject' and not s3plain.is_directory_object(r['key']))
         ops = self.ops_of(ctx, draft)
-        writes = sum(ops.get(op, {}).get('attempts', 0) for op in ('PutObject', 'CreateMultipartUpload'))
+        writes = sum(ops.get(op, {}).get('attempts', 0) for op in ('PutObject', 'CreateMultipartUpload')) - dir_puts
         files = {key: sorted(layout) for key, layout in st['layout'].items() if key in counts}
         return {'parts': self.part_view(parts),
                 'part_types': sorted([p['table'], p['rows'], p['part_type']] for p in parts),
@@ -308,6 +311,7 @@ class ObjectsPerPart(S3Card):
                 'put_payload_sizes': put_sizes,
                 'object_size_histogram': size_histogram(put_sizes),
                 'object_writes': writes,
+                'directory_writes': dir_puts,
                 'insert_tx_checks': sum(c['attempts'] for op, c in ops.items() if op not in OBJECT_WRITE_OPS),
                 'metadata': st.get('metadata'),
                 **metadata_ratios(st.get('metadata'), sum(counts.values()),

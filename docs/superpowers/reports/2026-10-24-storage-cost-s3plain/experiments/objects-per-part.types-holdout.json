@@ -1,0 +1,51 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "objects-per-part.types-holdout",
+  "card": "objects-per-part",
+  "case_id": "types-holdout",
+  "policies": [
+    "s3plain",
+    "s3plain_cached"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "t",
+        "columns": "k UInt64, a0 Array(UInt32), a1 Array(UInt32), a2 Array(UInt32), a3 Array(UInt32), j0 JSON, j1 JSON, u0 Nullable(UInt64), u1 Nullable(UInt64), u2 Nullable(UInt64), u3 Nullable(UInt64), u4 Nullable(UInt64), u5 Nullable(UInt64), m0 Map(String, UInt64), m1 Map(String, UInt64), m2 Map(String, UInt64), m3 Map(String, UInt64), s0 LowCardinality(String), s1 LowCardinality(String), s2 LowCardinality(String), s3 LowCardinality(String), INDEX i0 s0 TYPE set(100) GRANULARITY 1, PROJECTION p (SELECT k, max(length(a0)) GROUP BY k)",
+        "order_by": "k",
+        "row_bytes_bounds": [
+          150,
+          800
+        ]
+      }
+    ],
+    "inserts": [
+      {
+        "table": "t",
+        "rows": 80000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, arrayMap(x -> toUInt32(x + k + 0), range(k % 4)) AS a0, arrayMap(x -> toUInt32(x + k + 1), range(k % 4)) AS a1, arrayMap(x -> toUInt32(x + k + 2), range(k % 4)) AS a2, arrayMap(x -> toUInt32(x + k + 3), range(k % 4)) AS a3, CAST(concat('{{\"a\":', toString(k), ',\"b\":\"x', toString((k + 0) % 100), '\"}}') AS JSON) AS j0, CAST(concat('{{\"a\":', toString(k), ',\"b\":\"x', toString((k + 1) % 100), '\"}}') AS JSON) AS j1, if(k % 7 = 0, NULL, sipHash64(k, {seed}, 0)) AS u0, if(k % 7 = 1, NULL, sipHash64(k, {seed}, 1)) AS u1, if(k % 7 = 2, NULL, sipHash64(k, {seed}, 2)) AS u2, if(k % 7 = 3, NULL, sipHash64(k, {seed}, 3)) AS u3, if(k % 7 = 4, NULL, sipHash64(k, {seed}, 4)) AS u4, if(k % 7 = 5, NULL, sipHash64(k, {seed}, 5)) AS u5, map('a', k, 'b', k * 2) AS m0, map('a', k, 'b', k * 3) AS m1, map('a', k, 'b', k * 4) AS m2, map('a', k, 'b', k * 5) AS m3, concat('s', toString((k + 0) % 50)) AS s0, concat('s', toString((k + 1) % 50)) AS s1, concat('s', toString((k + 2) % 50)) AS s2, concat('s', toString((k + 3) % 50)) AS s3 FROM numbers({rows})"
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "Hold-out: k + 4 Array(UInt32), 2 JSON, 6 Nullable(UInt64), 4 Map(String, UInt64), 4 LowCardinality(String) in that order; projection SELECT k, max(length(a0)) GROUP BY k; set(100) index on s0. Two inserts of 80 000 rows (Wide). Same parameters as the s3 case; on s3_plain_rewritable."
+}

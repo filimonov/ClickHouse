@@ -1,0 +1,77 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "boundaries.compact-below-bytes",
+  "policy": "s3plain",
+  "inputs": {
+    "part_bytes_uncompressed": 9437160,
+    "min_level_for_wide_part": 0
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 13,
+        "HeadObject": 1
+      }
+    },
+    "observations": {
+      "parts": [
+        {
+          "name": "all_1_1_0",
+          "part_type": "Compact",
+          "rows": 235929,
+          "level": 0,
+          "data_uncompressed_bytes": 9437160,
+          "active": 1
+        }
+      ],
+      "upload_part_sizes": []
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "a file object is stored as is under its directory's random prefix",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.cpp",
+      "line": 34
+    },
+    {
+      "claim": "an insert creates the temporary part directory",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 974
+    },
+    {
+      "claim": "a new directory writes its prefix.path object",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 111
+    },
+    {
+      "claim": "and reads its metadata back (HeadObject)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 125
+    },
+    {
+      "claim": "the part is renamed to its final name",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 983
+    },
+    {
+      "claim": "a rename rewrites prefix.path of every directory of the subtree",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 239
+    }
+  ],
+  "prediction_commit": "pending"
+}

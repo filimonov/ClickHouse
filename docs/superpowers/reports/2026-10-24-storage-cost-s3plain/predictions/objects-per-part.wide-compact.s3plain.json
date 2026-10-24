@@ -38,48 +38,8 @@
   "expected": {
     "foreground": {
       "r1": {
-        "PutObject": {
-          "min": 33,
-          "max": 60,
-          "basis": "assumption",
-          "reason": "file objects plus prefix.path writes of created and renamed directories"
-        },
-        "HeadObject": {
-          "min": 0,
-          "max": 10,
-          "basis": "assumption",
-          "reason": "one metadata read per created directory, one per copied object"
-        },
-        "GetObject": {
-          "min": 0,
-          "max": 400,
-          "basis": "assumption",
-          "reason": "read splitting; this fit measures it"
-        },
-        "CopyObject": {
-          "min": 0,
-          "max": 40,
-          "basis": "assumption",
-          "reason": "an unlinked file is copied aside first"
-        },
-        "DeleteObject": {
-          "min": 0,
-          "max": 40,
-          "basis": "assumption",
-          "reason": "unlinked files, their copies and removed directories"
-        },
-        "DeleteObjects": {
-          "min": 0,
-          "max": 10,
-          "basis": "assumption",
-          "reason": "a recursive removal deletes its objects in batches"
-        },
-        "ListObjectsV2": {
-          "min": 0,
-          "max": 20,
-          "basis": "assumption",
-          "reason": "startup lists __root, __meta and every directory"
-        }
+        "PutObject": 39,
+        "HeadObject": 3
       }
     },
     "observations": {
@@ -99,7 +59,9 @@
           20000,
           "Compact"
         ]
-      ]
+      ],
+      "objects_total": 33,
+      "directory_writes": 6
     }
   },
   "tolerance": {
@@ -148,5 +110,5 @@
       "line": 239
     }
   ],
-  "prediction_commit": "0f1ad12f2a2"
+  "prediction_commit": "pending"
 }

@@ -78,3 +78,9 @@ def supports(card_name: str, policy: str) -> tuple | None:
     if policy not in PLAIN_POLICIES or op is None or GATES[op]['supported']:
         return None
     return False, reason(op)
+
+
+def is_directory_object(key: str) -> bool:
+    """`<prefix>/__meta/<random>/prefix.path`: the object that names one s3plain directory (PlainRewritableLayout.cpp:39)."""
+    parts = (key or '').rsplit('/', 3)
+    return len(parts) == 4 and parts[1] == '__meta' and parts[3] == 'prefix.path'

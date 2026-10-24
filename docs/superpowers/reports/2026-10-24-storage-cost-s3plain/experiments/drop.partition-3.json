@@ -1,0 +1,67 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "drop.partition-3",
+  "card": "drop",
+  "case_id": "partition-3",
+  "policies": [
+    "s3plain",
+    "s3plain_cached"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "old_parts_lifetime": 1,
+      "cleanup_delay_period": 1,
+      "max_cleanup_delay_period": 1,
+      "cleanup_delay_period_random_add": 0
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "tp",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "partition_by": "k % 2",
+        "row_bytes": 40
+      }
+    ],
+    "inserts": [
+      {
+        "table": "tp",
+        "rows": 100000,
+        "count": 3,
+        "insert": "INSERT INTO {table} SELECT number * 2 AS k, sipHash64(k, {seed}, {i}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "tp",
+        "rows": 100000,
+        "count": 1,
+        "insert": "INSERT INTO {table} SELECT number * 2 + 1 AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      }
+    ],
+    "statements": [
+      {
+        "sql": "ALTER TABLE {db}.tp DROP PARTITION 0"
+      }
+    ],
+    "dropped": "tp/0",
+    "wait_outdated_removed": true,
+    "expected_rows": 100000
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "Hold-out: three inserts into partition 0 and one into partition 1 (Compact parts), then DROP PARTITION 0: one empty part covers three. Same parameters as the s3 case; on s3_plain_rewritable."
+}
