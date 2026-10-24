@@ -1,6 +1,9 @@
 """EBS demand fit (R1): coefficients from `local` records of `io-sizes` and natural-merge cards.
 
 usage: python3 -m yardstick.cost.ebs_fit <measurements.jsonl>...   (prints the fit as JSON)
+       python3 -m yardstick.cost.ebs_fit --holdout <experiment_id> <measurements.jsonl>...
+           (checks the hold-out's pooled `io_bytes_per_op` and `io_request_size_distribution` against the fit;
+           exit 1 if a key fails)
 
 Rules, stated once so the fit and the hold-out predictions use the same ones:
 - a per-record value is pooled by the mean over records; its spread is the largest |record - mean|;
@@ -125,7 +128,7 @@ def envelope_check(value: float, fit: dict) -> dict:
 def tv_check(value: dict, fit: dict) -> dict:
     limit = TV_SLACK[0] * fit['max_tv'] + TV_SLACK[1]
     tv = tv_distance(value, fit['value'])
-    return {'tv': tv, 'max_tv': limit, 'ok': tv <= limit}
+    return {'tv': tv, 'limit': limit, 'ok': tv <= limit}
 
 
 OPS = {'mutation': 'mutations', 'drop': 'deletes', 'startup': 'recovery'}
@@ -165,7 +168,31 @@ def ops_check(value: float, fit: dict) -> dict:
     return {'value': value, 'fit': fit['value'], 'slack': slack, 'ok': abs(value - fit['value']) <= slack}
 
 
+def holdout_checks(records, holdout_id: str) -> dict:
+    """`coefficient.key` -> check of the hold-out's pooled value against the fit of `FIT_IO`."""
+    fit = demand_fit(records, FIT_IO)
+    held = demand_fit(records, {holdout_id})
+    out = {}
+    for key, f in fit['io_bytes_per_op'].items():
+        if key in held['io_bytes_per_op']:
+            out[f'io_bytes_per_op.{key}'] = scalar_check(held['io_bytes_per_op'][key]['value'], f)
+    for key, f in fit['io_request_size_distribution'].items():
+        if key in held['io_request_size_distribution']:
+            out[f'io_request_size_distribution.{key}'] = tv_check(held['io_request_size_distribution'][key]['value'], f)
+    if not out:
+        raise ValueError(f'{holdout_id}: no key in common with the fit')
+    return out
+
+
 def main(argv) -> int:
+    if argv[:1] == ['--holdout']:
+        if len(argv) < 3:
+            print('usage: python3 -m yardstick.cost.ebs_fit --holdout <experiment_id> <measurements.jsonl>...',
+                  file=sys.stderr)
+            return 2
+        checks = holdout_checks(load(argv[2:]), argv[1])
+        print(json.dumps(checks, indent=1, sort_keys=True))
+        return 0 if all(c['ok'] for c in checks.values()) else 1
     records = load(argv)
     base = idle_baseline(records)
     fit = demand_fit(records, FIT_IO)

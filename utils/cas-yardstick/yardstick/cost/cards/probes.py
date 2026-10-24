@@ -1,4 +1,4 @@
-"""Phase-0 acceptance probes (design §5.3); the CAS probe lives in `cas_probe.py`, the estimate's samples in `samples.py`.
+"""Phase-0 acceptance probes (design §5.3); the CAS probe lives in `cas_probe.py`.
 
 Manifests in the phase-0 report directory (`experiments/<experiment_id>.json`) carry every parameter. The
 expected request counts live in `predictions/<experiment_id>.<policy>.json`; their `source_refs` cite the

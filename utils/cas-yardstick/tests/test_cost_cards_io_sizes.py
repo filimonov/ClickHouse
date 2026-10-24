@@ -207,6 +207,23 @@ class FitTest(unittest.TestCase):
         self.assertTrue(ebs_fit.ops_check(14.6, fit)['ok'])   # slack 2 x 1 + 0.15 x 11 = 3.65
         self.assertFalse(ebs_fit.ops_check(14.7, fit)['ok'])
 
+    def test_holdout_mode_reproduces_the_committed_ebs_table(self):
+        import contextlib
+        import io
+        from yardstick.cost import ebs_fit
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'docs', 'superpowers',
+                            'reports', '2026-10-24-storage-cost-ebs', 'measurements.jsonl')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(ebs_fit.main(['--holdout', 'io-sizes.mixed-holdout-3', path]), 0)
+        got = json.loads(out.getvalue())
+        # The README hold-out table: inserts.write 1.0209 against 1.0323 +- 0.1794, TV 0.096 <= 0.378.
+        w = got['io_bytes_per_op.inserts.write']
+        self.assertEqual((round(w['value'], 4), round(w['fit'], 4), round(w['slack'], 4)), (1.0209, 1.0323, 0.1794))
+        d = got['io_request_size_distribution.inserts.write']
+        self.assertEqual((round(d['tv'], 3), round(d['limit'], 3)), (0.096, 0.378))
+        self.assertEqual(len(got), 10)
+
 
 class PhaseWindowTest(unittest.TestCase):
     def test_logical_bytes_are_read_after_the_window_closes(self):
