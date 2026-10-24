@@ -9,14 +9,14 @@ doc_type: 'reference'
 
 # Storage cost calculator — validation and hold-out ledger {#validation}
 
-Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3`, `s3plain` and CAS: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 120 records, 108 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
+Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3`, `s3plain` and CAS: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 129 records, 117 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
 
 | Item | Value |
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report runs | `cost-20261024T154049Z` and `cost-20261024T162519Z` (the CAS point hold-outs); `measurements.jsonl` holds their 120 records, 108 ok |
-| Rig | both runs execute the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
+| Report runs | `cost-20261024T154049Z`, `cost-20261024T162519Z` (the CAS point hold-outs) and `cost-20261024T164439Z` (the 1 000-row fetch); `measurements.jsonl` holds their 129 records, 117 ok |
+| Rig | all runs execute the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
 | Earlier runs | `cost-20261024T145603Z` (calibration) and `cost-20261024T151251Z` (first report run); §[Cases](#cases) says what each found. Neither is in `measurements.jsonl` |
 | Predictions | at `849c483095f`, before any run of their case; `types-holdout-2`, `merge-30k` and the revised `cas_cached` fit counts at `03f8c0489a2`, after the first run; the CAS point hold-outs at `168f71aea78`; the replication report's fault predictions at `2c006846dbc`, `0bc1e557850` and `bac037b336d` |
 | Store | RustFS behind the ledger proxy; every ok record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
@@ -50,6 +50,7 @@ Cases (K = 3 each, one invocation per run):
 | `replication-fetch.insert-3` | `s3plain`, `cas` | hold-out | `acquire_requests`, `acquire_bytes` |
 | `replication-local.merge-40k` | `s3plain`, `cas` | hold-out (`s3plain` consumed in the first run) | `local_exec_requests` |
 | `replication-local.merge-30k` | `s3plain` | hold-out (fresh) | `local_exec_requests` |
+| `replication-fetch.insert-1k` | `s3`, `s3plain`, `cas` | validation (fourth run) | `acquire_requests` |
 | `faults.put-5xx-nth5` | `s3plain`, `cas` | hold-out | `retry_outcome_mix` |
 | `faults.multipart-abort-75k` | `s3plain` | hold-out | `failed_upload_residue` |
 | `faults.multipart-abort` | `s3`, `s3plain`, `cas` | fit on `cas`; validation on `s3`, `s3plain` | `failed_upload_residue` |
@@ -62,7 +63,7 @@ consumed one (rows, parts, source rows, the faulted request).
 
 ## Cases and verdicts {#cases}
 
-Runs `cost-20261024T154049Z` and `cost-20261024T162519Z`, K = 3 per case and policy. Role is the coverage edge; `consumed` marks a falsified
+Runs `cost-20261024T154049Z`, `cost-20261024T162519Z` and `cost-20261024T164439Z`, K = 3 per case and policy. Role is the coverage edge; `consumed` marks a falsified
 hold-out or a failed validation.
 
 | Case | Policy | ok / passes | Role |
@@ -101,6 +102,9 @@ hold-out or a failed validation.
 | `objects-per-part.wide-wide` | `cas_cached` | 3 / 3 | fit |
 | `replication-fetch.insert-3` | `cas` | 3 / 3 | holdout, holdout (consumed) |
 | `replication-fetch.insert-3` | `s3plain` | 3 / 3 | holdout |
+| `replication-fetch.insert-1k` | `cas` | 3 / 3 | validation |
+| `replication-fetch.insert-1k` | `s3` | 3 / 3 | validation |
+| `replication-fetch.insert-1k` | `s3plain` | 3 / 3 | validation |
 | `replication-local.merge-30k` | `s3plain` | 3 / 3 | holdout |
 | `replication-local.merge-40k` | `cas` | 3 / 3 | holdout |
 | `replication-local.merge-40k` | `s3plain` | 0 / 3 | holdout (consumed) |
@@ -233,6 +237,11 @@ tolerance; sender rows subtract the originator's own reads of the matching `repl
 | `failed_upload_residue` | `faults.multipart-abort-part3c` | `cas` | incomplete bytes after the window | 0 | 0 | 0 | yes |
 | `failed_upload_residue` | `faults.multipart-abort-75k` | `s3plain` | incomplete bytes after the window | 0 | 0 | 0 | yes |
 
+- **Small parts.** `replication-fetch.insert-1k` (three 1 000-row parts, predicted at `c69414e314a`, run
+  `cost-20261024T164439Z`) gives the same per-part requests: `s3` sender 11, receiver `PutObject` 11 and
+  `GetObject` 9; `s3plain` 11, 13, 9 and `HeadObject` 1; `cas` receiver `GetObject` 8.44, `PutObject` 7, sender 2.33.
+  `acquire_requests` validity becomes `insert_rows` 1 000–200 000 (it was `part_rows` 50 000–200 000, a value the
+  presets do not resolve).
 - **CAS relink bytes are per part, not per byte.** The relay carried 19 152 B per part at 100 000 rows,
   19 234 B at 150 000 rows and 20 158 B for one 300 000-row Wide part: the relink ships the part manifest, whose
   size follows the file count. `acquire_bytes[cas]` (a ratio) falsifies at 150 000 rows; the edge is `consumed`

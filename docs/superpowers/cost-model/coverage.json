@@ -2145,6 +2145,21 @@
           "duration_s": 60,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "insert-1k",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     },
@@ -16687,6 +16702,63 @@
         "cost-20261024T103803Z/s3plain_cached/drop/partition-3/k3"
       ],
       "status": "consumed"
+    },
+    {
+      "coefficient": "acquire_requests",
+      "experiment_id": "replication-fetch.insert-1k",
+      "policy": "s3",
+      "span": {
+        "part_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "c69414e314a",
+      "measurement_ids": [
+        "cost-20261024T164439Z/s3/replication-fetch/insert-1k/k1",
+        "cost-20261024T164439Z/s3/replication-fetch/insert-1k/k2",
+        "cost-20261024T164439Z/s3/replication-fetch/insert-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "acquire_requests",
+      "experiment_id": "replication-fetch.insert-1k",
+      "policy": "s3plain",
+      "span": {
+        "part_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "c69414e314a",
+      "measurement_ids": [
+        "cost-20261024T164439Z/s3plain/replication-fetch/insert-1k/k1",
+        "cost-20261024T164439Z/s3plain/replication-fetch/insert-1k/k2",
+        "cost-20261024T164439Z/s3plain/replication-fetch/insert-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "acquire_requests",
+      "experiment_id": "replication-fetch.insert-1k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "c69414e314a",
+      "measurement_ids": [
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k1",
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k2",
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k3"
+      ],
+      "status": "done"
     }
   ],
   "domain": {

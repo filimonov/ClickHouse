@@ -41,8 +41,8 @@
       }
     },
     "validity": {
-      "part_rows": [
-        50000,
+      "insert_rows": [
+        1000,
         200000
       ]
     },
