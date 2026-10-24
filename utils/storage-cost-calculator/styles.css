@@ -207,7 +207,8 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
   .breakdown tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
   .breakdown th[scope="row"] { border: 0; padding: 4px 0; }
   .breakdown td { border: 0; padding: 2px 0; display: flex; justify-content: space-between; gap: 12px; min-width: 0; white-space: normal; }
-  .breakdown td::before { content: attr(data-label); color: var(--mute); flex: 0 0 auto; }
+  /* The label takes the free space, so the amount and its (i) stay together on the right. */
+  .breakdown td::before { content: attr(data-label); color: var(--mute); flex: 1 1 auto; }
   .breakdown td > .cell-btn { margin: 0; text-align: right; }
   .breakdown th[scope="row"] { position: static; box-shadow: none; }
   /* The SVG scales to about half its 640-unit width here: larger units keep the ticks readable. */
