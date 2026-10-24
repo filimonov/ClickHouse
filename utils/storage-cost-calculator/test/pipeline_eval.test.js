@@ -177,7 +177,7 @@ test('test_aggregate_once_then_allocate_back_sums_to_total', () => {
   close(share.money, storage.money * 51000 / 51400);
   // The EBS column notes its allocation and the instance class that carries its throughput.
   const notes = r.variants.ebs.notes.map((n) => n.text);
-  assert.ok(notes.some((t) => /^single: 1 x \(51000 GiB/.test(t)), notes.join(' | '));
+  assert.ok(notes.some((t) => /^single: 1 replica × \(1 x 51000 GiB/.test(t)), notes.join(' | '));
   assert.ok(notes.some((t) => /instance class for 125 MiB\/s .*: m6i\.large/.test(t)), notes.join(' | '));
 });
 
@@ -274,7 +274,7 @@ test('test_manual_provisioning_priced_and_missing_input_unavailable', () => {
   assert.equal(ebs.provisioning.manual, true);
   // 2 x 600 GiB x 0.08; baseline IOPS and throughput add nothing.
   close(ebs.total, 96);
-  assert.ok(ebs.notes.some((n) => n.text === 'manual: 2 x (600 GiB, 3000 IOPS, 125 MiB/s)'));
+  assert.ok(ebs.notes.some((n) => n.text === 'manual: 1 replica × (2 x 600 GiB, 3000 IOPS, 125 MiB/s)'));
   assert.ok(ebs.notes.some((n) => /instance class for 250 MiB\/s/.test(n.text)));
   const ins = inputs(manual);
   ins.delete('provisioned_size_gib');
@@ -417,4 +417,26 @@ test('test_measured_fixtures_within_tolerance', (t) => {
   const without = coverage.evidence.map((e, i) => [`evidence[${i}]`, e])
     .filter(([id, e]) => e.status === 'done' && ['fit', 'holdout'].includes(e.role) && !withCells.has(id)).map(([id]) => id);
   assert.deepEqual(only.edges.map((e) => e.edge_id).sort(), without.sort());
+});
+
+test('test_block_lines_follow_replicas_and_s3_lines_follow_their_formulas', () => {
+  const one = run({ replicas: 1 });
+  const two = run({ replicas: 2 });
+  const block = new Set(['block_capacity', 'block_iops', 'block_mibps']);
+  const lines = (r, v) => r.variants[v].lines;
+  for (const l of lines(one, 'ebs')) {
+    const d = lines(two, 'ebs').find((x) => x.rule_id === l.rule_id);
+    assert.ok(block.has(l.rule_id), l.rule_id);
+    close(d.money, 2 * l.money, l.rule_id);
+    close(d.quantity, 2 * l.quantity, l.rule_id);
+  }
+  close(two.variants.ebs.total, 2 * one.variants.ebs.total);
+  assert.equal(two.variants.ebs.provisioning.replicas, 2);
+  assert.ok(two.variants.ebs.notes.some((n) => /^single: 2 replicas × \(1 x 1000 GiB/.test(n.text)));
+  assert.ok(two.variants.ebs.notes.some((n) => /^per replica: smallest instance class/.test(n.text)));
+  // The fixture's S3 formulas do not read replicas, so those lines are unchanged.
+  for (const l of lines(one, 's3')) close(lines(two, 's3').find((x) => x.rule_id === l.rule_id).money, l.money, l.rule_id);
+  const ins = inputs();
+  ins.delete('replicas');
+  assert.equal(pipeline.run(C, ins, AWS, {}).variants.ebs.state, 'unavailable');
 });

@@ -212,7 +212,15 @@
     return Object.assign(pick, { feasible: true, manual: false, notes: [], alternatives, rejected });
   }
 
-  function blockLines(rows, preset, manual) {
+  function replicasOf(opts) {
+    const n = opts && opts.replicas;
+    if (!Number.isInteger(n) || n < 1) throw new Error(`block rows need opts.replicas, an integer >= 1, got ${JSON.stringify(n)}`);
+    return n;
+  }
+
+  // Block rows describe one replica; every block line is that replica's bill times the replica count.
+  function blockLines(rows, preset, manual, opts) {
+    const replicas = replicasOf(opts);
     const demand = { capacity_gib: 0, peak_iops: 0, peak_mibps: 0 };
     const field = { capacity: 'capacity_gib', iops: 'peak_iops', mibps: 'peak_mibps' };
     for (const r of rows) {
@@ -226,13 +234,16 @@
     const g = preset.block.gp3;
     const n = alloc.volumes;
     const base = { tiers: null, source_url: g.source_url };
-    const note = `${alloc.manual ? 'manual' : alloc.layout}: ${n} x (${alloc.size_gib} GiB, ${alloc.iops} IOPS, ${alloc.mibps} MiB/s)`;
-    const iopsAbove = n * Math.max(0, alloc.iops - g.iops_baseline);
-    const mibpsAbove = n * Math.max(0, alloc.mibps - g.mibps_baseline);
+    const label = alloc.manual ? 'manual' : alloc.layout;
+    const perReplica = `${n} x ${alloc.size_gib} GiB, ${alloc.iops} IOPS, ${alloc.mibps} MiB/s`;
+    const note = `${label}: ${replicas} ${replicas === 1 ? 'replica' : 'replicas'} × (${perReplica})`;
+    const iopsAbove = replicas * n * Math.max(0, alloc.iops - g.iops_baseline);
+    const mibpsAbove = replicas * n * Math.max(0, alloc.mibps - g.mibps_baseline);
+    const capacity = replicas * n * alloc.size_gib;
     return {
-      allocation: Object.assign({ demand }, alloc),
+      allocation: Object.assign({ demand }, alloc, { replicas, note, per_replica: Object.assign({ note: `${label}: ${perReplica}` }, alloc) }),
       lines: [
-        Object.assign({ rule_id: 'block_capacity', unit: 'GiB-month', quantity: n * alloc.size_gib, money: n * alloc.size_gib * g.price_per_gib_month, note }, base),
+        Object.assign({ rule_id: 'block_capacity', unit: 'GiB-month', quantity: capacity, money: capacity * g.price_per_gib_month, note }, base),
         Object.assign({ rule_id: 'block_iops', unit: 'IOPS-month above baseline', quantity: iopsAbove, money: iopsAbove * g.iops_price, note: `baseline ${g.iops_baseline} per volume` }, base),
         Object.assign({ rule_id: 'block_mibps', unit: 'MiB/s-month above baseline', quantity: mibpsAbove, money: mibpsAbove * g.mibps_price, note: `baseline ${g.mibps_baseline} per volume` }, base),
       ],
@@ -240,7 +251,7 @@
   }
 
   // Bills the rows whose scope equals `scope`; the count of other rows is returned as `skipped`.
-  function bill(rows, preset, scope, outcomeMix, manual) {
+  function bill(rows, preset, scope, outcomeMix, manual, opts) {
     const sc = scope || 'variant';
     const mine = rows.filter((r) => r.scope === sc);
     const by = (t) => mine.filter((r) => r.row_type === t);
@@ -248,18 +259,18 @@
     const stray = mine.find((r) => !known.includes(r.row_type));
     if (stray) throw new Error(`row ${rowName(stray)}: unknown row_type`);
     const block = by('block_io').length + by('block_capacity').length > 0
-      ? blockLines([...by('block_capacity'), ...by('block_io')], preset, manual) : { lines: [], allocation: null };
+      ? blockLines([...by('block_capacity'), ...by('block_io')], preset, manual, opts) : { lines: [], allocation: null };
     const lines = [...requestLines(by('request'), preset, outcomeMix || null), ...(by('storage').length ? storageLines(by('storage'), preset) : []),
       ...transferLines(by('transfer'), preset), ...block.lines].map((l) => Object.assign(l, { scope: sc }));
     return { lines, total: lines.reduce((s, l) => s + l.money, 0), allocation: block.allocation, skipped: rows.length - mine.length };
   }
 
   // Bills each scope present in `rows` once, so tiers, free allowances and baselines see the variant's aggregate.
-  function billVariant(rows, preset, outcomeMix, manual) {
+  function billVariant(rows, preset, outcomeMix, manual, opts) {
     const lines = [];
     let provisioning = null;
     for (const scope of [...new Set(rows.map((r) => r.scope))]) {
-      const b = bill(rows, preset, scope, outcomeMix, manual);
+      const b = bill(rows, preset, scope, outcomeMix, manual, opts);
       lines.push(...b.lines);
       if (b.allocation) {
         if (provisioning) throw new Error('block rows in more than one scope');

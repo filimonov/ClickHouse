@@ -238,6 +238,28 @@
    },
    "hint": null,
    "status": "ok"
+  },
+  {
+   "id": "replicas",
+   "block": "fixture",
+   "label": "replicas",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "fixture",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
   }
  ],
  "sets": {},

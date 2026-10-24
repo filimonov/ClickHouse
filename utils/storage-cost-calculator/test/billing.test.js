@@ -204,7 +204,7 @@ test('test_pricing_fixtures_exact', () => {
     const layouts = fx.layouts ? fx.layouts.map((id) => preset.allocation.layouts.find((l) => l.id === id)) : undefined;
     const ex = fx.expected;
     if (fx.rows) {
-      const r = billing.bill(fx.rows, preset, 'variant', fx.outcome_mix || null);
+      const r = billing.bill(fx.rows, preset, 'variant', fx.outcome_mix || null, null, { replicas: fx.replicas || 1 });
       close(r.total, ex.total, `${fx.name} total`);
       for (const [id, want] of Object.entries(ex.lines)) {
         const l = line(r, id);
@@ -247,4 +247,36 @@ test('test_unbilled_outcome_classes_come_from_the_preset_free_list', () => {
     const mixed = billing.bill([row('request', 'GetObject', 'all', 100)], without, 'variant', { GetObject: { ok: 0.5, [cls]: 0.5 } });
     assert.equal(line(mixed, 'get_and_other').quantity, 100, cls);
   }
+});
+
+test('test_block_lines_scale_with_replicas', () => {
+  const rows = [row('block_capacity', 'capacity', 'ok', 100), row('block_io', 'iops', 'ok', 60000), row('block_io', 'mibps', 'ok', 500)];
+  const one = billing.billVariant(rows, P(), null, null, { replicas: 1 });
+  const two = billing.billVariant(rows, P(), null, null, { replicas: 2 });
+  for (const l of one.lines) {
+    const d = two.lines.find((x) => x.rule_id === l.rule_id);
+    close(d.quantity, 2 * l.quantity, `${l.rule_id} quantity`);
+    close(d.money, 2 * l.money, `${l.rule_id} money`);
+  }
+  close(two.total, 2 * one.total);
+  const a1 = one.provisioning;
+  const a2 = two.provisioning;
+  assert.deepEqual([a2.volumes, a2.size_gib, a2.iops, a2.mibps], [a1.volumes, a1.size_gib, a1.iops, a1.mibps]);
+  assert.equal(a2.replicas, 2);
+  assert.equal(a2.per_replica.volumes, a1.volumes);
+  assert.match(a1.note, /^[a-z0-9_]+: 1 replica × \(\d+ x \d+ GiB, \d+ IOPS, \d+ MiB\/s\)$/);
+  assert.match(a2.note, /: 2 replicas × \(/);
+  // Non-block rows are not scaled.
+  const req = row('request', 'GetObject', 'all', 1000);
+  close(billing.billVariant([req, ...rows], P(), null, null, { replicas: 2 }).lines.find((l) => l.rule_id === 'get_and_other').money,
+    billing.billVariant([req], P(), null, null, { replicas: 1 }).lines.find((l) => l.rule_id === 'get_and_other').money);
+});
+
+test('test_block_rows_need_explicit_replicas', () => {
+  const rows = [row('block_capacity', 'capacity', 'ok', 100)];
+  for (const o of [undefined, {}, { replicas: 0 }, { replicas: 1.5 }, { replicas: '2' }, { replicas: null }]) {
+    assert.throws(() => billing.billVariant(rows, P(), null, null, o), /replicas/, JSON.stringify(o));
+  }
+  // Without block rows replicas is not needed.
+  assert.doesNotThrow(() => billing.billVariant([row('request', 'GetObject', 'all', 1)], P(), null, null));
 });

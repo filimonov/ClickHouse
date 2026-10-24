@@ -385,13 +385,13 @@ function reconcile(where, record, prediction, cells, problems) {
 
 // Bills the record's available cells once per scope (tiers and baselines see the aggregate), then allocates
 // each line's money back to the cells: by the cells' `allocation.shares` when declared, else by quantity.
-function billGroup(where, cells, preset, problems) {
+function billGroup(where, cells, preset, problems, replicas) {
   const billed = cells.filter((c) => !c.unavailable.length);
   const rows = billed.flatMap((c) => c.ev.rows.map((r) => Object.assign({}, r, { cell: c.key })));
   if (!rows.length) return { lines: null, total: null, provisioning: null, allocation: [], byCell: {} };
   let b;
   try {
-    b = billing.billVariant(rows, preset, null);
+    b = billing.billVariant(rows, preset, null, null, { replicas });
   } catch (e) {
     problems.push(`${where}: billing failed: ${e.message}`);
     return { lines: null, total: null, provisioning: null, allocation: [], byCell: {} };
@@ -496,7 +496,7 @@ function main(argv) {
       return { key, name, cell: variantCells[name], ev, rows, unavailable: unavailableReasons(ev, rows, rec) };
     });
     reconcile(rec.measurement_id, rec, prediction, evaluated, problems);
-    const g = billGroup(rec.measurement_id, evaluated, preset, problems);
+    const g = billGroup(rec.measurement_id, evaluated, preset, problems, ctx.inputs.get('replicas'));
     const groupKey = prefix ? prefix.replace(/\/$/, '') : rec.variant;
     const allocation = g.allocation.map((a) => Object.assign({}, a, { label: presets.ruleLabel(a.rule_id, preset) }));
     groups[groupKey] = { measurement_id: rec.measurement_id, cells: evaluated.map((x) => x.key), lines: g.lines, total: g.total, provisioning: g.provisioning, allocation };

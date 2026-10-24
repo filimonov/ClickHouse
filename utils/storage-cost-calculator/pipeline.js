@@ -414,7 +414,7 @@
     if (m.problem) return { problem: m.problem };
     let b;
     try {
-      b = B.billVariant(rows, preset, options.outcome_mix || null, m.manual);
+      b = B.billVariant(rows, preset, options.outcome_mix || null, m.manual, { replicas: inputs.get('replicas') });
     } catch (e) {
       return { problem: `billing failed: ${e.message}` };
     }
@@ -427,9 +427,9 @@
     out.provisioning = b.provisioning;
     if (b.provisioning) {
       const p = b.provisioning;
-      out.notes.push({ kind: 'allocation', text: `${p.manual ? 'manual' : p.layout}: ${p.volumes} x (${p.size_gib} GiB, ${p.iops} IOPS, ${p.mibps} MiB/s)`, notes: p.notes });
+      out.notes.push({ kind: 'allocation', text: p.note, notes: p.notes });
       const ic = B.instanceClass(p, preset);
-      out.notes.push({ kind: 'instance_class', text: ic.instance_class ? `smallest instance class for ${ic.throughput_mibps} MiB/s of EBS bandwidth: ${ic.instance_class}` : ic.reason, instance_class: ic.instance_class });
+      out.notes.push({ kind: 'instance_class', text: ic.instance_class ? `per replica: smallest instance class for ${ic.throughput_mibps} MiB/s of EBS bandwidth: ${ic.instance_class}` : ic.reason, instance_class: ic.instance_class });
     }
     return {};
   }

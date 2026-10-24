@@ -156,8 +156,11 @@ test('test_drill_has_five_stages_with_branch_and_allocation', () => {
   assert.match(st.text, /^S3 storage: 25% of \$23\.00 by allocation\.shares = \$5\.75$/);
   // EBS block lines carry the allocator's layout and the instance class.
   const ebs = view({}, { ui: { openCell: { variant: 'ebs', operation: 'storage' } } }).vm.drill;
-  assert.ok(ebs.stages[4].lines.some((l) => l.kind === 'allocation' && /single: 1 x \(1000 GiB, 3000 IOPS, 125 MiB\/s\)/.test(l.text)));
+  assert.ok(ebs.stages[4].lines.some((l) => l.kind === 'allocation' && /single: 1 replica × \(1 x 1000 GiB, 3000 IOPS, 125 MiB\/s\)/.test(l.text)));
   assert.ok(ebs.stages[4].lines.some((l) => l.kind === 'instance_class'));
+  const ebs2 = view({ replicas: 2 }, { ui: { openCell: { variant: 'ebs', operation: 'storage' } } }).vm.drill;
+  assert.ok(ebs2.stages[4].lines.some((l) => l.kind === 'allocation' && /single: 2 replicas × \(1 x 1000 GiB, 3000 IOPS, 125 MiB\/s\)/.test(l.text)));
+  assert.ok(ebs2.stages[4].lines.some((l) => l.kind === 'instance_class' && /^per replica: /.test(l.text)));
   // A cell of a column that is not comparable does not open; neither does a cell that does not exist.
   const ns = view({ replacement_rate: 0.1 }, { ui: { openCell: { variant: 's3plain', operation: 'storage' } } }).vm;
   assert.equal(ns.drill, null);

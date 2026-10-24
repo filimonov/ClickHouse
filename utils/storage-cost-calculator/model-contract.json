@@ -1,20 +1,20 @@
 {
  "schema": "contract/1",
- "version": "709dbaa224d65e0c",
+ "version": "375fd08abf697842",
  "manifest": {
-  "code_sha256": "b7f4a173c9b568da8e4ba3614d204a38d7216acf157ea5ee7035809c358b6180",
+  "code_sha256": "2eef5f5cda1ef726460efd2d4fd2e9ef54a9c4f8e02b2fd470143fd8d7e98ba5",
   "code_files": {
-   "billing.js": "6264020b8a3a25b7eb96d857344cfc85408082ce202b3a1d73f47fcd549d1a1c",
+   "billing.js": "7938ac41114e362f1e8fab3bf7cd5494391bc667e65a8237fdf268d34e8e0a38",
    "contract.js": "1fab9f01cefb29e12234670db214089a13331c94b6868c39d0a4909dd2d2ad0f",
    "model.js": "377b8e98df76c529ff445ac3a98e632834d15f6a5e3c8978be932138fa89598a",
-   "pipeline.js": "2ea980bdcc6dfe4595844995eebfa4ed2437a0ce80a98068247a8371f6f1dc54",
+   "pipeline.js": "9a32661929dce8b569c5fc00c34633b5d2d5a831b6d49bc94ec8fd1dc78d69c3",
    "presets.js": "2b389a93cc7e34340c64e6c45dc19093472e79697cd748ab6bced2952df2c325",
    "ui.js": "6ef4af7239c8cea574c3387de2c2e57a170b7c78e3923562fdfd9cc921e2987c",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
    "viewmodel.js": "95b6825e936fa15814dd08896b01eafa91ecd51255343f4ea8bd2acd87d46baa"
   },
   "code_missing": [],
-  "contract_version": "709dbaa224d65e0c",
+  "contract_version": "375fd08abf697842",
   "registry_version": "0.2.0",
   "registry_sha256": "c175bfc5b3bbf3695a9983c5897a129634a685c313187043ef7bba0448e1cb6d",
   "coverage_version": "0.2.0",
@@ -37,7 +37,7 @@
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    }
   ],
-  "breakeven_sha256": "22a0c575a6c8d4bd4b9c59b190cc57021eeed4b03682c6c71ed7be75b7921ce2"
+  "breakeven_sha256": "01e6bb88fbc7032deabe3b821dd6aade03a1e221481a19a8ff486e991f7975bb"
  },
  "evidence_statement": "Built from 2 report(s): 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0. 8 coefficient(s): 3 measured, 5 pinned to source. 6 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.2.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
