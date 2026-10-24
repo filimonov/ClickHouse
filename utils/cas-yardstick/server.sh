@@ -5,19 +5,43 @@ set -euo pipefail
 
 START_TIMEOUT=${SERVER_START_TIMEOUT:-120}
 STOP_TIMEOUT=${SERVER_STOP_TIMEOUT:-60}
+TERM_GRACE=${SERVER_TERM_GRACE:-30}
 
 cmd=${1:-}
 shift || true
 
 # Signal the server's whole process group (setsid made it its own): under TRACE_PREFIX `server.pid` is the
 # tracer, and the server is its child, so a signal to the pid alone would leave the server running.
+group_of() {
+    ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ' || true
+}
+
+# A group other than the caller's own; empty when the pid is gone or shares the caller's group.
+own_group() {
+    local pgid
+    pgid=$(group_of "$1")
+    if [ -n "$pgid" ] && [ "$pgid" != "$(group_of $$)" ]; then
+        echo "$pgid"
+    fi
+}
+
 kill_group() {
     local sig=$1 pid=$2 pgid
-    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)
-    if [ -n "$pgid" ] && [ "$pgid" != "$(ps -o pgid= -p $$ | tr -d ' ')" ]; then
+    pgid=$(own_group "$pid")
+    if [ -n "$pgid" ]; then
         kill "-$sig" -- "-$pgid" 2>/dev/null || true
     else
         kill "-$sig" "$pid" 2>/dev/null || true
+    fi
+}
+
+# The tracer exits on TERM while a server that ignores TERM lives on, so liveness is the group's, not the pid's.
+group_alive() {
+    local pgid=$1 pid=$2
+    if [ -n "$pgid" ]; then
+        kill -0 -- "-$pgid" 2>/dev/null
+    else
+        kill -0 "$pid" 2>/dev/null
     fi
 }
 
@@ -59,12 +83,22 @@ case "$cmd" in
         done
         echo "server not answering SELECT 1 after $START_TIMEOUT s; killing it; see $dir/server.err.log" >&2
         pid=$(cat "$dir/server.pid")
+        pgid=$(own_group "$pid")
         kill_group TERM "$pid"
-        for _ in $(seq 1 30); do
-            kill -0 "$pid" 2>/dev/null || exit 1
+        for _ in $(seq 1 "$TERM_GRACE"); do
+            group_alive "$pgid" "$pid" || exit 1
             sleep 1
         done
-        kill_group KILL "$pid"
+        if [ -n "$pgid" ]; then
+            kill -KILL -- "-$pgid" 2>/dev/null || true
+        else
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+        for _ in $(seq 1 5); do
+            group_alive "$pgid" "$pid" || exit 1
+            sleep 1
+        done
+        echo "server group ${pgid:-$pid} survived SIGKILL" >&2
         exit 1
         ;;
     stop)

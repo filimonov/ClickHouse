@@ -20,6 +20,29 @@ def free_port_base():
     return port
 
 
+def _endpoints_bind(t: Topology) -> bool:
+    for host, port in [('127.0.0.1', p) for i in range(1, t.replicas + 1) for p in (t.tcp(i), t.http(i), t.interserver(i))] \
+            + [(t.relay_host(i), t.interserver(i)) for i in range(1, t.replicas + 1)] \
+            + [('127.0.0.1', t.keeper_client()), ('127.0.0.1', t.keeper_raft())]:
+        s = socket.socket()
+        try:
+            s.bind((host, port))
+        except OSError:
+            return False
+        finally:
+            s.close()
+    return True
+
+
+def free_topology_base(replicas: int, candidates=None, tries: int = 50) -> int:
+    """A port base whose every rig endpoint was just checked free: the test then preflights exactly that range."""
+    candidates = candidates if candidates is not None else (free_port_base() // 10 * 10 for _ in range(tries))
+    for base in candidates:
+        if base + 10 * replicas < 65536 and _endpoints_bind(Topology(port_base=base, replicas=replicas)):
+            return base
+    raise RuntimeError(f'no free port base for {replicas} replica(s) in {tries} tries')
+
+
 class Fake:
     pass
 
@@ -118,7 +141,7 @@ class CostConfigTest(unittest.TestCase):
         self.assertNotEqual(h1, h3)
 
     def test_preflight_reports_busy_port(self):
-        base = free_port_base() // 10 * 10 + 1000
+        base = free_topology_base(2)
         t = Topology(port_base=base, replicas=2)
         s = socket.socket()
         self.addCleanup(s.close)
@@ -128,7 +151,7 @@ class CostConfigTest(unittest.TestCase):
         self.assertIn(f'127.0.0.1:{t.http(2)}', problems[0])
 
     def test_preflight_accepts_port_in_time_wait(self):
-        base = free_port_base() // 10 * 10 + 1000
+        base = free_topology_base(1)
         t = Topology(port_base=base, replicas=1)
         port = t.http(1)
         listener = socket.socket()
@@ -146,6 +169,16 @@ class CostConfigTest(unittest.TestCase):
             plain.bind(('127.0.0.1', port))  # without SO_REUSEADDR the port really is unusable
         self.assertEqual(t.preflight_new_endpoints(), [])
 
+    def test_free_topology_base_skips_a_base_with_a_busy_endpoint(self):
+        busy_base = free_topology_base(1)
+        busy = socket.socket()
+        self.addCleanup(busy.close)
+        busy.bind(('127.0.0.1', Topology(port_base=busy_base, replicas=1).keeper_raft()))
+        good = free_topology_base(1, candidates=iter([busy_base, free_topology_base(1)]))
+        self.assertNotEqual(good, busy_base)
+        with self.assertRaises(RuntimeError):
+            free_topology_base(1, candidates=iter([busy_base]))
+
     def test_preflight_new_endpoints_ignores_proxy_and_store_ports(self):
         socks = []
         for port in (19131, 19121):
@@ -156,7 +189,7 @@ class CostConfigTest(unittest.TestCase):
             except OSError:
                 pass  # already held elsewhere: the ports are still not ours to check
             socks.append(s)
-        t = Topology(port_base=free_port_base() // 10 * 10 + 1000, replicas=3)
+        t = Topology(port_base=free_topology_base(3), replicas=3)
         self.assertEqual(t.preflight_new_endpoints(), [])
 
     def test_server_settings_rendered_at_xml_path(self):

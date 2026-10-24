@@ -282,3 +282,58 @@ http.server.HTTPServer(('127.0.0.1', port), H).serve_forever()
                     os.kill(child, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+
+    # A tracer that dies on TERM (as strace does) and a server that ignores TERM and never answers SELECT 1.
+    SILENT_SERVER = '''import os, signal, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+with open(os.environ['FAKE_CHILD_PID'], 'w') as f:
+    f.write(str(os.getpid()))
+while True:
+    time.sleep(1)
+'''
+    MORTAL_TRACER = '#!/bin/bash\n"$@" &\nwait\n'
+
+    def test_start_timeout_kills_the_traced_server_too(self):
+        import signal
+        import socket
+        import subprocess
+        server_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server.sh')
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'etc'))
+            open(os.path.join(tmp, 'etc', 'config.xml'), 'w').close()
+            binary, tracer = os.path.join(tmp, 'fake-clickhouse'), os.path.join(tmp, 'fake-strace')
+            with open(binary, 'w') as f:
+                f.write('#!/usr/bin/env python3\n' + self.SILENT_SERVER)
+            with open(tracer, 'w') as f:
+                f.write(self.MORTAL_TRACER)
+            os.chmod(binary, 0o755)
+            os.chmod(tracer, 0o755)
+            s = socket.socket()
+            s.bind(('127.0.0.1', 0))
+            http_port = s.getsockname()[1]
+            s.close()
+            child_pid_file = os.path.join(tmp, 'child.pid')
+            env = {**os.environ, 'TRACE_PREFIX': tracer, 'FAKE_CHILD_PID': child_pid_file, 'SERVER_START_TIMEOUT': '2',
+                   'SERVER_TERM_GRACE': '1'}
+            done = subprocess.run(['bash', server_sh, 'start', binary, tmp, str(http_port - 1)], env=env,
+                                  capture_output=True, text=True, timeout=90, start_new_session=True)
+            child = None
+            try:
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertIn('not answering', done.stderr)
+                with open(child_pid_file) as f:
+                    child = int(f.read())
+                for _ in range(50):  # a killed orphan is a zombie until its new parent reaps it
+                    try:
+                        os.kill(child, 0)
+                    except ProcessLookupError:
+                        break
+                    time.sleep(0.1)
+                else:
+                    self.fail(f'traced server {child} survived the start timeout')
+            finally:
+                if child is not None:
+                    try:
+                        os.kill(child, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
