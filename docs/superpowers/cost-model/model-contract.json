@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "1c6814f4ce41f619",
+ "version": "4803e04db015b074",
  "manifest": {
   "code_sha256": "a413ff0bdd291279087bf790d075c7815e4e81b979a90e31bfa2bbdc2e614962",
   "code_files": {
@@ -14,11 +14,11 @@
    "presets.js",
    "viewmodel.js"
   ],
-  "contract_version": "1c6814f4ce41f619",
+  "contract_version": "4803e04db015b074",
   "registry_version": "0.2.0",
   "registry_sha256": "6693b4464f778985e401177e384d949e94f1e58c570f3aaab85fb18372dfd42a",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "ed94cd6c494bf87c05965e4034fa1e4a88440f5d339526df629d7048885a8f91",
+  "coverage_sha256": "daa7a21991c4e695caf4b0b44190a952a3bbed858d37fe4a230dc8bd957cf7be",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
