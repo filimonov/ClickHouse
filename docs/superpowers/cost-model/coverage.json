@@ -2269,19 +2269,6 @@
           "duration_s": 31,
           "priority": "P1",
           "status": "run"
-        },
-        {
-          "case_id": "mixed-holdout-2",
-          "policies": [
-            "local"
-          ],
-          "replicas": 2,
-          "scale": 0.05,
-          "repeats": 3,
-          "timeout_s": 900,
-          "duration_s": 31,
-          "priority": "P1",
-          "status": "run"
         }
       ]
     }
@@ -11444,25 +11431,6 @@
       "status": "planned"
     },
     {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.mixed-holdout-2",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          150000,
-          150000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": null,
-      "measurement_ids": [],
-      "status": "planned"
-    },
-    {
       "coefficient": "io_request_size_distribution",
       "experiment_id": "io-sizes.narrow-compact",
       "policy": "local",
@@ -11554,25 +11522,6 @@
       },
       "role": "holdout",
       "prediction_commit": "dcd7f48fcf8",
-      "measurement_ids": [],
-      "status": "planned"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.mixed-holdout-2",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          150000,
-          150000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": null,
       "measurement_ids": [],
       "status": "planned"
     },
