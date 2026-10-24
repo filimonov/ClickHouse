@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "181141039b99f7c6",
+ "version": "8d6b3c03b38b4da4",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "181141039b99f7c6",
+  "contract_version": "8d6b3c03b38b4da4",
   "registry_version": "0.3.0",
-  "registry_sha256": "23e6f1faa18f25e5e9c23fd710609180f5ac77afd0c1d8eaa9b69b3eaf49663e",
+  "registry_sha256": "0f8983051607765559ab28d6a6a9598b01414ff4e3cf47e3077de6ceee4a89df",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "9f755e349d40905c32e6f8a3ef95f712e016277e151d8b88e6a65c2e798c26c2",
+  "coverage_sha256": "ad068cc5ddd954e26f277681879fc5a5b4d43a7ded769253c1276a0d7a19428c",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -32,9 +32,9 @@
    {
     "report": "2026-10-24-storage-cost-ebs",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
-    "rig_commit": "d56cc2d7804464469bb6f0a694ea963369933d1b",
+    "rig_commit": "e628391c5ab3713c50d198185a8e8a714d41bb9e",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "raw_sha256sums": "5af6fac8c75d89b82a6ba66dee690b09c171fe68da8a2751eb106630a2f456e1"
+    "raw_sha256sums": "b09f64fdea516ff625feb12f7479980ef103904f1628ec215c812c56bade9ffe"
    },
    {
     "report": "2026-10-24-storage-cost-lifecycle",
@@ -79,9 +79,9 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "39ad9004a2ae79f1c66a1ff26fb89e46e201d1d09eeddacf3dab988144efc262"
+  "breakeven_sha256": "3db5b90e66b8bfe38f71968dba3d4511b15cf29ea5da87f713f0daf5e343f9e3"
  },
- "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 59 coefficient(s): 41 measured, 18 pinned to source. 56 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 60 coefficient(s): 42 measured, 18 pinned to source. 57 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -10216,407 +10216,6 @@
    "status": "ok"
   },
   {
-   "id": "provisioned_size_gib",
-   "block": "local_disk",
-   "label": "Manual provisioning: size of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "GiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": null,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_size_gib": "total_space / 2^30 of the data disk"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_iops",
-   "block": "local_disk",
-   "label": "Manual provisioning: IOPS of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "iops",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 3000,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "provisioned_mibps",
-   "block": "local_disk",
-   "label": "Manual provisioning: throughput of each volume",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "mibps",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 125,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "volumes_per_replica",
-   "block": "local_disk",
-   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
-   "kind": "input",
-   "scope": "replica",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "auto"
-   ],
-   "table": null,
-   "default": "auto",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "auto picks the cheapest feasible layout of the billing contract",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
-    "mapping": {
-     "volumes_per_replica": "number of disks in the volume of the table storage policy"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_headroom",
-   "block": "ebs",
-   "label": "Free space provisioned above the active data, as a fraction of it (outdated parts until old_parts_lifetime, merge results before their sources go, metadata, growth)",
-   "kind": "input",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 0.2,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "not measured: rig parts are small, so the rig peak over active bytes does not carry to production sizes; 0.2 is an operator choice",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
-    "mapping": {
-     "ebs_headroom": "(total_space - free_space) / bytes_on_disk of active parts minus 1 is the current overhead"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_io_rule",
-   "block": "ebs",
-   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "ssd_256kib_merged_sequential"
-   ],
-   "table": null,
-   "default": "ssd_256kib_merged_sequential",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "ebs_max_io_bytes",
-   "block": "ebs",
-   "label": "Largest I/O an SSD volume counts as one IOPS",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "B",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 262144,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
-    "version": "2026-10-24"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_op",
-   "block": "ebs",
-   "label": "Operation key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "inserts",
-    "merges",
-    "mutations",
-    "deletes",
-    "reads",
-    "recovery"
-   ],
-   "table": null,
-   "default": "inserts",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_direction",
-   "block": "ebs",
-   "label": "Direction key of the EBS demand tables",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "write",
-    "read"
-   ],
-   "table": null,
-   "default": "write",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_size_bucket",
-   "block": "ebs",
-   "label": "Request-size bucket (power-of-two upper bound)",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "",
-   "value_type": "enum",
-   "enum": [
-    "<=4KiB",
-    "8KiB",
-    "16KiB",
-    "32KiB",
-    "64KiB",
-    "128KiB",
-    "256KiB",
-    "512KiB",
-    "1MiB",
-    ">1MiB"
-   ],
-   "table": null,
-   "default": "1MiB",
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "table key",
-    "version": "0.2.0"
-   },
-   "hint": null,
-   "status": "ok"
-  },
-  {
-   "id": "io_bytes_per_op",
-   "block": "ebs",
-   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_bytes_per_op",
-   "validity": {
-    "insert_rows": [
-     80000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "io_request_size_distribution",
-   "block": "ebs",
-   "label": "Fraction of volume requests per size bucket, by operation and direction",
-   "kind": "measured",
-   "scope": "volume",
-   "unit": "1",
-   "value_type": "table",
-   "enum": null,
-   "table": {
-    "index": [
-     "io_op",
-     "io_direction",
-     "io_size_bucket"
-    ],
-    "dim": "1"
-   },
-   "default": null,
-   "rule": null,
-   "coef": "io_request_size_distribution",
-   "validity": {
-    "insert_rows": [
-     80000,
-     300000
-    ]
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05; page cache not dropped (no root): write demand is /proc/<pid>/io write_bytes net of the idle baseline (embedded Keeper on r1), read demand is traced syscall bytes, an upper bound of cold device reads)",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "ebs_sequential_ios_per_mib",
-   "block": "ebs",
-   "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); real request counts were 1.3-6.5x this on the rig; the gp3 3000-IOPS baseline usually dominates",
-   "kind": "pinned",
-   "scope": "volume",
-   "unit": "req/MiB",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 4,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "provider",
-    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured spread of syscall I/Os per MiB on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
-    "version": "2026-10-24"
-   },
-   "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
-    "mapping": {
-     "ebs_sequential_ios_per_mib": "compare with CloudWatch VolumeWriteOps / (VolumeWriteBytes / 2^20) of the data volume"
-    }
-   },
-   "status": "ok"
-  },
-  {
-   "id": "peak_factor",
-   "block": "ebs",
-   "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
-   "kind": "input",
-   "scope": "cluster",
-   "unit": "1",
-   "value_type": "number",
-   "enum": null,
-   "table": null,
-   "default": 1,
-   "rule": null,
-   "coef": null,
-   "validity": null,
-   "evidence": {
-    "kind": "assumed",
-    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
-    "version": "0.2.0"
-   },
-   "hint": {
-    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
-    "mapping": {
-     "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
-    }
-   },
-   "status": "ok"
-  },
-  {
    "id": "plain_op",
    "block": "schema",
    "label": "S3 operation of an s3plain request row",
@@ -10992,6 +10591,488 @@
     "sql": "SELECT name, path FROM system.disks WHERE type = 'ObjectStorage'",
     "mapping": {
      "plain_local_metadata_bytes_per_object": "0: no metadata path on disk"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_size_gib",
+   "block": "local_disk",
+   "label": "Manual provisioning: size of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_size_gib": "total_space / 2^30 of the data disk"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_iops",
+   "block": "local_disk",
+   "label": "Manual provisioning: IOPS of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "iops",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3000,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_iops": "not visible to ClickHouse: the Iops of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "provisioned_mibps",
+   "block": "local_disk",
+   "label": "Manual provisioning: throughput of each volume",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "mibps",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 125,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "manual allocation; default is the gp3 baseline; read only when volumes_per_replica is a number",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks",
+    "mapping": {
+     "provisioned_mibps": "not visible to ClickHouse: the Throughput of the volume in aws ec2 describe-volumes"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "volumes_per_replica",
+   "block": "local_disk",
+   "label": "Volumes per replica: auto (cheapest feasible layout) or a count for manual provisioning",
+   "kind": "input",
+   "scope": "replica",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "auto"
+   ],
+   "table": null,
+   "default": "auto",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "auto picks the cheapest feasible layout of the billing contract",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT policy_name, volume_name, disks FROM system.storage_policies",
+    "mapping": {
+     "volumes_per_replica": "number of disks in the volume of the table storage policy"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_capacity_headroom",
+   "block": "ebs",
+   "label": "Capacity headroom over stored data (free space, temporary merge output)",
+   "kind": "input",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1.3,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "provisioned capacity = data_bytes x this factor; the rig shows the headroom exists (the probe_local_volume capacity peak and merge-natural allocated peaks exceed the final active bytes, docs/superpowers/reports/2026-10-24-storage-cost-ebs) but its small parts do not size it",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT name, path, total_space, free_space FROM system.disks -- and SELECT sum(bytes_on_disk) FROM system.parts WHERE active",
+    "mapping": {
+     "ebs_capacity_headroom": "(total_space - free_space) / sum(bytes_on_disk) at the busiest merge, plus the largest part a merge may write (max_bytes_to_merge_at_max_space_in_pool)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_io_rule",
+   "block": "ebs",
+   "label": "EBS I/O accounting on SSD volumes: an I/O counts up to 256 KiB, larger ones split, physically sequential small ones merge; demand is priced as a merged sequential stream (4 I/Os per MiB), the fewest I/Os its bytes can take",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "ssd_256kib_merged_sequential"
+   ],
+   "table": null,
+   "default": "ssd_256kib_merged_sequential",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "ebs_max_io_bytes",
+   "block": "ebs",
+   "label": "Largest I/O an SSD volume counts as one IOPS",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 262144,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24)",
+    "version": "2026-10-24"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_op",
+   "block": "ebs",
+   "label": "Operation key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "inserts",
+    "merges",
+    "mutations",
+    "deletes",
+    "reads",
+    "recovery"
+   ],
+   "table": null,
+   "default": "inserts",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_direction",
+   "block": "ebs",
+   "label": "Direction key of the EBS demand tables",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "write",
+    "read"
+   ],
+   "table": null,
+   "default": "write",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_size_bucket",
+   "block": "ebs",
+   "label": "Request-size bucket (power-of-two upper bound)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "<=4KiB",
+    "8KiB",
+    "16KiB",
+    "32KiB",
+    "64KiB",
+    "128KiB",
+    "256KiB",
+    "512KiB",
+    "1MiB",
+    ">1MiB"
+   ],
+   "table": null,
+   "default": "1MiB",
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "table key",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "io_bytes_per_op",
+   "block": "ebs",
+   "label": "Volume bytes per byte the operation produces (merge, insert) or scans (read), by direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_bytes_per_op",
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "op_write_bytes",
+   "block": "ebs",
+   "label": "Volume write bytes per source row of a mutated part; the mutation's reads are not modelled",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op"
+    ],
+    "dim": "B"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "op_write_bytes",
+   "validity": {
+    "mutated_part_rows": [
+     30000,
+     400000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, count(), sum(rows) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('MutatePart', 'RemovePart') GROUP BY event_type",
+    "mapping": {
+     "op_write_bytes": "write_bytes of /proc/<clickhouse pid>/io over a mutation or restart, divided by the rows mutated, parts dropped or restarts"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "drop_write_bytes_per_part",
+   "block": "ebs",
+   "label": "Volume write bytes per dropped part: not modelled (per-part writes did not carry to the hold-out layout)",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "drop_write_bytes_per_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); drop.partition 219 kB per dropped part, drop.partition-2 126 kB: the per-part unit fails the hold-out",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "unsupported"
+  },
+  {
+   "id": "restart_write_bytes",
+   "block": "ebs",
+   "label": "Volume write bytes per restart: below the rig resolution, not modelled",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "restart_write_bytes",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device); startup.intact / startup.small net writes were negative after the idle baseline",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "unsupported"
+  },
+  {
+   "id": "io_request_size_distribution",
+   "block": "ebs",
+   "label": "Fraction of volume requests per size bucket, by operation and direction",
+   "kind": "measured",
+   "scope": "volume",
+   "unit": "1",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "io_op",
+     "io_direction",
+     "io_size_bucket"
+    ],
+    "dim": "1"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "io_request_size_distribution",
+   "validity": {
+    "insert_rows": [
+     80000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs (local policy, scale 0.05, warm page cache (not dropped, no root): write demand is /proc/<pid>/io write_bytes net of the idle rate (server background, mostly system logs, plus about 2.3 kB/s of the embedded Keeper on r1); read demand is the bytes traced syscalls return, with no bound direction against a cold device)",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "mapping": {
+     "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "ebs_sequential_ios_per_mib",
+   "block": "ebs",
+   "label": "EBS I/Os per MiB, LOWER BOUND: a merged sequential stream (1 MiB / 256 KiB); the rig syscall proxy counted 1.3-6.5x this (5.3-26.1 per MiB; insert reads, 1335-1608 per MiB on negligible bytes, excluded); the gp3 3000-IOPS baseline usually dominates",
+   "kind": "pinned",
+   "scope": "volume",
+   "unit": "req/MiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 4,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "provider",
+    "ref": "https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html (checked 2026-10-24); measured syscall-proxy spread on docs/superpowers/reports/2026-10-24-storage-cost-ebs: 5.3-26.1 I/Os per MiB (insert writes 8.5-14.1 narrow, 15-16 mixed, 26 complex types; merge reads 10-20; scans 8-16)",
+    "version": "2026-10-24"
+   },
+   "hint": {
+    "sql": "SELECT event_type, sum(size_in_bytes) / 1048576 AS mib FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
+    "mapping": {
+     "ebs_sequential_ios_per_mib": "compare CloudWatch VolumeWriteOps of the data volume over the same day with 4 x mib; the ratio is the real I/Os per MiB"
+    }
+   },
+   "status": "ok"
+  },
+  {
+   "id": "peak_factor",
+   "block": "ebs",
+   "label": "Burst factor for provisioned IOPS/throughput; 1 = size for the average rate",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "not measurable on this rig: merge-natural.default gave 1.0 (all merges within 1.2 s) and merge-natural.wide 15.0-15.9 (one late merge sets the window); see the EBS report",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t, sum(size_in_bytes) FROM system.part_log WHERE event_date = today() AND event_type IN ('NewPart', 'MergeParts') GROUP BY t",
+    "mapping": {
+     "peak_factor": "1-s peak over mean of write bytes: max over mean of these per-second sums over a busy hour, or of iostat -x 1 wkB/s on the data volume; CloudWatch VolumeWriteBytes per minute understates second-level peaks"
     }
    },
    "status": "ok"
@@ -11468,12 +11549,12 @@
      "io_direction"
     ],
     "values": {
-     "inserts|read": 0.000897,
-     "inserts|write": 1.038584,
-     "merges|read": 1.00566,
-     "merges|write": 1.013777,
-     "reads|read": 1.225166,
-     "reads|write": 0.001475
+     "inserts|read": 0.000265,
+     "inserts|write": 1.033463,
+     "merges|read": 1.004677,
+     "merges|write": 1.006703,
+     "reads|read": 1.224855,
+     "reads|write": -4.6e-05
     }
    },
    "validity": {
@@ -11484,12 +11565,12 @@
    },
    "tolerance": {
     "abs": {
-     "inserts|read": 0.005858,
-     "inserts|write": 0.072581,
-     "merges|read": 0.012508,
-     "merges|write": 0.023712,
-     "reads|read": 0.284854,
-     "reads|write": 0.009057
+     "inserts|read": 0.005852,
+     "inserts|write": 0.074171,
+     "merges|read": 0.012077,
+     "merges|write": 0.02806,
+     "reads|read": 0.28423,
+     "reads|write": 0.005067
     },
     "rel": 0.1
    },
@@ -11524,18 +11605,18 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
     "version": "0.2.0",
     "measurement_ids": [
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -11544,144 +11625,144 @@
    "fit": {
     "method": "mean of the per-record values of io-sizes.narrow-compact, .narrow-wide and .types-holdout (ebs_fit.demand_fit)",
     "records": [
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
     ],
     "per_key": {
      "inserts|read": {
-      "spread": 0.0004291582428951323,
+      "spread": 0.00042598689045581113,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00024234768206245845,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00032129613828448184,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0003301703677841037,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.00037040059760522594,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00036539503149271763,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0004291582428951323,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 9.580364468836768e-05,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 9.378748628624176e-05,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 8.154855288742223e-05
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.00026450173335672614,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.00026450173335672614,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.00042598689045581113,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -3.2536098832144564e-05,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -3.6694569140997715e-05,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.00026450173335672614,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.0001387583436656362,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.00015713094206247226,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.00014085969185940106
       }
      },
      "inserts|write": {
-      "spread": 0.0337907051287516,
+      "spread": 0.03458555167562638,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": -0.008205264376974997,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.010710834183230045,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.010710805227931663,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.02387871041816414,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.02388006313721802,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0238737026427589,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0337907051287516,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.033678619958686706,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.03379005489883835
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.015311568780493223,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.015311309181207378,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": -0.007035490166388936,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.02105364107380958,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.021047500574109534,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.023835521463614562,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.034464726901376475,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.0345447526626208,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.03458555167562638
       }
      },
      "merges|read": {
-      "spread": 0.0037539213014912143,
+      "spread": 0.0035383014694798653,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0037539213014912143,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.003270567542966729,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0032763074267108117,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.002483451462595765,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.0023947788336518006,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.0023193823991529694,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.000742389866281945,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.0012267037054090046,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.0011340900040774926
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.0035383014694798653,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.0035383014694798653,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.0035383014694798653,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.002023474430374872,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.002023474430374872,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.002023474430374872,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -0.0015148270391054375,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -0.0015148270391054375,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -0.0015148270391054375
       }
      },
      "merges|write": {
-      "spread": 0.009355927401353936,
+      "spread": 0.011529752592622566,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.00023257614270266735,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.00022316705292912964,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.00021097780633438923,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.009353544717396467,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.009348548272166246,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.009355927401353936,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.009093976817353244,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.00921388989620664,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.009083432675391911
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": -0.003976559201794183,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": -0.003987065044630755,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": -0.003991213240375435,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": -0.006035020726542051,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": -0.006025395076049378,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": -0.006033451559412484,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.00929850558563694,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.009220446670545224,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.011529752592622566
       }
      },
      "reads|read": {
-      "spread": 0.1399267891387337,
+      "spread": 0.1396151055765218,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.13379340133449413,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13264604891991394,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13264604891991394,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.006686784979795135,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.006650031667348788,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.00655550770706137,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": -0.1399267891387337,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": -0.1395200401910881,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": -0.13953099419870374
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.13295773248212583,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.13295773248212583,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.13295773248212583,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.0066573730943959575,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.0066573730943959575,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.0066573730943959575,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -0.1396151055765218,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -0.1396151055765218,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -0.1396151055765218
       }
      },
      "reads|write": {
-      "spread": 0.0020285524667166023,
+      "spread": 3.3413469364270324e-05,
       "residuals": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0020285524667166023,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": -0.001581374351536461,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": -0.0015864362092484323,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": -0.000327453524810131,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": -0.00032796903681137036,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": -0.00033900235941907125,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0007151100309679824,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0007096106636793199,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0007089623204615612
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 9.582157514281407e-06,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 7.4527855295772194e-06,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 1.2716387367171337e-05,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 1.5106173430710494e-05,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 1.7992322028353327e-05,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 1.487621963162918e-05,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": -1.932693040080849e-05,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": -3.3413469364270324e-05,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": -2.498564573664416e-05
       }
      }
     },
     "holdout": {
      "records": [
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3"
      ],
      "checks": {
       "inserts|read": {
-       "fit": 0.0008971401700599561,
+       "fit": 0.00026450173335672614,
        "ok": true,
-       "slack": 0.00594803050279626,
-       "value": 0.0007250759750158224
+       "slack": 0.005878423954247295,
+       "value": 0.00019392079795842537
       },
       "inserts|write": {
-       "fit": 1.0385843036560058,
+       "fit": 1.0334629672240798,
        "ok": true,
-       "slack": 0.1764398406231038,
-       "value": 1.0349493210920213
+       "slack": 0.17751740007366074,
+       "value": 1.021663434283196
       },
       "merges|read": {
-       "fit": 1.005660228669173,
+       "fit": 1.00467690713942,
        "ok": true,
-       "slack": 0.11307386546989973,
-       "value": 1.0043955940168432
+       "slack": 0.11254429365290174,
+       "value": 1.0025436817736533
       },
       "merges|write": {
-       "fit": 1.013776918222415,
+       "fit": 1.0067029962149256,
        "ok": true,
-       "slack": 0.12508954662494937,
-       "value": 1.0180322848230006
+       "slack": 0.1287298048067377,
+       "value": 1.004778298802402
       },
       "reads|read": {
-       "fit": 1.2251664059829421,
+       "fit": 1.2248547224207302,
        "ok": true,
-       "slack": 0.4073702188757616,
-       "value": 1.3051539383894986
+       "slack": 0.4067156833951166,
+       "value": 1.3151351020114088
       },
       "reads|write": {
-       "fit": 0.001475025048520963,
+       "fit": -4.5589462757923344e-05,
        "ok": true,
-       "slack": 0.0092046074382853,
-       "value": 0.0024766232201547185
+       "slack": 0.005071385885004333,
+       "value": -4.406105004616944e-05
       }
      }
     }
@@ -11698,55 +11779,45 @@
      "io_size_bucket"
     ],
     "values": {
-     "inserts|read|128KiB": 0.0,
-     "inserts|read|16KiB": 0.0,
-     "inserts|read|1MiB": 0.0,
-     "inserts|read|256KiB": 0.0,
-     "inserts|read|32KiB": 0.0,
-     "inserts|read|512KiB": 0.0,
-     "inserts|read|64KiB": 0.0,
-     "inserts|read|8KiB": 0.0,
-     "inserts|read|<=4KiB": 1.0,
-     "inserts|read|>1MiB": 0.0,
-     "inserts|write|128KiB": 0.006879,
-     "inserts|write|16KiB": 0.008361,
-     "inserts|write|1MiB": 0.104316,
-     "inserts|write|256KiB": 0.019157,
-     "inserts|write|32KiB": 0.003439,
-     "inserts|write|512KiB": 0.019897,
-     "inserts|write|64KiB": 0.018263,
-     "inserts|write|8KiB": 0.015395,
-     "inserts|write|<=4KiB": 0.804293,
+     "inserts|write|128KiB": 0.007227,
+     "inserts|write|16KiB": 0.007227,
+     "inserts|write|1MiB": 0.122119,
+     "inserts|write|256KiB": 0.022475,
+     "inserts|write|32KiB": 0.003613,
+     "inserts|write|512KiB": 0.022078,
+     "inserts|write|64KiB": 0.021926,
+     "inserts|write|8KiB": 0.010151,
+     "inserts|write|<=4KiB": 0.783183,
      "inserts|write|>1MiB": 0.0,
-     "merges|read|128KiB": 0.629461,
-     "merges|read|16KiB": 0.01305,
+     "merges|read|128KiB": 0.662501,
+     "merges|read|16KiB": 0.013717,
      "merges|read|1MiB": 0.0,
      "merges|read|256KiB": 0.0,
-     "merges|read|32KiB": 0.012698,
+     "merges|read|32KiB": 0.013396,
      "merges|read|512KiB": 0.0,
-     "merges|read|64KiB": 0.047661,
-     "merges|read|8KiB": 0.007894,
-     "merges|read|<=4KiB": 0.289236,
+     "merges|read|64KiB": 0.050492,
+     "merges|read|8KiB": 0.008386,
+     "merges|read|<=4KiB": 0.251508,
      "merges|read|>1MiB": 0.0,
-     "merges|write|128KiB": 0.004739,
-     "merges|write|16KiB": 0.019003,
-     "merges|write|1MiB": 0.248639,
-     "merges|write|256KiB": 0.015267,
-     "merges|write|32KiB": 0.012891,
-     "merges|write|512KiB": 0.016616,
-     "merges|write|64KiB": 0.002375,
-     "merges|write|8KiB": 0.016259,
-     "merges|write|<=4KiB": 0.664211,
+     "merges|write|128KiB": 0.007051,
+     "merges|write|16KiB": 0.023953,
+     "merges|write|1MiB": 0.468308,
+     "merges|write|256KiB": 0.023012,
+     "merges|write|32KiB": 0.020076,
+     "merges|write|512KiB": 0.021729,
+     "merges|write|64KiB": 0.002936,
+     "merges|write|8KiB": 0.002936,
+     "merges|write|<=4KiB": 0.429999,
      "merges|write|>1MiB": 0.0,
-     "reads|read|128KiB": 0.802774,
-     "reads|read|16KiB": 0.006447,
+     "reads|read|128KiB": 0.818949,
+     "reads|read|16KiB": 0.006526,
      "reads|read|1MiB": 0.0,
      "reads|read|256KiB": 0.0,
-     "reads|read|32KiB": 0.00053,
+     "reads|read|32KiB": 0.000541,
      "reads|read|512KiB": 0.0,
-     "reads|read|64KiB": 0.001404,
-     "reads|read|8KiB": 0.013239,
-     "reads|read|<=4KiB": 0.175605,
+     "reads|read|64KiB": 0.001437,
+     "reads|read|8KiB": 0.013406,
+     "reads|read|<=4KiB": 0.159142,
      "reads|read|>1MiB": 0.0
     }
    },
@@ -11758,11 +11829,10 @@
    },
    "tolerance": {
     "max_tv": {
-     "inserts|read": 0.05,
-     "inserts|write": 0.280501,
-     "merges|read": 0.574494,
-     "merges|write": 0.436859,
-     "reads|read": 0.671762
+     "inserts|write": 0.383322,
+     "merges|read": 0.58646,
+     "merges|write": 0.768129,
+     "reads|read": 0.686468
     }
    },
    "domain": {
@@ -11796,18 +11866,18 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
     "version": "0.2.0",
     "measurement_ids": [
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-     "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+     "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -11816,114 +11886,273 @@
    "fit": {
     "method": "mean of the per-record request fractions (ebs_fit.pooled_distribution)",
     "records": [
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2",
-     "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k1",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k2",
-     "cost-20261024T145657Z/local/io-sizes/types-holdout/k3"
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2",
+     "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k1",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k2",
+     "cost-20261024T162633Z/local/io-sizes/types-holdout/k3"
     ],
     "per_key": {
-     "inserts|read": {
-      "tv": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.0,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.0
-      }
-     },
      "inserts|write": {
       "tv": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.07873160004034215,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.0733716482022282,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.0733716482022282,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.11525066231523648,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.11525066231523648,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.11525066231523648,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.07988106256051809,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.07972122878764187,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.07988106256051809
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.07724344610189601,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.07724344610189601,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.09111692001976508,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.12178901044253905,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.12178901044253905,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.16666080531433394,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.10148039079007073,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.10148039079007079,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.10148039079007076
       }
      },
      "merges|read": {
       "tv": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.10019424235178682,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.13311194075807056,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.13311194075807056,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16778464124197381,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.1636416210584302,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.15682483066058686,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.2622470658962326,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.25580506791536634,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.25758282996943327
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.1237821127811534,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.1237821127811534,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.1237821127811534,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.17191587859960103,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.17191587859960103,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.17191587859960103,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.26823011050705325,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.26823011050705325,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.26823011050705325
       }
      },
      "merges|write": {
       "tv": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.08720719034802119,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.08483654512023311,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.08483654512023311,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.19342973811058917,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.19342973811058917,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.19342973811058917,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.15775512153425023,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.15851499995370313,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.15775512153425023
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.06360370641416396,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.06360370641416396,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.06360370641416396,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.3024185950656539,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.3024185950656539,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.3024185950656539,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.35119113043949646,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.35119113043949646,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.35906455007762195
       }
      },
      "reads|read": {
       "tv": {
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k1": 0.09943588586806616,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k2": 0.16564901424363745,
-       "cost-20261024T145657Z/local/io-sizes/narrow-compact/k3": 0.16564901424363745,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k1": 0.16188571587162123,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k2": 0.16494981070786796,
-       "cost-20261024T145657Z/local/io-sizes/narrow-wide/k3": 0.1711367370225898,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k1": 0.3020152431094547,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k2": 0.3108810808202954,
-       "cost-20261024T145657Z/local/io-sizes/types-holdout/k3": 0.31000859467101305
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k1": 0.14944193685758725,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k2": 0.14944193685758725,
+       "cost-20261024T162633Z/local/io-sizes/narrow-compact/k3": 0.14944193685758725,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k1": 0.1707697469785008,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k2": 0.1707697469785008,
+       "cost-20261024T162633Z/local/io-sizes/narrow-wide/k3": 0.1707697469785008,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k1": 0.318233776685767,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k2": 0.318233776685767,
+       "cost-20261024T162633Z/local/io-sizes/types-holdout/k3": 0.318233776685767
       }
      }
     },
     "holdout": {
      "records": [
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k1",
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k2",
-      "cost-20261024T145657Z/local/io-sizes/mixed-holdout-2/k3"
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k1",
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k2",
+      "cost-20261024T162633Z/local/io-sizes/mixed-holdout-3/k3"
      ],
      "checks": {
-      "inserts|read": {
-       "max_tv": 0.05,
-       "ok": true,
-       "tv": 0.0
-      },
       "inserts|write": {
-       "max_tv": 0.28050132463047295,
+       "max_tv": 0.3833216106286679,
        "ok": true,
-       "tv": 0.08711062179716181
+       "tv": 0.09223222782264955
       },
       "merges|read": {
-       "max_tv": 0.5744941317924652,
+       "max_tv": 0.5864602210141066,
        "ok": true,
-       "tv": 0.055718477884216605
+       "tv": 0.08054788369786772
       },
       "merges|write": {
-       "max_tv": 0.4368594762211783,
+       "max_tv": 0.7681291001552439,
        "ok": true,
-       "tv": 0.1400313446457229
+       "tv": 0.12738639666744236
       },
       "reads|read": {
-       "max_tv": 0.6717621616405909,
+       "max_tv": 0.6864675533715341,
        "ok": true,
-       "tv": 0.1432262529285004
+       "tv": 0.11086404412566732
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "op_write_bytes",
+   "kind": "table",
+   "dim": "B",
+   "value": {
+    "index": [
+     "io_op"
+    ],
+    "values": {
+     "mutations": 13.313
+    }
+   },
+   "validity": {
+    "mutated_part_rows": [
+     30000,
+     400000
+    ]
+   },
+   "tolerance": {
+    "abs": {
+     "mutations": 19.558
+    },
+    "rel": 0.15
+   },
+   "domain": {
+    "fit": {
+     "mutations": "ALTER UPDATE of one column over 2 Compact parts of 100 000 rows and 2 Wide parts of 400 000 rows; per source row",
+     "deletes": "DROP PARTITION of 2 parts; per dropped part",
+     "recovery": "restart of one replica with 3 parts; per restart"
+    },
+    "holdout": {
+     "mutations": "2 Compact parts of 30 000 rows",
+     "deletes": "2 of 3 parts dropped",
+     "recovery": "3 parts of 1 000 rows"
+    }
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-ebs",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261024T162633Z/local/mutation/compact-30k/k1",
+     "cost-20261024T162633Z/local/mutation/compact-30k/k2",
+     "cost-20261024T162633Z/local/mutation/compact-30k/k3",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "fit": {
+    "method": "mean per-unit net /proc write_bytes of the fit records (ebs_fit.ops_values); reads of these operations are not modelled",
+    "records": [
+     "cost-20261024T162633Z/local/drop/partition/k1",
+     "cost-20261024T162633Z/local/drop/partition/k2",
+     "cost-20261024T162633Z/local/drop/partition/k3",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2",
+     "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2",
+     "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3",
+     "cost-20261024T162633Z/local/startup/intact/k1",
+     "cost-20261024T162633Z/local/startup/intact/k2",
+     "cost-20261024T162633Z/local/startup/intact/k3"
+    ],
+    "per_key": {
+     "deletes": {
+      "spread": 367.72037949133664,
+      "residuals": {
+       "cost-20261024T162633Z/local/drop/partition/k1": -201.05378691578517,
+       "cost-20261024T162633Z/local/drop/partition/k2": -166.66659257555148,
+       "cost-20261024T162633Z/local/drop/partition/k3": 367.72037949133664
+      }
+     },
+     "mutations": {
+      "spread": 9.778841318393276,
+      "residuals": {
+       "cost-20261024T162633Z/local/mutation/compact-update-one-column/k1": 9.753720599474407,
+       "cost-20261024T162633Z/local/mutation/compact-update-one-column/k2": 9.753810124343152,
+       "cost-20261024T162633Z/local/mutation/compact-update-one-column/k3": 9.756480963155271,
+       "cost-20261024T162633Z/local/mutation/wide-update-one-column/k1": -9.778522106291632,
+       "cost-20261024T162633Z/local/mutation/wide-update-one-column/k2": -9.778841318393276,
+       "cost-20261024T162633Z/local/mutation/wide-update-one-column/k3": -9.70664826228793
+      }
+     },
+     "recovery": {
+      "spread": 43558.849139697624,
+      "residuals": {
+       "cost-20261024T162633Z/local/startup/intact/k1": 21733.35216649365,
+       "cost-20261024T162633Z/local/startup/intact/k2": 21825.496973203983,
+       "cost-20261024T162633Z/local/startup/intact/k3": -43558.849139697624
+      }
+     }
+    },
+    "holdout": {
+     "records": [
+      "cost-20261024T162633Z/local/drop/partition-2/k1",
+      "cost-20261024T162633Z/local/drop/partition-2/k2",
+      "cost-20261024T162633Z/local/drop/partition-2/k3",
+      "cost-20261024T162633Z/local/mutation/compact-30k/k1",
+      "cost-20261024T162633Z/local/mutation/compact-30k/k2",
+      "cost-20261024T162633Z/local/mutation/compact-30k/k3",
+      "cost-20261024T162633Z/local/startup/small/k1",
+      "cost-20261024T162633Z/local/startup/small/k2",
+      "cost-20261024T162633Z/local/startup/small/k3"
+     ],
+     "checks": {
+      "deletes": {
+       "cost-20261024T162633Z/local/drop/partition-2/k1": {
+        "fit": 219439.79560009087,
+        "ok": false,
+        "slack": 33651.410098996304,
+        "value": 126088.99805368837
+       },
+       "cost-20261024T162633Z/local/drop/partition-2/k2": {
+        "fit": 219439.79560009087,
+        "ok": false,
+        "slack": 33651.410098996304,
+        "value": 126342.24609665998
+       },
+       "cost-20261024T162633Z/local/drop/partition-2/k3": {
+        "fit": 219439.79560009087,
+        "ok": false,
+        "slack": 33651.410098996304,
+        "value": 126339.8266990537
+       }
+      },
+      "mutations": {
+       "cost-20261024T162633Z/local/mutation/compact-30k/k1": {
+        "fit": 13.312990058536661,
+        "ok": true,
+        "slack": 21.55463114556705,
+        "value": 26.649568840014318
+       },
+       "cost-20261024T162633Z/local/mutation/compact-30k/k2": {
+        "fit": 13.312990058536661,
+        "ok": true,
+        "slack": 21.55463114556705,
+        "value": 26.64983977517752
+       },
+       "cost-20261024T162633Z/local/mutation/compact-30k/k3": {
+        "fit": 13.312990058536661,
+        "ok": true,
+        "slack": 21.55463114556705,
+        "value": 26.650940233805244
+       }
+      },
+      "recovery": {
+       "cost-20261024T162633Z/local/startup/small/k1": {
+        "fit": -52936.72158912266,
+        "ok": true,
+        "slack": 95058.20651776364,
+        "value": -31848.468716261646
+       },
+       "cost-20261024T162633Z/local/startup/small/k2": {
+        "fit": -52936.72158912266,
+        "ok": true,
+        "slack": 95058.20651776364,
+        "value": -31107.7911853618
+       },
+       "cost-20261024T162633Z/local/startup/small/k3": {
+        "fit": -52936.72158912266,
+        "ok": true,
+        "slack": 95058.20651776364,
+        "value": -31157.934502252872
+       }
       }
      }
     }
@@ -15142,7 +15371,7 @@
     "thresholds": "not_applicable",
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
-    "mutation_deletes": "unsupported_cut",
+    "mutation_deletes": "supported",
     "reads_cache": "not_applicable",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
@@ -15173,7 +15402,7 @@
     "multipart_graph": "not_applicable",
     "lifecycle": "not_applicable",
     "mutation_deletes": "not_applicable",
-    "reads_cache": "unsupported_cut",
+    "reads_cache": "supported",
     "startup_recovery": "not_applicable",
     "replication": "not_applicable",
     "faults": "not_applicable",
@@ -15190,7 +15419,7 @@
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "unsupported_cut",
-    "replication": "unsupported_cut",
+    "replication": "not_applicable",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
@@ -15721,18 +15950,9 @@
         "dim": "GiB"
        },
        "b": {
-        "kind": "add",
-        "dim": "1",
-        "a": {
-         "kind": "const",
-         "value": 1,
-         "dim": "1"
-        },
-        "b": {
-         "kind": "input",
-         "id": "ebs_headroom",
-         "dim": "1"
-        }
+        "kind": "input",
+        "id": "ebs_capacity_headroom",
+        "dim": "1"
        }
       }
      }
@@ -15923,7 +16143,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "IOPS at the AWS floor of 4 I/Os per MiB (a merged sequential stream): a lower bound; the rig syscall proxy counted 1.3-6.5x more; the gp3 3000-IOPS baseline usually dominates. Throughput x peak_factor (assumed, default 1 = average rate)",
+      "dim": "enum:note"
+     }
+    ]
    },
    "merges": {
     "ledger_rows": [
@@ -16143,28 +16369,616 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "IOPS at the AWS floor of 4 I/Os per MiB (a merged sequential stream): a lower bound; the rig syscall proxy counted 1.3-6.5x more; the gp3 3000-IOPS baseline usually dominates. Throughput x peak_factor (assumed, default 1 = average rate)",
+      "dim": "enum:note"
+     }
+    ]
    },
    "mutations": {
-    "ledger_rows": [],
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "div",
+        "dim": "MiB/s",
+        "on_zero": "unavailable",
+        "a": {
+         "kind": "mul",
+         "dim": "B",
+         "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "add",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "mutated_compact_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "mutated_wide_parts_per_month",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "input",
+           "id": "mutated_part_rows",
+           "dim": "count"
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "B",
+          "table_id": "op_write_bytes",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "mutations",
+            "dim": "enum:io_op"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 2755657728000,
+         "dim": "B*s/MiB"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "peak_factor",
+        "dim": "1"
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "mul",
+          "dim": "B",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "mutated_compact_parts_per_month",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "mutated_wide_parts_per_month",
+             "dim": "count"
+            }
+           },
+           "b": {
+            "kind": "input",
+            "id": "mutated_part_rows",
+            "dim": "count"
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "B",
+           "table_id": "op_write_bytes",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "mutations",
+             "dim": "enum:io_op"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 2755657728000,
+          "dim": "B*s/MiB"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
     "allocation": null,
     "states": [],
     "notes": []
    },
    "deletes": {
-    "ledger_rows": [],
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "div",
+        "dim": "MiB/s",
+        "on_zero": "unavailable",
+        "a": {
+         "kind": "branch",
+         "dim": "B",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "expired_parts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 0,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": "unavailable",
+          "dim": "B"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "B"
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 2755657728000,
+         "dim": "B*s/MiB"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "peak_factor",
+        "dim": "1"
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "branch",
+          "dim": "B",
+          "cond": {
+           "op": ">",
+           "a": {
+            "kind": "input",
+            "id": "expired_parts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": "unavailable",
+           "dim": "B"
+          },
+          "else": {
+           "kind": "const",
+           "value": 0,
+           "dim": "B"
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 2755657728000,
+          "dim": "B*s/MiB"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
     "allocation": null,
     "states": [],
     "notes": []
    },
    "reads": {
-    "ledger_rows": [],
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "div",
+        "dim": "MiB/s",
+        "on_zero": "unavailable",
+        "a": {
+         "kind": "mul",
+         "dim": "B",
+         "a": {
+          "kind": "mul",
+          "dim": "B",
+          "a": {
+           "kind": "mul",
+           "dim": "count",
+           "a": {
+            "kind": "input",
+            "id": "select_part_reads_per_day",
+            "dim": "count/day"
+           },
+           "b": {
+            "kind": "const",
+            "value": 30.416666666666668,
+            "dim": "day"
+           }
+          },
+          "b": {
+           "kind": "div",
+           "dim": "B",
+           "on_zero": "unavailable",
+           "a": {
+            "kind": "mul",
+            "dim": "B",
+            "a": {
+             "kind": "input",
+             "id": "data_bytes",
+             "dim": "GiB"
+            },
+            "b": {
+             "kind": "const",
+             "value": 1073741824,
+             "dim": "B/GiB"
+            }
+           },
+           "b": {
+            "kind": "input",
+            "id": "active_parts",
+            "dim": "count"
+           }
+          }
+         },
+         "b": {
+          "kind": "lookup",
+          "dim": "1",
+          "table_id": "io_bytes_per_op",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "reads",
+            "dim": "enum:io_op"
+           },
+           {
+            "kind": "const",
+            "value": "read",
+            "dim": "enum:io_direction"
+           }
+          ]
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 2755657728000,
+         "dim": "B*s/MiB"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "peak_factor",
+        "dim": "1"
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "mul",
+          "dim": "B",
+          "a": {
+           "kind": "mul",
+           "dim": "B",
+           "a": {
+            "kind": "mul",
+            "dim": "count",
+            "a": {
+             "kind": "input",
+             "id": "select_part_reads_per_day",
+             "dim": "count/day"
+            },
+            "b": {
+             "kind": "const",
+             "value": 30.416666666666668,
+             "dim": "day"
+            }
+           },
+           "b": {
+            "kind": "div",
+            "dim": "B",
+            "on_zero": "unavailable",
+            "a": {
+             "kind": "mul",
+             "dim": "B",
+             "a": {
+              "kind": "input",
+              "id": "data_bytes",
+              "dim": "GiB"
+             },
+             "b": {
+              "kind": "const",
+              "value": 1073741824,
+              "dim": "B/GiB"
+             }
+            },
+            "b": {
+             "kind": "input",
+             "id": "active_parts",
+             "dim": "count"
+            }
+           }
+          },
+          "b": {
+           "kind": "lookup",
+           "dim": "1",
+           "table_id": "io_bytes_per_op",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "reads",
+             "dim": "enum:io_op"
+            },
+            {
+             "kind": "const",
+             "value": "read",
+             "dim": "enum:io_direction"
+            }
+           ]
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 2755657728000,
+          "dim": "B*s/MiB"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "Reads: a full scan per part read, assumed; page-cache hits not modelled; EBS reads priced as IOPS only (owner decision)",
+      "dim": "enum:note"
+     }
+    ]
    },
    "recovery": {
-    "ledger_rows": [],
+    "ledger_rows": [
+     {
+      "row_type": "block_io",
+      "op_kind": "mibps",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "MiB/s",
+       "a": {
+        "kind": "div",
+        "dim": "MiB/s",
+        "on_zero": "unavailable",
+        "a": {
+         "kind": "branch",
+         "dim": "B",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "input",
+           "id": "restarts_per_month",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 0,
+           "dim": "count"
+          }
+         },
+         "then": {
+          "kind": "const",
+          "value": "unavailable",
+          "dim": "B"
+         },
+         "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "B"
+         }
+        },
+        "b": {
+         "kind": "const",
+         "value": 2755657728000,
+         "dim": "B*s/MiB"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "peak_factor",
+        "dim": "1"
+       }
+      }
+     },
+     {
+      "row_type": "block_io",
+      "op_kind": "iops",
+      "outcome_class": "all",
+      "category": null,
+      "route": null,
+      "scope": "volume",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "dim": "req/s",
+       "a": {
+        "kind": "mul",
+        "dim": "MiB/s",
+        "a": {
+         "kind": "div",
+         "dim": "MiB/s",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "branch",
+          "dim": "B",
+          "cond": {
+           "op": ">",
+           "a": {
+            "kind": "input",
+            "id": "restarts_per_month",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+           }
+          },
+          "then": {
+           "kind": "const",
+           "value": "unavailable",
+           "dim": "B"
+          },
+          "else": {
+           "kind": "const",
+           "value": 0,
+           "dim": "B"
+          }
+         },
+         "b": {
+          "kind": "const",
+          "value": 2755657728000,
+          "dim": "B*s/MiB"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "peak_factor",
+         "dim": "1"
+        }
+       },
+       "b": {
+        "kind": "input",
+        "id": "ebs_sequential_ios_per_mib",
+        "dim": "req/MiB"
+       }
+      }
+     }
+    ],
     "allocation": null,
     "states": [],
     "notes": []
@@ -28173,6 +28987,7 @@
    "mutation_objects_written": "2026-10-24-storage-cost-s3",
    "object_size_distribution": "2026-10-24-storage-cost-s3",
    "objects_per_part": "2026-10-24-storage-cost-s3",
+   "op_write_bytes": "2026-10-24-storage-cost-ebs",
    "plain_copy_on_hardlink": "2026-10-24-storage-cost-s3plain",
    "plain_dir_create_requests": "2026-10-24-storage-cost-s3plain",
    "plain_dir_remove_requests": "2026-10-24-storage-cost-s3plain",
