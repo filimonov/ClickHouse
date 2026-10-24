@@ -1,0 +1,49 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "big-insert-multipart.multipart",
+  "card": "big-insert-multipart",
+  "case_id": "multipart",
+  "policies": [
+    "s3",
+    "s3_cached"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "t",
+        "columns": "k UInt64, s String CODEC(NONE)",
+        "order_by": "k",
+        "row_bytes": 117
+      }
+    ],
+    "multipart_file": "s.bin",
+    "inserts": [
+      {
+        "table": "t",
+        "rows": 600000,
+        "count": 1,
+        "insert": "INSERT INTO {table} SELECT number AS k, leftPad(toString(sipHash64(number, {seed})), 100, 'x') AS s FROM numbers({rows})"
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "One insert of 600 000 rows: k UInt64 and s String CODEC(NONE) of 100-byte values; s.bin is 60 601 850 B, past the 32 MiB first upload buffer."
+}

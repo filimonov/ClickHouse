@@ -1,0 +1,46 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.cache-on-types",
+  "policy": "s3_cached",
+  "inputs": {
+    "basis": "source: the cache writes the bytes it downloads, rounded up to filesystem blocks per segment file"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "cache_fill_io_per_byte": {
+        "min": 0.8,
+        "max": 1.5
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    },
+    {
+      "claim": "a cold read loads statistics.packed, one ranged read per column file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1386
+    },
+    {
+      "claim": "a cache miss writes the downloaded range into a file segment",
+      "path": "tmp/src-26.8/src/Interpreters/FileCache/FileSegment.cpp",
+      "line": 418
+    }
+  ],
+  "prediction_commit": "pending"
+}

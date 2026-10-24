@@ -1,0 +1,36 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "cold-select.cache-off",
+  "policy": "s3",
+  "inputs": {},
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": {
+          "min": 1,
+          "max": 400,
+          "basis": "assumption",
+          "reason": "GetObject requests depend on read splitting; this fit measures them"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    }
+  ],
+  "prediction_commit": "pending"
+}

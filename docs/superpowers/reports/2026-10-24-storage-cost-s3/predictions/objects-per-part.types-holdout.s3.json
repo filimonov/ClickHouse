@@ -1,0 +1,176 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "objects-per-part.types-holdout",
+  "policy": "s3",
+  "inputs": {
+    "objects_per_part": 158,
+    "files_per_type": {
+      "UInt64": 2,
+      "Nullable(UInt64)": 4,
+      "Array(UInt32)": 4,
+      "LowCardinality(String)": 4,
+      "Map(String, UInt64)": 8,
+      "JSON": 24
+    },
+    "base_wide": 9,
+    "skip_index_files": 1,
+    "compact_projection_files": 10,
+    "fit_run": "cost-20261024T073405Z",
+    "fit_experiment": "objects-per-part.types-fit"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 316
+      }
+    },
+    "observations": {
+      "part_types": [
+        [
+          "t",
+          80000,
+          "Wide"
+        ],
+        [
+          "t",
+          80000,
+          "Wide"
+        ]
+      ],
+      "objects_total": 316,
+      "insert_tx_checks": 0
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "a Wide part writes one .bin per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 224
+    },
+    {
+      "claim": "and one marks file per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 140
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "primary.cidx",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "a part is Compact when its bytes are below min_bytes_for_wide_part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "a Nullable column adds a null map stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationNullable.cpp",
+      "line": 53
+    },
+    {
+      "claim": "an Array column adds a size0 stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationArray.cpp",
+      "line": 268
+    },
+    {
+      "claim": "a LowCardinality column adds a dictionary stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationLowCardinality.cpp",
+      "line": 86
+    },
+    {
+      "claim": "a Map is Array(Tuple(keys, values))",
+      "path": "tmp/src-26.8/src/DataTypes/DataTypeMap.cpp",
+      "line": 77
+    },
+    {
+      "claim": "a String column writes its sizes as a separate stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationString.cpp",
+      "line": 346
+    },
+    {
+      "claim": "a JSON column writes its object structure stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationObject.cpp",
+      "line": 198
+    },
+    {
+      "claim": "and its shared data stream",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationObject.cpp",
+      "line": 261
+    },
+    {
+      "claim": "every skip index of a part is packed into skp_idx.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndicesSerialization.h",
+      "line": 16
+    }
+  ],
+  "prediction_commit": "pending"
+}

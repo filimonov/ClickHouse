@@ -44,11 +44,14 @@ class TwoTables(CostCard):
 
 
 class DefaultsTest(unittest.TestCase):
-    def test_cards_registry_holds_the_phase0_and_lifecycle_cards(self):
-        self.assertEqual(sorted(cards.CARDS), ['amplification-run', 'async-inserts', 'boundaries', 'gc-scale',
-                                               'io-sizes', 'merge-forced', 'merge-natural', 'probe_cas_expect',
+    def test_cards_registry_holds_the_phase0_lifecycle_and_s3_cards(self):
+        # Every research report adds its own card module; each module's tests pin its own cards.
+        self.assertLessEqual({*['amplification-run', 'async-inserts', 'big-insert-multipart',
+                                               'boundaries', 'cold-select', 'drop', 'gc-scale', 'io-sizes', 'merge-forced',
+                                               'merge-natural', 'mutation', 'objects-per-part', 'probe_cas_expect',
                                                'probe_cas_gc_cohort', 'probe_local_volume', 'probe_multipart_fault',
-                                               'probe_replicated_fetch', 'probe_s3_insert', 'small-inserts'])
+                                               'probe_replicated_fetch', 'probe_s3_insert', 'small-inserts', 'startup']},
+                             set(cards.CARDS))
 
     def test_class_defaults(self):
         card = TwoTables()

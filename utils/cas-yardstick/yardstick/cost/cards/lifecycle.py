@@ -246,7 +246,7 @@ def check_observation(want, got, observations: dict) -> tuple:
 class LifecycleCard(ManifestCard):
     """A manifest card whose workload runs on the replica `params.replica` names."""
 
-    policies = ('s3', 's3plain', 'cas', 'local')
+    policies = ('s3', 's3plain', 'cas', 'local', 's3_cached')
 
     def replica_client(self, ctx):
         name = self.p(ctx)['replica']
@@ -308,8 +308,9 @@ class LifecycleCard(ManifestCard):
         # Snapshots accumulate: a part removed after an earlier snapshot keeps the files that snapshot listed.
         out = self.state(ctx).setdefault('remote_paths', {})
         if disk != 'local':
-            rows = self.rows_json(ctx, f"SELECT local_path, remote_path FROM system.remote_data_paths "
-                                       f"WHERE disk_name = '{disk}'")
+            # A cached policy's disk wraps the object disk; either name may list the objects.
+            rows = self.rows_json(ctx, f"SELECT DISTINCT local_path, remote_path FROM system.remote_data_paths "
+                                       f"WHERE disk_name IN ('{disk}', '{ctx.policy}')")
             for r in rows:
                 paths = out.setdefault(r['local_path'].rstrip('/').split('/')[-2], [])
                 if r['remote_path'] not in paths:

@@ -1,0 +1,39 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "startup.wide-parts",
+  "policy": "s3",
+  "inputs": {
+    "fit_experiment": "startup.intact",
+    "fit_run": "cost-20261024T073405Z",
+    "gets_per_wide_part": "9 + (columns + 1)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 2,
+        "GetObject": 105,
+        "DeleteObject": 2
+      }
+    },
+    "observations": {
+      "active_parts": 2
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    }
+  ],
+  "prediction_commit": "pending"
+}

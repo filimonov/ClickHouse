@@ -143,7 +143,10 @@ def _services(args, proxy_factory, run_id):
     """Topology and proxy (not started) for the store at `args.endpoint` or the default."""
     endpoint = args.endpoint or DEFAULT_ENDPOINT
     host = urllib.parse.urlparse(endpoint)
-    topology = Topology(port_base=args.port_base, replicas=args.replicas, store=(host.hostname, host.port))
+    base = getattr(args, 'proxy_port_base', 19131)
+    callers = {name: base + n for n, name in enumerate(('r1', 'r2', 'r3', 'rig'))}
+    topology = Topology(port_base=args.port_base, replicas=args.replicas, store=(host.hostname, host.port),
+                        callers=callers)
     ledger = os.path.join(args.runs_dir, run_id, 'ledger.jsonl')
     proxy = proxy_factory(topology.store, f'store@{endpoint}', ledger, topology.callers)
     return proxy, topology
@@ -361,6 +364,9 @@ def add_parsers(sub) -> None:
         p.add_argument('--binary', required=True)
         p.add_argument('--runs-dir', default=DEFAULT_RUNS_DIR)
         p.add_argument('--port-base', type=int, default=19700)
+        p.add_argument('--proxy-port-base', type=int, default=19131,
+                       help='ledger proxy ports: r1, r2, r3 and rig listen on this port and the next three, so two '
+                            'rigs on one host need distinct values')
         p.add_argument('--endpoint', help=f'an already running store instead of rustfs-bin.sh on {DEFAULT_ENDPOINT}')
         p.add_argument('--commit', help='source commit of the binary; default: HEAD of --source-dir')
         p.add_argument('--source-dir', help='source checkout of the binary; default: tmp/src-<version> for '

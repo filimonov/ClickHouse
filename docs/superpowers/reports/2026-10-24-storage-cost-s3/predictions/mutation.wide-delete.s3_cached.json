@@ -1,0 +1,144 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "mutation.wide-delete",
+  "policy": "s3_cached",
+  "inputs": {},
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 4,
+          "max": 200,
+          "basis": "assumption",
+          "reason": "files a mutation rewrites are fitted here"
+        },
+        "GetObject": {
+          "min": 0,
+          "max": 400,
+          "basis": "assumption",
+          "reason": "GetObject requests depend on read splitting; this fit measures them"
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 40,
+          "basis": "assumption",
+          "reason": "deletes of the replaced or dropped objects; this fit measures the batching"
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 40,
+          "basis": "assumption",
+          "reason": "deletes of the replaced or dropped objects; this fit measures the batching"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "a Wide part writes one .bin per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 224
+    },
+    {
+      "claim": "and one marks file per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 140
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "primary.cidx",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "a part is Compact when its bytes are below min_bytes_for_wide_part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "a part that is not Wide is mutated by rewriting all columns",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp",
+      "line": 908
+    },
+    {
+      "claim": "a Wide part mutation hardlinks the files of untouched streams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp",
+      "line": 1247
+    },
+    {
+      "claim": "columns.txt and checksums.txt are always rewritten",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp",
+      "line": 1162
+    }
+  ],
+  "prediction_commit": "pending"
+}
