@@ -210,10 +210,32 @@
     return out;
   }
 
+  // Ids of the coefficients and tables the page can read for this contract: every `coef`/`lookup` node in a cell of
+  // any variant, followed through the registry derivations of the inputs those cells read.
+  function reachedCoefficients(contract) {
+    const ids = new Set();
+    const seenInputs = new Set();
+    const rules = new Map(contract.registry.filter((q) => q.kind === 'derivation' && q.rule).map((q) => [q.id, q.rule]));
+    const visit = (node) => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(visit); return; }
+      if (node.kind === 'coef') ids.add(node.id);
+      else if (node.kind === 'lookup') ids.add(node.table_id);
+      else if (node.kind === 'input' && !seenInputs.has(node.id)) {
+        seenInputs.add(node.id);
+        if (rules.has(node.id)) visit(rules.get(node.id));
+      }
+      for (const v of Object.values(node)) visit(v);
+    };
+    for (const v of contract.variants) for (const cell of Object.values((contract.formulas || {})[v] || {})) visit(cell);
+    return ids;
+  }
+
   // Problems that keep a scenario from being "within measured coverage": an id that is not a registry input, a lock
   // outside a precedence group, a value for a derived member, a value the pipeline rejects, or an effective value
-  // (scenario over registry defaults, derived members included) outside a validity domain. A validity parameter
-  // the pipeline does not resolve cannot be checked and is a problem too.
+  // (scenario over registry defaults, derived members included) outside the validity domain of a coefficient the
+  // scenario reaches (see `reachedCoefficients`; `reported_only` coefficients are skipped) or of a registry row. A
+  // validity parameter the pipeline does not resolve cannot be checked and is a problem too.
   function coverageProblems(contract, scenario) {
     const problems = [];
     const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
@@ -224,7 +246,10 @@
       if (!byId.has(id)) problems.push(`value ${id} is not a registry id`);
       else if (res.fields[id] && res.fields[id].derived) problems.push(`value ${id} is set but derived from its locked partners`);
     }
+    const reached = reachedCoefficients(contract);
+    const skipped = new Set(contract.coefficients.filter((c) => c.reported_only || !reached.has(c.id)).map((c) => `coefficient ${c.id}`));
     for (const d of validityDomains(contract)) {
+      if (skipped.has(d.owner)) continue;
       if (!res.inputs.has(d.param)) { problems.push(`${d.owner}: validity parameter ${d.param} has no value to check`); continue; }
       const v = res.inputs.get(d.param);
       if (typeof v !== 'number' || v < d.range[0] || v > d.range[1]) problems.push(`${d.owner}: ${d.param} = ${JSON.stringify(v)} is outside [${d.range[0]}, ${d.range[1]}]`);
@@ -232,6 +257,6 @@
     return problems;
   }
 
-  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, validityDomains };
+  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, reachedCoefficients, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

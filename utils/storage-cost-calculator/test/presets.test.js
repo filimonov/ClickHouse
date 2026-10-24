@@ -31,6 +31,24 @@ test('test_every_scenario_within_coverage', () => {
   assert.match(bad((s) => { s.locks = ['no_such_lock', 'retention_days']; }), /no_such_lock/);
 });
 
+test('test_coverage_checks_only_reached_coefficients', () => {
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'contracts', 'minimal.json'), 'utf8'));
+  const scenario = { values: { inserts_per_month: 500 }, locks: [] };
+  const withExtra = (extra, refer) => {
+    const c = copy(raw);
+    c.coefficients.push(Object.assign({ id: 'extra_coef', kind: 'scalar', value: 1, dim: 'count', validity: { inserts_per_month: [1000, 2000] }, status: 'ok', evidence: { kind: 'measured', ref: 'fixture:extra' } }, extra));
+    if (refer) {
+      const swap = (n) => { if (n && typeof n === 'object') { if (n.kind === 'coef' && n.id === 'puts_per_insert_cas') n.id = 'extra_coef'; Object.values(n).forEach(swap); } };
+      swap(c.formulas);
+    }
+    return contract.load(c);
+  };
+  assert.deepEqual(presets.coverageProblems(withExtra({}, false), scenario), [], 'no cell reads it');
+  assert.deepEqual(presets.coverageProblems(withExtra({ reported_only: true }, false), scenario), []);
+  assert.match(presets.coverageProblems(withExtra({}, true), scenario).join('\n'), /coefficient extra_coef: inserts_per_month = 500 is outside \[1000, 2000\]/);
+  assert.match(presets.coverageProblems(withExtra({ reported_only: true }, true), scenario).join('\n') || 'none', /none/, 'reported_only wins over a reference');
+});
+
 test('test_structure_only_prices_set_prices_missing', () => {
   // Preset ids are the billing contract's; `custom` is the page's editable copy.
   assert.deepEqual(Object.keys(presets.PRICES), [...LIVE.billing.presets.map((p) => p.id), 'custom']);
