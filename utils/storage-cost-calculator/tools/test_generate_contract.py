@@ -49,6 +49,18 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(code, 0, log)
         return json.loads(self.copy.read_text())
 
+    def test_fixtures_are_built_with_the_registry(self):
+        # Without the registry a cell cannot reach the coefficients its derivations read in another report.
+        seen = []
+        real = gc.build_fixtures.build
+
+        def spy(reports, coverage, registry=None):
+            seen.append(registry)
+            return real(reports, coverage, registry)
+        with unittest.mock.patch.object(gc.build_fixtures, "build", spy):
+            self.generate()
+        self.assertEqual([r["version"] for r in seen], [json.loads((self.cm / "inputs-registry.json").read_text())["version"]])
+
     def edit_json(self, path, fn):
         doc = json.loads(path.read_text())
         fn(doc)

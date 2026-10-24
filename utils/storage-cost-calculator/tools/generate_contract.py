@@ -321,7 +321,7 @@ def build(opts, mode="dev"):
     breakeven, breakeven_body = breakeven_input(cm / BREAKEVEN, version, mode, problems, pending)
     manifest["breakeven_sha256"] = sha256((cm / BREAKEVEN).read_bytes()) if breakeven is not None else None
 
-    fixtures = build_fixtures.build(reports, cov)
+    fixtures = build_fixtures.build(reports, cov, reg)
     problems += [f"measured fixtures: {p}" for p in fixtures[2]]
     standalone = json.dumps(contract, indent=1, ensure_ascii=False) + "\n"
     outputs = {Path(cm / CONTRACT): standalone, Path(opts["copy"]): standalone}
