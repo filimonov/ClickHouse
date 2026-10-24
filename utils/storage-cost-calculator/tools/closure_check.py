@@ -940,6 +940,24 @@ def _load_jsonl(path, problems):
     return rows
 
 
+def dump_cuts(cm):
+    """The cut classification of the committed contract, for the JS parity test (test/cut_parity.test.js): coefficients
+    that rest only on cut experiments, and per cell the cut ones it reads (following registry derivations)."""
+    problems = []
+    reg, cov, contract = (_load(cm / n, problems) for n in ("inputs-registry.json", "coverage.json", CONTRACT))
+    if problems:
+        raise SystemExit("; ".join(problems))
+    known = {c["id"] for c in contract["coefficients"]} | {q["coef"] for q in reg["quantities"] if q.get("coef")}
+    cut = set(_cut_coefficients(cov)) & known
+    cells = {}
+    for v, ops in sorted(contract["formulas"].items()):
+        for op, cell in sorted(ops.items()):
+            hit = sorted({ref for _, ref in derived_refs(cell.get("ledger_rows"), reg)} & cut)
+            if hit:
+                cells[f"{v}.{op}"] = hit
+    return {"cut_coefficients": sorted(cut), "cells_on_cut": cells}
+
+
 def main(argv=None, fresh=None):
     """`fresh`: the outputs of a fresh render, when the caller (generate_contract.py check) already built them."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -953,8 +971,12 @@ def main(argv=None, fresh=None):
     ap.add_argument("--contract-copy", default=str(ROOT / "utils/storage-cost-calculator/model-contract.json"))
     ap.add_argument("--code-dir", default=str(ROOT / "utils/storage-cost-calculator"))
     ap.add_argument("--skip-node", action="store_true", help="skip the Node suite (dev mode only)")
+    ap.add_argument("--dump-cuts", action="store_true", help="print the cut classification as JSON and exit")
     args = ap.parse_args(argv)
     cm, problems = Path(args.cost_model), []
+    if args.dump_cuts:
+        print(json.dumps(dump_cuts(cm), indent=1, sort_keys=True))
+        return 0
     if args.mode == "final":
         problems += [f"missing artifact: {cm / n}" for n in REQUIRED if not (cm / n).exists()]
         if args.skip_node:
