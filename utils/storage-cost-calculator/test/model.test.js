@@ -293,7 +293,6 @@ test('test_dim_algebra', () => {
 
 test('test_check_dims_formulas_example_clean', () => {
   const registry = load('registry.json');
-  registry.quantities.push({ id: 'parts_inserted', unit: 'count', value_type: 'number' });
   const cell = load('formulas.json').cells.insert;
   const nodes = [...cell.ledger_rows.map((r) => r.expr), ...cell.allocation.shares.map((x) => x.weight),
     ...cell.states.map((x) => x.cond), ...cell.notes];
@@ -332,4 +331,14 @@ test('test_evaluate_cell_fails_closed', () => {
   const d = model.evaluateCell({ ledger_rows: [row], allocation: null }, ctx());
   assert.deepEqual(d.states, []);
   assert.equal(d.state, 'ok');
+});
+
+test('test_evaluate_cell_notes', () => {
+  const row = { row_type: 'request', op_kind: 'PutObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', expr: k(1) };
+  const r = model.evaluateCell({ ledger_rows: [row], allocation: null, states: [],
+    notes: [k(2), inp('absent'), k('unavailable')] }, ctx());
+  assert.deepEqual(r.notes.map((n) => [n.value, n.state]), [[2, 'ok'], [null, 'unavailable'], [null, 'unavailable']]);
+  assert.equal(r.notes[0].trace.kind, 'const');
+  assert.equal(r.state, 'ok');
+  assert.deepEqual(model.evaluateCell({ ledger_rows: [row], allocation: null }, ctx()).notes, []);
 });

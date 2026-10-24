@@ -242,9 +242,13 @@
       }
       return { id: s.id, active: r.value !== 0 && r.value !== false, reason: s.reason };
     });
-    const out = { rows, allocation, extrapolated, states, state: reasons.length ? 'unavailable' : 'ok' };
-    if (reasons.length) out.reason = reasons.join('; ');
-    return out;
+    const notes = (cell.notes || []).map((n) => {
+      const r = evaluate(n, ctx);
+      extrapolated = extrapolated || r.extrapolated;
+      return { value: r.value, state: r.state, trace: r.trace };
+    });
+    const out = { rows, allocation, extrapolated, states, notes, state: reasons.length ? 'unavailable' : 'ok' };
+    return reasons.length ? Object.assign(out, { reason: reasons.join('; ') }) : out;
   }
 
   // ---- static checks -------------------------------------------------------------------------
