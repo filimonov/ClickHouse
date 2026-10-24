@@ -1,0 +1,52 @@
+{
+ "schema": "registry/1",
+ "version": "reg-1",
+ "quantities": [
+  {
+   "id": "parts_inserted",
+   "block": "simple",
+   "label": "Parts inserted per month",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 10,
+   "rule": null,
+   "coef": null,
+   "validity": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "sample",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  },
+  {
+   "id": "puts_per_compact_part",
+   "block": "simple",
+   "label": "PUTs per compact part",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "puts_per_compact_part",
+   "validity": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "utils/storage-cost-calculator/test/fixtures/contract-sample/reports/2026-10-24-storage-cost-alpha",
+    "version": "1"
+   },
+   "hint": null,
+   "status": "ok"
+  }
+ ],
+ "sets": {},
+ "precedence": []
+}

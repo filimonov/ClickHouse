@@ -522,11 +522,16 @@ def table_arities_from_coefficients(coefficients):
             if c.get("kind") == "table" and isinstance(c.get("value"), dict)}
 
 
+APPLICABILITY = ("supported", "not_supported", "unsupported_cut")
+
+
 def validate_formulas(d, tables=None):
-    problems = _run(obj({
+    # `applicability` (operation -> family -> value) lists only the families that occur on the variant; the
+    # contract generator fills the rest of the domain.
+    problems = _run(obj_optional({
         "schema": literal("formulas/1"), "owner": nonempty_string, "variant": enum(*VARIANTS),
-        "cells": free_object,
-    }), d)
+        "cells": free_object, "applicability": dict_of(dict_of(enum(*APPLICABILITY))),
+    }, ("applicability",)), d)
     if problems:
         return problems
     for op, cell in d["cells"].items():

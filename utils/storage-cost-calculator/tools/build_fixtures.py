@@ -113,7 +113,7 @@ def build(report_dirs, coverage):
             continue
         if not e["measurement_ids"]:
             problems.append(f"{where}: done edge cites no measurement")
-        without_cells = False
+        without_cells = produced = False
         for k, mid in enumerate(e["measurement_ids"]):
             if mid not in measurements:
                 problems.append(f"{where}: measurement {mid} is in no report's measurements.jsonl")
@@ -152,7 +152,9 @@ def build(report_dirs, coverage):
                 "variant": m["variant"], "mode": m["mode"], "card": m["card"], "report": str(report),
                 "cells": cells, "coefficients": coefficients,
             }
-        if without_cells:
+            produced = True
+        # One fixture reconciles the edge; a further measurement without cells does not make it coefficient-only.
+        if without_cells and not produced:
             coefficient_only.append({"edge_id": edge_id, "coefficient": e["coefficient"], "role": e["role"],
                                      "experiment_id": e["experiment_id"], "policy": e["policy"],
                                      "measurement_ids": e["measurement_ids"], "request_rows_reconciled_by": "card"})
@@ -170,18 +172,22 @@ def main(argv=None):
     if problems:
         print("build_fixtures: " + "\n  ".join([f"{len(problems)} problem(s):", *problems]), file=sys.stderr)
         return 1
-    out = Path(a.out)
+    write(Path(a.out), fixtures, coefficient_only, a.coverage)
+    print(f"build_fixtures: {len(fixtures)} fixture(s) and {len(coefficient_only)} coefficient-only edge(s) "
+          f"from {len(reports)} report(s) into {a.out}")
+    return 0
+
+
+def write(out, fixtures, coefficient_only, coverage_path):
+    """Replaces every fixture under `out` with the given ones."""
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
     for name, fx in sorted(fixtures.items()):
         (out / name).write_text(json.dumps(fx, indent=1, sort_keys=True) + "\n")
     # The Node check compares this list with the coverage edges that have no fixture.
-    only = {"coverage": str(Path(a.coverage).resolve()), "edges": coefficient_only}
+    only = {"coverage": str(Path(coverage_path).resolve()), "edges": coefficient_only}
     (out / COEF_ONLY).write_text(json.dumps(only, indent=1, sort_keys=True) + "\n")
-    print(f"build_fixtures: {len(fixtures)} fixture(s) and {len(coefficient_only)} coefficient-only edge(s) "
-          f"from {len(reports)} report(s) into {out}")
-    return 0
 
 
 if __name__ == "__main__":

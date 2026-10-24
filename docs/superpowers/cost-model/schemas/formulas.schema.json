@@ -23,6 +23,20 @@
       "additionalProperties": {
         "$ref": "#/$defs/cell"
       }
+    },
+    "applicability": {
+      "description": "Optional. Operation -> family -> applicability, only for the families that occur on this variant. `not_supported` means the variant cannot perform the operation; the contract generator rejects it on an operation whose cell performs it.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "enum": [
+            "supported",
+            "not_supported",
+            "unsupported_cut"
+          ]
+        }
+      }
     }
   },
   "required": [

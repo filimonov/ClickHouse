@@ -1,0 +1,24 @@
+[
+ {
+  "id": "puts_per_compact_part",
+  "kind": "scalar",
+  "value": 3,
+  "dim": "count",
+  "validity": {
+   "parts_inserted": [
+    0,
+    1000
+   ]
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "utils/storage-cost-calculator/test/fixtures/contract-sample/reports/2026-10-24-storage-cost-alpha",
+   "version": "1",
+   "measurement_ids": [
+    "run42/s3/insert_basic/small_part/k0"
+   ],
+   "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "commit": "78133cca87d"
+  }
+ }
+]

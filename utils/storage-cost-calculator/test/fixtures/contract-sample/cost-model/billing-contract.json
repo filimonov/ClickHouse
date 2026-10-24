@@ -1,0 +1,10 @@
+{
+ "schema": "billing/1",
+ "version": "bill-1",
+ "presets": [
+  {
+   "id": "aws-us-east-1",
+   "structure_only": true
+  }
+ ]
+}

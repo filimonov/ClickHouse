@@ -1,0 +1,81 @@
+[
+ {
+  "schema": "formulas/1",
+  "owner": "alpha",
+  "variant": "s3",
+  "cells": {
+   "inserts": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "PutObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "caller": "r1",
+      "expr": {
+       "kind": "mul",
+       "dim": "count",
+       "a": {
+        "kind": "input",
+        "id": "parts_inserted",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "coef",
+        "id": "puts_per_compact_part",
+        "dim": "count"
+       }
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   },
+   "probe_sample": {
+    "ledger_rows": [
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "caller": "r1",
+      "expr": {
+       "kind": "const",
+       "value": 1,
+       "dim": "count"
+      }
+     }
+    ],
+    "allocation": null,
+    "states": [],
+    "notes": []
+   }
+  }
+ },
+ {
+  "schema": "formulas/1",
+  "owner": "alpha",
+  "variant": "ebs",
+  "cells": {
+   "inserts": {
+    "ledger_rows": [],
+    "allocation": null,
+    "states": [
+     {
+      "id": "not_supported",
+      "cond": true,
+      "reason": "the sample ebs column takes no inserts"
+     }
+    ],
+    "notes": []
+   }
+  }
+ }
+]

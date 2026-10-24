@@ -135,6 +135,26 @@ class BuildFixturesTest(unittest.TestCase):
                          [("evidence[0]", "card"), ("evidence[3]", "card")])
         self.assertEqual([p.name for p in self.out.iterdir()], ["_coefficient_only.json"])
 
+    def test_edge_with_a_fixture_is_not_also_coefficient_only(self):
+        # k0 lives in a report with the card's cell, k1 in one without: the edge is reconciled by k0's fixture.
+        reports, rep = self.copy_report()
+        other = reports / "2026-10-24-storage-cost-other"
+        other.mkdir()
+        record = json.loads((rep / "measurements.jsonl").read_text().splitlines()[0])
+        record.update(k=1, measurement_id=record["measurement_id"].replace("/k0", "/k1"))
+        (other / "measurements.jsonl").write_text(json.dumps(record) + "\n")
+        doc = json.loads((rep / "formulas.json").read_text())
+        del doc["cells"]["insert_basic.write"]
+        (other / "formulas.json").write_text(json.dumps(doc))
+        shutil.copy(rep / "coefficients.json", other / "coefficients.json")
+        cov = self.coverage()
+        cov["evidence"][0]["measurement_ids"].append(record["measurement_id"])
+        code, err = self.run_main(cov, reports=reports / "*/")
+        self.assertEqual(code, 0, err)
+        only = json.loads((self.out / "_coefficient_only.json").read_text())
+        self.assertEqual([e["edge_id"] for e in only["edges"]], ["evidence[3]"])
+        self.assertIn(NAME, [p.name for p in self.out.iterdir()])
+
     def test_cell_not_referencing_the_coefficient_fails(self):
         cov = self.coverage()
         cov["evidence"][0]["coefficient"] = "puts_per_wide_part"

@@ -125,8 +125,14 @@ test('test_index_page_template', () => {
   assert.match(html, /^<!doctype html>/i);
   assert.match(html, /<title>Storage Cost Calculator<\/title>/);
   for (const id of ['presets', 'inputs', 'cards', 'table', 'drill', 'notes', 'evidence', 'chart']) assert.ok(html.includes(`id="${id}"`), id);
-  assert.match(html, /<!-- contract:begin --><script type="application\/json" id="contract">\{\}<\/script><!-- contract:end -->/);
-  assert.deepEqual([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]), ['model.js', 'contract.js', 'billing.js', 'ui.js']);
+  // tools/generate_contract.py writes the block; it holds the same contract as the standalone copy.
+  const block = html.match(/<!-- contract:begin --><script type="application\/json" id="contract">(.*?)<\/script><!-- contract:end -->/s);
+  assert.ok(block, 'contract block');
+  const standalone = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'model-contract.json'), 'utf8'));
+  assert.deepEqual(JSON.parse(block[1]), standalone);
+  assert.equal(standalone.schema, 'contract/1');
+  assert.deepEqual([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]),
+    ['model.js', 'contract.js', 'billing.js', 'pipeline.js', 'presets.js', 'urlstate.js', 'viewmodel.js', 'ui.js']);
   const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
   for (const t of ['--bg', '--card', '--ink', '--mute', '--line', '--accent', '--ok', '--warn', '--cls-bytes', '--cls-transfer', '--cls-put', '--cls-get', '--cls-block']) assert.ok(css.includes(`${t}:`), t);
   assert.ok(css.includes(':root:not([data-theme="light"])') && css.includes(':root[data-theme="dark"]'));

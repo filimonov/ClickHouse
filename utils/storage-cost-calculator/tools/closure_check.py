@@ -31,6 +31,7 @@ REQUIRED = ("measurement-contract.md", "inputs-registry.json", "coverage.json", 
 # Rig policy (cards/runner.py `VARIANTS`) to the model variant it measures.
 POLICY_VARIANT = {"local": "ebs", "s3": "s3", "s3plain": "s3plain", "cas": "cas"}
 REPLICAS = "replicas"
+CONTRACT = "model-contract.json"
 
 
 # --- 1. dependency closure ---------------------------------------------------------------------
@@ -250,8 +251,12 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
 PROVENANCE = ("kind", "ref", "version", "measurement_ids", "binary_sha256", "commit")
 
 
-def evidence(coverage, coefficients, measurement_ids=None):
-    """`measurement_ids`, when given, are the ids the reports hold; evidence must resolve to them."""
+def evidence(coverage, coefficients, measurement_ids=None, identity=None):
+    """`measurement_ids`, when given, are the ids the reports hold; evidence must resolve to them.
+
+    `identity` maps a coefficient id to its owner report's manifest entry; a measured coefficient must cite the
+    commit and the binary that produced the report's records.
+    """
     problems = [f"coverage {p}" for p in artifacts.validate_coverage(coverage)]
     if problems:
         return problems
@@ -266,6 +271,10 @@ def evidence(coverage, coefficients, measurement_ids=None):
         if ev.get("kind") != "measured":
             continue
         problems += [f"{cid}: provenance missing {k}" for k in PROVENANCE if not ev.get(k)]
+        owner = (identity or {}).get(cid)
+        for key in ("commit", "binary_sha256") if owner else ():
+            if owner[key] != "pending" and ev.get(key) != owner[key]:
+                problems.append(f"{cid}: provenance {key} {ev.get(key)} differs from {owner['report']} records ({owner[key]})")
         rows = rows_of.get(cid, [])
         if not rows:
             problems.append(f"{cid}: measured coefficient has no evidence rows")
@@ -338,6 +347,8 @@ def _node_fixtures(cmd, mode):
     env = {k: v for k, v in os.environ.items() if k != "SCC_DEV"}
     if mode == "dev":
         env["SCC_DEV"] = "1"
+    # closure.test.js runs this script; inside the suite it runs from, it would recurse.
+    env["SCC_CLOSURE_CHILD"] = "1"
     done = subprocess.run(cmd, capture_output=True, text=True, env=env)
     tail = "\n".join((done.stdout + done.stderr).strip().splitlines()[-15:])
     return [] if done.returncode == 0 else [f"node fixtures failed ({' '.join(cmd)}):\n{tail}"]
@@ -384,9 +395,16 @@ def replay_problems(record, raw_path):
     return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
 
 
-def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=None):
-    """`raw` maps measurement ids to raw ledger slices; each record is replayed from its slice."""
+def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=None, contract=None, billing_contract=None):
+    """`raw` maps measurement ids to raw ledger slices; each record is replayed from its slice.
+
+    The pricing fixtures verify `billing-contract.json`; the page prices with the contract's embedded copy, so the
+    two must be the same document. `node_test_cmd=False` skips the Node suite.
+    """
     problems = [f"prediction {p}" for pr in predictions for p in artifacts.validate_prediction(pr)]
+    if contract is not None and contract.get("billing") != billing_contract:
+        problems.append(f"model-contract.json billing (version {(contract.get('billing') or {}).get('version')}) differs from "
+                        f"billing-contract.json (version {(billing_contract or {}).get('version')}): regenerate the contract")
     preds = {(p["experiment_id"], p["policy"]): p for p in predictions if isinstance(p, dict) and "policy" in p}
     for m in measurements:
         found = artifacts.validate_measurement(m)
@@ -412,7 +430,7 @@ def accounting(measurements, predictions, node_test_cmd=None, mode="dev", raw=No
             problems.append(f"{mid}: no prediction for {m['experiment_id']} / {m['policy']}")
         else:
             problems += _compare(m, pred)
-    return problems + _node_fixtures(node_test_cmd, mode)
+    return problems + ([] if node_test_cmd is False else _node_fixtures(node_test_cmd, mode))
 
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -499,6 +517,47 @@ def reproduction(copies=(), sums=()):
     return problems
 
 
+def manifest(contract, opts, mode):
+    """The contract's manifest names the code, artifact versions and report evidence that exist now."""
+    import generate_contract as gc  # generate_contract imports this module
+
+    problems, pending = [], []
+    cm = Path(opts["cost_model"])
+    m = contract.get("manifest") or {}
+    code_sha, files, _ = gc.code_manifest(opts["code_dir"], mode, problems, pending)
+    if (m.get("code_sha256"), m.get("code_files")) != (code_sha, files):
+        changed = sorted(n for n in set(files) | set(m.get("code_files") or {}) if files.get(n) != (m.get("code_files") or {}).get(n))
+        problems.append(f"manifest code_sha256 does not match the code files (changed: {', '.join(changed) or 'none'})")
+    for key, name in (("registry_version", "inputs-registry.json"), ("coverage_version", "coverage.json"),
+                      ("billing_version", "billing-contract.json")):
+        try:
+            current = json.loads((cm / name).read_text()).get("version")
+        except (OSError, ValueError) as e:
+            problems.append(f"manifest {key}: cannot read {name}: {e}")
+            continue
+        if m.get(key) != current:
+            problems.append(f"manifest {key} {m.get(key)} differs from {name} version {current}")
+    reports, _ = gc.report_dirs(opts["reports"])
+    listed = {e.get("report"): e for e in m.get("evidence") or []}
+    for r in reports:
+        e = listed.pop(r.name, None)
+        if e is None:
+            problems.append(f"manifest evidence does not list report {r.name}")
+            continue
+        digest = gc._raw_digest(r, mode, [], [])
+        if e.get("raw_sha256sums") != digest:
+            problems.append(f"{r.name}: raw/SHA256SUMS digest {digest} differs from the manifest ({e.get('raw_sha256sums')})")
+        ident = gc._identity(r, gc._records(r, []), mode, [], [])
+        problems += [f"{r.name}: records' {k} {ident[k]} differs from the manifest ({e.get(k)})" for k in ident if e.get(k) != ident[k]]
+    problems += [f"manifest evidence lists {name}, which is not a report directory" for name in sorted(listed)]
+    outputs, _, _, _, _ = gc.build(opts, mode)
+    if outputs is None:
+        problems.append("cannot render a fresh contract to compare with the generated files")
+    else:
+        problems += gc.stale(outputs)
+    return problems
+
+
 def identities(measurements):
     """Records of one report name one binary (downloaded and executed), one source commit and one rig commit."""
     problems = []
@@ -560,10 +619,27 @@ def main(argv=None):
     ap.add_argument("--cost-model", default=str(DEFAULT_COST_MODEL))
     ap.add_argument("--reports", default=DEFAULT_REPORTS, help="glob of report directories")
     ap.add_argument("--copy", action="append", default=[], metavar="SRC=GENERATED")
+    # The generated outputs the reproduction check renders afresh (tools/generate_contract.py).
+    ap.add_argument("--page", default=str(ROOT / "utils/storage-cost-calculator/index.html"))
+    ap.add_argument("--doc", default=str(DEFAULT_COST_MODEL / "storage-cost-model.md"))
+    ap.add_argument("--contract-copy", default=str(ROOT / "utils/storage-cost-calculator/model-contract.json"))
+    ap.add_argument("--code-dir", default=str(ROOT / "utils/storage-cost-calculator"))
+    ap.add_argument("--skip-node", action="store_true", help="skip the Node suite (dev mode only)")
     args = ap.parse_args(argv)
     cm, problems = Path(args.cost_model), []
     if args.mode == "final":
         problems += [f"missing artifact: {cm / n}" for n in REQUIRED if not (cm / n).exists()]
+        if args.skip_node:
+            problems.append("--skip-node is not allowed in final mode")
+    elif args.skip_node:
+        print("note: Node suite skipped (--skip-node)", file=sys.stderr)
+    contract = None
+    if (cm / CONTRACT).exists():
+        contract = _load(cm / CONTRACT, problems)
+    elif args.mode == "final":
+        problems.append(f"missing artifact: {cm / CONTRACT} (run tools/generate_contract.py generate)")
+    else:
+        print(f"note: pending: {cm / CONTRACT} not generated; evidence reads the reports' coefficients.json", file=sys.stderr)
     reports = [Path(p) for p in sorted(glob.glob(args.reports)) if Path(p).is_dir()]
     if args.mode == "final" and not reports:
         problems.append(f"missing artifact: no report directory matches {args.reports}")
@@ -592,13 +668,25 @@ def main(argv=None):
         problems += support(reg or {"quantities": []}, cov, formulas, require_formulas=args.mode == "final", pending=pending)
         if pending:
             print(f"note: {len(pending)} support cells pending (no evidence, no not_supported state)", file=sys.stderr)
-        problems += evidence(cov, coefficients, {m.get("measurement_id") for m in measurements})
+        ids = {m.get("measurement_id") for m in measurements}
+        if contract is not None:
+            by_report = {e.get("report"): e for e in (contract.get("manifest") or {}).get("evidence") or []}
+            owners = (contract.get("owners") or {}).get("coefficients") or {}
+            identity = {c: by_report[r] for c, r in owners.items() if r in by_report}
+            problems += evidence(cov, contract.get("coefficients") or [], ids, identity)
+        else:
+            problems += evidence(cov, coefficients, ids)
     if bil is not None:
         problems += billing(bil)
-    problems += accounting(measurements, predictions, mode=args.mode, raw=raw_slices(reports))
+    problems += accounting(measurements, predictions, node_test_cmd=False if args.skip_node else None, mode=args.mode,
+                           raw=raw_slices(reports), contract=contract, billing_contract=bil)
     if args.mode == "final":
         problems += [f"{r}: raw/SHA256SUMS missing" for r in reports if (r / "measurements.jsonl").exists() and not (r / "raw/SHA256SUMS").exists()]
     problems += reproduction([tuple(c.split("=", 1)) for c in args.copy], [r / "raw/SHA256SUMS" for r in reports if (r / "raw/SHA256SUMS").exists()])
+    if contract is not None:
+        opts = {"cost_model": str(cm), "reports": args.reports, "page": args.page, "doc": args.doc, "copy": args.contract_copy,
+                "code_dir": args.code_dir, "fixtures_out": None}
+        problems += manifest(contract, opts, args.mode)
     for records in per_report:
         problems += identities(records)
     problems += rerender(reports)

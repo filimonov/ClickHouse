@@ -1,0 +1,92 @@
+{
+ "schema": "coverage/1",
+ "version": "cov-1",
+ "cards": [
+  {
+   "name": "insert_basic",
+   "family": "write_path",
+   "model_variants": [
+    "s3"
+   ],
+   "cases": [
+    {
+     "case_id": "small_part",
+     "policies": [
+      "s3"
+     ],
+     "replicas": 1,
+     "scale": 1.0,
+     "repeats": 1,
+     "timeout_s": 300,
+     "duration_s": 120,
+     "priority": "P1",
+     "status": "run"
+    },
+    {
+     "case_id": "holdout_part",
+     "policies": [
+      "s3"
+     ],
+     "replicas": 1,
+     "scale": 1.0,
+     "repeats": 1,
+     "timeout_s": 300,
+     "duration_s": 120,
+     "priority": "P1",
+     "status": "run"
+    }
+   ]
+  }
+ ],
+ "evidence": [
+  {
+   "coefficient": "puts_per_compact_part",
+   "experiment_id": "insert_basic.small_part",
+   "policy": "s3",
+   "span": {
+    "parts_inserted": [
+     1,
+     1
+    ]
+   },
+   "role": "fit",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [
+    "run42/s3/insert_basic/small_part/k0"
+   ],
+   "status": "done"
+  },
+  {
+   "coefficient": "puts_per_compact_part",
+   "experiment_id": "insert_basic.holdout_part",
+   "policy": "s3",
+   "span": {
+    "parts_inserted": [
+     1,
+     1
+    ]
+   },
+   "role": "holdout",
+   "prediction_commit": "78133cca87d",
+   "measurement_ids": [
+    "run42/s3/insert_basic/holdout_part/k0"
+   ],
+   "status": "done"
+  }
+ ],
+ "domain": {
+  "variants": [
+   "ebs",
+   "s3"
+  ],
+  "operations": [
+   "inserts"
+  ],
+  "families": [
+   "write_path"
+  ]
+ },
+ "excluded": [
+  "zero-copy replication"
+ ]
+}
