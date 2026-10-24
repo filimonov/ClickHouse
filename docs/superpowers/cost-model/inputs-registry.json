@@ -10820,7 +10820,7 @@
         "version": "0.2.0"
       },
       "hint": {
-        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
         "mapping": {
           "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
         }
@@ -10928,7 +10928,7 @@
         "version": "0.2.0"
       },
       "hint": {
-        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+        "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
         "mapping": {
           "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
         }

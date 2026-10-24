@@ -14,7 +14,8 @@ EBS cells price one replica's gp3 volumes from three things:
 - **`io_bytes_per_op`** (measured): volume bytes per logical byte of an operation. Inserts and merges each have a
   fit and a passed hold-out.
 - **`ebs_sequential_ios_per_mib`** (pinned, AWS rule): 4 I/Os per MiB. This is a lower bound. Measured request
-  counts were 3–25× higher on this rig, depending on the schema. The gp3 baseline of 3000 IOPS usually dominates.
+  counts were 1.3–6.5× higher on this rig (5.3–26.1 per MiB; insert reads excluded), depending on the schema and
+  operation. The gp3 baseline of 3000 IOPS usually dominates.
 - **`peak_factor`** (assumed input, default 1): the rig cannot measure it; see [Peak factor](#peak).
 - **`op_write_bytes`**: write bytes per mutated row (measured); drops (273 kB per part) and restarts (0) by
   assumption; reads by assumption. See [Mutations, deletes, recovery and reads](#ops).
@@ -85,8 +86,9 @@ fewest I/Os the bytes can take under the rule). That is a lower bound.
 
 The rig also counts each traced request as `ceil(size / 256 KiB)` I/Os (`ebs_max_io_bytes`). This is a syscall-level
 proxy, not a device bound in either direction: writeback can split or merge requests, and the journal adds writes.
-Per schema it gave 11 I/Os per MiB on insert writes (narrow), 26 (complex types), and up to 106 on merge reads (mixed
-types). That is 3–25× the floor. A Wide part writes one data and one marks stream per substream
+After the F1 fix it gave 5.3–26.1 I/Os per MiB across operations and schemas: insert writes 8.5–14.1 (narrow), 15–16
+(mixed types) and 26 (complex types); merge reads 10–20; scans 8–16. That is 1.3–6.5× the floor. Insert reads are
+excluded: 1 335–1 608 per MiB on negligible bytes (metadata reads). A Wide part writes one data and one marks stream per substream
 (`src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp:220`, enumerated at `:243`), so more substreams mean more,
 smaller files. No envelope over three schemas bounds the next one, so the proxy is evidence, not a coefficient.
 The gp3 volume includes 3000 IOPS, which at 4 I/Os per MiB covers 750 MiB/s of demand.

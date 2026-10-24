@@ -2650,6 +2650,28 @@
           "status": "run"
         }
       ]
+    },
+    {
+      "name": "probe_local_volume",
+      "family": "local_volumes",
+      "model_variants": [
+        "ebs"
+      ],
+      "cases": [
+        {
+          "case_id": "gate",
+          "policies": [
+            "local"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
     }
   ],
   "evidence": [
@@ -10449,594 +10471,6 @@
       "status": "consumed"
     },
     {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.narrow-compact",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          100000,
-          100000
-        ],
-        "columns": [
-          5,
-          5
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.narrow-wide",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          300000,
-          300000
-        ],
-        "columns": [
-          5,
-          5
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.types-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          80000,
-          80000
-        ],
-        "columns": [
-          21,
-          21
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "e145a15461a",
-      "measurement_ids": [
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.types-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          80000,
-          80000
-        ],
-        "columns": [
-          21,
-          21
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "6525e12d1dc",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.mixed-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          120000,
-          120000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "dcd7f48fcf8",
-      "measurement_ids": [
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k1",
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k2",
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.mixed-holdout-2",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          150000,
-          150000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "956cd4ec795",
-      "measurement_ids": [
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k1",
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k2",
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.mixed-holdout-3",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          180000,
-          180000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "b498967f6f3",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.narrow-compact",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          100000,
-          100000
-        ],
-        "columns": [
-          5,
-          5
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.narrow-wide",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          300000,
-          300000
-        ],
-        "columns": [
-          5,
-          5
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.types-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          80000,
-          80000
-        ],
-        "columns": [
-          21,
-          21
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "e145a15461a",
-      "measurement_ids": [
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T135713Z/local/io-sizes/types-holdout/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.types-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          80000,
-          80000
-        ],
-        "columns": [
-          21,
-          21
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "6525e12d1dc",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
-        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.mixed-holdout",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          120000,
-          120000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "dcd7f48fcf8",
-      "measurement_ids": [
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k1",
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k2",
-        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.mixed-holdout-2",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          150000,
-          150000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "956cd4ec795",
-      "measurement_ids": [
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k1",
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k2",
-        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "io_request_size_distribution",
-      "experiment_id": "io-sizes.mixed-holdout-3",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          180000,
-          180000
-        ],
-        "columns": [
-          8,
-          8
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "b498967f6f3",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
-        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "io-sizes.narrow-compact-1k",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          1000,
-          1000
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "95732071f0b",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "insert_write_overhead_rows",
-      "experiment_id": "io-sizes.narrow-compact-1k",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          1000,
-          1000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "95732071f0b",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "insert_write_overhead_rows",
-      "experiment_id": "io-sizes.narrow-compact-10k",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          10000,
-          10000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "06d0354a09a",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k1",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k2",
-        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "small-inserts.default",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          1000,
-          1000
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/small-inserts/default/k1",
-        "cost-20261024T174727Z/local/small-inserts/default/k2",
-        "cost-20261024T174727Z/local/small-inserts/default/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "io_bytes_per_op",
-      "experiment_id": "merge-natural.default",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/merge-natural/default/k1",
-        "cost-20261024T174727Z/local/merge-natural/default/k2",
-        "cost-20261024T174727Z/local/merge-natural/default/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "mutation.compact-update-one-column",
-      "policy": "local",
-      "span": {
-        "rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k1",
-        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k2",
-        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "mutation.wide-update-one-column",
-      "policy": "local",
-      "span": {
-        "rows": [
-          400000,
-          400000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k1",
-        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k2",
-        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "mutation.compact-30k",
-      "policy": "local",
-      "span": {
-        "rows": [
-          30000,
-          30000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/mutation/compact-30k/k1",
-        "cost-20261024T174727Z/local/mutation/compact-30k/k2",
-        "cost-20261024T174727Z/local/mutation/compact-30k/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "drop.partition",
-      "policy": "local",
-      "span": {
-        "rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/drop/partition/k1",
-        "cost-20261024T174727Z/local/drop/partition/k2",
-        "cost-20261024T174727Z/local/drop/partition/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "drop.partition-2",
-      "policy": "local",
-      "span": {
-        "rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/drop/partition-2/k1",
-        "cost-20261024T174727Z/local/drop/partition-2/k2",
-        "cost-20261024T174727Z/local/drop/partition-2/k3"
-      ],
-      "status": "consumed"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "startup.intact",
-      "policy": "local",
-      "span": {
-        "rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/startup/intact/k1",
-        "cost-20261024T174727Z/local/startup/intact/k2",
-        "cost-20261024T174727Z/local/startup/intact/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "op_write_bytes",
-      "experiment_id": "startup.small",
-      "policy": "local",
-      "span": {
-        "rows": [
-          1000,
-          1000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "be94501e681",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/startup/small/k1",
-        "cost-20261024T174727Z/local/startup/small/k2",
-        "cost-20261024T174727Z/local/startup/small/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "peak_factor",
-      "experiment_id": "merge-natural.default",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          100000,
-          100000
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "d5cf507a02c",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/merge-natural/default/k1",
-        "cost-20261024T174727Z/local/merge-natural/default/k2",
-        "cost-20261024T174727Z/local/merge-natural/default/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "peak_factor",
-      "experiment_id": "merge-natural.wide",
-      "policy": "local",
-      "span": {
-        "insert_rows": [
-          50000,
-          50000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "e145a15461a",
-      "measurement_ids": [
-        "cost-20261024T174727Z/local/merge-natural/wide/k1",
-        "cost-20261024T174727Z/local/merge-natural/wide/k2",
-        "cost-20261024T174727Z/local/merge-natural/wide/k3"
-      ],
-      "status": "consumed"
-    },
-    {
       "coefficient": "objects_per_part",
       "experiment_id": "objects-per-part.narrow-compact",
       "policy": "s3",
@@ -17421,6 +16855,611 @@
         "cost-20261024T094831Z/s3_cached/big-insert-multipart/multipart/k3"
       ],
       "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.narrow-compact",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ],
+        "columns": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.narrow-wide",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ],
+        "columns": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.types-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ],
+        "columns": [
+          21,
+          21
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "e145a15461a",
+      "measurement_ids": [
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.types-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ],
+        "columns": [
+          21,
+          21
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "6525e12d1dc",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.mixed-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          120000,
+          120000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "dcd7f48fcf8",
+      "measurement_ids": [
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k1",
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k2",
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.mixed-holdout-2",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          150000,
+          150000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "956cd4ec795",
+      "measurement_ids": [
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k1",
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k2",
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.mixed-holdout-3",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          180000,
+          180000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b498967f6f3",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.narrow-compact",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ],
+        "columns": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.narrow-wide",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ],
+        "columns": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.types-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ],
+        "columns": [
+          21,
+          21
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "e145a15461a",
+      "measurement_ids": [
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T135713Z/local/io-sizes/types-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.types-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          80000,
+          80000
+        ],
+        "columns": [
+          21,
+          21
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "6525e12d1dc",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k1",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k2",
+        "cost-20261024T174727Z/local/io-sizes/types-holdout/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.mixed-holdout",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          120000,
+          120000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "dcd7f48fcf8",
+      "measurement_ids": [
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k1",
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k2",
+        "cost-20261024T140702Z/local/io-sizes/mixed-holdout/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.mixed-holdout-2",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          150000,
+          150000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "956cd4ec795",
+      "measurement_ids": [
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k1",
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k2",
+        "cost-20261024T160737Z/local/io-sizes/mixed-holdout-2/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "io_request_size_distribution",
+      "experiment_id": "io-sizes.mixed-holdout-3",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          180000,
+          180000
+        ],
+        "columns": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b498967f6f3",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k1",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k2",
+        "cost-20261024T174727Z/local/io-sizes/mixed-holdout-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "io-sizes.narrow-compact-1k",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "95732071f0b",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "insert_write_overhead_rows",
+      "experiment_id": "io-sizes.narrow-compact-1k",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "95732071f0b",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-1k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "insert_write_overhead_rows",
+      "experiment_id": "io-sizes.narrow-compact-10k",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "06d0354a09a",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k1",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k2",
+        "cost-20261024T174727Z/local/io-sizes/narrow-compact-10k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "small-inserts.default",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/small-inserts/default/k1",
+        "cost-20261024T174727Z/local/small-inserts/default/k2",
+        "cost-20261024T174727Z/local/small-inserts/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "io_bytes_per_op",
+      "experiment_id": "merge-natural.default",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/merge-natural/default/k1",
+        "cost-20261024T174727Z/local/merge-natural/default/k2",
+        "cost-20261024T174727Z/local/merge-natural/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "mutation.compact-update-one-column",
+      "policy": "local",
+      "span": {
+        "rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k1",
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k2",
+        "cost-20261024T174727Z/local/mutation/compact-update-one-column/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "mutation.wide-update-one-column",
+      "policy": "local",
+      "span": {
+        "rows": [
+          400000,
+          400000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k1",
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k2",
+        "cost-20261024T174727Z/local/mutation/wide-update-one-column/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "mutation.compact-30k",
+      "policy": "local",
+      "span": {
+        "rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/mutation/compact-30k/k1",
+        "cost-20261024T174727Z/local/mutation/compact-30k/k2",
+        "cost-20261024T174727Z/local/mutation/compact-30k/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "drop.partition",
+      "policy": "local",
+      "span": {
+        "rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/drop/partition/k1",
+        "cost-20261024T174727Z/local/drop/partition/k2",
+        "cost-20261024T174727Z/local/drop/partition/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "drop.partition-2",
+      "policy": "local",
+      "span": {
+        "rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/drop/partition-2/k1",
+        "cost-20261024T174727Z/local/drop/partition-2/k2",
+        "cost-20261024T174727Z/local/drop/partition-2/k3"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "startup.intact",
+      "policy": "local",
+      "span": {
+        "rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/startup/intact/k1",
+        "cost-20261024T174727Z/local/startup/intact/k2",
+        "cost-20261024T174727Z/local/startup/intact/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "op_write_bytes",
+      "experiment_id": "startup.small",
+      "policy": "local",
+      "span": {
+        "rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "be94501e681",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/startup/small/k1",
+        "cost-20261024T174727Z/local/startup/small/k2",
+        "cost-20261024T174727Z/local/startup/small/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "ebs_capacity_headroom",
+      "experiment_id": "probe_local_volume.gate",
+      "policy": "local",
+      "span": {
+        "peak_over_data": [
+          1.034,
+          1.034
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "3157c681db5",
+      "measurement_ids": [
+        "cost-20261024T035215Z/local/probe_local_volume/gate/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "peak_factor",
+      "experiment_id": "merge-natural.default",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "d5cf507a02c",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/merge-natural/default/k1",
+        "cost-20261024T174727Z/local/merge-natural/default/k2",
+        "cost-20261024T174727Z/local/merge-natural/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "peak_factor",
+      "experiment_id": "merge-natural.wide",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "e145a15461a",
+      "measurement_ids": [
+        "cost-20261024T174727Z/local/merge-natural/wide/k1",
+        "cost-20261024T174727Z/local/merge-natural/wide/k2",
+        "cost-20261024T174727Z/local/merge-natural/wide/k3"
+      ],
+      "status": "consumed"
     }
   ],
   "domain": {
