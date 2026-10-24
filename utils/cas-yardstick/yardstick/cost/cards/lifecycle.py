@@ -313,7 +313,8 @@ class LifecycleCard(ManifestCard):
                                        f"WHERE disk_name IN ('{disk}', '{ctx.policy}')")
             for r in rows:
                 paths = out.setdefault(r['local_path'].rstrip('/').split('/')[-2], [])
-                if r['remote_path'] not in paths:
+                # A CAS part file kept inline in the part manifest has no object (empty remote path).
+                if r['remote_path'] and r['remote_path'] not in paths:
                     paths.append(r['remote_path'])
 
     def reclassify(self, ctx, bounds) -> None:

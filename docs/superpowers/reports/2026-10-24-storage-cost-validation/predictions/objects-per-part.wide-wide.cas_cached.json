@@ -7,15 +7,16 @@
     "blob_candidates_per_part": 80.0,
     "distinct_blob_uploads_per_part": 41.333333333333336,
     "calibration_run": "cost-20261024T145603Z",
-    "basis": "fit: counts of the calibration run (K=1, cas) at this rig commit",
-    "graph": "per table HEAD 6, LIST 6, GET 10 (the snapshot of system.remote_data_paths inside the window); per part GET 10, PUT 7; per distinct blob upload PUT 2; per hash hit GET 1"
+    "basis": "fit: the cas counts plus the second snapshot, both measured in run cost-20261024T151251Z",
+    "graph": "per table HEAD 6, LIST 6, GET 10 (the snapshot of system.remote_data_paths inside the window); per part GET 10, PUT 7; per distinct blob upload PUT 2; per hash hit GET 1",
+    "observer_second_disk": "the cas_cached snapshot reads the cache disk too: HEAD +6, LIST +6, GET +9 per table and +2 per part (run cost-20261024T151251Z)"
   },
   "expected": {
     "foreground": {
       "r1": {
-        "GetObject": 42,
-        "HeadObject": 132,
-        "ListObjectsV2": 6,
+        "GetObject": 57,
+        "HeadObject": 138,
+        "ListObjectsV2": 12,
         "PutObject": 269
       }
     },
@@ -145,5 +146,5 @@
       "line": 116
     }
   ],
-  "prediction_commit": "849c483095f"
+  "prediction_commit": "PENDING"
 }

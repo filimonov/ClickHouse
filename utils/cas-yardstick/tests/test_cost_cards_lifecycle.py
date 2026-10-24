@@ -415,6 +415,20 @@ class CardsTest(unittest.TestCase):
             card.collect_layout(ctx)
             self.assertEqual(card.state(ctx)['remote_paths'], {'all_1_1_0': ['p/k1'], 'all_1_2_1': ['p/k2']})
 
+    def test_layout_skips_files_without_an_object(self):
+        # A CAS part keeps small files inline in its manifest: system.remote_data_paths lists them with an empty
+        # remote path, and no object of the store backs them.
+        m = manifest('merge-natural.default')
+        m['policies'] = ['cas']
+        card = CARDS['merge-natural']
+        rows = jsonl([{'local_path': 'store/a/b/all_1_1_0/data.bin', 'remote_path': 'p/blob1'},
+                      {'local_path': 'store/a/b/all_1_1_0/count.txt', 'remote_path': ''}])
+        with tempfile.TemporaryDirectory() as tmp:
+            cluster = FakeCluster(n=1, answers={'FROM system.remote_data_paths': rows})
+            ctx = ctx_for(m, cluster, tmp, os.path.join(tmp, 'l'))
+            card.collect_layout(ctx)
+            self.assertEqual(card.state(ctx)['remote_paths'], {'all_1_1_0': ['p/blob1']})
+
     def test_long_runs_snapshot_the_layout_while_inserting(self):
         m = manifest('merge-natural.default')
         m['params'].update(inserts=3, interval_s=0)
