@@ -269,15 +269,33 @@ test('test_applicability_unsupported_cut_with_nonzero_workload', () => {
   assert.equal(r.variants.cas.total, null);
 });
 
-test('test_declared_allocation_shares_split_every_line', () => {
+test('test_declared_shares_apply_only_to_lines_the_sharing_cell_produced', () => {
+  // s3plain: storage declares a 3:1 split with inserts; inserts declares nothing.
   const sp = run().variants.s3plain;
   assert.equal(sp.state, 'ok');
-  for (const a of sp.allocation) assert.equal(a.basis, 'allocation.shares');
-  close(sp.cells.storage.money, sp.total * 0.75);
-  close(sp.cells.inserts.money, sp.total * 0.25);
-  // The PUT line goes 3:1 too, although only the inserts cell issues PUTs.
-  const put = sp.cells.storage.lines.find((l) => l.rule_id === 'put_copy_post_list');
-  close(put.share, 0.75);
+  const storageLine = sp.allocation.find((a) => a.rule_id === 'storage');
+  assert.equal(storageLine.basis, 'allocation.shares');
+  close(storageLine.shares.storage.fraction, 0.75);
+  close(storageLine.shares.inserts.fraction, 0.25);
+  // The PUTs come from the inserts cell only, so they stay there.
+  const put = sp.allocation.find((a) => a.rule_id === 'put_copy_post_list');
+  assert.equal(put.basis, 'quantity');
+  close(put.shares.inserts.fraction, 1);
+  assert.equal(put.shares.storage.fraction, 0);
+  assert.equal(sp.cells.storage.lines.find((l) => l.rule_id === 'put_copy_post_list'), undefined);
+  close(sp.cells.storage.money + sp.cells.inserts.money, sp.total);
+  close(sp.cells.storage.money, storageLine.money * 0.75);
+});
+
+test('test_cut_reason_names_only_nonzero_inputs', () => {
+  const c = load((x) => {
+    const r = x.formulas.ebs.replacement.ledger_rows[0];
+    r.expr.a = { kind: 'add', dim: 'count', a: { kind: 'input', id: 'replacement_rate', dim: 'count' }, b: { kind: 'input', id: 'mutations_per_month', dim: 'count' } };
+  });
+  const r = run({ replacement_rate: 0.1 }, c);
+  assert.equal(r.variants.ebs.state, 'unsupported_cut');
+  assert.match(r.variants.ebs.reason, /replacement_rate = 0\.1 is non-zero/);
+  assert.doesNotMatch(r.variants.ebs.reason, /mutations_per_month/);
 });
 
 test('test_cut_lookup_table_zero_and_nonzero', () => {

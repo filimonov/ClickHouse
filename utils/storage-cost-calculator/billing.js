@@ -285,21 +285,33 @@
     return own ? own.quantity : 0;
   }
 
-  // Allocates each aggregate line's money back to `cells` ([{key, name, rows, shares}]): by the cells' declared
-  // `shares` (cell name -> weight) when any cell declares them, else by each cell's own quantity of the line.
+  // Allocates each aggregate line's money back to `cells` ([{key, name, rows, shares}]) by each cell's own quantity
+  // of the line (spec §4.4). A cell that declares `shares` (cell name -> weight) passes its portion of the lines it
+  // produced on to those cells by weight; lines it did not produce are untouched.
   function allocate(lines, cells, preset) {
     const problems = [];
-    const declared = {};
-    for (const c of cells) Object.assign(declared, c.shares || {});
-    const shareKeys = Object.keys(declared);
-    for (const k of shareKeys) if (!cells.some((c) => c.name === k)) problems.push(`allocation share for unknown cell ${k}`);
-    const basis = shareKeys.length ? 'allocation.shares' : 'quantity';
+    const keyOf = new Map(cells.map((c) => [c.name, c.key]));
+    for (const c of cells) {
+      for (const name of Object.keys(c.shares || {})) if (!keyOf.has(name)) problems.push(`allocation share for unknown cell ${name}`);
+    }
     const allocation = lines.map((l) => {
-      const weights = Object.fromEntries(cells.map((c) => [c.key, shareKeys.length ? (declared[c.name] || 0) : cellQuantity(l, c.rows, preset)]));
-      const sum = Object.values(weights).reduce((s, w) => s + w, 0);
+      const own = Object.fromEntries(cells.map((c) => [c.key, cellQuantity(l, c.rows, preset)]));
+      const sum = Object.values(own).reduce((s, w) => s + w, 0);
       if (sum <= 0 && l.money > EPS) problems.push(`${l.rule_id} money ${l.money} has no cell to allocate to`);
-      const shares = Object.fromEntries(Object.entries(weights).map(([k, w]) => [k, { weight: w, fraction: sum > 0 ? w / sum : 0, money: sum > 0 ? l.money * w / sum : 0 }]));
-      return { rule_id: l.rule_id, scope: l.scope, money: l.money, basis, shares };
+      // Fractions come from quantities, so a zero-priced line still shows who used it.
+      const frac = Object.fromEntries(cells.map((c) => [c.key, 0]));
+      let redirected = false;
+      for (const c of cells) {
+        const part = sum > 0 ? own[c.key] / sum : 0;
+        const declared = Object.entries(c.shares || {}).filter(([name]) => keyOf.has(name));
+        if (own[c.key] <= 0 || declared.length === 0) { frac[c.key] += part; continue; }
+        const total = declared.reduce((s, [, w]) => s + w, 0);
+        if (!(total > 0)) { problems.push(`${c.name}: allocation shares sum to ${total}`); frac[c.key] += part; continue; }
+        redirected = true;
+        for (const [name, w] of declared) frac[keyOf.get(name)] += part * w / total;
+      }
+      const shares = Object.fromEntries(cells.map((c) => [c.key, { weight: own[c.key], fraction: frac[c.key], money: l.money * frac[c.key] }]));
+      return { rule_id: l.rule_id, scope: l.scope, money: l.money, basis: redirected ? 'allocation.shares' : 'quantity', shares };
     });
     const byCell = {};
     for (const c of cells) {

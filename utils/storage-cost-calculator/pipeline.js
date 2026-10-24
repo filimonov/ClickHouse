@@ -311,7 +311,8 @@
   }
 
   function cutReason(variant, op, t, ctx) {
-    const deps = t.dependents.map((id) => `${id} = ${JSON.stringify(ctx.inputs.has(id) ? ctx.inputs.get(id) : null)}`);
+    // A zero-valued dependent does not make the term non-zero, so it is not named.
+    const deps = t.dependents.filter((id) => ctx.inputs.get(id) !== 0).map((id) => `${id} = ${JSON.stringify(ctx.inputs.has(id) ? ctx.inputs.get(id) : null)}`);
     return `${variant}.${op}: ${t.refs.join(', ')} is unsupported (card cut)` + (deps.length ? ` and its dependent input ${deps.join(', ')} is non-zero` : ' and the cell needs it unconditionally');
   }
 
