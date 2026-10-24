@@ -10,6 +10,7 @@ from __future__ import annotations
 import gzip
 import json
 import sys
+from types import SimpleNamespace
 
 from . import ledger as L
 
@@ -54,7 +55,9 @@ def problems(record: dict, rows: list) -> list:
     _diff('ledger.setup', L.summarize(work('setup')), led['setup'], out)
     _diff('ledger.teardown', L.summarize(work('teardown')), led['teardown'], out)
     _diff('ledger.rig', L.summarize([a for a in phase['window'] if a['caller'] == 'rig']), {'rig': led['rig']}, out)
-    families = CARDS[record['card']].inventory_families(None)
+    # Cards pick their key families by policy; a family that needs more of the pass context fails the replay.
+    families = CARDS[record['card']].inventory_families(SimpleNamespace(policy=record['policy'],
+                                                                        variant=record['variant']))
     attempts = sorted(phase['setup'] + phase['window'] + phase['teardown'], key=lambda a: a['seq'])
     bounds = L.replay(attempts, L.Inventory(), families)
     for rc in record['inventory'].get('reclassified', []):

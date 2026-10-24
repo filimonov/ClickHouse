@@ -32,7 +32,7 @@ def record_for(raw):
     p = s.attempts_by_phase
     bounds = L.replay(sorted(p['setup'] + p['window'] + p['teardown'], key=lambda a: a['seq']), L.Inventory(), [])
     work = lambda ph: [a for a in p[ph] if a['caller'] != 'rig']  # noqa: E731
-    return {'measurement_id': MID, 'card': 'probe_s3_insert', 'status': 'ok',
+    return {'measurement_id': MID, 'card': 'probe_s3_insert', 'policy': 's3', 'variant': 's3', 'status': 'ok',
             'window': {'t_start_us': 1000, 't_end_us': 4000},
             'ledger': {'foreground': L.summarize(work('window')), 'maintenance': {}, 'setup': L.summarize(work('setup')),
                        'teardown': L.summarize(work('teardown')),
@@ -51,6 +51,21 @@ class ReproduceTest(unittest.TestCase):
         found = '\n'.join(reproduce.problems(bad, raw))
         self.assertIn('r1 PutObject attempts', found)
         self.assertIn('byte_hours.active.upper', found)
+
+    def test_cards_choosing_families_by_policy_replay(self):
+        # faults and replication pick their key families from the pass policy.
+        from unittest import mock
+        seen = []
+
+        class ByPolicy:
+            def inventory_families(self, ctx):
+                seen.append((ctx.policy, ctx.variant))
+                return []
+        raw = rows()
+        rec = {**record_for(raw), 'card': 'by-policy', 'policy': 'cas_cached', 'variant': 'cas'}
+        with mock.patch.dict('yardstick.cost.cards.CARDS', {'by-policy': ByPolicy()}):
+            self.assertEqual(reproduce.problems(rec, raw), [])
+        self.assertEqual(seen, [('cas_cached', 'cas')])
 
     def test_maintenance_split_is_checked_as_integrated_usage(self):
         raw = rows()
