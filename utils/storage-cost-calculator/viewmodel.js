@@ -198,12 +198,35 @@
   // A note with a number ends in "= value"; a text note stands alone.
   const noteText = (n) => (typeof n.value === 'number' ? `${n.text} = ${fmtQuantity(n.value)}` : n.text);
 
+  // A cell is extrapolated when the pipeline says so (a fitted or assumed coefficient outside its range, a substituted
+  // lookup key) or when it prices money with a coefficient whose basis is `assumed`.
+  function assumedCoefs(contract) {
+    return new Set(contract.coefficients.filter((c) => model().basisOf(c) === 'assumed').map((c) => c.id));
+  }
+  function readsAny(node, ids) {
+    if (!node || typeof node !== 'object') return false;
+    if ((node.kind === 'coef' && ids.has(node.id)) || (node.kind === 'lookup' && ids.has(node.table_id))) return true;
+    return Object.values(node).some((v) => (Array.isArray(v) ? v.some((x) => readsAny(x, ids)) : v && typeof v === 'object' && readsAny(v, ids)));
+  }
+  function cellExtrapolated(contract, v, op, c, assumed) {
+    if (!c) return false;
+    if (c.extrapolated) return true;
+    if (!assumed.size || !(typeof c.money === 'number' && c.money > 0)) return false;
+    const f = (contract.formulas[v] || {})[op];
+    return !!f && f.ledger_rows.some((r) => readsAny(r.expr, assumed));
+  }
+  function extrapolatedCells(contract, v, vr) {
+    const assumed = assumedCoefs(contract);
+    return Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed)).map(([op]) => op);
+  }
+
   // The cheapest badge needs two priced columns to compare; an extrapolated winner says so.
-  function cheapestOf(result) {
+  function cheapestOf(result, contract) {
     const priced = Object.keys(result.variants).filter((v) => result.variants[v].state === 'ok' && typeof result.variants[v].total === 'number');
     const v = result.cheapest;
     if (!v || priced.length < 2) return { variant: null, text: null, priced: priced.length };
-    return { variant: v, text: result.variants[v].extrapolated ? 'cheapest (extrapolated)' : `cheapest of ${priced.length} priced`, priced: priced.length };
+    const ex = result.variants[v].extrapolated || (contract && extrapolatedCells(contract, v, result.variants[v]).length > 0);
+    return { variant: v, text: ex ? 'cheapest (extrapolated)' : `cheapest of ${priced.length} priced`, priced: priced.length };
   }
 
   function barSegments(vr, preset) {
@@ -230,13 +253,15 @@
   }
 
   function buildCards(result, contract, preset, pageState, inputs) {
-    const best = cheapestOf(result);
+    const best = cheapestOf(result, contract);
     return contract.variants.map((v) => {
       const vr = result.variants[v];
       if (!vr) throw new Error(`result has no variant ${v}`);
       if (result.cheapest === v && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
       const cheapest = best.variant === v && pageState === 'ok';
-      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated, cheapest,
+      const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr) : [];
+      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated || exCells.length > 0,
+        extrapolated_cells: exCells.length, extrapolated_text: exCells.length ? `extrapolated: ${exCells.length} ${exCells.length === 1 ? 'cell' : 'cells'}` : vr.extrapolated ? 'extrapolated' : null, cheapest,
         cheapest_text: cheapest ? best.text : null, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
       if (vr.state !== 'ok') {
         card.state_text = stateText(vr.state);
@@ -294,6 +319,7 @@
 
   function buildTable(result, contract, preset, pageState, problems, fields) {
     const rows = [];
+    const assumed = assumedCoefs(contract);
     for (const op of contract.operations) {
       if (!operationShown(contract, op)) continue;
       if (!OPERATION_LABELS[op]) problems.push(`operation ${op} has no label in viewmodel.js`);
@@ -304,11 +330,11 @@
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
         const hint = pageState === 'ok' && c.money === 0 ? zeroHint(op, fields) : null;
-        return { variant: v, operation: op, text, state: 'ok', extrapolated: !!c.extrapolated, clickable: true, hint };
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed), clickable: true, hint };
       });
       rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: op === 'storage' && pageState === 'ok' ? GIB_NOTE : null });
     }
-    const best = cheapestOf(result);
+    const best = cheapestOf(result, contract);
     return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows };
   }
 

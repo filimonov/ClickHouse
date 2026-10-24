@@ -37,3 +37,23 @@ test('test_fitted_outside_range_extrapolates_derived_does_not', () => {
   assert.equal(derived.extrapolated, false);
   assert.equal(s3At(load(), 1000).extrapolated, false);
 });
+
+test('test_column_badge_counts_extrapolated_cells_and_assumed_money', () => {
+  const vmod = require('../viewmodel.js');
+  const build = (c, raw) => {
+    const r0 = pipeline.resolveInputs(c, raw, [], {});
+    const aws = presets.resolvePrice(c, 'aws-us-east-1');
+    return vmod.build(pipeline.run(c, r0.inputs, aws, {}), c, r0.fields, r0.lockOrder, { pricePreset: aws });
+  };
+  const card = (vm, v) => vm.cards.find((x) => x.variant === v);
+  const out = build(load(), { inserts_per_month: 60000 });
+  assert.equal(card(out, 's3').extrapolated, true);
+  assert.match(card(out, 's3').extrapolated_text, /^extrapolated: \d+ cells?$/);
+  // An assumed coefficient that prices money marks its cell and column; a fitted one inside its range does not.
+  const plain = build(load(), { inserts_per_month: 1000 });
+  assert.equal(card(plain, 'cas').extrapolated, false);
+  const assumed = build(load((x) => { x.coefficients.find((k) => k.id === 'puts_per_insert_cas').basis = 'assumed'; }), { inserts_per_month: 1000 });
+  assert.equal(card(assumed, 'cas').extrapolated, true);
+  assert.equal(card(assumed, 'cas').extrapolated_text, 'extrapolated: 1 cell');
+  assert.equal(assumed.table.rows.find((r) => r.operation === 'inserts').cells.find((c) => c.variant === 'cas').extrapolated, true);
+});

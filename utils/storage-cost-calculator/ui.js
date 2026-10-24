@@ -243,7 +243,8 @@
   function renderCard(c, vm) {
     known(VARIANT_STATES, c.state, 'variant state');
     if (c.cheapest && c.state !== 'ok') throw new Error(`ui: ${c.variant} is marked cheapest in state ${c.state}`);
-    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${c.cheapest ? badge(c.cheapest_text, 'ok') : ''}${extrapolatedBadge(c.extrapolated)}</header>`;
+    const exBadge = c.extrapolated ? badge(c.extrapolated_text || 'extrapolated', 'warn') : '';
+    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${c.cheapest ? badge(c.cheapest_text, 'ok') : ''}${exBadge}</header>`;
     if (c.state !== 'ok') {
       const why = `<button type="button" class="btn btn-small" data-action="info" data-info-kind="variant" data-variant="${esc(c.variant)}">Why</button>`;
       return `<article class="card is-off" data-variant="${esc(c.variant)}" data-state="${esc(c.state)}">${head}`
