@@ -1,6 +1,6 @@
 {
   "schema": "coverage/1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "cards": [
     {
       "name": "objects-per-part",
@@ -114,10 +114,126 @@
       ],
       "cases": [
         {
+          "case_id": "compact-below-bytes",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "insert-split",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "level-cross",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "merge-cross",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "multipart-above",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "multipart-below",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "multipart-equal",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "wide-above-bytes",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "wide-equal-bytes",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "part-size-sequence",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -168,10 +284,22 @@
       ],
       "cases": [
         {
+          "case_id": "default",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 2400,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "small-inserts",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -196,10 +324,35 @@
       ],
       "cases": [
         {
+          "case_id": "default",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "wide",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "merge-natural",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -224,10 +377,22 @@
       ],
       "cases": [
         {
+          "case_id": "default",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "merge-forced",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -252,10 +417,35 @@
       ],
       "cases": [
         {
+          "case_id": "bursty",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "steady",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
           "case_id": "async-inserts",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -280,10 +470,22 @@
       ],
       "cases": [
         {
+          "case_id": "2h",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 9000,
+          "duration_s": 7260,
+          "priority": "P2",
+          "status": "planned"
+        },
+        {
           "case_id": "amplification-run",
           "policies": [
             "local",
-            "s3",
             "s3plain",
             "cas"
           ],
@@ -1023,7 +1225,493 @@
       ]
     }
   ],
-  "evidence": [],
+  "evidence": [
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.compact-below-bytes",
+      "policy": "s3",
+      "span": {
+        "bytes_uncompressed": [
+          9437160,
+          9437160
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/compact-below-bytes/k1",
+        "cost-20261024T045917Z/s3/boundaries/compact-below-bytes/k2",
+        "cost-20261024T045917Z/s3/boundaries/compact-below-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.wide-equal-bytes",
+      "policy": "s3",
+      "span": {
+        "bytes_uncompressed": [
+          10485760,
+          10485760
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/wide-equal-bytes/k1",
+        "cost-20261024T045917Z/s3/boundaries/wide-equal-bytes/k2",
+        "cost-20261024T045917Z/s3/boundaries/wide-equal-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.wide-above-bytes",
+      "policy": "s3",
+      "span": {
+        "bytes_uncompressed": [
+          11534360,
+          11534360
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/wide-above-bytes/k1",
+        "cost-20261024T045917Z/s3/boundaries/wide-above-bytes/k2",
+        "cost-20261024T045917Z/s3/boundaries/wide-above-bytes/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.level-cross",
+      "policy": "s3",
+      "span": {
+        "part_level": [
+          0,
+          1
+        ],
+        "bytes_uncompressed": [
+          11534360,
+          11534360
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/level-cross/k1",
+        "cost-20261024T045917Z/s3/boundaries/level-cross/k2",
+        "cost-20261024T045917Z/s3/boundaries/level-cross/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "merge-forced.default",
+      "policy": "s3",
+      "span": {
+        "part_level": [
+          0,
+          1
+        ],
+        "bytes_uncompressed": [
+          4000000,
+          32000000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-forced/default/k1",
+        "cost-20261024T045917Z/s3/merge-forced/default/k2",
+        "cost-20261024T045917Z/s3/merge-forced/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "part_type_predicate",
+      "experiment_id": "boundaries.merge-cross",
+      "policy": "s3",
+      "span": {
+        "part_level": [
+          0,
+          1
+        ],
+        "bytes_uncompressed": [
+          6291480,
+          12582960
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/merge-cross/k1",
+        "cost-20261024T045917Z/s3/boundaries/merge-cross/k2",
+        "cost-20261024T045917Z/s3/boundaries/merge-cross/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "multipart_sizing_rule",
+      "experiment_id": "boundaries.multipart-below",
+      "policy": "s3",
+      "span": {
+        "object_bytes": [
+          33554424,
+          33554424
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/multipart-below/k1",
+        "cost-20261024T045917Z/s3/boundaries/multipart-below/k2",
+        "cost-20261024T045917Z/s3/boundaries/multipart-below/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "multipart_sizing_rule",
+      "experiment_id": "boundaries.multipart-above",
+      "policy": "s3",
+      "span": {
+        "object_bytes": [
+          50331656,
+          50331656
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/multipart-above/k1",
+        "cost-20261024T045917Z/s3/boundaries/multipart-above/k2",
+        "cost-20261024T045917Z/s3/boundaries/multipart-above/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "multipart_sizing_rule",
+      "experiment_id": "boundaries.multipart-equal",
+      "policy": "s3",
+      "span": {
+        "object_bytes": [
+          33554432,
+          33554432
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/multipart-equal/k1",
+        "cost-20261024T045917Z/s3/boundaries/multipart-equal/k2",
+        "cost-20261024T045917Z/s3/boundaries/multipart-equal/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "parts_per_insert",
+      "experiment_id": "boundaries.insert-split",
+      "policy": "s3",
+      "span": {
+        "insert_rows": [
+          2621122,
+          2621122
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "fcaec9179c7",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/boundaries/insert-split/k1",
+        "cost-20261024T045917Z/s3/boundaries/insert-split/k2",
+        "cost-20261024T045917Z/s3/boundaries/insert-split/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "parts_per_insert",
+      "experiment_id": "small-inserts.default",
+      "policy": "s3",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "small-inserts.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          28.0,
+          653.0
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          6.0,
+          23.0
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.wide",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "small-inserts.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          28.0,
+          653.0
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "merge-natural.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          6.0,
+          23.0
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_fan_in_distribution",
+      "experiment_id": "merge-natural.wide",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "small-inserts.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          28.0,
+          653.0
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "merge-natural.default",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          6.0,
+          23.0
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "merge_result_size_distribution",
+      "experiment_id": "merge-natural.wide",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "write_amplification_rule",
+      "experiment_id": "amplification-run.2h",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          7200
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [],
+      "status": "planned"
+    },
+    {
+      "coefficient": "async_insert_flush_rule",
+      "experiment_id": "async-inserts.steady",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          20,
+          20
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/async-inserts/steady/k1",
+        "cost-20261024T045917Z/s3/async-inserts/steady/k2",
+        "cost-20261024T045917Z/s3/async-inserts/steady/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "async_insert_flush_rule",
+      "experiment_id": "async-inserts.bursty",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          100,
+          100
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/async-inserts/bursty/k1",
+        "cost-20261024T045917Z/s3/async-inserts/bursty/k2",
+        "cost-20261024T045917Z/s3/async-inserts/bursty/k3"
+      ],
+      "status": "done"
+    }
+  ],
   "domain": {
     "variants": [
       "ebs",

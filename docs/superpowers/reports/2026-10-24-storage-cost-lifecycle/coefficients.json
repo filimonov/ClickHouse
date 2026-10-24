@@ -1,0 +1,203 @@
+[
+  {
+    "id": "merge_effective_fan_in",
+    "kind": "scalar",
+    "dim": "1",
+    "value": 6.1097,
+    "validity": {
+      "merge_size_ratio": [
+        6.0,
+        653.0
+      ],
+      "insert_rows": [
+        1000,
+        100000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.3474,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "least squares of amplification_bytes against 1 + rewrite_levels over the final parts",
+      "records": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "residuals": {
+        "cost-20261024T045917Z/s3/small-inserts/default/k1": -0.1383,
+        "cost-20261024T045917Z/s3/small-inserts/default/k2": -0.168,
+        "cost-20261024T045917Z/s3/small-inserts/default/k3": -0.1186,
+        "cost-20261024T045917Z/s3/merge-natural/default/k1": 0.1694,
+        "cost-20261024T045917Z/s3/merge-natural/default/k2": 0.1694,
+        "cost-20261024T045917Z/s3/merge-natural/default/k3": 0.1694
+      },
+      "holdout_residuals": {
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1": 0.0801,
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2": 0.0801,
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3": 0.0801
+      }
+    }
+  },
+  {
+    "id": "merge_fan_in_distribution",
+    "kind": "table",
+    "dim": "1",
+    "value": {
+      "index": [
+        "merge_fan_in_bucket"
+      ],
+      "values": {
+        "13-20": 0.0,
+        "2": 0.0,
+        "21+": 0.0,
+        "3": 0.0,
+        "4": 0.0,
+        "5": 0.0,
+        "6": 0.8801,
+        "7-8": 0.1156,
+        "9-12": 0.0043
+      }
+    },
+    "validity": {
+      "merge_size_ratio": [
+        6.0,
+        653.0
+      ],
+      "insert_rows": [
+        1000,
+        100000
+      ]
+    },
+    "tolerance": {
+      "max_tv": 0.3426
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "mean of the per-record fractions",
+      "records": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "holdout_tv": [
+        0.0503,
+        0.0503,
+        0.0503
+      ]
+    }
+  },
+  {
+    "id": "merge_result_size_distribution",
+    "kind": "table",
+    "dim": "1",
+    "value": {
+      "index": [
+        "merge_result_size_bucket"
+      ],
+      "values": {
+        "129-256": 0.0102,
+        "17-32": 0.0969,
+        "2-4": 0.0,
+        "257-512": 0.006,
+        "33-64": 0.0213,
+        "5-8": 0.8282,
+        "513+": 0.0026,
+        "65-128": 0.0349,
+        "9-16": 0.0
+      }
+    },
+    "validity": {
+      "merge_size_ratio": [
+        6.0,
+        653.0
+      ],
+      "insert_rows": [
+        1000,
+        100000
+      ]
+    },
+    "tolerance": {
+      "max_tv": 0.3852
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2",
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "mean of the per-record fractions (result rows / inserted part rows)",
+      "records": [
+        "cost-20261024T045917Z/s3/merge-natural/default/k1",
+        "cost-20261024T045917Z/s3/merge-natural/default/k2",
+        "cost-20261024T045917Z/s3/merge-natural/default/k3",
+        "cost-20261024T045917Z/s3/small-inserts/default/k1",
+        "cost-20261024T045917Z/s3/small-inserts/default/k2",
+        "cost-20261024T045917Z/s3/small-inserts/default/k3"
+      ],
+      "holdout_tv": [
+        0.0647,
+        0.0647,
+        0.0647
+      ]
+    }
+  }
+]
