@@ -29,10 +29,21 @@ def write(path: str, record: dict) -> None:
     found = problems(record)
     if found:
         raise ValueError('invalid measurement record: ' + '; '.join(found))
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(record, f, indent=2, sort_keys=True)
-        f.write('\n')
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # A reader (or a crash) must see the old file or the whole new one, never a truncated record.
+    tmp = f'{path}.tmp.{os.getpid()}'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(record, f, indent=2, sort_keys=True)
+            f.write('\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def read(path: str) -> dict:

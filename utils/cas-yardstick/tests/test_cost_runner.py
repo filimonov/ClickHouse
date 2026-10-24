@@ -166,7 +166,11 @@ class RunnerFixture(unittest.TestCase):
         self.calls = []
         self.counters = {}
         self.topology = Topology(port_base=19700, replicas=1)
-        self.topology.preflight_new_endpoints = lambda: []
+        # The runner copies the topology per pass, so an instance attribute would not reach the copy; a live run on
+        # the same ports would then stall start_all for its port-wait timeout.
+        free = mock.patch.object(Topology, 'preflight_new_endpoints', lambda self: [])
+        free.start()
+        self.addCleanup(free.stop)
         os.makedirs(os.path.join(tmp.name, 'run1'))
         self.proxy = FakeProxy(os.path.join(tmp.name, 'ledger.jsonl'), self.calls)
         self.rig = FakeRig(self.calls)
@@ -195,7 +199,8 @@ class RunnerFixture(unittest.TestCase):
     def deps(self, **kw):
         fields = dict(binary='/bin/ch', run_id='run1', runs_dir=self.runs_dir, topology=self.topology,
                       proxy=self.proxy, rig=self.rig, store_id='s', keep_prefix=False,
-                      binary_sha256='0' * 64, commit='abc', binary_download_sha256=None, rig_commit='f' * 40)
+                      binary_sha256='0' * 64, commit='abc', binary_download_sha256=None, rig_commit='f' * 40,
+                      store_version='1.0.0-beta.9', store_sha256='b' * 64, rig_dirty=False)
         fields.update(kw)
         return Deps(**fields)
 
@@ -219,6 +224,8 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(measurements_problems(record), [])
         self.assertEqual(record['status'], 'ok')
         self.assertEqual(record['measurement_id'], 'run1/s3/fake/small/k0')
+        self.assertEqual((record['store_version'], record['store_sha256'], record['rig_dirty']),
+                         ('1.0.0-beta.9', 'b' * 64, False))
         self.assertEqual((record['experiment_id'], record['variant'], record['cache_enabled']), ('fake.small', 's3', False))
         self.assertEqual(record['pass_dir'], os.path.join(self.runs_dir, 'run1/s3/fake/small/k0'))
         self.assertEqual(record['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
@@ -246,6 +253,28 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(record['generations']['r1'][0]['pid'], 4242)
         self.assertEqual(record['cleanup'], {'aborted_uploads': 0, 'deleted_keys': 0, 'verified_empty': True, 'errors': []})
         self.assertEqual(self.calls[:3], ['list', 'sh_start', 'setup'])
+
+    def test_window_so_far_flushes_and_fails_without_the_start_mark(self):
+        seen = {}
+
+        def measured(ctx):
+            self.calls.clear()
+            seen['window'] = ctx.window()
+            seen['flushed'] = self.calls[:1]
+            self.writes(2)(ctx)
+        self.card.on_measured = measured
+        self.rig.objects = 0
+        self.assertEqual(self.go()['status'], 'ok')
+        self.assertEqual(seen['flushed'], ['flush'])
+        self.assertEqual(set(seen['window']), {'start_seq', 't_start_us'})
+
+    def test_window_so_far_before_the_window_fails_the_pass(self):
+        # No start mark yet: the pass fails instead of handing the card an empty dict.
+        self.card.on_setup = lambda ctx: ctx.window()
+        self.rig.objects = 0
+        record = self.go()
+        self.assertEqual(record['status'], 'FAILED')
+        self.assertIn('window start mark', record['reason'])
 
     def test_observer_mutation_replayed_reclassify_and_observe_hooks(self):
         key = 'run1/s3/fake/small/k0/data/x'
@@ -604,6 +633,27 @@ class MeasurementsTest(unittest.TestCase):
                 measurements.write(path, {'status': 'ok'})
             self.assertIn('schema', str(ctx.exception))
             self.assertFalse(os.path.exists(path))
+
+    def test_write_replaces_atomically_and_keeps_the_old_file_on_failure(self):
+        example = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', 'docs', 'superpowers',
+                               'cost-model', 'schemas', 'examples', 'measurement-ok.json')
+        with open(example, encoding='utf-8') as f:
+            record = json.load(f)
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'r.json')
+            measurements.write(path, record)
+            with open(path, 'rb') as f:
+                first = f.read()
+            self.assertEqual(json.loads(first.decode('utf-8')), record)
+
+            def half(obj, f, **kw):
+                f.write('{"truncated": ')
+                raise OSError('disk full')
+            with mock.patch.object(measurements.json, 'dump', half), self.assertRaises(OSError):
+                measurements.write(path, record)
+            with open(path, 'rb') as f:
+                self.assertEqual(f.read(), first)
+            self.assertEqual(os.listdir(d), ['r.json'])
 
 
 if __name__ == '__main__':

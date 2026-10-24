@@ -1,6 +1,7 @@
 #!/bin/bash
 # RustFS binary (no container) for the cost rig.
 # ensure exit codes: 0 = started by this call (writes .started-by-rig), 3 = already up (not ours), other = failure.
+# start and ensure print `store_version=<v> store_sha256=<h>` once the store is verified to be the pinned build.
 # usage: rustfs-bin.sh start [--data DIR] [--bin PATH] | stop [--data DIR] [--force] | status [--data DIR] | ensure [--data DIR] [--bin PATH]
 set -euo pipefail
 
@@ -14,6 +15,10 @@ MARKER=.cas-yardstick-rustfs
 OWNED=.started-by-rig
 PIDFILE=.rustfs.pid
 READY_TIMEOUT=60
+# Request counts depend on the store build (listing behavior differs between releases), so only this build runs.
+# Changing the store means changing these two lines.
+PIN_VERSION=1.0.0-beta.9
+PIN_SHA256=bf4aca66af214c7733f2b775847e0227c113fc97d5f74752a305ce2b75933664
 
 up()
 {
@@ -27,6 +32,32 @@ pid_alive()
     pid=$(cat "$DATA/$PIDFILE" 2>/dev/null) || return 1
     # The comm check guards against a recycled pid.
     [ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" = rustfs ]
+}
+
+check_pin()
+{
+    local file=$1 what=$2 got
+    got=$(sha256sum "$file" 2>/dev/null | cut -d' ' -f1) || true
+    if [ "$got" != "$PIN_SHA256" ]; then
+        echo "$what sha256 ${got:-unreadable} is not the pinned rustfs $PIN_VERSION ($PIN_SHA256)" >&2
+        exit 1
+    fi
+}
+
+print_identity()
+{
+    echo "store_version=$PIN_VERSION store_sha256=$PIN_SHA256"
+}
+
+# A store already answering on the port counts only if it is the process this script started from $DATA and
+# its executable is the pinned build.
+check_running()
+{
+    if ! pid_alive; then
+        echo "a store answers on 127.0.0.1:$PORT but $DATA/$PIDFILE names no running rustfs; cannot identify its build" >&2
+        exit 1
+    fi
+    check_pin "/proc/$(cat "$DATA/$PIDFILE")/exe" "running store"
 }
 
 parse_args()
@@ -44,11 +75,12 @@ parse_args()
 
 do_start()
 {
+    [ -x "$BIN" ] || { echo "rustfs binary not found or not executable: $BIN" >&2; exit 1; }
+    check_pin "$BIN" "$BIN"
     if up || pid_alive; then
         echo "rustfs is already up on 127.0.0.1:$PORT" >&2
         exit 1
     fi
-    [ -x "$BIN" ] || { echo "rustfs binary not found or not executable: $BIN" >&2; exit 1; }
     # Refuse to wipe a directory this script did not create.
     if [ -e "$DATA" ] && [ -n "$(ls -A "$DATA")" ] && [ ! -f "$DATA/$MARKER" ]; then
         echo "refusing to wipe non-empty $DATA without $MARKER" >&2
@@ -82,6 +114,7 @@ do_start()
         exit 1
     fi
     echo "endpoint=http://127.0.0.1:$PORT bin=$BIN data=$DATA"
+    print_identity
 }
 
 cmd=${1:-}
@@ -95,8 +128,10 @@ case "$cmd" in
     ensure)
         parse_args "$@"
         if up; then
+            check_running
             (cd "$HERE" && python3 -m yardstick.cost.s3client ensure-bucket "$BUCKET" --endpoint "http://127.0.0.1:$PORT")
             echo "endpoint=http://127.0.0.1:$PORT (already up)"
+            print_identity
             exit 3
         else
             do_start

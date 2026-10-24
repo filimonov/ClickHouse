@@ -61,6 +61,8 @@ class FakeRig:
 
 
 class FakeRustfs:
+    identity = ('1.0.0-beta.9', 'b' * 64)
+
     def __init__(self, started):
         self.started, self.stopped = started, False
 
@@ -84,9 +86,18 @@ def run_args(tmp, manifests, **kw):
         f.write('d' * 64 + '  ' + os.path.join(tmp, 'clickhouse') + '\n')
     base = dict(binary=os.path.join(tmp, 'clickhouse'), source_dir=None, manifests=manifests, cases='all', policies='s3,cas',
                 replicas=1, repeats=None, runs_dir=os.path.join(tmp, 'runs'), port_base=19700,
-                endpoint=None, keep_prefix=False, commit='abc123')
+                endpoint=None, keep_prefix=False, commit='abc123', lock=os.path.join(tmp, 'yardstick.lock'),
+                allow_dirty=True, store_version=None, store_sha256=None)
     base.update(kw)
     return SimpleNamespace(**base)
+
+
+def distinct_run_ids(test):
+    """Run ids have one-second resolution and a reused one fails; give each session in a test its own."""
+    ids = iter(f'20260101T{n:06d}Z' for n in range(10 ** 6))
+    patcher = mock.patch.object(cli.time, 'strftime', lambda *a: next(ids))
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 class ManifestsTest(unittest.TestCase):
@@ -103,6 +114,9 @@ class ManifestsTest(unittest.TestCase):
 
 
 class RunTest(unittest.TestCase):
+    def setUp(self):
+        distinct_run_ids(self)
+
     def test_run_dispatch_and_exit_codes(self):
         with tempfile.TemporaryDirectory() as tmp:
             touch(os.path.join(tmp, 'clickhouse'))
@@ -115,6 +129,8 @@ class RunTest(unittest.TestCase):
 
             def fake_run_case(card, manifest, policy, k, deps):
                 calls.append((manifest['case_id'], policy, k, deps.commit, deps.binary_sha256))
+                self.assertEqual((deps.store_version, deps.store_sha256), ('1.0.0-beta.9', 'b' * 64))
+                self.assertIsInstance(deps.rig_dirty, bool)
                 self.assertEqual(len(deps.rig_commit), 40)
                 self.assertEqual(deps.binary_download_sha256, 'd' * 64)
                 status = 'FAILED' if (manifest['case_id'], policy, k) == ('one', 'cas', 2) else 'ok'
@@ -167,10 +183,21 @@ class RunTest(unittest.TestCase):
             calls.clear()
             args = run_args(tmp, [m], cases='c.two', repeats=1, policies='cas', endpoint='http://h:9')
             unsupported = lambda *a: {**ok_record(), 'status': 'UNSUPPORTED', 'reason': 'no'}  # noqa: E731
-            code, rustfs, out = go(args, started=True, run_case=unsupported)
-            self.assertEqual(code, 0)
+            with mock.patch('sys.stderr', io.StringIO()) as err:
+                code, rustfs, out = go(args, started=True, run_case=unsupported)
+            self.assertEqual(code, 2)  # an external store must be named
+            self.assertIn('--store-version', err.getvalue())
+            args.store_version, args.store_sha256 = 'ext-1', 'e' * 64
+            with mock.patch('sys.stderr', io.StringIO()) as err:
+                code, rustfs, out = go(args, started=True, run_case=unsupported)
+            self.assertEqual(code, 1)  # nothing measured is a failed run
+            self.assertIn('no ok records', err.getvalue())
             self.assertFalse(rustfs.stopped)
             self.assertIn('UNSUPPORTED', out)
+            mixed = iter([{**ok_record(), 'status': 'UNSUPPORTED', 'reason': 'no'}, ok_record()])
+            code, _, _ = go(run_args(tmp, [m], cases='c.two', repeats=2, policies='cas'), started=False,
+                            run_case=lambda *a: next(mixed))
+            self.assertEqual(code, 0)  # UNSUPPORTED beside an ok record is not a failure
 
             # an exception still stops proxy and RustFS
             def explode(*a):
@@ -239,8 +266,15 @@ class OwnershipTest(unittest.TestCase):
         with open(script, 'w') as f:
             f.write('#!/bin/sh\necho boom >&2\nexit 1\n')
         os.chmod(script, 0o755)
-        with self.assertRaisesRegex(RuntimeError, 'boom'):
+        with self.assertRaisesRegex(cli.EnvironmentProblem, 'boom'):
             cli.Rustfs(script).ensure()
+        script = os.path.join(self.tmp.name, 'ensure-id.sh')
+        with open(script, 'w') as f:
+            f.write('#!/bin/sh\necho endpoint=x\necho store_version=1.0 store_sha256=abc\nexit 3\n')
+        os.chmod(script, 0o755)
+        rustfs = cli.Rustfs(script)
+        self.assertIs(rustfs.ensure(), False)
+        self.assertEqual(rustfs.identity, ('1.0', 'abc'))
 
     def test_rustfs_stopped_when_setup_raises_after_ensure(self):
         def broken(*a, **kw):
@@ -266,10 +300,10 @@ class OwnershipTest(unittest.TestCase):
         err = io.StringIO()
         base = run_args(self.tmp.name, [self.m])
         for change, code, text in (
-                (dict(cases='c.nope'), 1, 'c.nope'),
-                (dict(policies='s3,gcs'), 1, 'gcs'),
-                (dict(policies='cas'), 1, 'nothing to run'),
-                (dict(cases='c.one,c.zzz'), 1, 'c.zzz')):
+                (dict(cases='c.nope'), 2, 'c.nope'),
+                (dict(policies='s3,gcs'), 2, 'gcs'),
+                (dict(policies='cas'), 2, 'nothing to run'),
+                (dict(cases='c.one,c.zzz'), 2, 'c.zzz')):
             args = SimpleNamespace(**{**vars(base), **change})
             err = io.StringIO()
             with mock.patch('sys.stderr', err):
@@ -289,7 +323,118 @@ class OwnershipTest(unittest.TestCase):
                                            rustfs=Counting(True), cards={}), 2)
 
 
+TOOL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HOLD_LOCK = (
+    'import sys\n'
+    'from yardstick.cost import cli\n'
+    'with cli.run_lock(sys.argv[1], "holder-run"):\n'
+    '    print("held", flush=True)\n'
+    '    sys.stdin.readline()\n')
+
+
+class SessionGuardTest(unittest.TestCase):
+    def setUp(self):
+        distinct_run_ids(self)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.m = os.path.join(self.tmp.name, 'm')
+        touch(os.path.join(self.tmp.name, 'clickhouse'))
+        write_manifest(self.m, 'c', 'one', ['s3'], repeats=1)
+        self.lock = os.path.join(self.tmp.name, 'yardstick.lock')
+
+    def run_cli(self, rustfs=None, run_case=None, **kw):
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', err):
+            code = cli.cmd_run(run_args(self.tmp.name, [self.m], **kw),
+                               run_case=run_case or (lambda *a: ok_record('c', 'one')), proxy_factory=FakeProxy,
+                               rig_factory=FakeRig, rustfs=rustfs or FakeRustfs(False), cards={'c': object()})
+        return code, err.getvalue()
+
+    def test_lock_contention_fails_fast_naming_the_holder(self):
+        import subprocess
+        holder = subprocess.Popen(['python3', '-c', HOLD_LOCK, self.lock], cwd=TOOL_ROOT, stdin=subprocess.PIPE,
+                                  stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), 'held')
+
+            class NoStore(FakeRustfs):
+                def ensure(self):
+                    raise AssertionError('store touched under a held lock')
+            code, err = self.run_cli(rustfs=NoStore(False))
+            self.assertEqual(code, 3)
+            self.assertIn(f'pid={holder.pid} run_id=holder-run', err)
+        finally:
+            holder.communicate('\n', timeout=30)
+        code, _ = self.run_cli()
+        self.assertEqual(code, 0)
+        with open(self.lock) as f:
+            self.assertEqual(f.read(), '')  # released and cleared
+
+    def test_lock_inherited_from_an_external_flock_wrapper_is_accepted(self):
+        import shutil
+        import subprocess
+        if not shutil.which('flock'):
+            self.skipTest('flock(1) not installed')
+        done = subprocess.run(['flock', self.lock, 'python3', '-c', HOLD_LOCK, self.lock], cwd=TOOL_ROOT, input='\n',
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual((done.returncode, done.stdout.strip()), (0, 'held'), done.stderr)
+
+    def test_dirty_rig_refused_unless_allowed_and_then_recorded(self):
+        seen = []
+
+        def record(card, manifest, policy, k, deps):
+            seen.append(deps.rig_dirty)
+            return ok_record('c', 'one')
+        with mock.patch.object(cli, '_rig_status', lambda: ' M utils/cas-yardstick/x.py\n'):
+            code, err = self.run_cli(allow_dirty=False, run_case=record)
+            self.assertEqual((code, seen), (3, []))
+            self.assertIn('x.py', err)
+            self.assertEqual(self.run_cli(allow_dirty=True, run_case=record)[0], 0)
+        with mock.patch.object(cli, '_rig_status', lambda: ''):
+            self.assertEqual(self.run_cli(allow_dirty=False, run_case=record)[0], 0)
+        self.assertEqual(seen, [True, False])
+
+    def test_same_second_run_directory_is_not_reused(self):
+        with mock.patch.object(cli.time, 'strftime', lambda *a: '20260101T000000Z'):
+            self.assertEqual(self.run_cli()[0], 0)
+            code, err = self.run_cli()
+        self.assertEqual(code, 3)
+        self.assertIn('already exists', err)
+
+    def test_store_without_identity_line_is_an_environment_failure(self):
+        class Anonymous(FakeRustfs):
+            identity = None
+        rustfs = Anonymous(True)
+        code, err = self.run_cli(rustfs=rustfs)
+        self.assertEqual(code, 3)
+        self.assertIn('store_sha256', err)
+        self.assertTrue(rustfs.stopped)
+
+    def test_sigterm_runs_cleanup(self):
+        import signal
+        proxies = []
+
+        def proxy_factory(*a):
+            proxies.append(FakeProxy(*a))
+            return proxies[-1]
+
+        def terminated(*a):
+            os.kill(os.getpid(), signal.SIGTERM)
+            raise AssertionError('SIGTERM did not interrupt the pass')
+        before = signal.getsignal(signal.SIGTERM)
+        rustfs = FakeRustfs(True)
+        with self.assertRaises(SystemExit) as caught, redirect_stdout(io.StringIO()):
+            cli.cmd_run(run_args(self.tmp.name, [self.m]), run_case=terminated, proxy_factory=proxy_factory,
+                        rig_factory=FakeRig, rustfs=rustfs, cards={'c': object()})
+        self.assertEqual(caught.exception.code, 128 + signal.SIGTERM)
+        self.assertTrue(proxies[-1].stopped and rustfs.stopped)
+        self.assertIs(signal.getsignal(signal.SIGTERM), before)
+
+
 class ProbeTest(unittest.TestCase):
+    def setUp(self):
+        distinct_run_ids(self)
+
     def test_failed_probe_record_skips_node_tools(self):
         with tempfile.TemporaryDirectory() as tmp:
             touch(os.path.join(tmp, 'clickhouse'))
@@ -313,10 +458,11 @@ class ProbeTest(unittest.TestCase):
             args.manifests = m
             out = io.StringIO()
             with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
-                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40), \
+                        mock.patch.object(cli, '_rig_status', lambda: ''):
                 code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 1)
             self.assertIn('FAIL probe_s3_insert: run FAILED', out.getvalue())
             self.assertEqual(len(node), 2 * (len(cli.PROBES) - 1))
             self.assertFalse(any('probe_s3_insert' in cmd for cmd in node))
@@ -346,7 +492,8 @@ class ProbeTest(unittest.TestCase):
                 args.manifests = m
                 out = io.StringIO()
                 with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
-                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40), \
+                        mock.patch.object(cli, '_rig_status', lambda: ''):
                     code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                          rustfs=FakeRustfs(False), cards=cards, tools_dir=tools_dir)
                 return code, out.getvalue()
@@ -359,14 +506,14 @@ class ProbeTest(unittest.TestCase):
             # The drill reads predictions and formulas from the report directory the manifests came from.
             self.assertEqual(drill[drill.index('--report-dir') + 1], m)
             self.assertEqual([c[1].rsplit('/', 1)[1] for c in node[:2]], ['drill.mjs', 'render_check.mjs'])
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 1)
             self.assertEqual(out.count('PASS'), len(cli.PROBES) - 1)
             self.assertIn('FAIL probe_local_volume: render check failed', out)
 
             node.clear()
             os.remove(os.path.join(tools, 'drill.mjs'))
             code, out = go(tools)
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 1)
             self.assertEqual(node, [])
             self.assertEqual(out.count('FAIL'), len(cli.PROBES))
             self.assertIn('tool missing', out)
@@ -398,10 +545,11 @@ class ProbeTest(unittest.TestCase):
             args.manifests = m
             out = io.StringIO()
             with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess), \
-                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40):
+                        mock.patch.object(cli, '_git_commit', lambda *a: 'f' * 40), \
+                        mock.patch.object(cli, '_rig_status', lambda: ''):
                 code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
-            self.assertEqual(code, 2)
+            self.assertEqual(code, 1)
             self.assertIn('FAIL probe_multipart_fault: assertions failed: b', out.getvalue())
             self.assertEqual(out.getvalue().count('PASS'), len(cli.PROBES) - 1)
             self.assertFalse(any('probe_multipart_fault' in cmd for cmd in node))
@@ -515,6 +663,47 @@ class EstimateCommandTest(unittest.TestCase):
             self.assertEqual(cases['lonely.q']['basis'], 'sample')
 
 
+class RerunReserveTest(unittest.TestCase):
+    def test_reserve_scales_hours_and_is_a_flag(self):
+        recs = [ok_record('a', 'p1', wall_s=100)]
+        plain = estimate.estimate(recs, COVERAGE, REGISTRY, None, rerun_reserve=1.0)
+        default = estimate.estimate(recs, COVERAGE, REGISTRY, None)
+        self.assertAlmostEqual(default.total_hours, plain.total_hours * estimate.RERUN_RESERVE)
+        args = argparse_parser().parse_args(['cost', 'estimate', 'rd', '--rerun-reserve', '1.5'])
+        self.assertEqual((args.rerun_reserve, args.budget_hours), (1.5, estimate.BUDGET_HOURS))
+        self.assertIn('1.5x rerun reserve', estimate.render(estimate.estimate(recs, COVERAGE, REGISTRY, None,
+                                                                              rerun_reserve=1.5)))
+
+
+class EstimateInputsTest(unittest.TestCase):
+    def test_missing_or_empty_run_dir_and_missing_coverage_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reg, cov = os.path.join(tmp, 'registry.json'), os.path.join(tmp, 'coverage.json')
+            for path, data in ((reg, REGISTRY), (cov, COVERAGE)):
+                with open(path, 'w') as f:
+                    json.dump(data, f)
+            run_dir = os.path.join(tmp, 'run')
+
+            def go(coverage=cov):
+                args = argparse_parser().parse_args(['cost', 'estimate', run_dir, '--coverage', coverage,
+                                                     '--registry', reg, '--presets', '/nope'])
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err), redirect_stdout(io.StringIO()):
+                    return args.func(args), err.getvalue()
+            self.assertEqual(go(), (2, f'no measurements.jsonl in run directory {run_dir}\n'))
+            os.makedirs(run_dir)
+            open(os.path.join(run_dir, 'measurements.jsonl'), 'w').close()
+            code, err = go()
+            self.assertEqual(code, 2)
+            self.assertIn('has no records', err)
+            with open(os.path.join(run_dir, 'measurements.jsonl'), 'w') as f:
+                f.write(json.dumps(ok_record()) + '\n')
+            code, err = go(os.path.join(tmp, 'absent-coverage.json'))
+            self.assertEqual(code, 2)
+            self.assertIn('absent-coverage.json', err)
+            self.assertEqual(go()[0], 0)
+
+
 class EstimateRegistryTest(unittest.TestCase):
     def test_default_registry_exists_and_a_missing_one_fails(self):
         args = argparse_parser().parse_args(['cost', 'estimate', 'rd'])
@@ -524,6 +713,8 @@ class EstimateRegistryTest(unittest.TestCase):
             cov = os.path.join(tmp, 'coverage.json')
             with open(cov, 'w') as f:
                 json.dump(COVERAGE, f)
+            with open(os.path.join(tmp, 'measurements.jsonl'), 'w') as f:
+                f.write(json.dumps(ok_record()) + '\n')
             args = argparse_parser().parse_args(['cost', 'estimate', tmp, '--coverage', cov, '--registry',
                                                  os.path.join(tmp, 'absent.json')])
             err = io.StringIO()

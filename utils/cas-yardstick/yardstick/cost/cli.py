@@ -1,12 +1,19 @@
-"""`yardstick.py cost run|probe|estimate`: matrix runs of the cost cards, probe gates and the runtime estimate."""
+"""`yardstick.py cost run|probe|estimate`: matrix runs of the cost cards, probe gates and the runtime estimate.
+
+Exit codes: 0 ok, 1 measurement failure, 2 usage, 3 environment (lock held, dirty rig, store unidentified).
+"""
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import glob
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 
@@ -22,6 +29,10 @@ REPO = os.path.dirname(os.path.dirname(TOOL_DIR))
 TOOLS_DIR = os.path.join(REPO, 'utils', 'storage-cost-calculator', 'tools')
 DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
 DEFAULT_RUNS_DIR = os.path.join(REPO, 'tmp', 'cas-yardstick', 'runs')
+# The same file the report READMEs wrap runs in with `flock`, so the two forms exclude each other.
+DEFAULT_LOCK = os.path.join(REPO, 'tmp', 'yardstick.lock')
+RIG_PATH = os.path.join('utils', 'cas-yardstick')
+EXIT_OK, EXIT_MEASUREMENT, EXIT_USAGE, EXIT_ENVIRONMENT = 0, 1, 2, 3
 PROBE_MANIFESTS = os.path.join(REPO, 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-phase0', 'experiments')
 PROBES = ('probe_s3_insert', 'probe_replicated_fetch', 'probe_multipart_fault', 'probe_cas_gc_cohort',
           'probe_local_volume', 'probe_cas_expect')
@@ -34,17 +45,33 @@ COLUMNS = ['case', 'policy', 'status', 'wall_s', 'PUT', 'GET', 'LIST', 'DEL call
 
 # --- rig lifecycle ---
 
+class EnvironmentProblem(Exception):
+    """The host is not fit for a measurement: exit 3, nothing measured."""
+
+
+class UsageProblem(Exception):
+    """The arguments cannot describe a run: exit 2, nothing measured."""
+
+
 class Rustfs:
     """`rustfs-bin.sh`: `ensure` reports whether this call started the store; only then is it stopped."""
 
     def __init__(self, script=os.path.join(TOOL_DIR, 'rustfs-bin.sh')):
         self.script = script
+        self.identity = None
 
     def ensure(self) -> bool:
-        """True when this call started the store (exit 0); False when it was already up (exit 3)."""
+        """True when this call started the store (exit 0); False when it was already up (exit 3).
+
+        Sets `identity` to (store_version, store_sha256) from the script's verified pin line.
+        """
         done = subprocess.run([self.script, 'ensure'], capture_output=True, text=True)
         if done.returncode not in (0, ENSURE_ALREADY_UP):
-            raise RuntimeError(f'rustfs-bin.sh ensure failed: {done.stderr.strip() or done.stdout.strip()}')
+            raise EnvironmentProblem(f'rustfs-bin.sh ensure failed: {done.stderr.strip() or done.stdout.strip()}')
+        fields = dict(item.split('=', 1) for line in done.stdout.splitlines() if line.startswith('store_version=')
+                      for item in line.split())
+        self.identity = ((fields['store_version'], fields['store_sha256'])
+                         if fields.get('store_version') and fields.get('store_sha256') else None)
         return done.returncode == 0
 
     def stop(self) -> None:
@@ -62,6 +89,76 @@ def _sha256(path: str) -> str:
 def _git_commit(where: str = REPO) -> str:
     return subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=where, capture_output=True, text=True,
                           check=True).stdout.strip()
+
+
+def _rig_status() -> str:
+    """`git status --porcelain` of the rig sources; non-empty means `rig_commit` does not describe the code that ran."""
+    return subprocess.run(['git', 'status', '--porcelain', '--', RIG_PATH], cwd=REPO, capture_output=True,
+                          text=True, check=True).stdout
+
+
+def _held_by_ancestor(fd: int) -> bool:
+    """True when the lock on `fd`'s file is held through a descriptor this process inherited.
+
+    `flock tmp/yardstick.lock cmd` passes its locked descriptor to `cmd`; locking that same open file again
+    succeeds only if it is the holder.
+    """
+    st = os.fstat(fd)
+    for name in os.listdir('/proc/self/fd'):
+        other = int(name)
+        if other == fd:
+            continue
+        try:
+            o = os.fstat(other)
+        except OSError:
+            continue
+        if (o.st_dev, o.st_ino) != (st.st_dev, st.st_ino):
+            continue
+        try:
+            fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+@contextlib.contextmanager
+def run_lock(path: str, run_id: str):
+    """Hold `path` exclusively for one run or probe session; fail fast naming the holder."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o664)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not _held_by_ancestor(fd):
+                holder = os.pread(fd, 4096, 0).decode('utf-8', 'replace').strip()
+                raise EnvironmentProblem(f'{path} is held by {holder or "a process that wrote no id (external flock)"}'
+                                         '; another rig session is running') from None
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f'pid={os.getpid()} run_id={run_id}\n'.encode(), 0)
+        try:
+            yield
+        finally:
+            os.ftruncate(fd, 0)
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def _term_as_exit():
+    """SIGTERM raises SystemExit, so the `finally` blocks stop servers, proxy and store."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def handler(signum, frame):
+        raise SystemExit(128 + signum)
+    previous = signal.signal(signal.SIGTERM, handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def download_sha256(binary: str):
@@ -102,7 +199,7 @@ def source_commit(args) -> str:
         return args.commit
     where = getattr(args, 'source_dir', None) or source_dir_for(args.binary)
     if not where:
-        sys.exit(f'cannot tell the source commit of {args.binary}: pass --commit or --source-dir')
+        raise UsageProblem(f'cannot tell the source commit of {args.binary}: pass --commit or --source-dir')
     return _git_commit(where)
 
 
@@ -152,14 +249,53 @@ def _services(args, proxy_factory, run_id):
     return proxy, topology
 
 
+def usage_problem(args):
+    """A flag combination the session cannot run with, or None."""
+    if args.endpoint and not (getattr(args, 'store_version', None) and getattr(args, 'store_sha256', None)):
+        return '--endpoint needs --store-version and --store-sha256: records must name the store build'
+    return None
+
+
 def _session(args, body, *, proxy_factory, rig_factory, rustfs):
-    """Run `body(deps, run_id)` with the store and proxy up; both are stopped in `finally`, the store only if started here."""
+    """Run `body(deps, run_id)` under the run lock with the store and proxy up; exit 3 on an environment problem.
+
+    Proxy and store are stopped in `finally` (the store only if started here); SIGTERM takes the same path.
+    """
     run_id = 'cost-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+    try:
+        with _term_as_exit(), run_lock(getattr(args, 'lock', None) or DEFAULT_LOCK, run_id):
+            return _locked_session(args, body, run_id, proxy_factory=proxy_factory, rig_factory=rig_factory,
+                                   rustfs=rustfs)
+    except EnvironmentProblem as e:
+        print(e, file=sys.stderr)
+        return EXIT_ENVIRONMENT
+    except UsageProblem as e:
+        print(e, file=sys.stderr)
+        return EXIT_USAGE
+
+
+def _locked_session(args, body, run_id, *, proxy_factory, rig_factory, rustfs):
+    dirty = _rig_status()
+    if dirty and not getattr(args, 'allow_dirty', False):
+        raise EnvironmentProblem(f'{RIG_PATH} has uncommitted changes, so rig_commit would not describe the code '
+                                 f'that runs (pass --allow-dirty to record rig_dirty: true):\n{dirty.rstrip()}')
+    commit = source_commit(args)
+    os.makedirs(args.runs_dir, exist_ok=True)
+    try:
+        # Run ids have one-second resolution; a second run in the same second must not append to the first.
+        os.mkdir(os.path.join(args.runs_dir, run_id))
+    except FileExistsError:
+        raise EnvironmentProblem(f'run directory {os.path.join(args.runs_dir, run_id)} already exists') from None
     started, proxy = False, None
     try:
-        if not args.endpoint:
+        if args.endpoint:
+            identity = (args.store_version, args.store_sha256)
+        else:
             # Ownership is recorded before anything else can raise, so the finally still stops a store started here.
             started = rustfs.ensure()
+            identity = rustfs.identity
+            if not identity:
+                raise EnvironmentProblem('rustfs-bin.sh ensure printed no store_version/store_sha256 line')
         proxy, topology = _services(args, proxy_factory, run_id)
         proxy.start()
         # Every rig request (listings, observer aborts, cleanup) goes through the proxy's `rig` listener, so an
@@ -167,10 +303,12 @@ def _session(args, body, *, proxy_factory, rig_factory, rustfs):
         rig = rig_factory(f'http://127.0.0.1:{proxy.ports["rig"]}', 'clickhouse', 'clickhouse')
         problems = topology.verify_services(proxy, rig)
         if problems:
-            sys.exit('; '.join(problems))
+            raise EnvironmentProblem('; '.join(problems))
         deps = Deps(binary=args.binary, run_id=run_id, runs_dir=args.runs_dir, topology=topology, proxy=proxy, rig=rig,
-                    store_id=f'store@{args.endpoint or DEFAULT_ENDPOINT}', keep_prefix=args.keep_prefix, binary_sha256=_sha256(args.binary), commit=source_commit(args),
-                    binary_download_sha256=download_sha256(args.binary), rig_commit=_git_commit())
+                    store_id=f'store@{args.endpoint or DEFAULT_ENDPOINT}', keep_prefix=args.keep_prefix,
+                    binary_sha256=_sha256(args.binary), commit=commit,
+                    binary_download_sha256=download_sha256(args.binary), rig_commit=_git_commit(),
+                    rig_dirty=bool(dirty), store_version=identity[0], store_sha256=identity[1])
         return body(deps, run_id)
     finally:
         try:
@@ -265,16 +403,21 @@ def cmd_run(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory=S
         matrix = _matrix(args, cards)
     except ValueError as e:
         print(e, file=sys.stderr)
-        return 1
+        return EXIT_USAGE
     missing = sorted({m['card'] for m, _, _ in matrix if m['card'] not in cards})
-    if missing:
-        print(f'no such card: {", ".join(missing)}', file=sys.stderr)
-        return 1
+    problem = f'no such card: {", ".join(missing)}' if missing else usage_problem(args)
+    if problem:
+        print(problem, file=sys.stderr)
+        return EXIT_USAGE
 
     def body(deps, run_id):
         records = _execute(matrix, deps, run_id, cards, run_case)
         print_table(records, deps.keep_prefix)
-        return 1 if any(r['status'] == 'FAILED' or cleanup_failed(r, deps.keep_prefix) for r in records) else 0
+        if not any(r['status'] == 'ok' for r in records):
+            print(f'{run_id}: no ok records', file=sys.stderr)
+            return EXIT_MEASUREMENT
+        failed = any(r['status'] == 'FAILED' or cleanup_failed(r, deps.keep_prefix) for r in records)
+        return EXIT_MEASUREMENT if failed else EXIT_OK
     return _session(args, body, proxy_factory=proxy_factory, rig_factory=rig_factory, rustfs=rustfs or Rustfs())
 
 
@@ -299,7 +442,11 @@ def cmd_probe(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory
         matrix = _matrix(args, cards, only=set(PROBES))
     except ValueError as e:
         print(e, file=sys.stderr)
-        return 2
+        return EXIT_USAGE
+    problem = usage_problem(args)
+    if problem:
+        print(problem, file=sys.stderr)
+        return EXIT_USAGE
 
     def body(deps, run_id):
         run_dir = os.path.join(deps.runs_dir, run_id)
@@ -324,29 +471,36 @@ def cmd_probe(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory
             results[probe] = ('FAIL' if reason else 'PASS', reason, drill_json)
         for probe, (verdict, reason, path) in results.items():
             print(f'{verdict} {probe}' + (f': {reason}' if reason else '') + (f'  drill: {path}' if path else ''))
-        return 2 if any(v == 'FAIL' for v, _, _ in results.values()) else 0
+        return EXIT_MEASUREMENT if any(v == 'FAIL' for v, _, _ in results.values()) else EXIT_OK
     return _session(args, body, proxy_factory=proxy_factory, rig_factory=rig_factory, rustfs=rustfs or Rustfs())
 
 
 # --- estimate ---
 
 def cmd_estimate(args) -> int:
-    records = []
     path = os.path.join(args.run_dir, 'measurements.jsonl')
-    if os.path.exists(path):
-        with open(path, encoding='utf-8') as f:
-            records = [json.loads(line) for line in f if line.strip()]
-    if not os.path.isfile(args.registry):
-        # The cut list names the quantities each cut removes; without the registry it would silently list none.
-        print(f'registry not found: {args.registry}', file=sys.stderr)
-        return 2
+    # Durations come from measured passes; a mistyped run directory would otherwise estimate from nothing.
+    if not os.path.isfile(path):
+        print(f'no measurements.jsonl in run directory {args.run_dir}', file=sys.stderr)
+        return EXIT_USAGE
+    with open(path, encoding='utf-8') as f:
+        records = [json.loads(line) for line in f if line.strip()]
+    if not records:
+        print(f'{path} has no records', file=sys.stderr)
+        return EXIT_USAGE
+    for name, file in (('coverage', args.coverage), ('registry', args.registry)):
+        if not os.path.isfile(file):
+            # The cut list names the quantities each cut removes; without these files it would silently list none.
+            print(f'{name} not found: {file}', file=sys.stderr)
+            return EXIT_USAGE
     registry = _read_json(args.registry)
     presets = None
     if os.path.exists(args.presets):
         with open(args.presets, encoding='utf-8') as f:
             presets = estimate_mod.presets_by_coefficient(f.read(), registry)
     sample_of = dict(item.split('=', 1) for item in args.sample_of)
-    est = estimate_mod.estimate(records, _read_json(args.coverage), registry, presets, args.budget_hours, sample_of)
+    est = estimate_mod.estimate(records, _read_json(args.coverage), registry, presets, args.budget_hours, sample_of,
+                                args.rerun_reserve)
     if args.json:
         print(json.dumps(est.__dict__, indent=2, sort_keys=True))
     else:
@@ -371,6 +525,11 @@ def add_parsers(sub) -> None:
         p.add_argument('--commit', help='source commit of the binary; default: HEAD of --source-dir')
         p.add_argument('--source-dir', help='source checkout of the binary; default: tmp/src-<version> for '
                                             'a binary at .../<version>/clickhouse')
+        p.add_argument('--store-version', help='version of the store at --endpoint (required with --endpoint)')
+        p.add_argument('--store-sha256', help='sha256 of the store binary at --endpoint (required with --endpoint)')
+        p.add_argument('--lock', default=DEFAULT_LOCK, help='lock file held for the whole session')
+        p.add_argument('--allow-dirty', action='store_true',
+                       help=f'run although {RIG_PATH} has uncommitted changes; records carry rig_dirty: true')
 
     r = csub.add_parser('run', help='run manifests x policies x repeats')
     common(r)
@@ -382,7 +541,7 @@ def add_parsers(sub) -> None:
     r.add_argument('--keep-prefix', action='store_true')
     r.set_defaults(func=cmd_run)
 
-    p = csub.add_parser('probe', help='run the phase-0 probes, then drill and render checks; exit 2 on FAIL')
+    p = csub.add_parser('probe', help='run the phase-0 probes, then drill and render checks; exit 1 on FAIL')
     common(p)
     p.add_argument('--manifests', default=PROBE_MANIFESTS)
     p.add_argument('--replicas', type=int, default=2, help='servers the rig may start; each pass runs its card\'s count')
@@ -394,7 +553,10 @@ def add_parsers(sub) -> None:
     e.add_argument('--coverage', default=os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'coverage.json'))
     e.add_argument('--registry', default=os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'inputs-registry.json'))
     e.add_argument('--presets', default=os.path.join(REPO, 'utils', 'storage-cost-calculator', 'presets.js'))
-    e.add_argument('--budget-hours', type=float, default=72)
+    e.add_argument('--budget-hours', type=float, default=estimate_mod.BUDGET_HOURS,
+                   help='runtime budget; default: three workstation-days (spec §5.5)')
+    e.add_argument('--rerun-reserve', type=float, default=estimate_mod.RERUN_RESERVE,
+                   help='factor on every case for reruns; spec §5.5 asks for a reserve without fixing its size')
     e.add_argument('--sample-of', action='append', default=[], metavar='FAMILY=CASE',
                    help='case whose measured pass stands in for a family with no records')
     e.add_argument('--json', action='store_true')

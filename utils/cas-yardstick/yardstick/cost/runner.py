@@ -36,6 +36,10 @@ class Deps:
     keep_prefix: bool
     binary_sha256: str
     commit: str
+    # Request counts depend on the store build and on the rig code, so both are part of the record's identity.
+    store_version: str
+    store_sha256: str
+    rig_dirty: bool
     binary_download_sha256: str | None = None
     rig_commit: str = ''
 
@@ -111,7 +115,8 @@ class _Pass:
             'policy': policy, 'variant': variant, 'cache_enabled': cached, 'replicas': card.replicas,
             'k': k, 'scale': manifest['scale'], 'mode': card.mode, 'binary_sha256': deps.binary_sha256,
             'binary_download_sha256': deps.binary_download_sha256, 'commit': deps.commit,
-            'rig_commit': deps.rig_commit, 'pass_dir': self.pass_dir}
+            'rig_commit': deps.rig_commit, 'rig_dirty': deps.rig_dirty, 'store_version': deps.store_version,
+            'store_sha256': deps.store_sha256, 'pass_dir': self.pass_dir}
         self.sections: dict = {}
         self.cluster = None
         self.ctx = None
@@ -361,9 +366,13 @@ class _Pass:
         return ledger_mod.replay(self.pass_rows(), Inventory(), self.families)
 
     def window_so_far(self) -> dict:
+        """Start of the current window; raises if the start mark is not in the ledger."""
+        self.deps.proxy.flush()
         mark = next((r for r in ledger_mod.read_rows(self.deps.proxy.ledger_path)
                      if r.get('label') == self.labels['window_start']), None)
-        return {'start_seq': mark['seq'], 't_start_us': mark['t_us']} if mark else {}
+        if mark is None:
+            raise RuntimeError(f'window start mark {self.labels["window_start"]} is not in the ledger')
+        return {'start_seq': mark['seq'], 't_start_us': mark['t_us']}
 
     # --- cleanup ---
 

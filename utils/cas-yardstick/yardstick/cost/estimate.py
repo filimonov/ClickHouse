@@ -6,6 +6,9 @@ import re
 import statistics
 from dataclasses import dataclass, field
 
+# Spec §5.5 (`docs/superpowers/specs/2026-10-23-storage-cost-calculator-design.md#budget`): "about three
+# workstation-days" of runtime, including a rerun reserve whose size it leaves open; both are `cost estimate` flags.
+BUDGET_HOURS = 72
 RERUN_RESERVE = 1.25
 
 
@@ -14,7 +17,8 @@ class Estimate:
     cases: list = field(default_factory=list)
     p1_hours: float = 0.0
     total_hours: float = 0.0
-    budget_hours: float = 72
+    budget_hours: float = BUDGET_HOURS
+    rerun_reserve: float = RERUN_RESERVE
     cuts: list = field(default_factory=list)
     reached: bool = True
 
@@ -44,13 +48,14 @@ def _pass_seconds(card: dict, case: dict, records: list, family_cards: dict, sam
 
 
 def estimate(measurements: list, coverage: dict, registry: dict | None, preset_ids_by_coefficient: dict | None,
-             budget_hours: float = 72, sample_of: dict | None = None) -> Estimate:
+             budget_hours: float = BUDGET_HOURS, sample_of: dict | None = None,
+             rerun_reserve: float = RERUN_RESERVE) -> Estimate:
     sample_of = sample_of or {}
     family_cards: dict = {}
     for card in coverage['cards']:
         family_cards.setdefault(card['family'], set()).add(card['name'])
     cleanup = _median([r['cleanup_s'] for r in measurements if 'cleanup_s' in r]) or 0
-    est = Estimate(budget_hours=budget_hours)
+    est = Estimate(budget_hours=budget_hours, rerun_reserve=rerun_reserve)
     for card in coverage['cards']:
         for case in card['cases']:
             if case['status'] != 'planned':
@@ -65,8 +70,8 @@ def estimate(measurements: list, coverage: dict, registry: dict | None, preset_i
                 'family': card['family'], 'priority': case['priority'], 'passes': passes, 'pass_seconds': per_pass,
                 'basis': basis, 'estimated_from_global': basis == 'global', 'measured_seconds': measured,
                 'floor_applied': case['duration_s'] > measured, 'seconds': passes * (per_pass + cleanup)})
-    est.p1_hours = sum(c['seconds'] for c in est.cases if c['priority'] == 'P1') * RERUN_RESERVE / 3600
-    est.total_hours = sum(c['seconds'] for c in est.cases) * RERUN_RESERVE / 3600
+    est.p1_hours = sum(c['seconds'] for c in est.cases if c['priority'] == 'P1') * est.rerun_reserve / 3600
+    est.total_hours = sum(c['seconds'] for c in est.cases) * est.rerun_reserve / 3600
     _plan_cuts(est, coverage, registry, preset_ids_by_coefficient)
     return est
 
@@ -96,7 +101,7 @@ def _plan_cuts(est: Estimate, coverage: dict, registry: dict | None, presets: di
             continue
         ids = [c['experiment_id'] for c in members]
         cut_ids.update(ids)
-        remaining -= sum(c['seconds'] for c in members) * RERUN_RESERVE / 3600
+        remaining -= sum(c['seconds'] for c in members) * est.rerun_reserve / 3600
         coefs = sorted({e['coefficient'] for e in coverage['evidence'] if e['experiment_id'] in ids})
         quantities = sorted(q['id'] for q in (registry or {}).get('quantities', []) if q.get('coef') in coefs)
         est.cuts.append({
@@ -140,7 +145,7 @@ def presets_by_coefficient(js_text: str, registry: dict | None) -> dict:
 
 def render(est: Estimate) -> str:
     lines = [f'P1: {est.p1_hours:.1f} h   P1+P2: {est.total_hours:.1f} h   budget: {est.budget_hours:g} h '
-             f'(includes the {RERUN_RESERVE}x rerun reserve)']
+             f'(includes the {est.rerun_reserve:g}x rerun reserve)']
     for c in est.cases:
         flag = '  (estimated from global median)' if c['estimated_from_global'] else ''
         floor = ' duration floor' if c['floor_applied'] else ''
