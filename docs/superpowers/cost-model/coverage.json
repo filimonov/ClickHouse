@@ -1239,9 +1239,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/compact-below-bytes/k1",
-        "cost-20261024T054012Z/s3/boundaries/compact-below-bytes/k2",
-        "cost-20261024T054012Z/s3/boundaries/compact-below-bytes/k3"
+        "cost-20261024T061359Z/s3/boundaries/compact-below-bytes/k1",
+        "cost-20261024T061359Z/s3/boundaries/compact-below-bytes/k2",
+        "cost-20261024T061359Z/s3/boundaries/compact-below-bytes/k3"
       ],
       "status": "done"
     },
@@ -1258,9 +1258,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/wide-equal-bytes/k1",
-        "cost-20261024T054012Z/s3/boundaries/wide-equal-bytes/k2",
-        "cost-20261024T054012Z/s3/boundaries/wide-equal-bytes/k3"
+        "cost-20261024T061359Z/s3/boundaries/wide-equal-bytes/k1",
+        "cost-20261024T061359Z/s3/boundaries/wide-equal-bytes/k2",
+        "cost-20261024T061359Z/s3/boundaries/wide-equal-bytes/k3"
       ],
       "status": "done"
     },
@@ -1277,9 +1277,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/wide-above-bytes/k1",
-        "cost-20261024T054012Z/s3/boundaries/wide-above-bytes/k2",
-        "cost-20261024T054012Z/s3/boundaries/wide-above-bytes/k3"
+        "cost-20261024T061359Z/s3/boundaries/wide-above-bytes/k1",
+        "cost-20261024T061359Z/s3/boundaries/wide-above-bytes/k2",
+        "cost-20261024T061359Z/s3/boundaries/wide-above-bytes/k3"
       ],
       "status": "done"
     },
@@ -1300,9 +1300,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/level-cross/k1",
-        "cost-20261024T054012Z/s3/boundaries/level-cross/k2",
-        "cost-20261024T054012Z/s3/boundaries/level-cross/k3"
+        "cost-20261024T061359Z/s3/boundaries/level-cross/k1",
+        "cost-20261024T061359Z/s3/boundaries/level-cross/k2",
+        "cost-20261024T061359Z/s3/boundaries/level-cross/k3"
       ],
       "status": "done"
     },
@@ -1323,9 +1323,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-forced/default/k1",
-        "cost-20261024T054012Z/s3/merge-forced/default/k2",
-        "cost-20261024T054012Z/s3/merge-forced/default/k3"
+        "cost-20261024T061359Z/s3/merge-forced/default/k1",
+        "cost-20261024T061359Z/s3/merge-forced/default/k2",
+        "cost-20261024T061359Z/s3/merge-forced/default/k3"
       ],
       "status": "done"
     },
@@ -1346,9 +1346,9 @@
       "role": "holdout",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/merge-cross/k1",
-        "cost-20261024T054012Z/s3/boundaries/merge-cross/k2",
-        "cost-20261024T054012Z/s3/boundaries/merge-cross/k3"
+        "cost-20261024T061359Z/s3/boundaries/merge-cross/k1",
+        "cost-20261024T061359Z/s3/boundaries/merge-cross/k2",
+        "cost-20261024T061359Z/s3/boundaries/merge-cross/k3"
       ],
       "status": "done"
     },
@@ -1365,9 +1365,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/multipart-below/k1",
-        "cost-20261024T054012Z/s3/boundaries/multipart-below/k2",
-        "cost-20261024T054012Z/s3/boundaries/multipart-below/k3"
+        "cost-20261024T061359Z/s3/boundaries/multipart-below/k1",
+        "cost-20261024T061359Z/s3/boundaries/multipart-below/k2",
+        "cost-20261024T061359Z/s3/boundaries/multipart-below/k3"
       ],
       "status": "done"
     },
@@ -1384,9 +1384,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/multipart-above/k1",
-        "cost-20261024T054012Z/s3/boundaries/multipart-above/k2",
-        "cost-20261024T054012Z/s3/boundaries/multipart-above/k3"
+        "cost-20261024T061359Z/s3/boundaries/multipart-above/k1",
+        "cost-20261024T061359Z/s3/boundaries/multipart-above/k2",
+        "cost-20261024T061359Z/s3/boundaries/multipart-above/k3"
       ],
       "status": "done"
     },
@@ -1403,9 +1403,9 @@
       "role": "holdout",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/multipart-equal/k1",
-        "cost-20261024T054012Z/s3/boundaries/multipart-equal/k2",
-        "cost-20261024T054012Z/s3/boundaries/multipart-equal/k3"
+        "cost-20261024T061359Z/s3/boundaries/multipart-equal/k1",
+        "cost-20261024T061359Z/s3/boundaries/multipart-equal/k2",
+        "cost-20261024T061359Z/s3/boundaries/multipart-equal/k3"
       ],
       "status": "done"
     },
@@ -1422,9 +1422,9 @@
       "role": "fit",
       "prediction_commit": "fcaec9179c7",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/boundaries/insert-split/k1",
-        "cost-20261024T054012Z/s3/boundaries/insert-split/k2",
-        "cost-20261024T054012Z/s3/boundaries/insert-split/k3"
+        "cost-20261024T061359Z/s3/boundaries/insert-split/k1",
+        "cost-20261024T061359Z/s3/boundaries/insert-split/k2",
+        "cost-20261024T061359Z/s3/boundaries/insert-split/k3"
       ],
       "status": "done"
     },
@@ -1441,9 +1441,9 @@
       "role": "holdout",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/small-inserts/default/k1",
-        "cost-20261024T054012Z/s3/small-inserts/default/k2",
-        "cost-20261024T054012Z/s3/small-inserts/default/k3"
+        "cost-20261024T061359Z/s3/small-inserts/default/k1",
+        "cost-20261024T061359Z/s3/small-inserts/default/k2",
+        "cost-20261024T061359Z/s3/small-inserts/default/k3"
       ],
       "status": "done"
     },
@@ -1453,8 +1453,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          6.0,
-          718.0
+          26.0,
+          806.0
         ],
         "insert_rows": [
           1000,
@@ -1464,9 +1464,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/small-inserts/default/k1",
-        "cost-20261024T054012Z/s3/small-inserts/default/k2",
-        "cost-20261024T054012Z/s3/small-inserts/default/k3"
+        "cost-20261024T061359Z/s3/small-inserts/default/k1",
+        "cost-20261024T061359Z/s3/small-inserts/default/k2",
+        "cost-20261024T061359Z/s3/small-inserts/default/k3"
       ],
       "status": "done"
     },
@@ -1487,9 +1487,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/default/k1",
-        "cost-20261024T054012Z/s3/merge-natural/default/k2",
-        "cost-20261024T054012Z/s3/merge-natural/default/k3"
+        "cost-20261024T061359Z/s3/merge-natural/default/k1",
+        "cost-20261024T061359Z/s3/merge-natural/default/k2",
+        "cost-20261024T061359Z/s3/merge-natural/default/k3"
       ],
       "status": "done"
     },
@@ -1510,9 +1510,9 @@
       "role": "holdout",
       "prediction_commit": "b652973295f",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/wide/k1",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k2",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k3"
+        "cost-20261024T061359Z/s3/merge-natural/wide/k1",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k2",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k3"
       ],
       "status": "done"
     },
@@ -1522,8 +1522,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          6.0,
-          718.0
+          26.0,
+          806.0
         ],
         "insert_rows": [
           1000,
@@ -1533,9 +1533,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/small-inserts/default/k1",
-        "cost-20261024T054012Z/s3/small-inserts/default/k2",
-        "cost-20261024T054012Z/s3/small-inserts/default/k3"
+        "cost-20261024T061359Z/s3/small-inserts/default/k1",
+        "cost-20261024T061359Z/s3/small-inserts/default/k2",
+        "cost-20261024T061359Z/s3/small-inserts/default/k3"
       ],
       "status": "done"
     },
@@ -1556,9 +1556,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/default/k1",
-        "cost-20261024T054012Z/s3/merge-natural/default/k2",
-        "cost-20261024T054012Z/s3/merge-natural/default/k3"
+        "cost-20261024T061359Z/s3/merge-natural/default/k1",
+        "cost-20261024T061359Z/s3/merge-natural/default/k2",
+        "cost-20261024T061359Z/s3/merge-natural/default/k3"
       ],
       "status": "done"
     },
@@ -1579,9 +1579,9 @@
       "role": "holdout",
       "prediction_commit": "b652973295f",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/wide/k1",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k2",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k3"
+        "cost-20261024T061359Z/s3/merge-natural/wide/k1",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k2",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k3"
       ],
       "status": "done"
     },
@@ -1591,8 +1591,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          6.0,
-          718.0
+          26.0,
+          806.0
         ],
         "insert_rows": [
           1000,
@@ -1602,9 +1602,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/small-inserts/default/k1",
-        "cost-20261024T054012Z/s3/small-inserts/default/k2",
-        "cost-20261024T054012Z/s3/small-inserts/default/k3"
+        "cost-20261024T061359Z/s3/small-inserts/default/k1",
+        "cost-20261024T061359Z/s3/small-inserts/default/k2",
+        "cost-20261024T061359Z/s3/small-inserts/default/k3"
       ],
       "status": "done"
     },
@@ -1625,9 +1625,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/default/k1",
-        "cost-20261024T054012Z/s3/merge-natural/default/k2",
-        "cost-20261024T054012Z/s3/merge-natural/default/k3"
+        "cost-20261024T061359Z/s3/merge-natural/default/k1",
+        "cost-20261024T061359Z/s3/merge-natural/default/k2",
+        "cost-20261024T061359Z/s3/merge-natural/default/k3"
       ],
       "status": "done"
     },
@@ -1648,9 +1648,9 @@
       "role": "holdout",
       "prediction_commit": "b652973295f",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/merge-natural/wide/k1",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k2",
-        "cost-20261024T054012Z/s3/merge-natural/wide/k3"
+        "cost-20261024T061359Z/s3/merge-natural/wide/k1",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k2",
+        "cost-20261024T061359Z/s3/merge-natural/wide/k3"
       ],
       "status": "done"
     },
@@ -1690,9 +1690,9 @@
       "role": "fit",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/async-inserts/steady/k1",
-        "cost-20261024T054012Z/s3/async-inserts/steady/k2",
-        "cost-20261024T054012Z/s3/async-inserts/steady/k3"
+        "cost-20261024T061359Z/s3/async-inserts/steady/k1",
+        "cost-20261024T061359Z/s3/async-inserts/steady/k2",
+        "cost-20261024T061359Z/s3/async-inserts/steady/k3"
       ],
       "status": "done"
     },
@@ -1717,9 +1717,9 @@
       "role": "holdout",
       "prediction_commit": "2d931d33a05",
       "measurement_ids": [
-        "cost-20261024T054012Z/s3/async-inserts/bursty/k1",
-        "cost-20261024T054012Z/s3/async-inserts/bursty/k2",
-        "cost-20261024T054012Z/s3/async-inserts/bursty/k3"
+        "cost-20261024T061359Z/s3/async-inserts/bursty/k1",
+        "cost-20261024T061359Z/s3/async-inserts/bursty/k2",
+        "cost-20261024T061359Z/s3/async-inserts/bursty/k3"
       ],
       "status": "done"
     }

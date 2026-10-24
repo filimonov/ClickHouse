@@ -7,58 +7,58 @@
     "inserted_part_type": "Compact",
     "rows_per_insert": 1000,
     "columns": 5,
-    "predicted_merges_for_allowance": 1386,
-    "fit_run": "cost-20261024T054012Z",
+    "predicted_merges_for_allowance": 1362,
+    "fit_run": "cost-20261024T061359Z",
     "fit_measurement_ids": [
-      "cost-20261024T054012Z/s3/merge-natural/default/k1",
-      "cost-20261024T054012Z/s3/merge-natural/default/k2",
-      "cost-20261024T054012Z/s3/merge-natural/default/k3",
-      "cost-20261024T054012Z/s3/small-inserts/default/k1",
-      "cost-20261024T054012Z/s3/small-inserts/default/k2",
-      "cost-20261024T054012Z/s3/small-inserts/default/k3"
+      "cost-20261024T061359Z/s3/merge-natural/default/k1",
+      "cost-20261024T061359Z/s3/merge-natural/default/k2",
+      "cost-20261024T061359Z/s3/merge-natural/default/k3",
+      "cost-20261024T061359Z/s3/small-inserts/default/k1",
+      "cost-20261024T061359Z/s3/small-inserts/default/k2",
+      "cost-20261024T061359Z/s3/small-inserts/default/k3"
     ],
-    "merge_effective_fan_in": 6.2271,
+    "merge_effective_fan_in": 6.2846,
+    "amplification_model": "rewrite_levels_at_weighted_ratio",
     "fit_residuals": {
-      "cost-20261024T054012Z/s3/merge-natural/default/k1": 0.1838,
-      "cost-20261024T054012Z/s3/merge-natural/default/k2": 0.1838,
-      "cost-20261024T054012Z/s3/merge-natural/default/k3": 0.1838,
-      "cost-20261024T054012Z/s3/small-inserts/default/k1": -0.2033,
-      "cost-20261024T054012Z/s3/small-inserts/default/k2": -0.0424,
-      "cost-20261024T054012Z/s3/small-inserts/default/k3": -0.2244
+      "cost-20261024T061359Z/s3/merge-natural/default/k1": 0.1929,
+      "cost-20261024T061359Z/s3/merge-natural/default/k2": 0.1929,
+      "cost-20261024T061359Z/s3/merge-natural/default/k3": 0.1929,
+      "cost-20261024T061359Z/s3/small-inserts/default/k1": -0.1488,
+      "cost-20261024T061359Z/s3/small-inserts/default/k2": -0.1086,
+      "cost-20261024T061359Z/s3/small-inserts/default/k3": -0.0638
     },
     "pooled_fan_in_distribution": {
       "13-20": 0.0,
       "2": 0.0,
       "21+": 0.0,
-      "3": 0.0,
-      "4": 0.0,
-      "5": 0.0009,
-      "6": 0.8802,
-      "7-8": 0.1164,
-      "9-12": 0.0026
+      "3": 0.0017,
+      "4": 0.0009,
+      "5": 0.0,
+      "6": 0.874,
+      "7-8": 0.1157,
+      "9-12": 0.0077
     },
     "pooled_result_size_distribution": {
-      "129-256": 0.0136,
-      "17-32": 0.0943,
+      "129-256": 0.0137,
+      "17-32": 0.1003,
       "2-4": 0.0,
-      "257-512": 0.0042,
-      "33-64": 0.0212,
-      "5-8": 0.8267,
-      "513+": 0.0025,
-      "65-128": 0.034,
-      "9-16": 0.0034
+      "257-512": 0.0051,
+      "33-64": 0.0222,
+      "5-8": 0.8228,
+      "513+": 0.0026,
+      "65-128": 0.0325,
+      "9-16": 0.0009
     },
     "fit_max_tv": {
-      "fan_in_distribution": 0.0713,
-      "result_size_distribution": 0.0926
+      "fan_in_distribution": 0.0815,
+      "result_size_distribution": 0.0849
     },
     "tolerance_rules": {
       "amplification_bytes": "abs = largest |fit residual| + half the largest K=3 range of a fit case; rel = 0",
       "distributions": "max_tv = 2 x largest TV of a fit record to the pooled fit distribution + 1 / predicted merges, predicted merges = floor((inserts - 1) / (f - 1))",
       "fan_in_mean": "the fit records' per-record mean range, widened by one part each side",
       "result_size_distribution": "pooled fit distribution restricted to sizes up to the insert count and renormalised"
-    },
-    "amplification_model": "the registry rule write_amplification_rule (lifecycle.amplification_rule)"
+    }
   },
   "expected": {
     "foreground": {
@@ -96,46 +96,46 @@
           "13-20": 0.0,
           "2": 0.0,
           "21+": 0.0,
-          "3": 0.0,
-          "4": 0.0,
-          "5": 0.0009,
-          "6": 0.8802,
-          "7-8": 0.1164,
-          "9-12": 0.0026
+          "3": 0.0017,
+          "4": 0.0009,
+          "5": 0.0,
+          "6": 0.874,
+          "7-8": 0.1157,
+          "9-12": 0.0077
         },
-        "max_tv": 0.1433
+        "max_tv": 0.1637
       },
       "result_size_distribution": {
         "reference": {
-          "129-256": 0.0136,
-          "17-32": 0.0943,
+          "129-256": 0.0137,
+          "17-32": 0.1003,
           "2-4": 0.0,
-          "257-512": 0.0042,
-          "33-64": 0.0212,
-          "5-8": 0.8267,
-          "513+": 0.0025,
-          "65-128": 0.034,
-          "9-16": 0.0034
+          "257-512": 0.0051,
+          "33-64": 0.0222,
+          "5-8": 0.8228,
+          "513+": 0.0026,
+          "65-128": 0.0325,
+          "9-16": 0.0009
         },
-        "max_tv": 0.1859
+        "max_tv": 0.1706
       },
       "fan_in_mean": {
-        "min": 5.0558,
+        "min": 5.1077,
         "max": 7.3636,
         "basis": "fit",
         "reason": "fit per-record mean range widened by one part"
       },
       "amplification_bytes": {
         "model": "rewrite_levels_at_weighted_ratio",
-        "fan_in": 6.2271,
-        "abs": 0.3898,
+        "fan_in": 6.2846,
+        "abs": 0.214,
         "rel": 0
       }
     }
   },
   "tolerance": {
     "abs": {
-      "amplification_bytes": 0.3898
+      "amplification_bytes": 0.214
     },
     "rel": {
       "amplification_bytes": 0
@@ -263,5 +263,5 @@
       "line": 2155
     }
   ],
-  "prediction_commit": "e07bd772acf"
+  "prediction_commit": "uncommitted"
 }
