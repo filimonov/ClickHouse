@@ -268,8 +268,9 @@ class _Pass:
         by_seq = {a['seq']: a for a in pass_rows}
         crossing = [s for s in found['sliced'].crossing if s in by_seq and by_seq[s]['caller'] != 'rig']
         # An attempt still running has no row. One that began before the window ended spans its boundary.
+        # The proxy serves several passes: an attempt older than this pass's setup belongs to an earlier one.
         crossing = sorted(set(crossing) | {o['seq'] for o in open_now if o['caller'] != 'rig'
-                                           and o['seq'] < marks['window_end']['seq']})
+                                           and marks['setup_start']['seq'] <= o['seq'] < marks['window_end']['seq']})
         t_w0, t_w1 = marks['window_start']['t_us'], marks['window_end']['t_us']
         self.sections['window'] = {'start_seq': marks['window_start']['seq'], 'end_seq': marks['window_end']['seq'],
                                    't_start_us': t_w0, 't_end_us': t_w1, 'crossing': crossing}

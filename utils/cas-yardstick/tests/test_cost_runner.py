@@ -281,11 +281,16 @@ class RunnerTest(RunnerFixture):
     def test_open_attempt_at_flush_fails_deterministic_card(self):
         def measured(ctx):
             ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x')
-            ctx.proxy.open = [(ctx.proxy.seq, 'r1'), (1, 'rig')]  # begun in the window, no row yet
+            ctx.proxy.open = [(ctx.proxy.seq, 'r1'), (1, 'rig'), (0, 'r1')]  # begun in the window, no row yet
         self.card.on_measured = measured
         record = self.go()
         self.assertEqual((record['status'], record['reason']), ('FAILED', 'window_crossing'))
         self.assertEqual(len(record['partial']['window']['crossing']), 1)
+
+    def test_open_attempt_from_an_earlier_pass_is_ignored(self):
+        self.proxy.seq = 5  # earlier passes on the shared proxy already used these seqs
+        self.card.on_measured = lambda ctx: (self.writes(2)(ctx), setattr(ctx.proxy, 'open', [(3, 'r1')]))
+        self.assertEqual(self.go()['status'], 'ok')
 
     def test_open_attempt_after_the_window_does_not_cross(self):
         self.card.on_teardown = lambda ctx: setattr(ctx.proxy, 'open', [(ctx.proxy.seq + 1, 'r1')])

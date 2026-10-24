@@ -637,6 +637,46 @@ class BrokenUpstreamTest(ProxyBase):
         self.proxy.finish(b)
         self.assertEqual(self.proxy.open_attempts(), [])
 
+    def assert_no_open_attempts(self, timeout=5):
+        deadline = time.time() + timeout
+        while self.proxy.open_attempts() and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(self.proxy.open_attempts(), [])
+
+    def test_open_attempts_empty_after_every_handler_path(self):
+        s = self.raw()
+        s.sendall(b'PUT /b/k HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n')
+        read_response(s)
+        s.close()
+        self.assert_no_open_attempts()  # (a) 411
+
+        self.proxy.set_fault({'op': 'PutObject', 'action': 'status', 'status': 503, 'send_upstream': False})
+        c = self.conn()
+        c.request('PUT', '/b/k', b'abc')
+        c.getresponse().read()
+        self.assert_no_open_attempts()  # (b) injected status without upstream
+
+        self.proxy.clear_faults()
+        self.proxy.set_fault({'op': 'PutObject', 'action': 'drop_response', 'send_upstream': True})
+        c = self.conn()
+        with self.assertRaises((http.client.RemoteDisconnected, ConnectionError)):
+            c.request('PUT', '/b/k', b'abc')
+            c.getresponse()
+        self.assert_no_open_attempts()  # (c) dropped response
+
+        self.proxy.clear_faults()
+        s = self.raw()
+        s.sendall(b'PUT /b/k HTTP/1.1\r\nHost: h\r\nContent-Length: 1000\r\n\r\n0123456789')
+        s.close()
+        self.assert_no_open_attempts()  # (d) client gone mid-body
+
+    def test_finish_removes_the_open_entry_even_when_the_write_fails(self):
+        a = self.proxy.begin('r1')
+        self.proxy._write = lambda row: (_ for _ in ()).throw(OSError('disk full'))
+        with self.assertRaises(OSError):
+            self.proxy.finish(a)
+        self.assertEqual(self.proxy.open_attempts(), [])
+
     def test_connect_refused_answers_502_and_row_present_right_after_flush(self):
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))

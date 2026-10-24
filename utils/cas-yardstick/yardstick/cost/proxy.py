@@ -372,11 +372,13 @@ class LedgerProxy:
         with self._lock:
             self._last_us = max(self._last_us, time.time_ns() // 1000)
             attempt.row['t_end_us'] = self._last_us
-            self._write(attempt.row)
-            self._open.pop(attempt.row['seq'], None)
-            if attempt.finishing:
-                self._finishing -= 1
-                self._finished.notify_all()
+            try:
+                self._write(attempt.row)
+            finally:
+                self._open.pop(attempt.row['seq'], None)
+                if attempt.finishing:
+                    self._finishing -= 1
+                    self._finished.notify_all()
 
     def mark(self, label: str) -> int:
         with self._lock:

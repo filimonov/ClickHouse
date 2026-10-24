@@ -18,7 +18,7 @@ def _validator():
 def problems(record: dict) -> list:
     """Schema problems of `record`, plus a problem if it cannot be serialised as JSON."""
     found = list(_validator()(record))
-    try:
+    try:  # strict JSON: NaN or infinity would write a file other readers reject
         json.dumps(record, allow_nan=False)
     except (TypeError, ValueError) as e:
         found.append(f'not JSON-serialisable: {e}')
@@ -26,9 +26,9 @@ def problems(record: dict) -> list:
 
 
 def write(path: str, record: dict) -> None:
-    problems = globals()['problems'](record)
-    if problems:
-        raise ValueError('invalid measurement record: ' + '; '.join(problems))
+    found = problems(record)
+    if found:
+        raise ValueError('invalid measurement record: ' + '; '.join(found))
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(record, f, indent=2, sort_keys=True)
