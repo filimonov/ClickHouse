@@ -8839,6 +8839,443 @@
         }
       },
       "status": "ok"
+    },
+    {
+      "id": "cas_blob_uploads_per_part",
+      "block": "cas",
+      "label": "Distinct blob uploads of an inserted part (cas_objects_per_part at the shape and part type)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "cas_objects_per_part",
+        "keys": [
+          {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+          },
+          {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_merge_result_blob_uploads",
+      "block": "cas",
+      "label": "Distinct blob uploads of a level-1 merge result: Wide once fan-in x part bytes reach min_bytes_for_wide_part (FutureMergedMutatedPart.cpp:25-32)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "cas_objects_per_part",
+        "keys": [
+          {
+            "kind": "input",
+            "id": "shape",
+            "dim": "enum:shape"
+          },
+          {
+            "kind": "branch",
+            "dim": "enum:part_type",
+            "cond": {
+              "op": "<",
+              "a": {
+                "kind": "mul",
+                "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "part_bytes_uncompressed",
+                  "dim": "B"
+                },
+                "dim": "B"
+              },
+              "b": {
+                "kind": "input",
+                "id": "min_bytes_for_wide_part",
+                "dim": "B"
+              }
+            },
+            "then": {
+              "kind": "const",
+              "value": "compact",
+              "dim": "enum:part_type"
+            },
+            "else": {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+            }
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "reclaim_periods_blob_delete",
+      "block": "cas",
+      "label": "GC round periods from retirement to the blob delete",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "reclaim_delay_periods",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "blob_delete",
+            "dim": "enum:gc_stage"
+          }
+        ],
+        "dim": "1"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient reclaim_delay_periods",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get",
+      "block": "cas",
+      "label": "GC round requests: fold get",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_put",
+      "block": "cas",
+      "label": "GC round requests: fold put",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_put",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_list",
+      "block": "cas",
+      "label": "GC round requests: fold list",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_list",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get_per_manifest",
+      "block": "cas",
+      "label": "GC round requests: fold get per manifest",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get_per_manifest",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_deferred_get",
+      "block": "cas",
+      "label": "GC round requests: deferred get",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "deferred_get",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_deferred_put",
+      "block": "cas",
+      "label": "GC round requests: deferred put",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "deferred_put",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_deferred_list",
+      "block": "cas",
+      "label": "GC round requests: deferred list",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "deferred_list",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_duration_fold_base",
+      "block": "cas",
+      "label": "GC fold round duration: fold base",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "ms",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_duration",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_base",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "ms"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_duration",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_duration_fold_per_part",
+      "block": "cas",
+      "label": "GC fold round duration: fold per part",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "ms",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_duration",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_per_part",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "ms"
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_duration",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
     }
   ],
   "sets": {},

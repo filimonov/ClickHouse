@@ -72,20 +72,8 @@
          "a": {
           "kind": "mul",
           "a": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "b": {
@@ -159,20 +147,8 @@
         "a": {
          "kind": "mul",
          "a": {
-          "kind": "lookup",
-          "table_id": "cas_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "input",
-            "id": "part_type",
-            "dim": "enum:part_type"
-           }
-          ],
+          "kind": "input",
+          "id": "cas_blob_uploads_per_part",
           "dim": "count"
          },
          "b": {
@@ -226,20 +202,8 @@
         "dim": "1/s"
        },
        "b": {
-        "kind": "lookup",
-        "table_id": "cas_objects_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         },
-         {
-          "kind": "input",
-          "id": "part_type",
-          "dim": "enum:part_type"
-         }
-        ],
+        "kind": "input",
+        "id": "cas_blob_uploads_per_part",
         "dim": "count"
        },
        "dim": "1/s"
@@ -257,20 +221,8 @@
    "states": [],
    "notes": [
     {
-     "kind": "lookup",
-     "table_id": "cas_objects_per_part",
-     "keys": [
-      {
-       "kind": "input",
-       "id": "shape",
-       "dim": "enum:shape"
-      },
-      {
-       "kind": "input",
-       "id": "part_type",
-       "dim": "enum:part_type"
-      }
-     ],
+     "kind": "input",
+     "id": "cas_blob_uploads_per_part",
      "dim": "count"
     },
     {
@@ -336,51 +288,8 @@
           "a": {
            "kind": "mul",
            "a": {
-            "kind": "lookup",
-            "table_id": "cas_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "branch",
-              "dim": "enum:part_type",
-              "cond": {
-               "op": "<",
-               "a": {
-                "kind": "mul",
-                "a": {
-                 "kind": "coef",
-                 "id": "merge_effective_fan_in",
-                 "dim": "1"
-                },
-                "b": {
-                 "kind": "input",
-                 "id": "part_bytes_uncompressed",
-                 "dim": "B"
-                },
-                "dim": "B"
-               },
-               "b": {
-                "kind": "input",
-                "id": "min_bytes_for_wide_part",
-                "dim": "B"
-               }
-              },
-              "then": {
-               "kind": "const",
-               "value": "compact",
-               "dim": "enum:part_type"
-              },
-              "else": {
-               "kind": "const",
-               "value": "wide",
-               "dim": "enum:part_type"
-              }
-             }
-            ],
+            "kind": "input",
+            "id": "cas_merge_result_blob_uploads",
             "dim": "count"
            },
            "b": {
@@ -498,20 +407,8 @@
           "b": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "cas_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ],
+            "kind": "input",
+            "id": "cas_blob_uploads_per_part",
             "dim": "count"
            },
            "b": {
@@ -533,51 +430,8 @@
         "b": {
          "kind": "mul",
          "a": {
-          "kind": "lookup",
-          "table_id": "cas_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "branch",
-            "dim": "enum:part_type",
-            "cond": {
-             "op": "<",
-             "a": {
-              "kind": "mul",
-              "a": {
-               "kind": "coef",
-               "id": "merge_effective_fan_in",
-               "dim": "1"
-              },
-              "b": {
-               "kind": "input",
-               "id": "part_bytes_uncompressed",
-               "dim": "B"
-              },
-              "dim": "B"
-             },
-             "b": {
-              "kind": "input",
-              "id": "min_bytes_for_wide_part",
-              "dim": "B"
-             }
-            },
-            "then": {
-             "kind": "const",
-             "value": "compact",
-             "dim": "enum:part_type"
-            },
-            "else": {
-             "kind": "const",
-             "value": "wide",
-             "dim": "enum:part_type"
-            }
-           }
-          ],
+          "kind": "input",
+          "id": "cas_merge_result_blob_uploads",
           "dim": "count"
          },
          "b": {
@@ -645,51 +499,8 @@
         "on_zero": "unavailable"
        },
        "b": {
-        "kind": "lookup",
-        "table_id": "cas_objects_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         },
-         {
-          "kind": "branch",
-          "dim": "enum:part_type",
-          "cond": {
-           "op": "<",
-           "a": {
-            "kind": "mul",
-            "a": {
-             "kind": "coef",
-             "id": "merge_effective_fan_in",
-             "dim": "1"
-            },
-            "b": {
-             "kind": "input",
-             "id": "part_bytes_uncompressed",
-             "dim": "B"
-            },
-            "dim": "B"
-           },
-           "b": {
-            "kind": "input",
-            "id": "min_bytes_for_wide_part",
-            "dim": "B"
-           }
-          },
-          "then": {
-           "kind": "const",
-           "value": "compact",
-           "dim": "enum:part_type"
-          },
-          "else": {
-           "kind": "const",
-           "value": "wide",
-           "dim": "enum:part_type"
-          }
-         }
-        ],
+        "kind": "input",
+        "id": "cas_merge_result_blob_uploads",
         "dim": "count"
        },
        "dim": "1/s"
@@ -712,51 +523,8 @@
      "dim": "1"
     },
     {
-     "kind": "lookup",
-     "table_id": "cas_objects_per_part",
-     "keys": [
-      {
-       "kind": "input",
-       "id": "shape",
-       "dim": "enum:shape"
-      },
-      {
-       "kind": "branch",
-       "dim": "enum:part_type",
-       "cond": {
-        "op": "<",
-        "a": {
-         "kind": "mul",
-         "a": {
-          "kind": "coef",
-          "id": "merge_effective_fan_in",
-          "dim": "1"
-         },
-         "b": {
-          "kind": "input",
-          "id": "part_bytes_uncompressed",
-          "dim": "B"
-         },
-         "dim": "B"
-        },
-        "b": {
-         "kind": "input",
-         "id": "min_bytes_for_wide_part",
-         "dim": "B"
-        }
-       },
-       "then": {
-        "kind": "const",
-        "value": "compact",
-        "dim": "enum:part_type"
-       },
-       "else": {
-        "kind": "const",
-        "value": "wide",
-        "dim": "enum:part_type"
-       }
-      }
-     ],
+     "kind": "input",
+     "id": "cas_merge_result_blob_uploads",
      "dim": "count"
     }
    ]
@@ -1296,29 +1064,15 @@
            "a": {
             "kind": "add",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_base",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_base",
              "dim": "ms"
             },
             "b": {
              "kind": "mul",
              "a": {
-              "kind": "lookup",
-              "table_id": "gc_round_duration",
-              "keys": [
-               {
-                "kind": "const",
-                "value": "fold_per_part",
-                "dim": "enum:gc_round_term"
-               }
-              ],
+              "kind": "input",
+              "id": "gc_round_duration_fold_per_part",
               "dim": "ms"
              },
              "b": {
@@ -1499,15 +1253,8 @@
          "then": {
           "kind": "add",
           "a": {
-           "kind": "lookup",
-           "table_id": "gc_round_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "fold_get",
-             "dim": "enum:gc_round_term"
-            }
-           ],
+           "kind": "input",
+           "id": "gc_round_requests_fold_get",
            "dim": "count"
           },
           "b": {
@@ -1538,15 +1285,8 @@
              "dim": "1"
             },
             "b": {
-             "kind": "lookup",
-             "table_id": "gc_round_requests",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "deferred_get",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_requests_deferred_get",
              "dim": "count"
             },
             "dim": "count"
@@ -1554,15 +1294,8 @@
            "b": {
             "kind": "add",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_requests",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_get",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_requests_fold_get",
              "dim": "count"
             },
             "b": {
@@ -1666,15 +1399,8 @@
          "dim": "1/s"
         },
         "b": {
-         "kind": "lookup",
-         "table_id": "gc_round_requests",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "fold_get_per_manifest",
-           "dim": "enum:gc_round_term"
-          }
-         ],
+         "kind": "input",
+         "id": "gc_round_requests_fold_get_per_manifest",
          "dim": "count"
         },
         "dim": "1/s"
@@ -1720,29 +1446,15 @@
           "a": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "gc_round_duration",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "fold_base",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_duration_fold_base",
             "dim": "ms"
            },
            "b": {
             "kind": "mul",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_per_part",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_per_part",
              "dim": "ms"
             },
             "b": {
@@ -1921,15 +1633,8 @@
          }
         },
         "then": {
-         "kind": "lookup",
-         "table_id": "gc_round_requests",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "fold_put",
-           "dim": "enum:gc_round_term"
-          }
-         ],
+         "kind": "input",
+         "id": "gc_round_requests_fold_put",
          "dim": "count"
         },
         "else": {
@@ -1944,29 +1649,15 @@
             "dim": "1"
            },
            "b": {
-            "kind": "lookup",
-            "table_id": "gc_round_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "deferred_put",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_requests_deferred_put",
             "dim": "count"
            },
            "dim": "count"
           },
           "b": {
-           "kind": "lookup",
-           "table_id": "gc_round_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "fold_put",
-             "dim": "enum:gc_round_term"
-            }
-           ],
+           "kind": "input",
+           "id": "gc_round_requests_fold_put",
            "dim": "count"
           },
           "dim": "count"
@@ -2021,29 +1712,15 @@
           "a": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "gc_round_duration",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "fold_base",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_duration_fold_base",
             "dim": "ms"
            },
            "b": {
             "kind": "mul",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_per_part",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_per_part",
              "dim": "ms"
             },
             "b": {
@@ -2222,15 +1899,8 @@
          }
         },
         "then": {
-         "kind": "lookup",
-         "table_id": "gc_round_requests",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "fold_list",
-           "dim": "enum:gc_round_term"
-          }
-         ],
+         "kind": "input",
+         "id": "gc_round_requests_fold_list",
          "dim": "count"
         },
         "else": {
@@ -2245,29 +1915,15 @@
             "dim": "1"
            },
            "b": {
-            "kind": "lookup",
-            "table_id": "gc_round_requests",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "deferred_list",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_requests_deferred_list",
             "dim": "count"
            },
            "dim": "count"
           },
           "b": {
-           "kind": "lookup",
-           "table_id": "gc_round_requests",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "fold_list",
-             "dim": "enum:gc_round_term"
-            }
-           ],
+           "kind": "input",
+           "id": "gc_round_requests_fold_list",
            "dim": "count"
           },
           "dim": "count"
@@ -2337,29 +1993,15 @@
           "a": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "gc_round_duration",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "fold_base",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_duration_fold_base",
             "dim": "ms"
            },
            "b": {
             "kind": "mul",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_per_part",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_per_part",
              "dim": "ms"
             },
             "b": {
@@ -2513,29 +2155,15 @@
           "a": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "gc_round_duration",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "fold_base",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_duration_fold_base",
             "dim": "ms"
            },
            "b": {
             "kind": "mul",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_per_part",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_per_part",
              "dim": "ms"
             },
             "b": {
@@ -2749,20 +2377,8 @@
            "dim": "1/s"
           },
           "b": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "dim": "1/s"
@@ -2909,20 +2525,8 @@
           "dim": "1/s"
          },
          "b": {
-          "kind": "lookup",
-          "table_id": "cas_objects_per_part",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-           },
-           {
-            "kind": "input",
-            "id": "part_type",
-            "dim": "enum:part_type"
-           }
-          ],
+          "kind": "input",
+          "id": "cas_blob_uploads_per_part",
           "dim": "count"
          },
          "dim": "1/s"
@@ -3064,20 +2668,8 @@
            "dim": "1/s"
           },
           "b": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "dim": "1/s"
@@ -3317,20 +2909,8 @@
            "dim": "1/s"
           },
           "b": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "dim": "1/s"
@@ -3502,29 +3082,15 @@
            "a": {
             "kind": "add",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_base",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_base",
              "dim": "ms"
             },
             "b": {
              "kind": "mul",
              "a": {
-              "kind": "lookup",
-              "table_id": "gc_round_duration",
-              "keys": [
-               {
-                "kind": "const",
-                "value": "fold_per_part",
-                "dim": "enum:gc_round_term"
-               }
-              ],
+              "kind": "input",
+              "id": "gc_round_duration_fold_per_part",
               "dim": "ms"
              },
              "b": {
@@ -3857,20 +3423,8 @@
              "dim": "1/s"
             },
             "b": {
-             "kind": "lookup",
-             "table_id": "cas_objects_per_part",
-             "keys": [
-              {
-               "kind": "input",
-               "id": "shape",
-               "dim": "enum:shape"
-              },
-              {
-               "kind": "input",
-               "id": "part_type",
-               "dim": "enum:part_type"
-              }
-             ],
+             "kind": "input",
+             "id": "cas_blob_uploads_per_part",
              "dim": "count"
             },
             "dim": "1/s"
@@ -3903,29 +3457,15 @@
             "a": {
              "kind": "add",
              "a": {
-              "kind": "lookup",
-              "table_id": "gc_round_duration",
-              "keys": [
-               {
-                "kind": "const",
-                "value": "fold_base",
-                "dim": "enum:gc_round_term"
-               }
-              ],
+              "kind": "input",
+              "id": "gc_round_duration_fold_base",
               "dim": "ms"
              },
              "b": {
               "kind": "mul",
               "a": {
-               "kind": "lookup",
-               "table_id": "gc_round_duration",
-               "keys": [
-                {
-                 "kind": "const",
-                 "value": "fold_per_part",
-                 "dim": "enum:gc_round_term"
-                }
-               ],
+               "kind": "input",
+               "id": "gc_round_duration_fold_per_part",
                "dim": "ms"
               },
               "b": {
@@ -4160,20 +3700,8 @@
              "dim": "1/s"
             },
             "b": {
-             "kind": "lookup",
-             "table_id": "cas_objects_per_part",
-             "keys": [
-              {
-               "kind": "input",
-               "id": "shape",
-               "dim": "enum:shape"
-              },
-              {
-               "kind": "input",
-               "id": "part_type",
-               "dim": "enum:part_type"
-              }
-             ],
+             "kind": "input",
+             "id": "cas_blob_uploads_per_part",
              "dim": "count"
             },
             "dim": "1/s"
@@ -4206,29 +3734,15 @@
             "a": {
              "kind": "add",
              "a": {
-              "kind": "lookup",
-              "table_id": "gc_round_duration",
-              "keys": [
-               {
-                "kind": "const",
-                "value": "fold_base",
-                "dim": "enum:gc_round_term"
-               }
-              ],
+              "kind": "input",
+              "id": "gc_round_duration_fold_base",
               "dim": "ms"
              },
              "b": {
               "kind": "mul",
               "a": {
-               "kind": "lookup",
-               "table_id": "gc_round_duration",
-               "keys": [
-                {
-                 "kind": "const",
-                 "value": "fold_per_part",
-                 "dim": "enum:gc_round_term"
-                }
-               ],
+               "kind": "input",
+               "id": "gc_round_duration_fold_per_part",
                "dim": "ms"
               },
               "b": {
@@ -4373,29 +3887,15 @@
        "a": {
         "kind": "add",
         "a": {
-         "kind": "lookup",
-         "table_id": "gc_round_duration",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "fold_base",
-           "dim": "enum:gc_round_term"
-          }
-         ],
+         "kind": "input",
+         "id": "gc_round_duration_fold_base",
          "dim": "ms"
         },
         "b": {
          "kind": "mul",
          "a": {
-          "kind": "lookup",
-          "table_id": "gc_round_duration",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "fold_per_part",
-            "dim": "enum:gc_round_term"
-           }
-          ],
+          "kind": "input",
+          "id": "gc_round_duration_fold_per_part",
           "dim": "ms"
          },
          "b": {
@@ -4585,20 +4085,8 @@
        "dim": "1/s"
       },
       "b": {
-       "kind": "lookup",
-       "table_id": "cas_objects_per_part",
-       "keys": [
-        {
-         "kind": "input",
-         "id": "shape",
-         "dim": "enum:shape"
-        },
-        {
-         "kind": "input",
-         "id": "part_type",
-         "dim": "enum:part_type"
-        }
-       ],
+       "kind": "input",
+       "id": "cas_blob_uploads_per_part",
        "dim": "count"
       },
       "dim": "1/s"
@@ -4727,20 +4215,8 @@
         "dim": "1/s"
        },
        "b": {
-        "kind": "lookup",
-        "table_id": "cas_objects_per_part",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
-         },
-         {
-          "kind": "input",
-          "id": "part_type",
-          "dim": "enum:part_type"
-         }
-        ],
+        "kind": "input",
+        "id": "cas_blob_uploads_per_part",
         "dim": "count"
        },
        "dim": "1/s"
@@ -4773,29 +4249,15 @@
        "a": {
         "kind": "add",
         "a": {
-         "kind": "lookup",
-         "table_id": "gc_round_duration",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "fold_base",
-           "dim": "enum:gc_round_term"
-          }
-         ],
+         "kind": "input",
+         "id": "gc_round_duration_fold_base",
          "dim": "ms"
         },
         "b": {
          "kind": "mul",
          "a": {
-          "kind": "lookup",
-          "table_id": "gc_round_duration",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "fold_per_part",
-            "dim": "enum:gc_round_term"
-           }
-          ],
+          "kind": "input",
+          "id": "gc_round_duration_fold_per_part",
           "dim": "ms"
          },
          "b": {
@@ -5066,20 +4528,8 @@
             "dim": "1/s"
            },
            "b": {
-            "kind": "lookup",
-            "table_id": "cas_objects_per_part",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "shape",
-              "dim": "enum:shape"
-             },
-             {
-              "kind": "input",
-              "id": "part_type",
-              "dim": "enum:part_type"
-             }
-            ],
+            "kind": "input",
+            "id": "cas_blob_uploads_per_part",
             "dim": "count"
            },
            "dim": "1/s"
@@ -5118,15 +4568,8 @@
        "b": {
         "kind": "mul",
         "a": {
-         "kind": "lookup",
-         "table_id": "reclaim_delay_periods",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "blob_delete",
-           "dim": "enum:gc_stage"
-          }
-         ],
+         "kind": "input",
+         "id": "reclaim_periods_blob_delete",
          "dim": "1"
         },
         "b": {
@@ -5141,29 +4584,15 @@
           "a": {
            "kind": "add",
            "a": {
-            "kind": "lookup",
-            "table_id": "gc_round_duration",
-            "keys": [
-             {
-              "kind": "const",
-              "value": "fold_base",
-              "dim": "enum:gc_round_term"
-             }
-            ],
+            "kind": "input",
+            "id": "gc_round_duration_fold_base",
             "dim": "ms"
            },
            "b": {
             "kind": "mul",
             "a": {
-             "kind": "lookup",
-             "table_id": "gc_round_duration",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "fold_per_part",
-               "dim": "enum:gc_round_term"
-              }
-             ],
+             "kind": "input",
+             "id": "gc_round_duration_fold_per_part",
              "dim": "ms"
             },
             "b": {
@@ -5303,20 +4732,8 @@
          "b": {
           "kind": "mul",
           "a": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "b": {
@@ -5334,20 +4751,8 @@
          "a": {
           "kind": "mul",
           "a": {
-           "kind": "lookup",
-           "table_id": "cas_objects_per_part",
-           "keys": [
-            {
-             "kind": "input",
-             "id": "shape",
-             "dim": "enum:shape"
-            },
-            {
-             "kind": "input",
-             "id": "part_type",
-             "dim": "enum:part_type"
-            }
-           ],
+           "kind": "input",
+           "id": "cas_blob_uploads_per_part",
            "dim": "count"
           },
           "b": {
@@ -5411,20 +4816,8 @@
        "a": {
         "kind": "mul",
         "a": {
-         "kind": "lookup",
-         "table_id": "cas_objects_per_part",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "shape",
-           "dim": "enum:shape"
-          },
-          {
-           "kind": "input",
-           "id": "part_type",
-           "dim": "enum:part_type"
-          }
-         ],
+         "kind": "input",
+         "id": "cas_blob_uploads_per_part",
          "dim": "count"
         },
         "b": {

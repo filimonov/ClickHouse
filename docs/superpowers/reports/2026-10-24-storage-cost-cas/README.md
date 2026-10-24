@@ -287,6 +287,11 @@ Pinned (registry, source-derived, reconciled exactly by the named cases): `cas_k
 `gc` carries `backlog_grows` when retired blobs per round exceed the graduation or the redelete budget (0 means
 unbounded).
 
+The cells read the measured tables through registry derivations (`cas_blob_uploads_per_part`,
+`cas_merge_result_blob_uploads`, `gc_round_requests_<term>`, `gc_round_duration_<term>`,
+`reclaim_periods_blob_delete`), whose rules are the lookups. A cell describes a month, not a pass, so the per-pass
+check is each card's own exact assertion set; the measured-fixture builder lists these edges as coefficient-only.
+
 Assumed inputs (registry, `basis: assumption`, each with its reason): `cas_hash_hit_fraction` 0 (no repeated
 content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the data), `cas_ref_log_tail_records`
 128 (half the snapshot threshold), `cas_blob_bytes` 1 MiB and `cas_manifest_bytes` 13 000 B (measured 13 019 and
