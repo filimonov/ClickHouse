@@ -10,11 +10,11 @@
    ],
    "values": {
     "narrow|compact": 1,
-    "narrow|wide": 10,
+    "narrow|wide": 8,
     "wide|compact": 1,
-    "wide|wide": 80,
+    "wide|wide": 41.3333,
     "types|compact": 2,
-    "types|wide": 135
+    "types|wide": 75
    }
   },
   "validity": {
@@ -79,7 +79,7 @@
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
   },
   "status": "ok",
-  "rule": "distinct blob uploads per part, as an upper bound: Compact 1 (data.bin) plus 1 per projection; Wide 2 per substream (.bin and .cmrk2); a file whose bytes equal an earlier file of the pool is not uploaded again. The bound holds with equality when no two blob files are byte-equal (narrow Compact and Wide, wide and types Compact); mark files of streams with equal compressed block sizes coincide, so the measured uploads of the wide and types Wide cases are 0.52 and 0.56 of the bound (validation report)",
+  "rule": "distinct blob uploads per part, measured on the objects-per-part generators of each shape: Compact 1 (data.bin) plus 1 per projection; Wide 2 per substream (.bin and .cmrk2) minus the files whose bytes equal an earlier blob of the pool (not uploaded again). Mark files of streams with equal compressed block sizes coincide, so the count depends on the data: the bound without coinciding files is narrow Wide 10, wide Wide 80, types Wide 135 (reached by cas-branches.fresh and .adoption for narrow Wide). Validation report",
   "holdout_measurements": [
    "cost-20261024T104750Z/cas/cas-branches/inline/k1",
    "cost-20261024T104750Z/cas/cas-branches/inline/k2",
@@ -87,12 +87,15 @@
    "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k1",
    "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k2",
    "cost-20261024T104750Z/cas/cas-branches/mix-holdout-2/k3",
-   "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k1",
-   "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k2",
-   "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k3",
-   "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k1",
-   "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k2",
-   "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k3"
+   "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k1",
+   "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k2",
+   "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k3",
+   "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k1",
+   "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k2",
+   "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k3",
+   "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k1",
+   "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k2",
+   "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k3"
   ]
  },
  {

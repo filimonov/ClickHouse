@@ -255,7 +255,7 @@ Measured (owner `cas`, `coefficients.json`); each has a fit and a distinct hold-
 
 | Coefficient | Value | Fit | Hold-out | Validity |
 |---|---|---|---|---|
-| `cas_objects_per_part[shape][part_type]` | narrow Compact 1, narrow Wide 10; wide Compact 1, wide Wide 80; types Compact 2, types Wide 135 blob files (upper bound, see the validation report) | `fresh`, `adoption`, `staging-peak`; `objects-per-part.*` (validation report) | `inline`, `mix-holdout-2`; `objects-per-part.types-holdout-2` | 100–4 000 000 rows per insert |
+| `cas_objects_per_part[shape][part_type]` | distinct uploads of the shape generators: narrow Compact 1, narrow Wide 8; wide Compact 1, wide Wide 41.33; types Compact 2, types Wide 75 (data-dependent, see the validation report) | `fresh`, `adoption`, `staging-peak`; `objects-per-part.*` (validation report) | `inline`, `mix-holdout-2`; `objects-per-part.*-2` (validation report) | 100–4 000 000 rows per insert |
 | `cas_branch_population[write][branch]` | per part write, e.g. one-column mutation: fresh 1, hash hit 1, adoption 8, inline 9 | `fresh`, `hash-hit`, `adoption`, `staging-peak` | `mix-holdout-2` | as above |
 | `gc_round_requests[term]` | fold GET 17 + 1 per new manifest + 1 per tail log record, PUT 5, LIST 4; Deferred GET 12, PUT 1, LIST 3; per blob object 0 | `objects-1k`, `objects-10k` (residual 0) | `objects-5k`, `objects-3k` | 1 017–9 949 objects |
 | `gc_round_duration[term]` | fold 260.1 ms + 3.114 ms per new part (±39.2 ms, the largest fit or hold-out residual); Deferred 25.8 ms | `objects-1k`, `objects-10k` | `objects-3k` | as above |

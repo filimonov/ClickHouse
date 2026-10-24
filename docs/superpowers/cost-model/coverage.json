@@ -218,6 +218,45 @@
           "duration_s": 60,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "narrow-wide-2",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "wide-wide-2",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "types-fit-wide-2",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     },
@@ -16129,44 +16168,6 @@
       "status": "consumed"
     },
     {
-      "coefficient": "cas_objects_per_part",
-      "experiment_id": "objects-per-part.types-holdout-2",
-      "policy": "cas",
-      "span": {
-        "insert_rows": [
-          70000,
-          70000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "03f8c0489a2",
-      "measurement_ids": [
-        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k1",
-        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k2",
-        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "cas_objects_per_part",
-      "experiment_id": "objects-per-part.types-holdout-2",
-      "policy": "cas_cached",
-      "span": {
-        "insert_rows": [
-          70000,
-          70000
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "03f8c0489a2",
-      "measurement_ids": [
-        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k1",
-        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k2",
-        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k3"
-      ],
-      "status": "done"
-    },
-    {
       "coefficient": "part_type_predicate",
       "experiment_id": "boundaries.compact-below-bytes",
       "policy": "cas",
@@ -16731,6 +16732,101 @@
         "cost-20261024T154049Z/cas/replication-natural-fit/validation/k1",
         "cost-20261024T154049Z/cas/replication-natural-fit/validation/k2",
         "cost-20261024T154049Z/cas/replication-natural-fit/validation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          70000,
+          70000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k1",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k2",
+        "cost-20261024T154049Z/cas/objects-per-part/types-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-holdout-2",
+      "policy": "cas_cached",
+      "span": {
+        "insert_rows": [
+          70000,
+          70000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "03f8c0489a2",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k1",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k2",
+        "cost-20261024T154049Z/cas_cached/objects-per-part/types-holdout-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.narrow-wide-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "168f71aea78",
+      "measurement_ids": [
+        "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k1",
+        "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k2",
+        "cost-20261024T162519Z/cas/objects-per-part/narrow-wide-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.wide-wide-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          40000,
+          40000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "168f71aea78",
+      "measurement_ids": [
+        "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k1",
+        "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k2",
+        "cost-20261024T162519Z/cas/objects-per-part/wide-wide-2/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_objects_per_part",
+      "experiment_id": "objects-per-part.types-fit-wide-2",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          90000,
+          90000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "168f71aea78",
+      "measurement_ids": [
+        "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k1",
+        "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k2",
+        "cost-20261024T162519Z/cas/objects-per-part/types-fit-wide-2/k3"
       ],
       "status": "done"
     }

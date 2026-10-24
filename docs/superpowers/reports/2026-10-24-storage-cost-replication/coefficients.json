@@ -433,9 +433,9 @@
       }
     },
     "validity": {
-      "inserts_while_down": [
-        250,
-        500
+      "missed_parts_per_restart": [
+        5,
+        5
       ]
     },
     "tolerance": {

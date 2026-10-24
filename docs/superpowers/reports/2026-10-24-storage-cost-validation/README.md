@@ -9,16 +9,16 @@ doc_type: 'reference'
 
 # Storage cost calculator — validation and hold-out ledger {#validation}
 
-Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3`, `s3plain` and CAS: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The run holds 111 records, 99 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
+Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3`, `s3plain` and CAS: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 120 records, 108 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
 
 | Item | Value |
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report run | `cost-20261024T154049Z`; `measurements.jsonl` holds its 111 records, 99 ok |
-| Rig | the run executes the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
+| Report runs | `cost-20261024T154049Z` and `cost-20261024T162519Z` (the CAS point hold-outs); `measurements.jsonl` holds their 120 records, 108 ok |
+| Rig | both runs execute the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
 | Earlier runs | `cost-20261024T145603Z` (calibration) and `cost-20261024T151251Z` (first report run); §[Cases](#cases) says what each found. Neither is in `measurements.jsonl` |
-| Predictions | at `849c483095f`, before any run of their case; `types-holdout-2`, `merge-30k` and the revised `cas_cached` fit counts at `03f8c0489a2`, after the first run; the replication report's fault predictions at `2c006846dbc`, `0bc1e557850` and `bac037b336d` |
+| Predictions | at `849c483095f`, before any run of their case; `types-holdout-2`, `merge-30k` and the revised `cas_cached` fit counts at `03f8c0489a2`, after the first run; the CAS point hold-outs at `168f71aea78`; the replication report's fault predictions at `2c006846dbc`, `0bc1e557850` and `bac037b336d` |
 | Store | RustFS behind the ledger proxy; every ok record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
 | Cuts | `gc-under-load.default` and `amplification-run.2h` (owner directive D14): no run; coverage `status: cut` |
 
@@ -43,7 +43,8 @@ Cases (K = 3 each, one invocation per run):
 |---|---|---|---|
 | `objects-per-part.narrow-compact`, `.narrow-wide`, `.wide-compact`, `.wide-wide`, `.types-fit-compact`, `.types-fit-wide` | `cas`, `cas_cached` | fit | `cas_objects_per_part` |
 | `objects-per-part.types-holdout` | `cas`, `cas_cached` | hold-out (consumed in the first run) | `cas_objects_per_part` |
-| `objects-per-part.types-holdout-2` | `cas`, `cas_cached` | hold-out (fresh) | `cas_objects_per_part` |
+| `objects-per-part.types-holdout-2` | `cas`, `cas_cached` | bound check (validation) | `cas_objects_per_part` |
+| `objects-per-part.narrow-wide-2`, `.wide-wide-2`, `.types-fit-wide-2` | `cas` | hold-out (second run) | `cas_objects_per_part` |
 | `boundaries.compact-below-bytes`, `.wide-above-bytes` | `cas` | fit | `part_type_predicate` |
 | `boundaries.wide-equal-bytes` | `cas` | hold-out | `part_type_predicate` |
 | `replication-fetch.insert-3` | `s3plain`, `cas` | hold-out | `acquire_requests`, `acquire_bytes` |
@@ -61,7 +62,7 @@ consumed one (rows, parts, source rows, the faulted request).
 
 ## Cases and verdicts {#cases}
 
-Run `cost-20261024T154049Z`, K = 3 per case and policy. Role is the coverage edge; `consumed` marks a falsified
+Runs `cost-20261024T154049Z` and `cost-20261024T162519Z`, K = 3 per case and policy. Role is the coverage edge; `consumed` marks a falsified
 hold-out or a failed validation.
 
 | Case | Policy | ok / passes | Role |
@@ -89,8 +90,11 @@ hold-out or a failed validation.
 | `objects-per-part.types-fit-wide` | `cas_cached` | 3 / 3 | fit |
 | `objects-per-part.types-holdout` | `cas` | 0 / 3 | holdout (consumed) |
 | `objects-per-part.types-holdout` | `cas_cached` | 0 / 3 | holdout (consumed) |
-| `objects-per-part.types-holdout-2` | `cas` | 3 / 3 | holdout |
-| `objects-per-part.types-holdout-2` | `cas_cached` | 3 / 3 | holdout |
+| `objects-per-part.types-holdout-2` | `cas` | 3 / 3 | validation |
+| `objects-per-part.types-holdout-2` | `cas_cached` | 3 / 3 | validation |
+| `objects-per-part.narrow-wide-2` | `cas` | 3 / 3 | holdout |
+| `objects-per-part.wide-wide-2` | `cas` | 3 / 3 | holdout |
+| `objects-per-part.types-fit-wide-2` | `cas` | 3 / 3 | holdout |
 | `objects-per-part.wide-compact` | `cas` | 3 / 3 | fit |
 | `objects-per-part.wide-compact` | `cas_cached` | 3 / 3 | fit |
 | `objects-per-part.wide-wide` | `cas` | 3 / 3 | fit |
@@ -108,7 +112,8 @@ The 12 FAILED records stay in `measurements.jsonl` as findings:
 
 - **`objects-per-part.types-holdout`** (`cas`, `cas_cached`): `PutObject` 244, predicted 298..570. That is 57.5
   distinct uploads per part of 139 blob candidates (0.41), below the band's floor (0.52, the smallest fitted Wide
-  ratio). Falsified in the first run, consumed; fresh hold-out `types-holdout-2`.
+  ratio). Falsified in the first run, consumed. Its replacement `types-holdout-2` is a bound check; the point
+  hold-outs of the value are `narrow-wide-2`, `wide-wide-2` and `types-fit-wide-2` (§[CAS shapes](#cas-shapes)).
 - **`replication-local.merge-40k`** on `s3plain`: the prediction listed `r2` only, and the card enforces exact
   counts on `s3plain`, so `r1`'s own merge requests (`GetObject` 32, `HeadObject` 1, `PutObject` 13) were
   unpredicted. A prediction defect found in the first run; consumed; fresh hold-out `merge-30k` predicts both replicas.
@@ -129,8 +134,10 @@ Earlier runs, not in `measurements.jsonl`:
 
 Distinct blob uploads per part = (`PutObject` − 7 × parts) / 2 (publish `PutObject` 7 per part; a fresh blob is
 `HeadObject`, `PutObject` of the body and of its `.meta`; `Pool/CasPartWriteTxn.cpp:397`). Blob candidates are the
-part's `.bin`, `.mrk*`, `.cmrk*`, `primary.idx` and `data.packed` files
-(`ContentAddressedTransaction.cpp:67`), counted from the `s3` layout of the same manifest.
+part's files ending in `.bin`, `.mrk`, `.mrk2`, `.mrk3`, `.cmrk`, `.cmrk2` or `.cmrk3`, plus `primary.idx` and
+`data.packed` (`ContentAddressedTransaction.cpp:77`), counted from the `s3` layout of the same manifest. Every other
+file (Compact `data.cmrk4` and `primary.cidx` included) is inline unless it outgrows the inline cap, in which case it
+spills to a blob (`:998`); no file of these cases did.
 
 | Case | Parts | Candidates per part | Uploads per part | Ratio | `cas` HEAD / GET / LIST | `cas_cached` HEAD / GET / LIST |
 |---|---|---|---|---|---|---|
@@ -141,17 +148,22 @@ part's `.bin`, `.mrk*`, `.cmrk*`, `primary.idx` and `data.packed` files
 | `wide-wide` | 3 | 80 | 41.33 | 0.52 | 132 / 42 / 6 | 138 / 57 / 12 |
 | `types-fit-wide` | 1 | 135 | 75 | 0.56 | 81 / 20 / 6 | 87 / 31 / 12 |
 | `types-holdout` (consumed) | 2 | 139 | 57.5 | 0.41 | 158 / 67 / 6 | 164 / 80 / 12 |
-| `types-holdout-2` (hold-out) | 2 | 139 | 57.5 | 0.41 | 158 / 67 / 6 | 164 / 80 / 12 |
+| `types-holdout-2` (bound check) | 2 | 139 | 57.5 | 0.41 | 158 / 67 / 6 | 164 / 80 / 12 |
+| `narrow-wide-2` (hold-out, 300 000 rows) | 3 | 10 | 8 | 0.80 | 36 / 46 / 6 | — |
+| `wide-wide-2` (hold-out, 40 000 rows) | 3 | 80 | 41.33 | 0.52 | 132 / 42 / 6 | — |
+| `types-fit-wide-2` (hold-out, 90 000 rows) | 1 | 135 | 75 | 0.56 | 81 / 20 / 6 | — |
 
 - **Collapse.** A blob whose bytes equal an earlier blob of the pool is not uploaded again. Mark files of streams
   whose compressed blocks have equal sizes are byte-equal: random `UInt64` columns compress to equal block sizes,
   so 40 of them share a few mark files. The count therefore depends on the data, not only on the shape.
-- **Value.** `cas_objects_per_part` keeps the candidate count as an upper bound: narrow Compact 1, narrow Wide 10,
-  wide Compact 1, wide Wide 80, types Compact 2, types Wide 135. It is exact when no two blob files are equal
-  (every Compact case; narrow Wide in `cas-branches.fresh` and `.adoption`). On this rig's generators the Wide
-  cases measured 0.41–0.80 of it, so CAS insert `PutObject` can be priced up to 2.4× high for Wide parts.
-- **Hold-out.** `types-holdout-2` (70 000 rows per part, predicted at `03f8c0489a2`) checks the bound: uploads per
-  part in [42, 139]; measured 57.5. It is a bound check, not a point prediction.
+- **Value.** `cas_objects_per_part` is the measured count of the shape generators (the cases behind the `shape`
+  input): narrow Compact 1, narrow Wide 8, wide Compact 1, wide Wide 41.3333, types Compact 2, types Wide 75. Data
+  whose mark files never coincide reaches the candidate count (narrow Wide 10 in `cas-branches.fresh` and
+  `.adoption`; wide 80, types 135), so the value prices the generators' data, not every table of that shape.
+- **Hold-outs.** `narrow-wide-2`, `wide-wide-2` and `types-fit-wide-2` run the fit generators at other row counts,
+  predicted with the fit counts at `168f71aea78` before their first run (`cost-20261024T162519Z`): all nine passes
+  are exact. `types-holdout-2` (a different schema, predicted at `03f8c0489a2`) checks only that uploads lie in
+  [42, 139] (measured 57.5); its edges are `validation`, not hold-out.
 - **Observer reads.** The `objects-per-part` window contains the card's `system.remote_data_paths` snapshot. On a
   CAS disk it sends `HeadObject` 6, `ListObjectsV2` 6 and `GetObject` 9 per table plus `GetObject` 2 per part
   (the `GetObject` 10 per table and per part above include them); `cas_cached` lists both disk names and doubles
@@ -174,8 +186,9 @@ lifecycle fit `merge_effective_fan_in` = 6.1437 (abs 0.2502) over each record's 
 | `cas` | 0 / 3 | 11 | 6.364 | 2.5522 | 2.3755 | +0.177 | 0.067 / 0.087 |
 
 - **Same on every variant.** The merge selector does not read the disk: all nine records merged 64 parts in 11
-  merges to the same final sizes. Residuals are inside the fit tolerance 0.2502; distributions are inside their
-  total-variation limits (0.3426 and 0.3852).
+  merges, and eight ended with the final sizes 23, 23, 6, 6, 6 (inserted parts). `s3` repeat 2 ended with 27, 23, 6,
+  6, 1, 1. Residuals are inside the fit tolerance 0.2502; distributions are inside their total-variation limits
+  (0.3426 and 0.3852).
 - **Difference.** `cas` is measured but not `ok`: the observer reads after the cutoff fail the window assertion.
   Its values come from the FAILED records' partial observations; they are not evidence edges.
 - **R4-2.** Every `ok` record carries `quiet_cutoff_us` and `cutoff_us`. Replaying
@@ -212,7 +225,7 @@ tolerance; sender rows subtract the originator's own reads of the matching `repl
 | `acquire_bytes` | `replication-fetch.insert-3` | `cas` | relay bytes / bytes on disk | 0.00881 | 0.00591 | rel 0.05 | **no** |
 | `acquire_requests` | `replication-fetch.insert-3` | `s3plain` | receiver `GetObject`, `PutObject`, `HeadObject` per part | 9, 13, 1 | 9, 13, 1 | 1.0 | yes |
 | `acquire_requests` | `replication-fetch.insert-3` | `s3plain` | sender `GetObject` per part | 11 | 11 | 1.0 | yes |
-| `acquire_bytes` | `replication-fetch.insert-3` | `s3plain` | relay bytes / bytes on disk | 1.0008 | 1.0008 | rel 0.05 | yes |
+| `acquire_bytes` | `replication-fetch.insert-3` | `s3plain` | relay bytes / bytes on disk | 1.0008 | 1.0005 | rel 0.05 | yes |
 | `local_exec_requests` | `replication-local.merge-40k` | `cas` | `GetObject`, `PutObject`, `HeadObject` per merge | 9.67, 7, 1 | 9.67, 7, 1 | 1.0 | yes |
 | `local_exec_requests` | `replication-local.merge-30k` | `s3plain` | `GetObject`, `PutObject`, `HeadObject` per merge, both replicas | 32, 13, 1 | 32, 13, 1 | 1.0 | yes |
 | `retry_outcome_mix` | `faults.put-5xx-nth5` | `cas` | rejected `PutObject` attempts | +1 over `faults.none` (9) | 10 | 0 | yes |
@@ -251,7 +264,7 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | `acquire_requests` | `cas` | `replication-fetch.insert-wide` | `replication-fetch.insert-3` (done) |
 | `acquire_requests` | `s3plain` | `replication-fetch.insert-wide` | `replication-fetch.insert-3` (done) |
 | `cas_branch_population` | `cas` | `cas-branches.mix-holdout` | `cas-branches.mix-holdout-2` (done) |
-| `cas_objects_per_part` | `cas` | `cas-branches.mix-holdout`, `objects-per-part.types-holdout` | `cas-branches.inline`, `cas-branches.mix-holdout-2`, `objects-per-part.types-holdout-2` (done) |
+| `cas_objects_per_part` | `cas` | `cas-branches.mix-holdout`, `objects-per-part.types-holdout` | `cas-branches.inline`, `cas-branches.mix-holdout-2`, `objects-per-part.narrow-wide-2`, `.wide-wide-2`, `.types-fit-wide-2` (done) |
 | `delete_calls_per_removed_part` | `s3` | `drop.partition-3` | `drop.partition-2` (done) |
 | `empty_part_objects` | `s3` | `drop.partition-3` | `drop.partition-2` (done) |
 | `failed_upload_residue` | `cas` | `faults.multipart-abort-part3b` | `faults.multipart-abort-part3c` (done) |
@@ -282,12 +295,12 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 
 | Coefficient | Gap |
 |---|---|
-| `cas_objects_per_part` | an upper bound: measured uploads are 0.41–0.80 of it for Wide parts on the rig's data; no rule predicts which mark files coincide |
+| `cas_objects_per_part` | data-dependent: the Wide values are the generators' counts; other data uploads up to the candidate count (narrow Wide 10, wide 80, types 135); no rule predicts which mark files coincide |
 | `acquire_bytes[cas]` | the ratio model does not hold: relay bytes are about 19–20 KB per part whatever the part's bytes; no CAS cell reads it |
 | `merge_effective_fan_in`, `merge_fan_in_distribution`, `merge_result_size_distribution` | validated on `s3` and `s3plain`; on `cas` the records fail on the card's own snapshot reads, with identical merge history |
 | `failed_upload_residue` | 0 on every variant within `upload_parts` 2–4; a part answered after the abort started stays in the replay's upper bound (replication report) |
 | `local_exec_requests` | per merge of 4 Compact sources; `GetObject` scales with sources (8 per source on `s3`, `s3plain`), so the per-merge value holds at 4 sources only |
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not run here: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. The EBS report owns these terms (`io-sizes` passes per operation, fit rules in `ebs_fit.py` at `c2a9eed0b85`) |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not measured: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. The EBS report cut those cells (`unsupported_cut`, edges `cut`; its §Cut operations) |
 
 ## Carried items {#carried}
 
@@ -307,15 +320,26 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 
 | Item | Placement |
 |---|---|
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | the EBS report (traced `io-sizes` passes per operation) |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | Tier 2: traced passes of those operations on `local` (cut by the EBS report) |
 | CAS natural-merge validation | Tier 2: the lifecycle card's snapshot reads must leave the window, or be excluded as observer traffic, before the cutoff assertion can hold on CAS |
-| CAS uploads per part below the bound | Tier 2: a mark-collapse rule from compressed block sizes, or a measured ratio per data profile |
+| CAS uploads per part for other data | Tier 2: a mark-collapse rule from compressed block sizes, or a measured count per data profile |
 | `acquire_bytes[cas]` as bytes per part | Tier 2: refit as bytes per part (manifest size per file) |
 | snapshot reads inside `S3Card` windows on CAS | Tier 2: snapshot after the window end; today no cell prices them |
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_validation_prompt.txt`, log `tmp/codex_validation_r1.log`): pending.
+One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_validation_prompt.txt`, log
+`tmp/codex_validation_r1.log`): 3 MAJOR, 4 MINOR, verdict REVISE. All closed:
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | MAJOR | `cas_objects_per_part` priced its upper bound as an exact count (wide Wide 80 against 41.33 measured) | closed: the value is the measured count of the shape generators; the bound is stated as the data-dependent ceiling (§[CAS shapes](#cas-shapes)) |
+| 2 | MAJOR | `types-holdout-2` checks a band, not the coefficient | closed: its edges are `validation`; point hold-outs `narrow-wide-2`, `wide-wide-2`, `types-fit-wide-2` predicted at `168f71aea78`, exact in run `cost-20261024T162519Z` |
+| 3 | MAJOR | catch-up validity `inserts_while_down` is no registry input, so the page cannot flag extrapolation | closed: validity is `missed_parts_per_restart` [5, 5] (both restart cases fetched 5 parts) |
+| 4 | MINOR | placement prose listed `.mrk*`/`.cmrk*` and omitted the inline spill | closed: exact suffixes (`ContentAddressedTransaction.cpp:77`) and the spill (`:998`) |
+| 5 | MINOR | "same final sizes" in all nine merge records | closed: `s3` repeat 2 ended with 27, 23, 6, 6, 1, 1 |
+| 6 | MINOR | `s3plain` byte ratio 1.0008 | closed: 1.0005 |
+| 7 | MINOR | EBS placement named evidence that does not exist | closed: the EBS report cut those cells; placement Tier 2 |
 
 ## Reproduce {#reproduce}
 
