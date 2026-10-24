@@ -1,0 +1,1022 @@
+{
+  "schema": "coverage/1",
+  "version": "0.1.0",
+  "cards": [
+    {
+      "name": "objects-per-part",
+      "family": "objects_per_part_by_shape",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "narrow-compact",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "narrow-wide",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "wide-compact",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "wide-wide",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "types-fit",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "types-holdout",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "boundaries",
+      "family": "thresholds",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "part-size-sequence",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "big-insert-multipart",
+      "family": "multipart_graph",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "multipart",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "small-inserts",
+      "family": "lifecycle",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "small-inserts",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "merge-natural",
+      "family": "lifecycle",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "merge-natural",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "merge-forced",
+      "family": "lifecycle",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "merge-forced",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "async-inserts",
+      "family": "lifecycle",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "async-inserts",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "amplification-run",
+      "family": "lifecycle",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "amplification-run",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "mutation",
+      "family": "mutation_deletes",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "compact",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "wide",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "lightweight-delete",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "drop",
+      "family": "mutation_deletes",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "partition",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "ttl",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "drop-table-sync",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "detach-attach",
+      "family": "mutation_deletes",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "detach-attach",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "cold-select",
+      "family": "reads_cache",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "cache-off",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "cache-on",
+          "policies": [
+            "s3_cached",
+            "s3plain_cached",
+            "cas_cached"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "cache-eviction",
+      "family": "reads_cache",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "cache-eviction",
+          "policies": [
+            "s3_cached",
+            "s3plain_cached",
+            "cas_cached"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "startup",
+      "family": "startup_recovery",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "startup",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "restart-catchup",
+      "family": "startup_recovery",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "restart-catchup",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "replacement",
+      "family": "startup_recovery",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "replacement",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 3,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "replication",
+      "family": "replication",
+      "model_variants": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "replication-fetch",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "replication-local",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "replication-natural",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "replication-natural-fit",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "replication-zero-copy",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "faults",
+      "family": "faults",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas",
+        "ebs"
+      ],
+      "cases": [
+        {
+          "case_id": "fault-put-5xx",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "fault-lost-response",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "fault-multipart-abort",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "fault-fetch",
+          "policies": [
+            "local",
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "cas-branches",
+      "family": "cas_branches",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "fresh",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "hash-hit",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "adoption",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "inline",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "staging-peak",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "cas-drop",
+      "family": "cas_branches",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "foreground-ref-removal",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "gc-lifecycle",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "reclaim-delay-by-stage",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "gc-idle",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "populated-pool",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "gc-scale",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "objects-1k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "objects-10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "objects-100k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P1",
+          "status": "planned"
+        },
+        {
+          "case_id": "mounts",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P2",
+          "status": "planned"
+        },
+        {
+          "case_id": "ref-growth",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 1800,
+          "priority": "P2",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "lease",
+      "family": "cas_lease",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "lease",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "name": "local-volume-sampling",
+      "family": "local_volumes",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "sampled-on-every-card",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 3,
+          "timeout_s": 900,
+          "priority": "P1",
+          "status": "planned"
+        }
+      ]
+    }
+  ],
+  "evidence": [],
+  "domain": {
+    "variants": [
+      "ebs",
+      "s3",
+      "s3plain",
+      "cas"
+    ],
+    "operations": [
+      "storage",
+      "inserts",
+      "merges",
+      "mutations",
+      "deletes",
+      "reads",
+      "recovery",
+      "local_disk"
+    ],
+    "families": [
+      "objects_per_part_by_shape",
+      "thresholds",
+      "multipart_graph",
+      "lifecycle",
+      "mutation_deletes",
+      "reads_cache",
+      "startup_recovery",
+      "replication",
+      "faults",
+      "cas_branches",
+      "cas_gc",
+      "cas_lease",
+      "local_volumes"
+    ]
+  },
+  "excluded": [
+    "S3 staging backend",
+    "shards > 1",
+    "io2/st1",
+    "the 26.6 binary",
+    "GCS/Azure values",
+    "KMS",
+    "VPC endpoints",
+    "Keeper",
+    "versioned buckets",
+    "namespace layouts other than those the supported tables and replica roots generate"
+  ]
+}

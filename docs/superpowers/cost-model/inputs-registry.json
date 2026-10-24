@@ -1,0 +1,287 @@
+{
+  "schema": "registry/1",
+  "version": "0.1.0",
+  "quantities": [
+    {
+      "id": "data_bytes",
+      "block": "simple",
+      "label": "Data size",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 20480,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "ingest_rate",
+      "block": "simple",
+      "label": "Ingest rate",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "GiB/day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 500,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "retention_days",
+      "block": "simple",
+      "label": "Retention",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 40,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "replicas",
+      "block": "simple",
+      "label": "Replicas",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "replicas": [
+          1,
+          6
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "shards",
+      "block": "simple",
+      "label": "Shards",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": {
+        "shards": [
+          1,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cache_enabled",
+      "block": "reads_cache",
+      "label": "Filesystem cache enabled",
+      "kind": "input",
+      "scope": "replica",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "0",
+        "1"
+      ],
+      "table": null,
+      "default": "1",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "shape",
+      "block": "schema",
+      "label": "Table shape",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "narrow",
+        "wide"
+      ],
+      "table": null,
+      "default": "narrow",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "part_type",
+      "block": "schema",
+      "label": "Part type",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "compact",
+        "wide"
+      ],
+      "table": null,
+      "default": "wide",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "type_mix",
+      "block": "schema",
+      "label": "Column type mix",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "plain",
+        "mixed",
+        "complex"
+      ],
+      "table": null,
+      "default": "plain",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    }
+  ],
+  "sets": {},
+  "precedence": [
+    {
+      "group": [
+        "data_bytes",
+        "ingest_rate",
+        "retention_days"
+      ],
+      "default_locked": [
+        "ingest_rate",
+        "retention_days"
+      ],
+      "rules": {
+        "data_bytes": {
+          "kind": "mul",
+          "dim": "GiB",
+          "a": {
+            "kind": "input",
+            "dim": "GiB/day",
+            "id": "ingest_rate"
+          },
+          "b": {
+            "kind": "input",
+            "dim": "day",
+            "id": "retention_days"
+          }
+        },
+        "ingest_rate": {
+          "kind": "div",
+          "dim": "GiB/day",
+          "a": {
+            "kind": "input",
+            "dim": "GiB",
+            "id": "data_bytes"
+          },
+          "b": {
+            "kind": "input",
+            "dim": "day",
+            "id": "retention_days"
+          },
+          "on_zero": "unavailable"
+        },
+        "retention_days": {
+          "kind": "div",
+          "dim": "day",
+          "a": {
+            "kind": "input",
+            "dim": "GiB",
+            "id": "data_bytes"
+          },
+          "b": {
+            "kind": "input",
+            "dim": "GiB/day",
+            "id": "ingest_rate"
+          },
+          "on_zero": "unavailable"
+        }
+      }
+    }
+  ]
+}
