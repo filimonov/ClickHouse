@@ -6,6 +6,7 @@ const path = require('node:path');
 const urlstate = require('../urlstate.js');
 
 const contract = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'model-contract.json'), 'utf8'));
+const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 const fullState = () => ({
@@ -36,6 +37,7 @@ test('test_url_with_unknown_versions_sets_cannot_reproduce', () => {
   s.manifest.evidence[0].commit = 'deadbeef';
   const r = urlstate.decode(urlstate.encode(s), contract);
   assert.equal(r.problem.kind, 'cannot_reproduce');
+  assert.equal(r.state, null);
   const reg = r.problem.missing.find((m) => m.artifact === 'registry' && m.field === 'registry_version');
   assert.equal(reg.version, '0.1.0');
   assert.equal(reg.loaded_value, contract.manifest.registry_version);
@@ -58,8 +60,36 @@ test('test_hash_is_url_safe', () => {
   const a = { z: 1, a: { y: 2, b: 3 } };
   const b = { a: { b: 3, y: 2 }, z: 1 };
   assert.equal(urlstate.encode(a), urlstate.encode(b));
-  // Lengths 1..4 bytes exercise every padding-free tail.
-  for (const v of ['a', 'ab', 'abc', 'abcd']) assert.deepEqual(urlstate.decode(urlstate.encode({ manifest: clone(contract.manifest), v }), contract).state.v, v);
+  // Payload lengths of 1 to 4 bytes exercise every padding-free tail length (mod 3).
+  for (const v of ['a', 'ab', 'abc', 'abcd']) assert.deepEqual(urlstate.decode(urlstate.encode(Object.assign(fullState(), { v })), contract).state.v, v);
+});
+
+test('test_every_manifest_entry_is_compared', () => {
+  const mutate = (f) => { const s = fullState(); f(s.manifest); return urlstate.decode(urlstate.encode(s), contract).problem; };
+  const field = (p, f) => p.missing.some((m) => m.field === f);
+  assert.ok(field(mutate((m) => { m.evidence[0].binary_sha256 = '00'; }), 'binary_sha256'));
+  assert.ok(field(mutate((m) => { m.evidence[1].rig_commit = '00'; }), 'rig_commit'));
+  assert.ok(field(mutate((m) => { m.code_files['model.js'] = '00'; }), 'code_files.model.js'));
+  assert.ok(field(mutate((m) => { m.code_missing = []; }), 'code_missing'));
+  assert.ok(field(mutate((m) => { delete m.code_files['billing.js']; }), 'code_files.billing.js'));
+  // Loaded side lacking an entry.
+  const loaded = clone(contract);
+  delete loaded.manifest.coverage_sha256;
+  loaded.manifest.evidence.pop();
+  const p = urlstate.decode(urlstate.encode(fullState()), loaded).problem;
+  assert.ok(field(p, 'coverage_sha256'));
+  assert.ok(p.missing.some((m) => m.field === 'report' && m.loaded_value === null));
+  assert.throws(() => urlstate.decode(urlstate.encode(fullState()), {}), TypeError);
+});
+
+test('test_hash_has_no_standard_base64_characters', () => {
+  // 0xfb 0xff 0xbf encodes to "+/+/" in standard base64 and 0xff pads to "/w==".
+  const s = fullState();
+  s.inputs.bytes = '\u00fb\u00ff\u00bf\u00ff~~?>>>';
+  const h = urlstate.encode(s);
+  assert.doesNotMatch(h, /[+/=]/);
+  assert.deepEqual(urlstate.decode(h, contract).state, s);
+  assert.match(Buffer.from('\xfb\xff\xbf', 'latin1').toString('base64'), /[+/]/);
 });
 
 test('test_malformed_hash_is_a_problem_not_partial_state', () => {
@@ -71,6 +101,16 @@ test('test_malformed_hash_is_a_problem_not_partial_state', () => {
     '#v1.' + Buffer.from([0xff, 0xfe, 0xfd]).toString('base64url'),
     '#v1.' + Buffer.from('{"manifest":').toString('base64url'),
   ];
+  const noInputs = fullState();
+  delete noInputs.inputs;
+  cases.push(urlstate.encode(noInputs));
+  const badType = fullState();
+  badType.locks = 'x';
+  cases.push(urlstate.encode(badType));
+  // Non-canonical tail: same bytes as `good` but with nonzero pad bits in the last character.
+  const g = good.slice(4);
+  const alt = ALPHA[(ALPHA.indexOf(g.slice(-1)) + 1) % 64];
+  if (g.length % 4 !== 0) cases.push('#v1.' + g.slice(0, -1) + alt);
   for (const h of cases) {
     const r = urlstate.decode(h, contract);
     assert.equal(r.state, null, h);

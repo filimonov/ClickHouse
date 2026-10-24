@@ -36,7 +36,10 @@
       if (chunk.length > 2) bytes.push((n >> 8) & 255);
       if (chunk.length > 3) bytes.push(n & 255);
     }
-    return new Uint8Array(bytes);
+    const out = new Uint8Array(bytes);
+    // Non-canonical tails (nonzero pad bits) would give several URLs for one state.
+    if (b64urlEncode(out) !== s) throw new Error('non-canonical base64url');
+    return out;
   }
 
   // Sorted keys make the hash a pure function of the state, so equal states give equal URLs.
@@ -72,6 +75,12 @@
       diff(artifact, url[vkey], vkey, url[vkey], loaded[vkey]);
       dkeys.forEach((k) => diff(artifact, url[vkey], k, url[k], loaded[k]));
     }
+    const files = (m) => (isObj(m.code_files) ? m.code_files : {});
+    const uf = files(url);
+    const lf = files(loaded);
+    for (const f of new Set([...Object.keys(uf), ...Object.keys(lf)])) diff('evaluator', url.code_sha256, `code_files.${f}`, uf[f], lf[f]);
+    const absent = (m) => (Array.isArray(m.code_missing) ? [...m.code_missing].sort().join(',') : undefined);
+    diff('evaluator', url.code_sha256, 'code_missing', absent(url), absent(loaded));
     const byReport = (m) => new Map((Array.isArray(m.evidence) ? m.evidence : []).map((e) => [e.report, e]));
     const ue = byReport(url);
     const le = byReport(loaded);
@@ -80,13 +89,20 @@
       const l = le.get(report);
       const name = `evidence:${report}`;
       if (!u || !l) { diff(name, u ? u.commit : null, 'report', u ? 'present' : undefined, l ? 'present' : undefined); continue; }
-      diff(name, u.commit, 'commit', u.commit, l.commit);
-      diff(name, u.commit, 'raw_sha256sums', u.raw_sha256sums, l.raw_sha256sums);
+      for (const k of new Set([...Object.keys(u), ...Object.keys(l)])) if (k !== 'report') diff(name, u.commit, k, u[k], l[k]);
     }
     return missing;
   }
 
+  const SHAPE = {
+    inputs: isObj, locks: Array.isArray, overrides: isObj, scenario: (v) => typeof v === 'string', price_preset: (v) => typeof v === 'string',
+    custom_prices: isObj, units: (v) => typeof v === 'string', openCell: (v) => v === null || typeof v === 'string',
+    sweepInput: (v) => v === null || typeof v === 'string', manifest: isObj,
+  };
+
   function decode(hash, contract) {
+    // The loaded contract is the reference; without its manifest nothing can be checked, so fail loudly.
+    if (!contract || !isObj(contract.manifest)) throw new TypeError('decode: contract.manifest is required');
     if (typeof hash !== 'string' || !hash.startsWith(PREFIX)) return { state: null, problem: formatProblem('unknown hash format; expected the "#v1." prefix') };
     let state;
     try {
@@ -96,9 +112,10 @@
       return { state: null, problem: formatProblem(`malformed hash: ${e.message}`) };
     }
     if (!isObj(state)) return { state: null, problem: formatProblem('hash payload is not an object') };
-    if (!isObj(state.manifest)) return { state: null, problem: formatProblem('hash payload has no manifest') };
+    for (const k of STATE_KEYS) if (!(k in state) || !SHAPE[k](state[k])) return { state: null, problem: formatProblem(`hash payload: missing or ill-typed "${k}"`) };
     const missing = compareManifests(state.manifest, contract.manifest);
-    return { state, problem: missing.length ? { kind: 'cannot_reproduce', missing } : null };
+    if (missing.length) return { state: null, problem: { kind: 'cannot_reproduce', missing } };
+    return { state, problem: null };
   }
 
   const urlstate = { encode, decode, STATE_KEYS };
