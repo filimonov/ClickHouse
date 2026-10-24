@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "da55c22368ef843c",
+ "version": "76ef4bc67aacfb6c",
  "manifest": {
   "code_sha256": "47f9bfc36da0dc16f131bcab2c0f0895eb62878c31dde85db2753dc897474b33",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "a1e87da7458675aceb6372a386cd642927f61ce300fc4694c79b996700e3b2ce"
   },
   "code_missing": [],
-  "contract_version": "da55c22368ef843c",
+  "contract_version": "76ef4bc67aacfb6c",
   "registry_version": "0.3.0",
-  "registry_sha256": "852e36236d85635055fcf7482d770b6d9dc98f302e6af18d91da82baefc12d6b",
+  "registry_sha256": "88935a26eac4a6b3c2506f9569fb04e08954dafd08071f59e489338574b08797",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "5fac58c963375f7de5b01ba482e88cf9c715149af601c9200546780767fb0851",
+  "coverage_sha256": "9613062960ed967ec15fb00342f67b935241f045f9dee0925699e01d3b49dce0",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -79,9 +79,9 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "b994d1b1bd2d3efd282b79d6b83707b0e57198c79d2a889a25ba89e45ffca126"
+  "breakeven_sha256": "fc36280e93dbf441a20addbd1b6a9e2d00747ca15c357bb8c4fed69572159d30"
  },
- "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 61 coefficient(s): 43 measured, 18 pinned to source. 58 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 1 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 61 coefficient(s): 43 measured, 18 pinned to source. 58 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -10901,7 +10901,7 @@
     "version": "0.2.0"
    },
    "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
     "mapping": {
      "io_bytes_per_op": "write_bytes of /proc/<clickhouse pid>/io over the same period, divided by sum(size_in_bytes)"
     }
@@ -11009,7 +11009,7 @@
     "version": "0.2.0"
    },
    "hint": {
-    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts', 'MutatePart') GROUP BY event_type",
+    "sql": "SELECT event_type, sum(size_in_bytes) FROM system.part_log WHERE event_date >= today() - 7 AND event_type IN ('NewPart', 'MergeParts') GROUP BY event_type",
     "mapping": {
      "io_request_size_distribution": "not in system tables: strace -f -yy -e trace=write,pwrite64,writev,pwritev,pwritev2,read,pread64,readv,preadv,preadv2 on the server, sizes per call"
     }
