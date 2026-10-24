@@ -549,6 +549,100 @@
        }
       }
      }
+    },
+    {
+     "row_type": "transfer",
+     "op_kind": "interserver",
+     "outcome_class": "all",
+     "category": null,
+     "route": "ec2_ec2_cross_az",
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "branch",
+      "dim": "GiB",
+      "cond": {
+       "op": "==",
+       "a": {
+        "kind": "input",
+        "id": "topology",
+        "dim": "enum:topology"
+       },
+       "b": {
+        "kind": "const",
+        "value": "cross_az",
+        "dim": "enum:topology"
+       }
+      },
+      "then": {
+       "kind": "mul",
+       "dim": "GiB",
+       "a": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+         "kind": "div",
+         "dim": "GiB/s",
+         "a": {
+          "kind": "input",
+          "id": "ingest_rate",
+          "dim": "GiB/day"
+         },
+         "b": {
+          "kind": "const",
+          "value": 86400,
+          "dim": "s/day"
+         },
+         "on_zero": "unavailable"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        }
+       },
+       "b": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+         "kind": "sub",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "lookup",
+         "dim": "1",
+         "table_id": "acquire_bytes",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "s3plain",
+           "dim": "enum:variant_id"
+          },
+          {
+           "kind": "const",
+           "value": "insert",
+           "dim": "enum:result_type"
+          }
+         ]
+        }
+       }
+      },
+      "else": {
+       "kind": "const",
+       "value": 0,
+       "dim": "GiB"
+      }
+     }
     }
    ],
    "allocation": null,
