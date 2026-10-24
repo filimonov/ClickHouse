@@ -123,6 +123,36 @@
       "status": "ok"
     },
     {
+      "id": "topology",
+      "block": "simple",
+      "label": "Replica placement: same_az (replicas of a shard in one availability zone; interserver traffic not charged) or cross_az (each fetched part crosses zones; charged per GB in each direction)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "same_az",
+        "cross_az"
+      ],
+      "table": null,
+      "default": "same_az",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT hostName() FROM clusterAllReplicas('<cluster>', system.one)",
+        "mapping": {
+          "topology": "cross_az when the replica hosts of one shard run in different availability zones (see the cloud console or instance metadata)"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "cache_enabled",
       "block": "reads_cache",
       "label": "Filesystem cache enabled",
