@@ -251,6 +251,22 @@
     return ctx;
   }
 
+  // Derived coefficients and tables a cell reads whose verified range does not hold the current values: exact by
+  // construction, so only an informational note.
+  function derivedOutside(contract, cell, ctx) {
+    if (!cell) return [];
+    const ids = new Set();
+    walk(cell.ledger_rows, (n) => { if (n.kind === 'coef') ids.add(n.id); if (n.kind === 'lookup') ids.add(n.table_id); });
+    const out = [];
+    for (const c of contract.coefficients) {
+      if (!ids.has(c.id) || model().basisOf(c) !== 'derived') continue;
+      const range = model().rangeOf(c) || {};
+      const off = Object.entries(range).filter(([p, r]) => typeof ctx.inputs.get(p) === 'number' && (ctx.inputs.get(p) < r[0] || ctx.inputs.get(p) > r[1]));
+      if (off.length) out.push(`${c.id}: formula from source; verified at ${off.map(([p, r]) => `${p} ${r[0]} to ${r[1]}`).join(', ')}`);
+    }
+    return out;
+  }
+
   // Lookups that used the nearest measured key, once per table and key pair.
   function substitutions(traces) {
     const out = new Map();
@@ -512,6 +528,7 @@
       const out = { state: 'ok', reason: null, extrapolated: ev.extrapolated, cells: {}, total: null, lines: null, allocation: null, provisioning: null, notes: [] };
       for (const [op, c] of Object.entries(ev.cells)) {
         for (const s of substitutions(c.trace)) c.notes.push({ text: `${s.table_id}: measured for ${s.measured}; applied to ${s.requested}`, value: null, state: 'ok', substitution: s });
+        for (const m of derivedOutside(contract, (contract.formulas[v] || {})[op], ctx)) c.notes.push({ text: m, value: null, state: 'ok', verified_only: true });
         out.cells[op] = { money: null, quantities: c.quantities, lines: null, rows: c.rows, extrapolated: c.extrapolated, trace: c.trace, notes: c.notes, zeroed_cut_terms: c.zeroed, ev: c.ev };
         for (const n of c.notes) out.notes.push({ kind: 'cell', operation: op, text: n.text, value: n.value });
       }

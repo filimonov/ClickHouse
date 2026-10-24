@@ -57,3 +57,11 @@ test('test_column_badge_counts_extrapolated_cells_and_assumed_money', () => {
   assert.equal(card(assumed, 'cas').extrapolated_text, 'extrapolated: 1 cell');
   assert.equal(assumed.table.rows.find((r) => r.operation === 'inserts').cells.find((c) => c.variant === 'cas').extrapolated, true);
 });
+
+test('test_derived_formula_outside_its_range_gets_an_information_note', () => {
+  const c = load((x) => { coef(x).basis = 'derived'; });
+  const s3 = s3At(c, 60000);
+  assert.equal(s3.extrapolated, false);
+  assert.ok(s3.notes.some((n) => n.text === 'puts_per_insert_s3: formula from source; verified at inserts_per_month 0 to 50000'), JSON.stringify(s3.notes));
+  assert.equal(s3At(c, 1000).notes.some((n) => /formula from source/.test(n.text)), false);
+});
