@@ -12,7 +12,7 @@ import time
 from .. import ledger as L
 from .base import DATABASE, POLL_S
 from .probes import _count, register, window_rows
-from .shapes import S3Card, tree_allocated
+from .shapes import S3Card, object_per_file, tree_allocated
 
 
 def layout_keys(layout: dict, prefix: str | None = None) -> set:
@@ -60,7 +60,10 @@ class OperationCard(S3Card):
         return {'unit_count': n, 'effective_counts': {'statements': n}, 'observations': {}}
 
     def expected_gone(self, ctx) -> set:
-        """Objects the operation removes: those of the setup's parts that no part lists any more."""
+        """Objects the operation removes: those of the setup's parts that no part lists any more. None outside
+        OBJECT_PER_FILE_POLICIES: removal there is not the part's (CAS GC) or there are no objects (local)."""
+        if not object_per_file(ctx.policy):
+            return set()
         st = self.state(ctx)
         return layout_keys(st.get('layout_before', {})) - layout_keys(st.get('layout', {}))
 
@@ -109,8 +112,9 @@ class Mutation(OperationCard):
                 out[f'full_rewrite.{t["name"]}.kept_objects'] = (0, rewrite[t['name']]['kept_objects'])
                 out[f'full_rewrite.{t["name"]}.new_objects'] = (rewrite[t['name']]['objects'],
                                                                  rewrite[t['name']]['new_objects'])
-        dead = layout_keys(st['layout_before']) - layout_keys(st['layout'])
-        out['replaced_objects_deleted'] = ([], sorted(dead & st['live_keys'])[:5])
+        if object_per_file(ctx.policy):
+            dead = layout_keys(st['layout_before']) - layout_keys(st['layout'])
+            out['replaced_objects_deleted'] = ([], sorted(dead & st['live_keys'])[:5])
         return out
 
 
@@ -144,7 +148,7 @@ class Drop(OperationCard):
                 client.query('SYSTEM FLUSH LOGS')
             st['rows'] = [0]
             st['parts'], st['layout'] = [], {}
-            gone, deadline = self.dropped_keys(ctx), time.monotonic() + timeout_s
+            gone, deadline = self.expected_gone(ctx), time.monotonic() + timeout_s
             while True:
                 st['live_keys'] = {ident[1] for ident in ctx.replay().upper.objects}
                 if not gone & st['live_keys'] or time.monotonic() >= deadline:
@@ -154,7 +158,7 @@ class Drop(OperationCard):
         super().complete(ctx, timeout_s)
 
     def expected_gone(self, ctx) -> set:
-        return self.dropped_keys(ctx)
+        return self.dropped_keys(ctx) if object_per_file(ctx.policy) else set()
 
     def dropped_keys(self, ctx) -> set:
         st, scope = self.state(ctx), self.p(ctx)['dropped']
@@ -169,9 +173,10 @@ class Drop(OperationCard):
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
-        keys = self.dropped_keys(ctx)
-        out['dropped_objects>0'] = (True, bool(keys))
-        out['dropped_objects_deleted'] = ([], sorted(keys & self.state(ctx)['live_keys'])[:5])
+        if object_per_file(ctx.policy):
+            keys = self.dropped_keys(ctx)
+            out['dropped_objects>0'] = (True, bool(keys))
+            out['dropped_objects_deleted'] = ([], sorted(keys & self.state(ctx)['live_keys'])[:5])
         return out
 
 

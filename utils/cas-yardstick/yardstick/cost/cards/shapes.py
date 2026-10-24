@@ -20,6 +20,17 @@ REGISTRY = os.path.join(REPO, 'docs', 'superpowers', 'cost-model', 'inputs-regis
 PART_COLUMNS = ('table, name, part_type, rows, level, active, path, partition_id, data_uncompressed_bytes, '
                 'bytes_on_disk')
 OBJECT_WRITE_OPS = ('PutObject', 'CreateMultipartUpload', 'UploadPart', 'CompleteMultipartUpload')
+# Disks that write each part file as its own object and delete it with the part
+# (Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp:274). The object checks hold only there: a CAS disk
+# stores each payload once by content hash and leaves removal to its GC
+# (Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:614), and a local disk
+# writes files, not objects (Disks/DiskLocal.cpp:464).
+OBJECT_PER_FILE_POLICIES = ('s3', 's3_cached', 's3plain', 's3plain_cached')
+ALL_POLICIES = OBJECT_PER_FILE_POLICIES + ('cas', 'cas_cached', 'local')
+
+
+def object_per_file(policy: str) -> bool:
+    return policy in OBJECT_PER_FILE_POLICIES
 
 
 def allocated(root: str, rel_dirs: list) -> dict:
@@ -91,8 +102,9 @@ def insert_part_type(registry: dict, table: dict, table_settings: dict, rows: in
 class S3Card(LifecycleCard):
     """A manifest card over the tables of `params.tables`; the workload runs on `params.replica`."""
 
-    # The s3plain report reuses these cards with unchanged manifests; its capability gate refuses some operations.
-    policies = ('s3', 's3_cached', 's3plain', 's3plain_cached')
+    # The variant reports reuse these cards with their own manifests and predictions; the s3plain capability gate
+    # refuses some operations, and checks of the one-object-per-file model run only on OBJECT_PER_FILE_POLICIES.
+    policies = ALL_POLICIES
 
     def supports(self, policy):
         gate = s3plain.supports(self.name, policy)
@@ -308,7 +320,8 @@ class ObjectsPerPart(S3Card):
         obs = draft['observations']
         out['part_types.registry_predicate'] = (self.expected_types(ctx), obs['part_types'])
         # Every object of every part is one object-creating request: one PutObject or one multipart upload.
-        out['object_writes==objects_total'] = (obs['objects_total'], obs['object_writes'])
+        if object_per_file(ctx.policy):
+            out['object_writes==objects_total'] = (obs['objects_total'], obs['object_writes'])
         return out
 
 
@@ -321,6 +334,12 @@ class BigInsertMultipart(ObjectsPerPart):
     """
 
     name = 'big-insert-multipart'
+
+    def supports(self, policy):
+        if policy == 'local':
+            return False, ('UNSUPPORTED: a local disk writes part files to the filesystem and sends no object request, '
+                           'so there is no multipart graph (Disks/DiskLocal.cpp:464)')
+        return super().supports(policy)
 
     def observe(self, ctx, draft):
         out = super().observe(ctx, draft)

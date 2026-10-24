@@ -194,3 +194,56 @@ class RemovalWaitTest(unittest.TestCase):
         ctx.replay = replay
         card.complete(ctx, timeout_s=0)
         self.assertEqual(st['live_keys'], {'a'})
+
+
+class PolicyTest(unittest.TestCase):
+    """The shape and operation cards run on every rig policy; object-model checks only where a part file is one object."""
+
+    CARD_NAMES = ('objects-per-part', 'big-insert-multipart', 'mutation', 'drop', 'cold-select', 'startup', 'merge-only')
+
+    def test_every_rig_policy_is_declared_and_local_refuses_the_multipart_graph(self):
+        from yardstick.config import COST_POLICIES
+        for name in self.CARD_NAMES:
+            card = CARDS[name]
+            self.assertEqual(set(card.policies), set(COST_POLICIES), name)
+            for policy in ('s3', 's3_cached', 'cas', 'cas_cached', 'local'):
+                ok, why = card.supports(policy)
+                if (name, policy) == ('big-insert-multipart', 'local'):
+                    self.assertFalse(ok)
+                    self.assertIn('Disks/DiskLocal.cpp:464', why)
+                else:
+                    self.assertTrue(ok, (name, policy, why))
+
+    def mutation_state(self, policy):
+        from unittest import mock
+        card = CARDS['mutation']
+        ctx = ctx_for(manifest('mutation.compact-update-one-column'), FakeCluster(), policy=policy)
+        st = card.state(ctx)
+        st.update(rows=[200000], parts_before=parts('tc', ['all_1_1_0', 'all_2_2_0']),
+                  layout_before=layout('tc', 'all_1_1_0', ['a', 'b']), live_keys={'a', 'c', 'd'},
+                  parts=parts('tc', ['all_1_1_0_3']), layout=layout('tc', 'all_1_1_0_3', ['c', 'd']))
+        draft = {'ledger': {'foreground': {'r1': {'PutObject': {'attempts': 20}}}}, 'window': {'crossing': []},
+                 'observations': {'rewrite': {'tc': {'objects': 2, 'new_objects': 2, 'kept_objects': 0}}}}
+        s3_prediction = card.predicted(ctx_for(manifest('mutation.compact-update-one-column'), FakeCluster()))
+        with mock.patch.object(card, 'predicted', return_value=s3_prediction):
+            return card, ctx, card.assertions(ctx, draft)
+
+    def test_replaced_objects_are_checked_only_on_object_per_file_disks(self):
+        card, ctx, out = self.mutation_state('s3')
+        self.assertEqual(card.expected_gone(ctx), {'a', 'b'})
+        self.assertNotEqual(*out['replaced_objects_deleted'])  # 'a' is still live
+        for policy in ('cas', 'local'):
+            card, ctx, out = self.mutation_state(policy)
+            self.assertEqual(card.expected_gone(ctx), set(), policy)
+            self.assertNotIn('replaced_objects_deleted', out, policy)
+            self.assertIn('full_rewrite.tc.kept_objects', out, policy)
+
+    def test_dropped_objects_are_waited_for_only_on_object_per_file_disks(self):
+        card = CARDS['drop']
+        for policy, want in (('s3', {'a', 'b'}), ('s3plain', {'a', 'b'}), ('cas', set()), ('local', set())):
+            ctx = ctx_for(manifest('drop.partition'), FakeCluster(), policy=policy)
+            st = card.state(ctx)
+            table = card.p(ctx)['dropped'].partition('/')[0]
+            st.update(parts_before=[{'table': table, 'name': 'p_1_1_0', 'partition_id': card.p(ctx)['dropped'].partition('/')[2] or 'all'}],
+                      layout_before=layout(table, 'p_1_1_0', ['a', 'b']))
+            self.assertEqual(card.expected_gone(ctx), want, policy)
