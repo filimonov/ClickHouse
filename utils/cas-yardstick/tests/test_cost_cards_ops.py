@@ -82,12 +82,23 @@ class DropTest(unittest.TestCase):
         self.assertNotEqual(*card.assertions(ctx, draft)['dropped_objects_deleted'])
 
 
+def no_ledger(card):
+    """An empty ledger for card tests that run without a proxy."""
+    import contextlib
+    from unittest import mock
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch.object(card, 'last_seq', return_value=0))
+    stack.enter_context(mock.patch.object(card, 'rows_after', return_value=[]))
+    return stack
+
+
 class ColdSelectTest(unittest.TestCase):
     def test_cold_select_restarts_after_the_inserts_and_before_the_window(self):
         card, m = CARDS['cold-select'], manifest('cold-select.cache-off')
         cluster = FakeCluster()
         ctx = ctx_for(m, cluster)
-        card.setup(ctx)
+        with no_ledger(card):  # the order of statements is under test, not the ledger reads
+            card.setup(ctx)
         log = cluster.clients[0].log
         inserts = [i for i, sql in enumerate(log) if sql.startswith('INSERT')]
         (stop, _, at_stop), (start, _, at_start) = cluster.events
@@ -103,7 +114,8 @@ class ColdSelectTest(unittest.TestCase):
         card, m = CARDS['cold-select'], manifest('cold-select.cache-on')
         cluster = FakeCluster()
         ctx = ctx_for(m, cluster, 's3_cached')
-        card.setup(ctx)
+        with no_ledger(card):
+            card.setup(ctx)
         query = m['params']['query'].format(db='yardstick')
         after_start = cluster.clients[0].log[cluster.events[1][2]:]
         self.assertEqual(after_start.count(query), 1)
@@ -274,3 +286,43 @@ class ManifestModeTest(unittest.TestCase):
             with open(name) as f:
                 m = json.load(f)
             self.assertEqual(m['mode'], CARDS[m['card']].mode, os.path.basename(name))
+
+
+class SmallPartChecksTest(unittest.TestCase):
+    def test_merge_only_asserts_the_result_part_type_from_the_registry_predicate(self):
+        from unittest import mock
+        card = CARDS['merge-only']
+        ctx = ctx_for(manifest('merge-only.narrow-compact-1k'), FakeCluster())
+        st = card.state(ctx)
+        st.update(rows=[8000], parts_before=parts('t', [f'all_{i}_{i}_0' for i in range(1, 9)]),
+                  parts=parts('t', ['all_1_8_1']), layout_before={}, layout={}, live_keys=set())
+        st['parts_before'] = [dict(p, rows=1000) for p in st['parts_before']]
+        draft = {'ledger': {'foreground': {'r1': {}}}, 'window': {'crossing': []},
+                 'observations': {'results': [{'table': 't', 'name': 'all_1_8_1', 'part_type': 'Compact', 'rows': 8000}]}}
+        with mock.patch.object(card, 'predicted', return_value={'expected': {'foreground': {}, 'observations': {}},
+                                                                'tolerance': {'abs': {}, 'rel': {}}}):
+            out = card.assertions(ctx, draft)
+            self.assertEqual(*out['result_part_type.registry_predicate'])
+            draft['observations']['results'][0]['part_type'] = 'Wide'
+            out = card.assertions(ctx, draft)
+            self.assertNotEqual(*out['result_part_type.registry_predicate'])
+
+    def test_startup_seconds_are_bounded_by_the_case_timeout(self):
+        from unittest import mock
+        card = CARDS['startup']
+        ctx = ctx_for(manifest('startup.intact'), FakeCluster())
+        card.state(ctx).update(rows=[300000])
+        with mock.patch.object(card, 'predicted', return_value={'expected': {'foreground': {}, 'observations': {}},
+                                                                'tolerance': {'abs': {}, 'rel': {}}}):
+            for seconds, ok in ((3.0, True), (0.0, False), (10 ** 6, False)):
+                draft = {'ledger': {'foreground': {'r1': {}}}, 'window': {'crossing': []}, 'observations': {'startup_seconds': seconds}}
+                got = card.assertions(ctx, draft)['startup_seconds.within_timeout']
+                self.assertEqual(got[0] == got[1], ok, seconds)
+
+    def test_ledger_reads_need_the_proxy(self):
+        card = CARDS['cold-select']
+        ctx = ctx_for(manifest('cold-select.cache-off'), FakeCluster())
+        with self.assertRaises(RuntimeError):
+            card.last_seq(ctx)
+        with self.assertRaises(RuntimeError):
+            card.rows_after(ctx, 0)

@@ -12,6 +12,7 @@ import time
 from .. import ledger as L
 from .base import DATABASE, POLL_S
 from .probes import _count, register, window_rows
+from . import shapes
 from .shapes import S3Card, object_per_file, tree_allocated
 
 
@@ -227,13 +228,13 @@ class ColdSelect(S3Card):
 
     def last_seq(self, ctx) -> int:
         if ctx.proxy is None:
-            return 0
+            raise RuntimeError(f'{self.name}: no ledger proxy to read the last sequence number from')
         ctx.proxy.flush()
         return max((r['seq'] for r in L.read_rows(ctx.proxy.ledger_path) if r.get('kind') == 'attempt'), default=0)
 
     def rows_after(self, ctx, seq0: int) -> list:
         if ctx.proxy is None:
-            return []
+            raise RuntimeError(f'{self.name}: no ledger proxy to read the attempts from')
         ctx.proxy.flush()
         return [r for r in L.read_rows(ctx.proxy.ledger_path) if r.get('kind') == 'attempt' and r['seq'] > seq0
                 and r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok']
@@ -307,7 +308,8 @@ class Startup(S3Card):
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
-        out['startup_seconds>0'] = (True, draft['observations']['startup_seconds'] > 0)
+        seconds = draft['observations']['startup_seconds']
+        out['startup_seconds.within_timeout'] = (True, 0 < seconds <= ctx.manifest['timeout_s'])
         return out
 
 
@@ -330,5 +332,11 @@ class MergeOnly(OperationCard):
 
     def assertions(self, ctx, draft):
         out = super().assertions(ctx, draft)
-        out['one_result'] = (1, len(draft['observations']['results']))
+        results = draft['observations']['results']
+        out['one_result'] = (1, len(results))
+        # The result's part type follows the registry predicate at the result size (merge_result_part_type).
+        table = self.p(ctx)['tables'][0]
+        rows = sum(p['rows'] for p in self.state(ctx)['parts_before'] if p['active'])
+        want = shapes.insert_part_type(shapes.load_registry(), table, ctx.manifest['settings']['table'], rows)
+        out['result_part_type.registry_predicate'] = ([want], [r['part_type'] for r in results])
         return out
