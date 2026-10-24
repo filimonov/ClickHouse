@@ -20,8 +20,10 @@ S3_EXPERIMENTS = os.path.join(REPORTS, '2026-10-24-storage-cost-s3', 'experiment
 TWIN_DIRS = (S3_EXPERIMENTS, os.path.join(REPORTS, '2026-10-24-storage-cost-lifecycle', 'experiments'))
 SRC = os.path.join(probes.REPO, 'tmp', 'src-26.8')
 PLAIN = ('s3plain', 's3plain_cached')
-# Cases of this report only: merges whose window also holds the removal of the sources, which plain unlinks file by file.
-NEW_CASES = {'merge-only.narrow-compact-removal.json', 'merge-only.wide-wide-removal.json'}
+# Cases of this report only: merges whose window holds the removal of the sources (plain unlinks file by file), and
+# fresh hold-outs replacing consumed ones.
+NEW_CASES = {'merge-only.narrow-compact-removal.json', 'merge-only.wide-wide-removal.json',
+             'objects-per-part.types-holdout-single.json'}
 
 
 def load(path):
@@ -83,9 +85,11 @@ class DirectoryObjectTest(unittest.TestCase):
         rows = [{'caller': 'r1', 'op': 'PutObject', 'key': k, 'req_payload_bytes': n, 'seq': i,
                  'upstream': {'outcome': 'ok'}}
                 for i, (k, n) in enumerate([('r1/abc/data.bin', 5), ('r1/abc/count.txt', 1),
-                                            ('r1/__meta/abc/prefix.path', 20), ('r1/__meta/abc/prefix.path', 20)])]
+                                            ('r1/__meta/abc/prefix.path', 20), ('r1/__meta/abc/prefix.path', 20),
+                                            ('r1/__meta/abc/prefix.path', 20)])]
+        # The last row is the teardown's rename to delete_tmp_, after the window: it is not counted.
         draft = {'ledger': {'foreground': {'r1': {'PutObject': {'attempts': 4}, 'HeadObject': {'attempts': 1}}}},
-                 'proc_io': {'r1': {'syscw': 0, 'write_bytes': 0}}}
+                 'proc_io': {'r1': {'syscw': 0, 'write_bytes': 0}}, 'window': {'end_seq': 3}}
         orig = shapes.window_rows
         shapes.window_rows = lambda ctx: rows
         try:

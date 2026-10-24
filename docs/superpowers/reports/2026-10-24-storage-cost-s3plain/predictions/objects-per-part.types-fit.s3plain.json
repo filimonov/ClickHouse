@@ -38,18 +38,8 @@
   "expected": {
     "foreground": {
       "r1": {
-        "PutObject": {
-          "min": 184,
-          "max": 192,
-          "basis": "assumption",
-          "reason": "two parts with a projection each: two directories per part are fitted here"
-        },
-        "HeadObject": {
-          "min": 2,
-          "max": 8,
-          "basis": "assumption",
-          "reason": "one per directory, projection directories included"
-        }
+        "PutObject": 196,
+        "HeadObject": 4
       }
     },
     "observations": {
@@ -65,7 +55,8 @@
           "Wide"
         ]
       ],
-      "objects_total": 176
+      "objects_total": 188,
+      "directory_writes": 8
     }
   },
   "tolerance": {
@@ -114,5 +105,5 @@
       "line": 239
     }
   ],
-  "prediction_commit": "2f20606ffe6"
+  "prediction_commit": "pending"
 }

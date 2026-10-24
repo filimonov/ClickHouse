@@ -294,7 +294,9 @@ class ObjectsPerPart(S3Card):
         st = self.state(ctx)
         parts = [p for p in st['parts'] if p['active']]
         counts = self.object_counts(st['layout'], parts)
-        rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok']
+        # Rows after the window (the teardown renames s3plain directories) are not the inserts'.
+        rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok'
+                and r['seq'] <= draft['window']['end_seq']]
         # On s3plain a part directory is an object too (create and rename); it is not a part file.
         dir_puts = sum(1 for r in rows if r['op'] == 'PutObject' and s3plain.is_directory_object(r['key']))
         put_sizes = sorted(r['req_payload_bytes'] for r in rows
@@ -347,7 +349,8 @@ class BigInsertMultipart(ObjectsPerPart):
 
     def observe(self, ctx, draft):
         out = super().observe(ctx, draft)
-        rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok']
+        rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok'
+                and r['seq'] <= draft['window']['end_seq']]
         uploads = {r['response_body']['upload_id']: r['key'] for r in rows
                    if r['op'] == 'CreateMultipartUpload' and (r.get('response_body') or {}).get('upload_id')}
         sizes = {u: [] for u in uploads}
