@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "7c028b5f9cf209cf",
+ "version": "b92cb0fbac40c40a",
  "manifest": {
   "code_sha256": "cdb539e677c597a6477ee9e9b55b07382fad94c65b49de361586a6bc0c67d132",
   "code_files": {
@@ -14,7 +14,7 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "7c028b5f9cf209cf",
+  "contract_version": "b92cb0fbac40c40a",
   "registry_version": "0.3.0",
   "registry_sha256": "14e50be05247594ede3691114c72b80f2e024de73057e04118ff84fb828b4559",
   "coverage_version": "0.2.0",
@@ -58,7 +58,7 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "f08625f204c6f82c710508af3878ed76047e40250de86c83e9a9f7af488a8ad6"
+  "breakeven_sha256": "4a1598559a2c8a13295df4b7456e0e47735495d9759b8a620bdd79cd6ccc806c"
  },
  "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 36 coefficient(s): 27 measured, 9 pinned to source. 34 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 2 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -10704,7 +10704,8 @@
    "status": "ok",
    "fit": {
     "method": "fraction of the PutObject payload sizes per bucket; the tolerance is the total-variation bound of the hold-out"
-   }
+   },
+   "reported_only": true
   },
   {
    "id": "insert_tx_checks",
@@ -10869,7 +10870,8 @@
     "max_abs_residual": 0.939,
     "points": 36
    },
-   "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+   "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O.",
+   "reported_only": true
   },
   {
    "id": "metadata_iops_per_part_write",
@@ -10939,7 +10941,8 @@
     "max_abs_residual": 0.939,
     "points": 36
    },
-   "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+   "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O.",
+   "reported_only": true
   },
   {
    "id": "stats_gets_per_column",

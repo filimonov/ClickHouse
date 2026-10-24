@@ -147,7 +147,8 @@
     "status": "ok",
     "fit": {
       "method": "fraction of the PutObject payload sizes per bucket; the tolerance is the total-variation bound of the hold-out"
-    }
+    },
+    "reported_only": true
   },
   {
     "id": "insert_tx_checks",
@@ -312,7 +313,8 @@
       "max_abs_residual": 0.939,
       "points": 36
     },
-    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O.",
+    "reported_only": true
   },
   {
     "id": "metadata_iops_per_part_write",
@@ -382,7 +384,8 @@
       "max_abs_residual": 0.939,
       "points": 36
     },
-    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O."
+    "note": "Process-wide write syscalls of the server, Keeper and log flushes included; not device I/O.",
+    "reported_only": true
   },
   {
     "id": "stats_gets_per_column",

@@ -19,7 +19,7 @@ The variant's eight cells are in `formulas.json`, their coefficients in `coeffic
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case but five, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4` and `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3` and `cost-20261024T123052Z` for the 1000-row validations; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 203 records |
+| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case but five, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3` and `cost-20261024T123052Z` for the 1000-row validations; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 203 records |
 | Consumed hold-outs | `drop.partition-3` (falsified count), `mutation.update-mixed` and `mutation.update-mixed-2` (exact counts missed by the repeat spread), `mutation.update-mixed-3` (its band was a stochastic tolerance, which the mutation card does not apply: the card's mode comes from its class, not the manifest). All their records stay in `measurements.jsonl`, 19 of them `FAILED` |
 | Invalid runs | `cost-20261024T073405Z`, `cost-20261024T074526Z`, `cost-20261024T075016Z`, `cost-20261024T075431Z`, `cost-20261024T075800Z`, `cost-20261024T083200Z`, `cost-20261024T084830Z` overlapped CAS or EBS runs on the same host and RustFS. No number of this report comes from them |
 | Predictions | fit predictions `80cd02f1c27` were written after exploratory runs; hold-outs `80cd02f1c27`, `202d45aadbc`, `5519040a680`, `09e9319a11f`, `b04768eaa9e`, each before the first run of its case. The invalid runs executed most hold-outs before the report run; no predicted count changed after that (later commits only added registry inputs and the commit ids), so the report run tests each committed count |
@@ -345,8 +345,9 @@ Each is `evidence.kind: assumed` in the registry or stated in a prediction:
   tables reach 1000 rows. `mutation.compact-small` missed and is consumed: a 1000-row Compact part mutates with 4
   `GetObject`, not 26, because Compact mutation reads scale with the part's granules. The mutation tables keep their
   measured range (100 000–400 000 rows per part). Merges of 1000-row sources are not covered either: they merge into a
-  Compact result, and the `merges` cell prices Wide results. `object_size_distribution` and the write-call fits keep their measured row range: object sizes
-  do change with rows (`data.bin` moves from the 1–32 MiB bucket to 4 KiB–1 MiB), and no cell prices them.
+  Compact result, and the `merges` cell prices Wide results. `object_size_distribution`, `metadata_iops_per_object_write` and `metadata_iops_per_part_write`
+  are `reported_only` in `coefficients.json`: no cell prices them, so they keep their measured row range (object sizes
+  do change with rows: `data.bin` moves from the 1–32 MiB bucket to 4 KiB–1 MiB).
 - **A TTL merge over several expired parts** is not measured: `drop.ttl` expires one part. The cell's split of
   `expiry_operations_per_month` and `expired_parts_per_month` follows the source; its multi-part branch is unvalidated.
 - **Startup history** (outdated parts, retained `mutation_<n>.txt`) is priced from the source, not measured: the
