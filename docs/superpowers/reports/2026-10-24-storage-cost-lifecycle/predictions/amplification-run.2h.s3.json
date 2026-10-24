@@ -7,51 +7,51 @@
     "inserted_part_type": "Compact",
     "rows_per_insert": 1000,
     "columns": 5,
-    "predicted_merges_for_allowance": 1362,
-    "fit_run": "cost-20261024T061359Z",
+    "predicted_merges_for_allowance": 1399,
+    "fit_run": "cost-20261024T064154Z",
     "fit_measurement_ids": [
-      "cost-20261024T061359Z/s3/merge-natural/default/k1",
-      "cost-20261024T061359Z/s3/merge-natural/default/k2",
-      "cost-20261024T061359Z/s3/merge-natural/default/k3",
-      "cost-20261024T061359Z/s3/small-inserts/default/k1",
-      "cost-20261024T061359Z/s3/small-inserts/default/k2",
-      "cost-20261024T061359Z/s3/small-inserts/default/k3"
+      "cost-20261024T064154Z/s3/merge-natural/default/k1",
+      "cost-20261024T064154Z/s3/merge-natural/default/k2",
+      "cost-20261024T064154Z/s3/merge-natural/default/k3",
+      "cost-20261024T064154Z/s3/small-inserts/default/k1",
+      "cost-20261024T064154Z/s3/small-inserts/default/k2",
+      "cost-20261024T064154Z/s3/small-inserts/default/k3"
     ],
-    "merge_effective_fan_in": 6.2846,
+    "merge_effective_fan_in": 6.1437,
     "amplification_model": "rewrite_levels_at_weighted_ratio",
     "fit_residuals": {
-      "cost-20261024T061359Z/s3/merge-natural/default/k1": 0.1929,
-      "cost-20261024T061359Z/s3/merge-natural/default/k2": 0.1929,
-      "cost-20261024T061359Z/s3/merge-natural/default/k3": 0.1929,
-      "cost-20261024T061359Z/s3/small-inserts/default/k1": -0.1488,
-      "cost-20261024T061359Z/s3/small-inserts/default/k2": -0.1086,
-      "cost-20261024T061359Z/s3/small-inserts/default/k3": -0.0638
+      "cost-20261024T064154Z/s3/merge-natural/default/k1": 0.15,
+      "cost-20261024T064154Z/s3/merge-natural/default/k2": 0.1701,
+      "cost-20261024T064154Z/s3/merge-natural/default/k3": 0.1701,
+      "cost-20261024T064154Z/s3/small-inserts/default/k1": -0.1105,
+      "cost-20261024T064154Z/s3/small-inserts/default/k2": -0.1088,
+      "cost-20261024T064154Z/s3/small-inserts/default/k3": -0.1948
     },
     "pooled_fan_in_distribution": {
       "13-20": 0.0,
       "2": 0.0,
       "21+": 0.0,
-      "3": 0.0017,
-      "4": 0.0009,
+      "3": 0.0,
+      "4": 0.0,
       "5": 0.0,
-      "6": 0.874,
-      "7-8": 0.1157,
-      "9-12": 0.0077
+      "6": 0.8801,
+      "7-8": 0.1148,
+      "9-12": 0.0051
     },
     "pooled_result_size_distribution": {
-      "129-256": 0.0137,
-      "17-32": 0.1003,
+      "129-256": 0.0162,
+      "17-32": 0.0952,
       "2-4": 0.0,
       "257-512": 0.0051,
-      "33-64": 0.0222,
-      "5-8": 0.8228,
-      "513+": 0.0026,
-      "65-128": 0.0325,
-      "9-16": 0.0009
+      "33-64": 0.0213,
+      "5-8": 0.8282,
+      "513+": 0.0008,
+      "65-128": 0.0315,
+      "9-16": 0.0017
     },
     "fit_max_tv": {
-      "fan_in_distribution": 0.0815,
-      "result_size_distribution": 0.0849
+      "fan_in_distribution": 0.0793,
+      "result_size_distribution": 0.0952
     },
     "tolerance_rules": {
       "amplification_bytes": "abs = largest |fit residual| + half the largest K=3 range of a fit case; rel = 0",
@@ -96,46 +96,46 @@
           "13-20": 0.0,
           "2": 0.0,
           "21+": 0.0,
-          "3": 0.0017,
-          "4": 0.0009,
+          "3": 0.0,
+          "4": 0.0,
           "5": 0.0,
-          "6": 0.874,
-          "7-8": 0.1157,
-          "9-12": 0.0077
+          "6": 0.8801,
+          "7-8": 0.1148,
+          "9-12": 0.0051
         },
-        "max_tv": 0.1637
+        "max_tv": 0.1593
       },
       "result_size_distribution": {
         "reference": {
-          "129-256": 0.0137,
-          "17-32": 0.1003,
+          "129-256": 0.0162,
+          "17-32": 0.0952,
           "2-4": 0.0,
           "257-512": 0.0051,
-          "33-64": 0.0222,
-          "5-8": 0.8228,
-          "513+": 0.0026,
-          "65-128": 0.0325,
-          "9-16": 0.0009
+          "33-64": 0.0213,
+          "5-8": 0.8282,
+          "513+": 0.0008,
+          "65-128": 0.0315,
+          "9-16": 0.0017
         },
-        "max_tv": 0.1706
+        "max_tv": 0.1911
       },
       "fan_in_mean": {
-        "min": 5.1077,
+        "min": 5.0609,
         "max": 7.3636,
         "basis": "fit",
         "reason": "fit per-record mean range widened by one part"
       },
       "amplification_bytes": {
         "model": "rewrite_levels_at_weighted_ratio",
-        "fan_in": 6.2846,
-        "abs": 0.214,
+        "fan_in": 6.1437,
+        "abs": 0.2502,
         "rel": 0
       }
     }
   },
   "tolerance": {
     "abs": {
-      "amplification_bytes": 0.214
+      "amplification_bytes": 0.2502
     },
     "rel": {
       "amplification_bytes": 0
@@ -263,5 +263,5 @@
       "line": 2155
     }
   ],
-  "prediction_commit": "eb71b1a4e0b"
+  "prediction_commit": "uncommitted"
 }

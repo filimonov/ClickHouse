@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "1e443600bf11eb3a",
+ "version": "d667d02f0f9e230c",
  "manifest": {
   "code_sha256": "e2bd5508f2ca072376f8de3e49c5762becf4187d2066c9b43508fb5fef4fe082",
   "code_files": {
@@ -14,20 +14,20 @@
    "viewmodel.js": "ff54fdb075460b1558025c8156397e865a1754c3e4d717a6a6412b0e9a49a81f"
   },
   "code_missing": [],
-  "contract_version": "1e443600bf11eb3a",
+  "contract_version": "d667d02f0f9e230c",
   "registry_version": "0.2.0",
-  "registry_sha256": "5c2b0f8999ec3001f9666e5fd48121d75c92309f525ef4d62bdffbfd55274c63",
+  "registry_sha256": "f27a5b71531d41281a4982fe6f39b72f607066a620ca38a3a0921093a7f3df18",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "daa7a21991c4e695caf4b0b44190a952a3bbed858d37fe4a230dc8bd957cf7be",
+  "coverage_sha256": "4f8f0e807d42d7835cd6bd0e05a66fc86481ceeb59dd7ad3ca389b9b7e7dde22",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
    {
     "report": "2026-10-24-storage-cost-lifecycle",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
-    "rig_commit": "d53e470cdb5d10ac940cf3fa4ab231506a974138",
+    "rig_commit": "474392fb9ad0f0fcc7a374a46f8a506f0af38070",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "raw_sha256sums": "ef403567bbb4b5de1f76dc4143017dfbb6c3c822fb23e55587de2eda9181e19b"
+    "raw_sha256sums": "b23a75d4e40769c4331bc81b49ef8696ddb108c896cc39e8254c4800541838e0"
    },
    {
     "report": "2026-10-24-storage-cost-phase0",
@@ -37,7 +37,7 @@
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    }
   ],
-  "breakeven_sha256": "bb84ac93204f4d428fa74e265cb6e6a3814406c4a50594736825b02883fbbbe3"
+  "breakeven_sha256": null
  },
  "evidence_statement": "Built from 2 report(s): 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0. 8 coefficient(s): 3 measured, 5 pinned to source. 6 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.2.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
@@ -3866,7 +3866,16 @@
    "default": null,
    "rule": null,
    "coef": "merge_effective_fan_in",
-   "validity": null,
+   "validity": {
+    "merge_size_ratio": [
+     18.22,
+     472.95
+    ],
+    "insert_rows": [
+     1000,
+     100000
+    ]
+   },
    "evidence": {
     "kind": "measured",
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5895,7 +5904,16 @@
    "default": null,
    "rule": null,
    "coef": "merge_fan_in_distribution",
-   "validity": null,
+   "validity": {
+    "merge_size_ratio": [
+     18.22,
+     472.95
+    ],
+    "insert_rows": [
+     1000,
+     100000
+    ]
+   },
    "evidence": {
     "kind": "measured",
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5964,7 +5982,16 @@
    "default": null,
    "rule": null,
    "coef": "merge_result_size_distribution",
-   "validity": null,
+   "validity": {
+    "merge_size_ratio": [
+     18.22,
+     472.95
+    ],
+    "insert_rows": [
+     1000,
+     100000
+    ]
+   },
    "evidence": {
     "kind": "measured",
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -6208,11 +6235,11 @@
    "id": "merge_effective_fan_in",
    "kind": "scalar",
    "dim": "1",
-   "value": 6.2846,
+   "value": 6.1437,
    "validity": {
     "merge_size_ratio": [
-     6.0,
-     806.0
+     18.22,
+     472.95
     ],
     "insert_rows": [
      1000,
@@ -6220,7 +6247,7 @@
     ]
    },
    "tolerance": {
-    "abs": 0.214,
+    "abs": 0.2502,
     "rel": 0
    },
    "evidence": {
@@ -6228,15 +6255,15 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
     "version": "0.2.0",
     "measurement_ids": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k1",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k2",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -6269,33 +6296,33 @@
    "fit": {
     "method": "least squares of amplification_bytes against the registry rule write_amplification_rule: 1 + rewrite_levels at the row-weighted final part size (lifecycle.amplification_rule)",
     "records": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3"
     ],
     "residuals": {
-     "cost-20261024T061359Z/s3/small-inserts/default/k1": -0.1488,
-     "cost-20261024T061359Z/s3/small-inserts/default/k2": -0.1086,
-     "cost-20261024T061359Z/s3/small-inserts/default/k3": -0.0638,
-     "cost-20261024T061359Z/s3/merge-natural/default/k1": 0.1929,
-     "cost-20261024T061359Z/s3/merge-natural/default/k2": 0.1929,
-     "cost-20261024T061359Z/s3/merge-natural/default/k3": 0.1929
+     "cost-20261024T064154Z/s3/small-inserts/default/k1": -0.1105,
+     "cost-20261024T064154Z/s3/small-inserts/default/k2": -0.1088,
+     "cost-20261024T064154Z/s3/small-inserts/default/k3": -0.1948,
+     "cost-20261024T064154Z/s3/merge-natural/default/k1": 0.15,
+     "cost-20261024T064154Z/s3/merge-natural/default/k2": 0.1701,
+     "cost-20261024T064154Z/s3/merge-natural/default/k3": 0.1701
     },
     "holdout_residuals": {
-     "cost-20261024T061359Z/s3/merge-natural/wide/k1": 0.1351,
-     "cost-20261024T061359Z/s3/merge-natural/wide/k2": 0.1351,
-     "cost-20261024T061359Z/s3/merge-natural/wide/k3": 0.1351
+     "cost-20261024T064154Z/s3/merge-natural/wide/k1": 0.0912,
+     "cost-20261024T064154Z/s3/merge-natural/wide/k2": 0.0912,
+     "cost-20261024T064154Z/s3/merge-natural/wide/k3": 0.0912
     },
     "committed_prediction": {
      "model": "rewrite_levels (row-weighted average of the levels)",
      "fan_in": 6.1912,
      "residuals": {
-      "cost-20261024T061359Z/s3/merge-natural/wide/k1": 0.1064,
-      "cost-20261024T061359Z/s3/merge-natural/wide/k2": 0.1064,
-      "cost-20261024T061359Z/s3/merge-natural/wide/k3": 0.1064
+      "cost-20261024T064154Z/s3/merge-natural/wide/k1": 0.1064,
+      "cost-20261024T064154Z/s3/merge-natural/wide/k2": 0.1064,
+      "cost-20261024T064154Z/s3/merge-natural/wide/k3": 0.1064
      }
     }
    }
@@ -6312,18 +6339,18 @@
      "13-20": 0.0,
      "2": 0.0,
      "21+": 0.0,
-     "3": 0.0017,
-     "4": 0.0009,
+     "3": 0.0,
+     "4": 0.0,
      "5": 0.0,
-     "6": 0.874,
-     "7-8": 0.1157,
-     "9-12": 0.0077
+     "6": 0.8801,
+     "7-8": 0.1148,
+     "9-12": 0.0051
     }
    },
    "validity": {
     "merge_size_ratio": [
-     6.0,
-     806.0
+     18.22,
+     472.95
     ],
     "insert_rows": [
      1000,
@@ -6362,15 +6389,15 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
     "version": "0.2.0",
     "measurement_ids": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k1",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k2",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -6379,12 +6406,12 @@
    "fit": {
     "method": "mean of the per-record fractions",
     "records": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3"
     ],
     "holdout_tv": {
      "against_committed_prediction": [
@@ -6393,9 +6420,9 @@
       0.0503
      ],
      "against_this_table": [
-      0.051,
-      0.051,
-      0.051
+      0.0519,
+      0.0519,
+      0.0519
      ]
     }
    }
@@ -6409,21 +6436,21 @@
      "merge_result_size_bucket"
     ],
     "values": {
-     "129-256": 0.0137,
-     "17-32": 0.1003,
+     "129-256": 0.0162,
+     "17-32": 0.0952,
      "2-4": 0.0,
      "257-512": 0.0051,
-     "33-64": 0.0222,
-     "5-8": 0.8228,
-     "513+": 0.0026,
-     "65-128": 0.0325,
-     "9-16": 0.0009
+     "33-64": 0.0213,
+     "5-8": 0.8282,
+     "513+": 0.0008,
+     "65-128": 0.0315,
+     "9-16": 0.0017
     }
    },
    "validity": {
     "merge_size_ratio": [
-     6.0,
-     806.0
+     18.22,
+     472.95
     ],
     "insert_rows": [
      1000,
@@ -6462,15 +6489,15 @@
     "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
     "version": "0.2.0",
     "measurement_ids": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k1",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k2",
-     "cost-20261024T061359Z/s3/merge-natural/wide/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+     "cost-20261024T064154Z/s3/merge-natural/wide/k3"
     ],
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -6479,12 +6506,12 @@
    "fit": {
     "method": "mean of the per-record fractions (result rows / inserted part rows)",
     "records": [
-     "cost-20261024T061359Z/s3/merge-natural/default/k1",
-     "cost-20261024T061359Z/s3/merge-natural/default/k2",
-     "cost-20261024T061359Z/s3/merge-natural/default/k3",
-     "cost-20261024T061359Z/s3/small-inserts/default/k1",
-     "cost-20261024T061359Z/s3/small-inserts/default/k2",
-     "cost-20261024T061359Z/s3/small-inserts/default/k3"
+     "cost-20261024T064154Z/s3/merge-natural/default/k1",
+     "cost-20261024T064154Z/s3/merge-natural/default/k2",
+     "cost-20261024T064154Z/s3/merge-natural/default/k3",
+     "cost-20261024T064154Z/s3/small-inserts/default/k1",
+     "cost-20261024T064154Z/s3/small-inserts/default/k2",
+     "cost-20261024T064154Z/s3/small-inserts/default/k3"
     ],
     "holdout_tv": {
      "against_committed_prediction": [
@@ -6493,9 +6520,9 @@
       0.0647
      ],
      "against_this_table": [
-      0.0581,
-      0.0581,
-      0.0581
+      0.0638,
+      0.0638,
+      0.0638
      ]
     }
    }

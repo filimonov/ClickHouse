@@ -3827,7 +3827,16 @@
       "default": null,
       "rule": null,
       "coef": "merge_effective_fan_in",
-      "validity": null,
+      "validity": {
+        "merge_size_ratio": [
+          18.22,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ]
+      },
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5856,7 +5865,16 @@
       "default": null,
       "rule": null,
       "coef": "merge_fan_in_distribution",
-      "validity": null,
+      "validity": {
+        "merge_size_ratio": [
+          18.22,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ]
+      },
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -5925,7 +5943,16 @@
       "default": null,
       "rule": null,
       "coef": "merge_result_size_distribution",
-      "validity": null,
+      "validity": {
+        "merge_size_ratio": [
+          18.22,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ]
+      },
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
