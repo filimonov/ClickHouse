@@ -48,6 +48,7 @@ A node is `{"kind": K, "dim": str, ...}`. `K` is one of `input`, `coef`, `lookup
 - `div` requires `on_zero` (`zero` or `unavailable`).
 - `lookup(table_id, keys)` needs at least one key. When the caller passes `tables` (id to index arity), the table must exist and `len(keys)` must equal its arity. Build `tables` with `table_arities_from_registry` or `table_arities_from_coefficients`.
 - Enums are `const` nodes with `dim` `enum:<name>`.
+- **Dims** are products of base units with integer exponents joined by `*` and `/` (`GiB*h`, `req/s`); `1` is the neutral unit. The evaluator expands these aliases first: `GiB_h` = `GiB*h`, `GiB_xfer` = `GiB`, `count` = `1`, `iops` = `req/s`, `mibps` = `MiB/s`. `checkDims` requires `add`/`sub`/`min`/`max`/`branch` operands to equal the declared dim, `mul` and `div` declared dims to equal the product or quotient of the operand dims, and `price` to declare `USD`.
 - `branch.cond` is `{"op": "<"|"<="|">"|">="|"=="|"!=", "a": node, "b": node}`.
 
 Worked examples, each a standalone node validated with `validate_node(node, "$", False, tables={"objects_per_part": 2})`:

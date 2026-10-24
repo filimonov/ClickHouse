@@ -43,9 +43,9 @@ test('test_dims_combine_and_mismatch', () => {
   assert.deepEqual(model.checkDims(bin('mul', b('uncompressed_bytes_per_part'), k(2, '1'), 'bytes'), registry), []);
   const mismatch = model.checkDims(bin('add', b('uncompressed_bytes_per_part'), k(1, 'count'), 'bytes'), registry);
   assert.equal(mismatch.length, 1);
-  assert.match(mismatch[0], /^\$: add operands bytes and count/);
+  assert.match(mismatch[0], /^\$: add operands bytes and 1 must both equal bytes/);
   const mulBad = model.checkDims(bin('mul', b('uncompressed_bytes_per_part'), k(2, '1'), 'count'), registry);
-  assert.match(mulBad[0], /^\$: mul: bytes must equal count/);
+  assert.match(mulBad[0], /^\$: mul of bytes and 1 is bytes, node declares 1/);
   const noDim = model.checkDims({ kind: 'add', a: k(1), b: k(1) }, registry);
   assert.deepEqual(noDim, ['$: missing dim']);
   const unknown = model.checkDims(bin('add', k(1), inp('nope'), 'count'), registry);
@@ -53,7 +53,7 @@ test('test_dims_combine_and_mismatch', () => {
   assert.deepEqual(model.checkDims({ kind: 'var', name: 'x', dim: 'count' }, registry), ['$: unbound var x']);
   assert.deepEqual(model.checkDims({ kind: 'zap', dim: 'count' }, registry), ['$: unknown kind zap']);
   assert.deepEqual(model.checkDims({ kind: 'price', dim: 'count', unit: 'u', rule_id: 'r', quantity: k(1) }, registry),
-    ['$: price must have dim USD, got count']);
+    ['$: price must have dim USD, got 1']);
   assert.deepEqual(model.checkDims(load('example-part-type.json'), registry), []);
   assert.deepEqual(model.checkDims(load('example-objects-per-part.json'), registry), []);
 });
@@ -127,10 +127,16 @@ test('test_coef_outside_validity_extrapolated', () => {
 test('test_unavailable_propagates', () => {
   const un = inp('absent');
   const c = ctx({ sets: new Map([['s', ['a', 'b']]]) });
-  for (const kind of ['add', 'sub', 'mul', 'min', 'max']) {
-    assert.equal(model.evaluate(bin(kind, k(1), un), c).state, 'unavailable', kind);
-    assert.equal(model.evaluate(bin(kind, un, k(1)), c).state, 'unavailable', kind);
+  for (const kind of ['add', 'sub', 'mul', 'min', 'max', 'div']) {
+    const extra = kind === 'div' ? { on_zero: 'zero' } : {};
+    assert.equal(model.evaluate(bin(kind, k(1), un, 'count', extra), c).state, 'unavailable', kind);
+    assert.equal(model.evaluate(bin(kind, un, k(1), 'count', extra), c).state, 'unavailable', kind);
   }
+  const lk = { kind: 'lookup', dim: 'count', table_id: 't', keys: [un] };
+  assert.equal(model.evaluate(lk, ctx({ tables: new Map([['t', { index: ['a'], dim: 'count', values: {} }]]) })).state, 'unavailable');
+  const br = { kind: 'branch', dim: 'count', cond: { op: '<', a: un, b: k(1) }, then: k(1), else: k(2) };
+  assert.equal(model.evaluate(br, c).state, 'unavailable');
+  assert.equal(model.evaluate({ kind: 'var', name: 'v', dim: 'count' }, ctx({ vars: new Map([['v', null]]) })).state, 'unavailable');
   assert.equal(model.evaluate({ kind: 'ceil_to', dim: 'count', x: un, step: k(1) }, c).state, 'unavailable');
   assert.equal(model.evaluate({ kind: 'floor_to', dim: 'count', x: k(1), step: un }, c).state, 'unavailable');
   assert.equal(model.evaluate({ kind: 'sum_over', dim: 'count', set: 's', var: 'v', body: un }, c).state, 'unavailable');
@@ -155,7 +161,9 @@ test('test_render_symbolic_fixture', () => {
   assert.equal(model.render(bin('sub', bin('sub', inp('a'), inp('b')), inp('c')), registry), 'a − b − c');
   assert.equal(model.render({ kind: 'price', dim: 'USD', unit: 'GiB_month', rule_id: 'storage', quantity: inp('gib') }, registry),
     'price(unit=GiB_month, rule=storage, gib)');
-  assert.equal(model.render(mul, registry), model.render(mul, registry));
+  const reordered = { ...registry, quantities: [...registry.quantities].reverse() };
+  const fx = load('example-multipart-parts.json');
+  assert.equal(model.render(fx, reordered), model.render(fx, registry));
 });
 
 test('test_fractional_values_not_rounded_without_node', () => {
@@ -257,4 +265,71 @@ test('test_lookup_arity', () => {
   assert.deepEqual(model.checkDims(bad, registry),
     ['$: lookup objects_per_part has 1 keys, table index has 2']);
   assert.deepEqual(model.checkDims(load('example-objects-per-part.json'), registry), []);
+});
+
+test('test_dim_algebra', () => {
+  const registry = { quantities: [] };
+  const n = (kind, a, b, dim) => ({ kind, dim, a, b });
+  const c = (dim) => ({ kind: 'const', value: 1, dim });
+  assert.equal(model.checkDims(n('mul', c('GiB'), c('req'), 'count'), registry).length, 1);
+  assert.equal(model.checkDims(n('div', c('1'), c('GiB'), 'GiB'), registry).length, 1);
+  assert.deepEqual(model.checkDims(n('mul', c('GiB'), c('h'), 'GiB_h'), registry), []);
+  assert.deepEqual(model.checkDims(n('div', c('req'), c('s'), 'iops'), registry), []);
+  assert.deepEqual(model.checkDims(n('mul', c('iops'), c('s'), 'req'), registry), []);
+  assert.deepEqual(model.checkDims(n('add', c('count'), c('1'), 'count'), registry), []);
+  assert.deepEqual(model.checkDims(n('div', c('GiB'), c('GiB'), 'count'), registry), []);
+  const cl = (x, step, dim) => ({ kind: 'ceil_to', dim, x, step });
+  assert.deepEqual(model.checkDims(cl(c('GiB'), c('GiB'), 'GiB'), registry), []);
+  assert.deepEqual(model.checkDims(cl(c('GiB'), c('1'), 'GiB'), registry), []);
+  assert.equal(model.checkDims(cl(c('GiB'), c('h'), 'GiB'), registry).length, 1);
+  const reg = { quantities: [
+    { id: 'p', unit: 'GiB', value_type: 'number', coef: 'p' },
+    { id: 'tab', value_type: 'table', unit: 'objects', table: { index: ['a'], dim: 'count' }, coef: 'tab' }] };
+  assert.equal(model.checkDims({ kind: 'coef', id: 'p', dim: 'req' }, reg).length, 1);
+  assert.deepEqual(model.checkDims({ kind: 'coef', id: 'p', dim: 'GiB' }, reg), []);
+  assert.deepEqual(model.checkDims({ kind: 'lookup', dim: 'count', table_id: 'tab', keys: [c('enum:a')] }, reg), []);
+  assert.equal(model.checkDims({ kind: 'lookup', dim: 'GiB', table_id: 'tab', keys: [c('enum:a')] }, reg).length, 1);
+});
+
+test('test_check_dims_formulas_example_clean', () => {
+  const registry = load('registry.json');
+  registry.quantities.push({ id: 'parts_inserted', unit: 'count', value_type: 'number' });
+  const cell = load('formulas.json').cells.insert;
+  const nodes = [...cell.ledger_rows.map((r) => r.expr), ...cell.allocation.shares.map((x) => x.weight),
+    ...cell.states.map((x) => x.cond), ...cell.notes];
+  for (const node of nodes) assert.deepEqual(model.checkDims(node, registry), []);
+});
+
+test('test_extrapolated_propagates_and_empty_sum', () => {
+  const coefs = new Map([['c', { kind: 'scalar', value: 4, dim: 'count', validity: { size: [10, 100] } }]]);
+  const c = ctx({ coefs, inputs: new Map([['size', 500]]), sets: new Map([['s', ['a']], ['e', []]]) });
+  const cf = { kind: 'coef', id: 'c', dim: 'count' };
+  const br = { kind: 'branch', dim: 'count', cond: { op: '<', a: cf, b: k(100) }, then: k(1), else: k(2) };
+  assert.equal(model.evaluate(br, c).extrapolated, true);
+  const brThen = { kind: 'branch', dim: 'count', cond: { op: '<', a: k(1), b: k(2) }, then: cf, else: k(2) };
+  assert.equal(model.evaluate(brThen, c).extrapolated, true);
+  assert.equal(model.evaluate({ kind: 'sum_over', dim: 'count', set: 's', var: 'v', body: cf }, c).extrapolated, true);
+  assert.equal(model.evaluate({ kind: 'ceil_to', dim: 'count', x: cf, step: k(1) }, c).extrapolated, true);
+  assert.equal(model.evaluate({ kind: 'price', dim: 'USD', unit: 'u', rule_id: 'r', quantity: cf }, c).extrapolated, true);
+  const empty = model.evaluate({ kind: 'sum_over', dim: 'count', set: 'e', var: 'v', body: cf }, c);
+  assert.equal(empty.state, 'ok');
+  assert.equal(empty.value, 0);
+});
+
+test('test_evaluate_cell_fails_closed', () => {
+  const un = inp('absent');
+  const row = { row_type: 'request', op_kind: 'PutObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', expr: k(1) };
+  const a = model.evaluateCell({ ledger_rows: [row], allocation: null,
+    states: [{ id: 's', cond: bin('add', un, k(1)), reason: 'r' }], notes: [] }, ctx());
+  assert.equal(a.states[0].active, null);
+  assert.equal(a.state, 'unavailable');
+  assert.match(a.reason, /state s condition unavailable/);
+  const b = model.evaluateCell({ ledger_rows: [row],
+    allocation: { shares: [{ cell: 'x', weight: k(1) }, { cell: 'y', weight: un }] }, states: [], notes: [] }, ctx());
+  assert.equal(b.allocation, null);
+  assert.equal(b.state, 'unavailable');
+  assert.match(b.reason, /allocation weight for y unavailable/);
+  const d = model.evaluateCell({ ledger_rows: [row], allocation: null }, ctx());
+  assert.deepEqual(d.states, []);
+  assert.equal(d.state, 'ok');
 });
