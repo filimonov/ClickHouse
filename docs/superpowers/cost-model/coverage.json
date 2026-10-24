@@ -9856,7 +9856,6 @@
       "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
-        "cost-20261024T115147Z/s3/replication-fetch/merge/k2",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
       ],
       "status": "done"
@@ -9875,7 +9874,6 @@
       "prediction_commit": "bac037b336d",
       "measurement_ids": [
         "cost-20261024T115147Z/s3/replication-fetch/merge/k1",
-        "cost-20261024T115147Z/s3/replication-fetch/merge/k2",
         "cost-20261024T115147Z/s3/replication-fetch/merge/k3"
       ],
       "status": "done"

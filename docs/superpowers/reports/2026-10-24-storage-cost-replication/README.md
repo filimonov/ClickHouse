@@ -343,8 +343,9 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
   upstream `unknown`, no fault rule installed) and reissued from offset 0 (seq 9000, 4 318 512 bytes): r1
   `GetObject` 44 against 43, in 1 of 3 repeats. The cause in the reader is not identified. The prediction is now
   43..44 (`basis: assumption`, `bac037b336d`). The fit edge of `acquire_requests` and `acquire_bytes` on
-  `replication-fetch.merge` / `s3` cites all three repeats, k2 included (it fits the range; its record keeps the
-  FAILED status it got under the exact 43); `acquire_requests` carries `abs` tolerance 1 for it. The re-read stays
+  `replication-fetch.merge` / `s3` cites k1 and k3 only: k2 fits the range, but its record keeps the FAILED status it
+  got under the exact 43, and a done edge's measured fixtures (`tools/build_fixtures.py`) accept only ok records. Its
+  request count is in this paragraph and `acquire_requests` carries `abs` tolerance 1 for it. The re-read stays
   open.
 - **Manifest modes follow the cards.** The forced replication and fault cards are `stochastic` (CAS windows cross
   their boundaries) and compare `s3`, `s3plain` and `local` exactly themselves; their 19 manifests said
