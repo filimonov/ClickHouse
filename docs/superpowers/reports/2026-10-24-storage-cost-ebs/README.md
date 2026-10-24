@@ -23,7 +23,7 @@ EBS cells price one replica's gp3 volumes from three things:
 |---|---|
 | Binary | antalya-26.8 `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
 | Rig policy / model variant | `local` / `ebs` |
-| Report run | `cost-20261024T162633Z`: all cases, K = 3, one rig commit |
+| Report run | `cost-20261024T171231Z`: all cases, K = 3, one rig commit |
 | Ops predictions | `be94501e681` (manifests of the s3 report on `local`) |
 | Earlier runs | `cost-20261024T080735Z` (fit, before the `preadv2` fix), `cost-20261024T132526Z` (fit), `cost-20261024T135713Z` and `cost-20261024T140702Z` (consumed hold-outs, see [Hold-outs](#holdouts)), `cost-20261024T140341Z`, `cost-20261024T160737Z` (fit after the F1 fix) |
 | Predictions | source `d5cf507a02c`; consumed hold-outs `e145a15461a`, `dcd7f48fcf8`; hold-out `b498967f6f3` |
@@ -39,7 +39,7 @@ registry quantities (`insert_rows`, `mutated_part_rows`), so scale 0.05 and the 
   append counts a whole 4 KiB page. Filesystem journal and metadata writes are not in it, and files deleted before
   writeback are over-counted. It is a process-side measure of volume writes, not a device measurement.
 - **The embedded Keeper runs in r1's process.** `io-sizes.idle` quantifies it: r1 (server + Keeper) writes
-  `64 717` B/s at idle, r2 (server only) `64 171` B/s. The Keeper's share is about `546` B/s. Its traced
+  `66 492` B/s at idle, r2 (server only) `64 171` B/s. The Keeper's share is about `2 321` B/s. Its traced
   log writes are only `24.6` B/s; page rounding of small appends explains the rest of the gap.
 - **Server background writes are excluded from EBS demand.** Every `io-sizes` pass idles 10 s first, and each phase
   subtracts r1's idle rate × phase time. That rate is mostly the server itself: system log tables and the server log,
@@ -115,14 +115,14 @@ complex-type schema against 11 for the narrow ones.
 
 | Operation, direction | `io_bytes_per_op` (mean ± spread) | Syscall I/Os per MiB, proxy: max (mean) |
 |---|---|---|
-| `inserts, read` | 0.0003 ± 0.0004 | no bytes |
-| `inserts, write` | 1.0335 ± 0.0346 | 25.02 (14.83) |
+| `inserts, read` | 0.0002 ± 0.0003 | no bytes |
+| `inserts, write` | 1.0322 ± 0.0358 | 25.02 (14.53) |
 | `merges, read` | 1.0047 ± 0.0035 | 18.93 (15.1) |
-| `merges, write` | 1.0067 ± 0.0115 | 9.783 (6.242) |
+| `merges, write` | 1.0065 ± 0.0095 | 9.315 (6.19) |
 | `reads, read` | 1.2249 ± 0.1396 | 15.93 (10.78) |
 | `reads, write` | -0.0000 ± 0.0000 | no bytes |
 
-Request sizes (fraction of requests): `inserts.write`: 1MiB 0.12, 256KiB 0.02, 512KiB 0.02, 64KiB 0.02, 8KiB 0.01, <=4KiB 0.78; `merges.read`: 128KiB 0.66, 16KiB 0.01, 32KiB 0.01, 64KiB 0.05, <=4KiB 0.25; `merges.write`: 16KiB 0.02, 1MiB 0.47, 256KiB 0.02, 32KiB 0.02, 512KiB 0.02, <=4KiB 0.43; `reads.read`: 128KiB 0.82, 8KiB 0.01, <=4KiB 0.16
+Request sizes (fraction of requests): `inserts.write`: 1MiB 0.13, 256KiB 0.02, 512KiB 0.02, 64KiB 0.02, <=4KiB 0.78; `merges.read`: 128KiB 0.66, 16KiB 0.01, 32KiB 0.01, 64KiB 0.05, <=4KiB 0.25; `merges.write`: 16KiB 0.02, 1MiB 0.47, 256KiB 0.02, 32KiB 0.02, 512KiB 0.02, <=4KiB 0.43; `reads.read`: 128KiB 0.82, 8KiB 0.01, <=4KiB 0.16
 
 ### Hold-outs {#holdouts}
 
@@ -146,38 +146,39 @@ The FAILED record sets stay in `measurements.jsonl`, and their edges are `consum
 
 | Coefficient, key | Hold-out value | Accepted | Result |
 |---|---|---|---|
-| `io_bytes_per_op`, `inserts.read` | 0.0002 | 0.0003 ± 0.0059 | pass |
-| `io_bytes_per_op`, `inserts.write` | 1.0217 | 1.0335 ± 0.1775 | pass |
+| `io_bytes_per_op`, `inserts.read` | 0.0002 | 0.0002 ± 0.0055 | pass |
+| `io_bytes_per_op`, `inserts.write` | 1.0244 | 1.0322 ± 0.1798 | pass |
 | `io_bytes_per_op`, `merges.read` | 1.0025 | 1.0047 ± 0.1125 | pass |
-| `io_bytes_per_op`, `merges.write` | 1.0048 | 1.0067 ± 0.1287 | pass |
+| `io_bytes_per_op`, `merges.write` | 1.0048 | 1.0065 ± 0.1247 | pass |
 | `io_bytes_per_op`, `reads.read` | 1.3151 | 1.2249 ± 0.4067 | pass |
 | `io_bytes_per_op`, `reads.write` | -0.0000 | -0.0000 ± 0.0051 | pass |
-| `io_request_size_distribution`, `inserts.write` | TV 0.092 | TV ≤ 0.383 | pass |
+| `io_request_size_distribution`, `inserts.write` | TV 0.076 | TV ≤ 0.368 | pass |
 | `io_request_size_distribution`, `merges.read` | TV 0.081 | TV ≤ 0.586 | pass |
-| `io_request_size_distribution`, `merges.write` | TV 0.127 | TV ≤ 0.768 | pass |
+| `io_request_size_distribution`, `merges.write` | TV 0.129 | TV ≤ 0.754 | pass |
 | `io_request_size_distribution`, `reads.read` | TV 0.111 | TV ≤ 0.686 | pass |
-| `peak_factor` | 15.0–15.9 (`merge-natural.wide`) | 1.00 ± 0.105 | FAIL: consumed, the quantity became an assumed input |
+| `peak_factor` | 14.9–15.9 (`merge-natural.wide`) | 1.00 ± 0.105 | FAIL: consumed, the quantity became an assumed input |
 
 ### Validation outside the fit domain {#validation}
+
+The 1 000-row probe `io-sizes.narrow-compact-1k` gave inserts write 2.2898, 2.5081, 2.2903 against 1.0322 ± 0.1798: outside tolerance, so the validity stays at 80 000–300 000 rows and 1 000-row inserts are marked extrapolated.
 
 Total r1 `write_bytes` of the natural-merge cases on `local` against inserted × `io_bytes_per_op[inserts, write]` +
 merged × `io_bytes_per_op[merges, write]` + idle rate × wall time:
 
 | Record | Predicted B | Measured B | Measured / predicted |
 |---|---|---|---|
-| `cost-20261024T162633Z/local/merge-natural/default/k1` | 365 325 724 | 368 566 272 | 1.009 |
-| `cost-20261024T162633Z/local/merge-natural/default/k2` | 365 327 289 | 368 570 368 | 1.009 |
-| `cost-20261024T162633Z/local/merge-natural/default/k3` | 365 327 121 | 368 562 176 | 1.009 |
-| `cost-20261024T162633Z/local/merge-natural/wide/k1` | 317 963 710 | 322 535 424 | 1.014 |
-| `cost-20261024T162633Z/local/merge-natural/wide/k2` | 317 996 335 | 322 613 248 | 1.015 |
-| `cost-20261024T162633Z/local/merge-natural/wide/k3` | 317 962 621 | 322 543 616 | 1.014 |
-| `cost-20261024T162633Z/local/small-inserts/default/k1` | 274 547 779 | 332 718 080 | 1.212 |
-| `cost-20261024T162633Z/local/small-inserts/default/k2` | 274 546 596 | 332 824 576 | 1.212 |
-| `cost-20261024T162633Z/local/small-inserts/default/k3` | 274 546 917 | 332 754 944 | 1.212 |
+| `cost-20261024T171231Z/local/merge-natural/default/k1` | 365 211 500 | 368 492 544 | 1.009 |
+| `cost-20261024T171231Z/local/merge-natural/default/k2` | 365 209 149 | 368 562 176 | 1.009 |
+| `cost-20261024T171231Z/local/merge-natural/default/k3` | 365 209 629 | 368 439 296 | 1.009 |
+| `cost-20261024T171231Z/local/merge-natural/wide/k1` | 317 876 698 | 322 490 368 | 1.015 |
+| `cost-20261024T171231Z/local/merge-natural/wide/k2` | 317 876 279 | 322 363 392 | 1.014 |
+| `cost-20261024T171231Z/local/merge-natural/wide/k3` | 317 942 898 | 322 543 616 | 1.014 |
+| `cost-20261024T171231Z/local/small-inserts/default/k1` | 274 573 022 | 332 939 264 | 1.213 |
+| `cost-20261024T171231Z/local/small-inserts/default/k2` | 274 580 809 | 333 012 992 | 1.213 |
+| `cost-20261024T171231Z/local/small-inserts/default/k3` | 274 584 844 | 332 906 496 | 1.212 |
 
-`small-inserts.default` (1 000-row parts, outside the validity 80 000–300 000 rows) writes 21 % more than predicted:
-per-part metadata files and page rounding weigh more in small parts. The page marks inputs outside the validity as
-extrapolated.
+`small-inserts.default` (1 000-row parts with natural merges) writes about 21 % more than predicted: per-part
+metadata files and page rounding weigh more in small parts.
 
 ### Peak factor {#peak}
 
@@ -204,9 +205,9 @@ so `op_write_bytes` is the window's net r1 write bytes (idle rate × wall time s
 
 | Operation | Unit | Fit | Hold-out |
 |---|---|---|---|
-| `deletes` | B per dropped part | 2.194e+05 ± 368 | 1.261e+05, 1.263e+05, 1.263e+05 (not modelled, cut, ± 3.37e+04) |
-| `mutations` | B per source row | 13.31 ± 9.78 | 26.65, 26.65, 26.65 (pass, ± 21.6) |
-| `recovery` | B per restart | -5.294e+04 ± 4.36e+04 | -3.185e+04, -3.111e+04, -3.116e+04 (not modelled, cut, ± 9.51e+04) |
+| `deletes` | B per dropped part | 2.174e+05 ± 80.6 | 1.251e+05, 1.251e+05, 1.251e+05 (not modelled, cut, ± 3.28e+04) |
+| `mutations` | B per source row | 13.29 ± 9.77 | 26.61, 26.62, 26.62 (pass, ± 21.5) |
+| `recovery` | B per restart | -3.628e+04 ± 642 | -1.028e+05, -4.001e+04, -3.64e+04 (not modelled, cut, ± 6.73e+03) |
 
 Only mutations are modelled (`op_write_bytes[mutations]`, fit and passed hold-out). Drops and restarts are not:
 
