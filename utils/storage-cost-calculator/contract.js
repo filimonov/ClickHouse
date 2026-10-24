@@ -116,7 +116,7 @@
       owner.set(rec.id, { ref, kind: rec.kind });
       if (rec.kind === 'table') {
         if (!isObj(rec.value)) problems.push(`coefficients[${i}] (${rec.id}).value: table coefficient needs {index, values}, got ${typeOf(rec.value)}`);
-        else tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim };
+        else tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim, validity: rec.validity || null };
       }
     });
     return new Map([...owner].map(([id, o]) => [id, o.kind]));

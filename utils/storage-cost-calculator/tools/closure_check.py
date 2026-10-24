@@ -230,6 +230,10 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
                 variant = POLICY_VARIANT.get(policy.removesuffix("_cached"))
                 if variant not in card["model_variants"]:
                     problems.append(f"card {card['name']}.{case['case_id']}: policy {policy} measures {variant}, not in model_variants")
+    for card in coverage["cards"]:
+        measured = {POLICY_VARIANT.get(p.removesuffix("_cached")) for case in card["cases"] for p in case["policies"]}
+        problems += [f"card {card['name']}: model variant {v} is not measured by any case policy"
+                     for v in card["model_variants"] if v not in measured]
     problems += [f"family {f} has no card" for f in sorted(families - {c["family"] for c in coverage["cards"]})]
     problems += _cells_on_cut(coverage, formulas_list)
     if _cut_coefficients(coverage) and not PRESETS.exists():

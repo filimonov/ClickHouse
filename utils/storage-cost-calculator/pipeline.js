@@ -203,13 +203,15 @@
 
   function buildCtx(contract, inputs, cut) {
     const values = new Map(inputs);
+    // A pinned quantity is a registered constant: expressions read it like an input.
+    for (const q of contract.registry) if (q.kind === 'pinned' && !values.has(q.id) && q.default !== null && q.default !== undefined) values.set(q.id, q.default);
     const coefs = new Map();
     for (const c of contract.coefficients) {
       if (c.kind === 'table' || cut.coefs.has(c.id) || c.value === null || c.value === undefined) continue;
       coefs.set(c.id, { value: c.value, validity: c.validity || null });
     }
     const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
-    const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null };
+    const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set() };
     // Registry derivations may read each other; evaluate until no new value appears (they are acyclic, §4.2).
     const pending = contract.registry.filter((x) => x.kind === 'derivation' && x.rule && !values.has(x.id));
     for (let changed = true; changed;) {
@@ -217,7 +219,11 @@
       for (const x of pending) {
         if (values.has(x.id)) continue;
         const r = model().evaluate(x.rule, ctx);
-        if (r.state === 'ok') { values.set(x.id, r.value); changed = true; }
+        if (r.state === 'ok') {
+          values.set(x.id, r.value);
+          if (r.extrapolated) ctx.extrapolatedInputs.add(x.id);
+          changed = true;
+        }
       }
     }
     return ctx;
@@ -345,6 +351,7 @@
     if (!occurs) states.push({ id: 'unavailable', reason: `${v}: no operation has a supported family in this contract` });
     for (const op of contract.operations) {
       const app = (contract.applicability[v] || {})[op] || {};
+      if (contract.families.every((f) => app[f] === 'not_applicable')) continue;
       // A `not_applicable` family does not occur on this variant: it adds nothing and changes no state.
       const fams = contract.families.filter((f) => app[f] !== 'supported' && app[f] !== 'not_applicable');
       const notSup = fams.filter((f) => app[f] === 'not_supported');
@@ -418,7 +425,7 @@
     } catch (e) {
       return { problem: `billing failed: ${e.message}` };
     }
-    const a = B.allocate(b.lines, ops.map((op) => ({ key: op, name: op, rows: ev.cells[op].rows, shares: ev.cells[op].ev.allocation })), preset);
+    const a = B.allocate(b.lines, ops.map((op) => ({ key: op, name: op, rows: ev.cells[op].rows, shares: ev.cells[op].ev.allocation })), preset, options.outcome_mix || null);
     if (a.problems.length) return { problem: a.problems.join('; ') };
     for (const op of ops) Object.assign(out.cells[op], { money: a.byCell[op].money, lines: a.byCell[op].lines });
     out.total = b.total;

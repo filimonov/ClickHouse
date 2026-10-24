@@ -440,3 +440,46 @@ test('test_block_lines_follow_replicas_and_s3_lines_follow_their_formulas', () =
   ins.delete('replicas');
   assert.equal(pipeline.run(C, ins, AWS, {}).variants.ebs.state, 'unavailable');
 });
+
+test('test_extrapolation_survives_derivations_and_table_validity', () => {
+  // A registry derivation over a coefficient used outside its range is extrapolated at every use.
+  const viaDerivation = load((x) => {
+    x.registry.push(Object.assign({}, x.registry.find((q) => q.id === 'data_bytes'), {
+      id: 'puts_derived', kind: 'derivation', unit: 'count', default: null,
+      rule: { kind: 'mul', dim: 'count', a: { kind: 'input', id: 'inserts_per_month', dim: 'count' }, b: { kind: 'coef', id: 'puts_per_insert_s3', dim: 'count' } },
+    }));
+    x.formulas.s3.inserts.ledger_rows[0].expr = { kind: 'input', id: 'puts_derived', dim: 'count' };
+  });
+  const d = run({ inserts_per_month: 60000 }, viaDerivation).variants.s3;
+  assert.equal(d.cells.inserts.extrapolated, true);
+  assert.equal(d.extrapolated, true);
+  assert.equal(run({ inserts_per_month: 1000 }, viaDerivation).variants.s3.extrapolated, false);
+  // A table coefficient's validity domain applies to its lookups.
+  const viaTable = load((x) => {
+    const t = x.coefficients.find((k) => k.id === 'ebs_mutation_iops');
+    t.status = 'ok';
+    t.validity = { mutations_per_month: [0, 10] };
+  });
+  const out = run({ mutations_per_month: 20 }, viaTable).variants.ebs;
+  assert.equal(out.cells.mutations.extrapolated, true);
+  assert.equal(out.extrapolated, true);
+  assert.equal(run({ mutations_per_month: 5 }, viaTable).variants.ebs.extrapolated, false);
+});
+
+test('test_all_not_applicable_operation_contributes_nothing', () => {
+  const base = run().variants.cas;
+  const c = load((x) => { for (const f of x.families) x.applicability.cas.storage[f] = 'not_applicable'; });
+  const r = run({}, c).variants.cas;
+  assert.equal(r.state, 'ok');
+  assert.ok(r.total < base.total, `storage must not be billed: ${r.total} vs ${base.total}`);
+  assert.equal(r.cells.storage, undefined);
+});
+
+test('test_pinned_quantity_default_reaches_expressions', () => {
+  const c = load((x) => { x.registry.find((q) => q.id === 'inserts_per_month').kind = 'pinned'; });
+  const withoutIt = new Map(inputs());
+  withoutIt.delete('inserts_per_month');
+  const r = pipeline.run(c, withoutIt, AWS, {});
+  assert.equal(r.variants.s3.state, 'ok');
+  close(r.variants.s3.total, run().variants.s3.total);
+});

@@ -131,7 +131,7 @@
     const cell = table.values[key];
     const bad = typeof cell === 'number' ? badValue({ dim: 'count' }, cell) : `invalid value ${JSON.stringify(cell)}`;
     if (bad) return unavailable(node, kids, ex, Object.assign({ reason: `table ${node.table_id}[${key}]: ${bad}` }, extra));
-    return ok(node, cell, kids, ex, extra);
+    return ok(node, cell, kids, ex || validityExtrapolated(table.validity, ctx), extra);
   }
 
   function evalBranch(node, ctx) {
@@ -181,7 +181,8 @@
         const v = ctx.inputs.get(node.id);
         if (v === undefined) return unavailable(node, []);
         const bad = badValue(node, v);
-        return bad ? unavailable(node, [], false, { reason: `input ${node.id}: ${bad}` }) : ok(node, v, []);
+        return bad ? unavailable(node, [], false, { reason: `input ${node.id}: ${bad}` })
+          : ok(node, v, [], !!(ctx.extrapolatedInputs && ctx.extrapolatedInputs.has(node.id)));
       }
       case 'coef': {
         const c = ctx.coefs.get(node.id);

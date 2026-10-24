@@ -280,3 +280,14 @@ test('test_block_rows_need_explicit_replicas', () => {
   // Without block rows replicas is not needed.
   assert.doesNotThrow(() => billing.billVariant([row('request', 'GetObject', 'all', 1)], P(), null, null));
 });
+
+test('test_allocation_keeps_the_outcome_mix', () => {
+  const mix = { PutObject: { server_error: 1 } };
+  const rows = [row('request', 'PutObject', 'all', 1000), row('request', 'PutObject', 'ok', 1000)];
+  const b = billing.bill(rows, P(), 'variant', mix);
+  close(line(b, 'put_copy_post_list').quantity, 1000);
+  const cells = [{ key: 'a', name: 'a', rows: [rows[0]] }, { key: 'b', name: 'b', rows: [rows[1]] }];
+  const a = billing.allocate(b.lines, cells, P(), mix);
+  close(a.byCell.a.money, 0);
+  close(a.byCell.b.money, b.total);
+});

@@ -139,6 +139,13 @@ class SupportTest(unittest.TestCase):
         conditional['cells']['x']['states'][0]['cond'] = {'kind': 'const', 'value': 1, 'dim': 'bool'}
         self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 6)
 
+    def test_card_variant_without_a_measuring_policy_is_flagged(self):
+        cov = self.coverage()
+        cov['cards'][0]['model_variants'] = ['s3', 'cas']
+        cov['domain']['variants'] = ['s3', 'cas']
+        problems = cc.support(registry(), cov, [], require_formulas=False)
+        self.assertTrue(any('cas is not measured by any case policy' in p for p in problems), problems)
+
     def test_planned_evidence_backs_nothing_and_cuts_reach_cells(self):
         reg = registry(quantity('k', kind='measured', default=None))
         cell = formulas('variant', coef('k'), op='insert')

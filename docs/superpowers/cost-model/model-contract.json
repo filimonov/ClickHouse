@@ -1,20 +1,20 @@
 {
  "schema": "contract/1",
- "version": "e522a3bc08566d71",
+ "version": "4aa245f69ce2609e",
  "manifest": {
-  "code_sha256": "f4f658efbcd47b9c308481ab774fafea27889d04e88613755df7ee6f5deaab80",
+  "code_sha256": "e29c1bfa4ce2c0212b98ba35c9636270512297d1c486b4116cc11b07c00a1903",
   "code_files": {
-   "billing.js": "7938ac41114e362f1e8fab3bf7cd5494391bc667e65a8237fdf268d34e8e0a38",
-   "contract.js": "1fab9f01cefb29e12234670db214089a13331c94b6868c39d0a4909dd2d2ad0f",
-   "model.js": "377b8e98df76c529ff445ac3a98e632834d15f6a5e3c8978be932138fa89598a",
-   "pipeline.js": "9a32661929dce8b569c5fc00c34633b5d2d5a831b6d49bc94ec8fd1dc78d69c3",
+   "billing.js": "190a45779f3bed307410d6ffc0998593bff5c193d3090cd54caf15757d4be0fc",
+   "contract.js": "ab36253ad853095547580b9c4f0918b535630b1158d58a3822102295f39eff82",
+   "model.js": "f97820f06af3384888e16a24dafcc9572344feaedd32694c723d672b4557b890",
+   "pipeline.js": "52da0002054b53e87d10ba4772ca04ae1c2e3f7a616091182cd45ff0ed7e94d9",
    "presets.js": "2b389a93cc7e34340c64e6c45dc19093472e79697cd748ab6bced2952df2c325",
    "ui.js": "6ef4af7239c8cea574c3387de2c2e57a170b7c78e3923562fdfd9cc921e2987c",
    "urlstate.js": "262c24ad7e113d8ae2a2818f3c2c2987a4b46f56b4eae10ad93c43ce9cc5ca48",
    "viewmodel.js": "23ea3fb2148c0ee7e1dd73f9deed90cee2d2e778118ec1c8614ed4547c7ef37f"
   },
   "code_missing": [],
-  "contract_version": "e522a3bc08566d71",
+  "contract_version": "4aa245f69ce2609e",
   "registry_version": "0.2.0",
   "registry_sha256": "c175bfc5b3bbf3695a9983c5897a129634a685c313187043ef7bba0448e1cb6d",
   "coverage_version": "0.2.0",
@@ -37,7 +37,7 @@
     "raw_sha256sums": "78f1302a0ba9c987026abc58ea5e027270120bca44ab23d64db9cb90629825cc"
    }
   ],
-  "breakeven_sha256": "3dabf4e0b40247171fd175ab8a45307ff19bd21d66c3e391d31fa3c8861d43cb"
+  "breakeven_sha256": "a55078c6146c8fca17438dabd32812a0beaa9b9b01120b9368331222c5584b48"
  },
  "evidence_statement": "Built from 2 report(s): 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0. 8 coefficient(s): 3 measured, 5 pinned to source. 6 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.2.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet.",
  "registry": [

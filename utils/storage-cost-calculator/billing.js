@@ -281,7 +281,7 @@
   }
 
   // Quantity a cell contributes to one aggregate billing line; allocation is proportional to it.
-  function cellQuantity(line, rows, preset) {
+  function cellQuantity(line, rows, preset, outcomeMix) {
     const mine = rows.filter((r) => r.scope === line.scope);
     const sum = (xs) => xs.reduce((s, r) => s + r.quantity, 0);
     if (line.rule_id === 'storage') return sum(mine.filter((r) => r.row_type === 'storage'));
@@ -292,21 +292,21 @@
     if (transfer.length) return sum(transfer);
     const req = mine.filter((r) => r.row_type === 'request');
     if (!req.length) return 0;
-    const own = bill(req, preset, line.scope, null).lines.find((l) => l.rule_id === line.rule_id);
+    const own = bill(req, preset, line.scope, outcomeMix || null).lines.find((l) => l.rule_id === line.rule_id);
     return own ? own.quantity : 0;
   }
 
   // Allocates each aggregate line's money back to `cells` ([{key, name, rows, shares}]) by each cell's own quantity
   // of the line (spec §4.4). A cell that declares `shares` (cell name -> weight) passes its portion of the lines it
   // produced on to those cells by weight; lines it did not produce are untouched.
-  function allocate(lines, cells, preset) {
+  function allocate(lines, cells, preset, outcomeMix) {
     const problems = [];
     const keyOf = new Map(cells.map((c) => [c.name, c.key]));
     for (const c of cells) {
       for (const name of Object.keys(c.shares || {})) if (!keyOf.has(name)) problems.push(`allocation share for unknown cell ${name}`);
     }
     const allocation = lines.map((l) => {
-      const own = Object.fromEntries(cells.map((c) => [c.key, cellQuantity(l, c.rows, preset)]));
+      const own = Object.fromEntries(cells.map((c) => [c.key, cellQuantity(l, c.rows, preset, outcomeMix)]));
       const sum = Object.values(own).reduce((s, w) => s + w, 0);
       if (sum <= 0 && l.money > EPS) problems.push(`${l.rule_id} money ${l.money} has no cell to allocate to`);
       // Fractions come from quantities, so a zero-priced line still shows who used it.
