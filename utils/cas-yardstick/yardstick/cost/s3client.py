@@ -189,7 +189,7 @@ class S3Client:
         self.request('DELETE', bucket, key, query={'uploadId': upload_id})
 
     def list_multipart_uploads(self, bucket: str, prefix: str = '') -> list[dict]:
-        """RustFS 1.0.0-rc.3 returns nothing for a directory-style prefix such as `dir/`; pass the full key."""
+        """RustFS 1.0.0-beta.9 (the pinned build) returns nothing for a directory-style prefix such as `dir/`; pass the full key."""
         root = ET.fromstring(self.request('GET', bucket, query={'uploads': '', 'prefix': prefix})[2])
         return [{'key': _text(u, 'Key'), 'upload_id': _text(u, 'UploadId')} for u in _children(root, 'Upload')]
 

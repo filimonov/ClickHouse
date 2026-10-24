@@ -20,7 +20,7 @@ SAMPLE_INTERVAL_S = 0.5
 # EBS demand peaks (variant `ebs`): `/proc/<pid>/io` per replica at this interval, into `observations.proc_io_series`.
 PROC_IO_INTERVAL_S = 1.0
 CLOSING_OPS = ('CompleteMultipartUpload', 'AbortMultipartUpload')
-UNLISTED_UPLOADS_NOTE = ('objects listed empty; incomplete uploads not enumerable on RustFS rc.3; '
+UNLISTED_UPLOADS_NOTE = ('objects listed empty; incomplete uploads not enumerable on RustFS 1.0.0-beta.9; '
                          'prior passes abort their uploads from the ledger')
 
 

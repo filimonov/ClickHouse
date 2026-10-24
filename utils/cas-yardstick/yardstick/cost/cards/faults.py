@@ -99,8 +99,8 @@ class Faults(LifecycleCard):
     def check_aborted_uploads(self, ctx) -> dict:
         """Store-side check of every upload the server aborted: ListParts must answer NoSuchUpload.
 
-        The replay's lower bound alone could hide a part the store kept; RustFS rc.3 cannot list incomplete uploads by
-        prefix, but it answers ListParts per upload id. The rig port keeps these requests out of the workload.
+        The replay's lower bound alone could hide a part the store kept; RustFS 1.0.0-beta.9 cannot list incomplete
+        uploads by prefix, but it answers ListParts per upload id. The rig port keeps these requests out of the workload.
         """
         replica = self.p(ctx)['replica']
         aborted = sorted({(r['bucket'], r['key'], r['upload_id']) for r in window_rows(ctx)

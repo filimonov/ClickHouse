@@ -239,7 +239,7 @@ Against the RCA numbers:
 
 ## Cost rig
 
-The cost rig (`yardstick/cost/`) measures per-request storage cost against a RustFS binary instead of the container, with a counting proxy between the servers and the store. `rustfs-bin.sh` starts the binary from `<repo>/ci/tmp/rustfs` with data in `<repo>/tmp/cas-yardstick/rustfs-bin-data/` (it refuses a non-empty directory without the `.cas-yardstick-rustfs` marker) and creates the bucket `yardstick-cost`.
+The cost rig (`yardstick/cost/`) measures per-request storage cost against a RustFS binary instead of the container, with a counting proxy between the servers and the store. `rustfs-bin.sh` starts the binary from `<repo>/ci/tmp/rustfs` with data in `<repo>/tmp/cas-yardstick/rustfs-bin-data/` (it refuses a non-empty directory without the `.cas-yardstick-rustfs` marker) and creates the bucket `yardstick-cost`. It runs only the pinned build, RustFS 1.0.0-beta.9 by sha256 (`PIN_VERSION`, `PIN_SHA256`), and refuses a store already up on 19121 unless it is that build started from its data directory.
 
 | Port | Use |
 |---|---|
@@ -253,6 +253,18 @@ The cost rig (`yardstick/cost/`) measures per-request storage cost against a Rus
 ```bash
 utils/cas-yardstick/rustfs-bin.sh ensure   # start the store unless it is up (exit 0 = started here, 3 = already up); `stop` stops it only if `ensure` started it
 python3 utils/cas-yardstick/yardstick.py cost run --binary PATH --manifests REPORT_DIR --cases all|a.b,c.d --policies s3,cas
-python3 utils/cas-yardstick/yardstick.py cost probe --binary PATH     # five probes, drill + render checks; exit 2 on FAIL
+python3 utils/cas-yardstick/yardstick.py cost probe --binary PATH     # six probes, drill + render checks; exit 1 on FAIL
 python3 utils/cas-yardstick/yardstick.py cost estimate RUN_DIR --coverage docs/superpowers/cost-model/coverage.json
+python3 -m yardstick.cost.ebs_fit --holdout EXPERIMENT_ID MEASUREMENTS.jsonl...   # from utils/cas-yardstick; EBS hold-out checks
 ```
+
+**Run lock.** `cost run` and `cost probe` hold `<repo>/tmp/yardstick.lock` (`fcntl.flock`, `--lock` to change) for the whole session and write `pid=<pid> run_id=<run>` into it. A second session exits 3 at once and names the holder. The report READMEs wrap runs in `flock tmp/yardstick.lock ...`: that is the same lock, and a session started under it inherits the lock and runs. Do not use `flock -o`, which closes the descriptor before the command starts.
+
+**Run identity.** Each record carries `rig_commit`, `rig_dirty`, `store_version` and `store_sha256` beside the binary hashes ([measurement contract](../../docs/superpowers/cost-model/measurement-contract.md#identities)). A session refuses uncommitted changes under `utils/cas-yardstick` (exit 3) unless `--allow-dirty`, which records `rig_dirty: true`. `--endpoint` (a store not started by `rustfs-bin.sh`) needs `--store-version` and `--store-sha256`. SIGTERM stops servers, proxy and a store the session started before the process exits.
+
+| Exit | `cost run`, `cost probe`, `cost estimate` |
+|---|---|
+| 0 | ok |
+| 1 | measurement failure: a `FAILED` record, a failed cleanup, a failed probe, or a run with no `ok` record |
+| 2 | usage: bad flags or selection, unknown card, missing source commit, missing or empty run directory, coverage or registry |
+| 3 | environment: lock held, dirty rig, store not the pinned build, services not answering, run directory already exists |

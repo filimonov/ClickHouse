@@ -68,7 +68,7 @@ Objects outside every family are `active` data. Counts per caller and op are `at
 - **End states.** `lower` holds each identity's smallest possible final state, `upper` its largest (see the bounds below); a creation reaches `lower` only when upstream is `ok`, a retirement reaches `upper` only when `ok`. Objects made by an `unknown` attempt carry `outcome_unknown`. Cards read these inventories (residue, objects present).
 - **Byte-hour bounds** follow each transition's effect on bytes, not its kind or its seq. Each transition takes effect at one instant inside its `[t_start_us, t_end_us]`, in any order those instants allow (seq is start order, so a PUT that started later can land first); an `unknown` one may not take effect. At an instant `t`, the state after transition `k` is possible when `k` may have taken effect by `t` and every other certain transition `j` may have taken effect before `k` (`t_start_j <= min(t, t_end_k)`) or may still be pending (`t_end_j > t`). The true state of every feasible schedule passes this test, so `lower` and `upper` integrate the minimum and maximum over the possible states, per category, with no cap on how many transitions overlap. The bound is pointwise and can be looser than the best single schedule. End states use the same test at the end of time: `lower` keeps each identity's smallest possible final state, `upper` its largest; a size tie breaks toward absent in `lower` and toward present in `upper` (a zero-byte object and its deletion both hold 0 bytes). Examples: 100 B over hours 0..5, overwritten with 1 B during [1, 2] and with 100 B during [3, 4], gives 203..401 byte-hours; 10 B, then 1 B during [1, 3] and 50 B during [2, 4], gives 14..170 byte-hours (one real schedule: 42.2) and final sizes 1 B and 50 B.
 - **Never change inventory:** upstream `error`, `not_sent`, and `rejected` attempts.
-- **Initial inventory.** Replay starts from an empty inventory. Listing the pass prefix proves no completed objects; incomplete multipart parts need `ListMultipartUploads` by prefix, which RustFS 1.0.0-rc.3 does not answer for a directory prefix. So the runner records `inventory.initial: declared` with `inventory.note` (objects listed empty; incomplete uploads not enumerable; prior passes abort their uploads from the ledger). `empty_verified` is recorded only when the rig client can list uploads by prefix and the listing is empty; a non-empty listing fails the pass with `prefix_not_empty`.
+- **Initial inventory.** Replay starts from an empty inventory. Listing the pass prefix proves no completed objects; incomplete multipart parts need `ListMultipartUploads` by prefix, which the pinned RustFS build (1.0.0-beta.9, see [Identities](#identities)) does not answer for a directory prefix. So the runner records `inventory.initial: declared` with `inventory.note` (objects listed empty; incomplete uploads not enumerable; prior passes abort their uploads from the ledger). `empty_verified` is recorded only when the rig client can list uploads by prefix and the listing is empty; a non-empty listing fails the pass with `prefix_not_empty`.
 - **Observer mutations** (for example the rig aborting a probe's multipart upload) stay in replay although `rig` requests are excluded from workload counts.
 - **Byte-hours.** `byte_hours(bounds, t0, t1)` integrates the bounds above, clipped to the window, per category, as `{lower, upper}`. The integration is a sweep, linear in the transitions plus their overlap: at `t` the possible states are the started transitions whose end is at or after `M(t)`, the latest start among certain transitions that must have landed by `t` (the absent state only while there is none); this is the possibility test above in closed form. Objects of unknown size land in `uncertain` with size 0 and are counted in `inventory.uncertain_identities`; the drill makes every cell with a storage row unavailable (`unknown object sizes (N)`) when that count is non-zero, so they are never priced at zero. A lifetime that crosses a window edge contributes only its in-window part. `Bounds.creators` names the caller that first created each identity, so bounds can be split by creator.
 - **Categories.** `active`, `outdated`, `garbage`, `temporary`, `incomplete`, `detached`, `metadata`. A key family assigns the category at creation. `incomplete` is assigned to parts. A logical category (`outdated` after a merge, `garbage` after a drop, ...) is attached later with `reclassify(identities, category, t_us, evidence)`, which applies to both bounds from `t_us` onward and records the evidence. The record keeps the calls in `inventory.reclassified`, so `python3 -m yardstick.cost.reproduce` can recompute the bounds from the raw ledger slice. Without evidence the object keeps its creation category.
@@ -108,11 +108,39 @@ Objects outside every family are `active` data. Counts per caller and op are `at
 
 **Scale.** A record's `scale` is its manifest's; there is no CLI override. A card's `COUNTS` reach it as `ctx.counts`, each scaled by the manifest's `scale`.
 
-**Runtime estimate.** `cost estimate` budgets each planned pass at `max(measured median, duration_s)`, where `duration_s` is the case's declared duration in `coverage.json`, plus the median cleanup, times 1.25 for reruns. A missing registry fails the command.
+**Runtime estimate.** `cost estimate` budgets each planned pass at `max(measured median, duration_s)`, where `duration_s` is the case's declared duration in `coverage.json`, plus the median cleanup, times the rerun reserve (`--rerun-reserve`, default 1.25). A missing or empty run directory, coverage or registry fails the command with exit 2.
 
-**Identities.** Every record names `binary_sha256` (the executed binary), `binary_download_sha256` (the download, from the nearest `SHA256SUMS` listing it; a self-extracting `clickhouse` rewrites itself on first start, so the two differ), `commit` (the binary's source commit: `--commit`, or HEAD of `--source-dir`, default `tmp/src-<version>`) and `rig_commit` (HEAD of the rig worktree).
+### Identities {#identities}
 
-Store lifecycle: `rustfs-bin.sh ensure` exits 0 when this call started the store, 3 when it was already up and not ours, other codes on failure. Only a caller that saw exit 0 stops the store; an `ensure` that fails stops nothing.
+Every record names the code, binary and store that produced it. A closure that groups records by identity must treat each field below as part of it.
+
+| Field | Meaning |
+|---|---|
+| `binary_sha256` | The executed `clickhouse` binary. |
+| `binary_download_sha256` | The download, from the nearest `SHA256SUMS` listing it. A self-extracting `clickhouse` rewrites itself on first start, so the two differ. |
+| `commit` | The binary's source commit: `--commit`, or HEAD of `--source-dir` (default `tmp/src-<version>`). |
+| `rig_commit` | HEAD of the rig worktree. |
+| `rig_dirty` | `git status --porcelain -- utils/cas-yardstick` was non-empty at session start. `cost run` and `cost probe` refuse a dirty rig (exit 3) unless `--allow-dirty`, which records `true`. |
+| `store_version` | Store build: the version pinned in `rustfs-bin.sh`, or `--store-version` with `--endpoint`. |
+| `store_sha256` | Store binary: the sha256 pinned in `rustfs-bin.sh`, or `--store-sha256` with `--endpoint`. |
+
+`rig_dirty`, `store_version` and `store_sha256` are optional in `measurement/1`: the records of the committed runs below lack them.
+
+**Store pin.** `rustfs-bin.sh` runs only RustFS 1.0.0-beta.9, sha256 `bf4aca66af214c7733f2b775847e0227c113fc97d5f74752a305ce2b75933664`. It checks the binary before starting it, and the executable of a store already up (`/proc/<pid>/exe` of the pid it recorded). A mismatch or an unidentifiable store fails `ensure`.
+
+**Committed runs, identified post hoc.** All 25 runs behind the committed records (`cost-20261024T035215Z` to `cost-20261024T180805Z`) used that build. The records do not say so; the identification rests on:
+
+- `ci/tmp/rustfs` hashes to the pinned sha256 and reports `rustfs 1.0.0-beta.9` (git tag `1.0.0-beta.9`, commit `a7827ed91bf`).
+- Its mtime, 2026-10-23 21:38 UTC, precedes the first run.
+- `rustfs-bin.sh` has always started that path; the store process serving the rig on 2026-10-24 runs an executable with the same hash.
+
+The design spec names RustFS 1.0.0-rc.3: that is the container image of `rustfs.sh`, which the cost rig does not use.
+
+### Store and session {#session}
+
+Store lifecycle: `rustfs-bin.sh ensure` exits 0 when this call started the store, 3 when it was already up and not ours, other codes on failure, and prints `store_version=<v> store_sha256=<h>`. Only a caller that saw exit 0 stops the store; an `ensure` that fails stops nothing.
+
+**Session.** `cost run` and `cost probe` hold `tmp/yardstick.lock` (`fcntl.flock`, the file the report READMEs wrap runs in with `flock`) for the whole session and write `pid=<pid> run_id=<run>` into it. A second session fails at once with exit 3, naming the holder. A session started under `flock tmp/yardstick.lock` inherits the lock and runs. The run directory must not exist yet. SIGTERM stops servers, proxy and the store this session started before the process exits.
 
 ## What one workstation cannot establish {#limits}
 
