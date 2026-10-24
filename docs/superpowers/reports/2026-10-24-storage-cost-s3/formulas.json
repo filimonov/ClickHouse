@@ -392,21 +392,43 @@
        "kind": "sub",
        "dim": "count",
        "a": {
-        "kind": "lookup",
+        "kind": "branch",
         "dim": "count",
-        "table_id": "objects_per_part",
-        "keys": [
-         {
+        "cond": {
+         "op": "==",
+         "a": {
           "kind": "input",
-          "id": "shape",
-          "dim": "enum:shape"
+          "id": "merge_results_per_month",
+          "dim": "count"
          },
-         {
+         "b": {
           "kind": "const",
-          "value": "wide",
-          "dim": "enum:part_type"
+          "value": 0,
+          "dim": "count"
          }
-        ]
+        },
+        "then": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        },
+        "else": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "objects_per_part",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "shape",
+           "dim": "enum:shape"
+          },
+          {
+           "kind": "input",
+           "id": "merge_result_part_type",
+           "dim": "enum:merge_result_part_type"
+          }
+         ]
+        }
        },
        "b": {
         "kind": "input",
@@ -936,43 +958,132 @@
       "kind": "add",
       "dim": "count",
       "a": {
-       "kind": "mul",
+       "kind": "branch",
        "dim": "count",
-       "a": {
-        "kind": "mul",
-        "dim": "1",
+       "cond": {
+        "op": "==",
         "a": {
          "kind": "input",
          "id": "mutated_compact_parts_per_month",
          "dim": "count"
         },
         "b": {
-         "kind": "input",
-         "id": "replicas",
+         "kind": "const",
+         "value": 0,
          "dim": "count"
         }
        },
-       "b": {
-        "kind": "lookup",
+       "then": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       },
+       "else": {
+        "kind": "mul",
         "dim": "count",
-        "table_id": "mutation_gets_per_part",
-        "keys": [
-         {
+        "a": {
+         "kind": "mul",
+         "dim": "1",
+         "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "mutated_compact_parts_per_month",
+          "dim": "count"
          },
-         {
+         "b": {
           "kind": "input",
-          "id": "mutation_kind",
-          "dim": "enum:mutation_kind"
-         },
-         {
-          "kind": "const",
-          "value": "compact",
-          "dim": "enum:part_type"
+          "id": "replicas",
+          "dim": "count"
          }
-        ]
+        },
+        "b": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "mutation_gets_per_part",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "input",
+            "id": "mutation_kind",
+            "dim": "enum:mutation_kind"
+           },
+           {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+           }
+          ]
+         },
+         "b": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "coef",
+           "id": "mutation_compact_gets_per_full_granule",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "max",
+           "dim": "1",
+           "args": [
+            {
+             "kind": "const",
+             "value": 1,
+             "dim": "1"
+            },
+            {
+             "kind": "div",
+             "dim": "1",
+             "a": {
+              "kind": "floor_to",
+              "dim": "count",
+              "x": {
+               "kind": "add",
+               "dim": "count",
+               "a": {
+                "kind": "input",
+                "id": "mutated_part_rows",
+                "dim": "count"
+               },
+               "b": {
+                "kind": "div",
+                "dim": "count",
+                "a": {
+                 "kind": "input",
+                 "id": "index_granularity",
+                 "dim": "count"
+                },
+                "b": {
+                 "kind": "const",
+                 "value": 2,
+                 "dim": "1"
+                },
+                "on_zero": "unavailable"
+               }
+              },
+              "step": {
+               "kind": "input",
+               "id": "index_granularity",
+               "dim": "count"
+              }
+             },
+             "b": {
+              "kind": "input",
+              "id": "index_granularity",
+              "dim": "count"
+             },
+             "on_zero": "unavailable"
+            }
+           ]
+          }
+         }
+        }
        }
       },
       "b": {

@@ -794,7 +794,7 @@
     },
     "validity": {
       "insert_rows": [
-        20000,
+        1000,
         400000
       ]
     },
@@ -815,7 +815,10 @@
         "cost-20261024T094831Z/s3/merge-only/narrow-wide-sources/k3",
         "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k1",
         "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k2",
-        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k3"
+        "cost-20261024T094831Z/s3/merge-only/wide-compact-sources/k3",
+        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k1",
+        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k2",
+        "cost-20261024T132311Z/s3/merge-only/narrow-compact-1k/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -844,7 +847,7 @@
     },
     "validity": {
       "insert_rows": [
-        20000,
+        1000,
         400000
       ]
     },
@@ -865,7 +868,10 @@
         "cost-20261024T094831Z/s3_cached/merge-only/narrow-wide-sources/k3",
         "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k1",
         "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k2",
-        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k3"
+        "cost-20261024T094831Z/s3_cached/merge-only/wide-compact-sources/k3",
+        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k1",
+        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k2",
+        "cost-20261024T132311Z/s3_cached/merge-only/narrow-compact-1k/k3"
       ],
       "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -948,7 +954,7 @@
     },
     "validity": {
       "insert_rows": [
-        100000,
+        1000,
         400000
       ]
     },
@@ -995,6 +1001,54 @@
     }
   },
   {
+    "id": "mutation_compact_gets_per_full_granule",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 2,
+    "validity": {
+      "insert_rows": [
+        1000,
+        100000
+      ]
+    },
+    "tolerance": {
+      "abs": 0,
+      "rel": 0
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-s3",
+      "version": "0.3.0",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3/mutation/compact-update-one-column/k3",
+        "cost-20261024T132311Z/s3/mutation/compact-small-2/k1",
+        "cost-20261024T132311Z/s3/mutation/compact-small-2/k2",
+        "cost-20261024T132311Z/s3/mutation/compact-small-2/k3",
+        "cost-20261024T132311Z/s3/mutation/compact-10k/k1",
+        "cost-20261024T132311Z/s3/mutation/compact-10k/k2",
+        "cost-20261024T132311Z/s3/mutation/compact-10k/k3",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k1",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k2",
+        "cost-20261024T094831Z/s3_cached/mutation/compact-update-one-column/k3",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-small-2/k1",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-small-2/k2",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-small-2/k3",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-10k/k1",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-10k/k2",
+        "cost-20261024T132311Z/s3_cached/mutation/compact-10k/k3"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "fit": {
+      "method": "data.bin GetObject of a Compact mutation read: one GET plus two seeks per granule (index_granularity rows), a trailing granule counting when at least half full, at least one pair; fitted at 1000, 10 000, 30 000 and 100 000 rows per part",
+      "rule": "1 + 2 x max(1, round(rows / index_granularity))"
+    }
+  },
+  {
     "id": "mutation_gets_per_part",
     "kind": "table",
     "dim": "count",
@@ -1005,23 +1059,23 @@
         "part_type"
       ],
       "values": {
-        "0|delete|compact": 27,
+        "0|delete|compact": 3,
         "0|delete|wide": 16,
-        "0|lightweight_delete|compact": 27,
+        "0|lightweight_delete|compact": 3,
         "0|lightweight_delete|wide": 14,
-        "0|update_column|compact": 26,
+        "0|update_column|compact": 2,
         "0|update_column|wide": 7,
-        "1|delete|compact": 27,
+        "1|delete|compact": 3,
         "1|delete|wide": 10,
-        "1|lightweight_delete|compact": 27,
+        "1|lightweight_delete|compact": 3,
         "1|lightweight_delete|wide": 3,
-        "1|update_column|compact": 26,
+        "1|update_column|compact": 2,
         "1|update_column|wide": 2
       }
     },
     "validity": {
       "insert_rows": [
-        100000,
+        1000,
         400000
       ]
     },

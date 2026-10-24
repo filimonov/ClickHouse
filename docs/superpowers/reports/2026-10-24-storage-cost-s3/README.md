@@ -9,9 +9,9 @@ doc_type: 'reference'
 
 # Storage cost calculator — s3 disk operation graphs (R2) {#s3}
 
-Every request count of the `s3` disk reconciles on the pinned binary: 41 cases on `s3` and `s3_cached`, K=3, four
-report runs, each alone on the host. 203 records are ok; the 19 `FAILED` records belong to the
-consumed hold-outs and validations (§Review). All 11 remaining hold-out cases land on their committed predictions. Mutation
+Every request count of the `s3` disk reconciles on the pinned binary: 48 cases on `s3` and `s3_cached`, K=3, four
+report runs, each alone on the host. 239 records are ok; the 25 `FAILED` records belong to the
+consumed hold-outs and validations (§Review). All 14 remaining hold-out cases land on their committed predictions. Mutation
 counts vary between repeats (§Mutation); every other count is identical in all repeats.
 The variant's eight cells are in `formulas.json`, their coefficients in `coefficients.json`.
 
@@ -19,8 +19,8 @@ The variant's eight cells are in `formulas.json`, their coefficients in `coeffic
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
 | Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case but five, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3` and `cost-20261024T123052Z` for the 1000-row validations; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 203 records |
-| Consumed hold-outs | `drop.partition-3` (falsified count), `mutation.update-mixed` and `mutation.update-mixed-2` (exact counts missed by the repeat spread), `mutation.update-mixed-3` (its band was a stochastic tolerance, which the mutation card does not apply: the card's mode comes from its class, not the manifest). All their records stay in `measurements.jsonl`, 19 of them `FAILED` |
+| Report runs | `cost-20261024T094831Z` (09:48–10:16 UTC) for every case but five, `cost-20261024T121249Z` for the hold-out `mutation.update-mixed-4`, `cost-20261024T115024Z` for the consumed `mutation.update-mixed-3`, `cost-20261024T123052Z` for the 1000-row validations and `cost-20261024T132311Z` for the small-part cases; each alone on the host under `tmp/yardstick.lock`, rig commit `7f9ef7459c8`. `measurements.jsonl` holds their 239 records |
+| Consumed hold-outs | `drop.partition-3` (falsified count), `mutation.update-mixed` and `mutation.update-mixed-2` (exact counts missed by the repeat spread), `mutation.update-mixed-3` (its band was a stochastic tolerance, which the mutation card did not apply; the card now refuses a manifest mode it does not run), `mutation.compact-small` and `mutation.compact-30k` (falsified forms of the granule rule). All their records stay in `measurements.jsonl`, 25 of them `FAILED` |
 | Invalid runs | `cost-20261024T073405Z`, `cost-20261024T074526Z`, `cost-20261024T075016Z`, `cost-20261024T075431Z`, `cost-20261024T075800Z`, `cost-20261024T083200Z`, `cost-20261024T084830Z` overlapped CAS or EBS runs on the same host and RustFS. No number of this report comes from them |
 | Predictions | fit predictions `80cd02f1c27` were written after exploratory runs; hold-outs `80cd02f1c27`, `202d45aadbc`, `5519040a680`, `09e9319a11f`, `b04768eaa9e`, each before the first run of its case. The invalid runs executed most hold-outs before the report run; no predicted count changed after that (later commits only added registry inputs and the commit ids), so the report run tests each committed count |
 | Withdrawn hold-outs | the `bytes_per_get` band of `cold-select.cache-off-types` and the `cache_fill_io_per_byte` check of `cold-select.cache-on-types` failed in an invalid run and were revised; both cases are fits now, `cold-select.cache-off-types-2` and `cold-select.cache-on-types-2` are the hold-outs |
@@ -124,9 +124,15 @@ sources (`merge-forced.default`) and 16 for 2 are 8 per 5-column Compact source.
   one `DeleteObjects` per part inside the window. Parts the cleanup removes in the same pass can share a call: 3
   calls for 4 parts in one repeat of `mutation.wide-delete`, 5 for 6 in `mutation.update-mixed`. One call per removed
   part is the upper bound the cells price.
-- **Reads per part** (`mutation_gets_per_part`, narrow shape, the least over the repeats): delete compact: 27, delete wide: 16, lightweight_delete compact: 27, lightweight_delete wide: 14, update_column compact: 26, update_column wide: 7, delete compact: 27 (cache), delete wide: 10 (cache), lightweight_delete compact: 27 (cache), lightweight_delete wide: 3 (cache), update_column compact: 26 (cache), update_column wide: 2 (cache). A
-  Compact part read takes one more `GetObject` of `data.bin` in some repeats (26 against 25 per part on the
-  narrow table): the table's tolerance is 1 per part. The exact hold-outs `mutation.update-mixed` and
+- **Reads per part** (`mutation_gets_per_part`, narrow shape, the least over the repeats): delete compact: 3, delete wide: 16, lightweight_delete compact: 3, lightweight_delete wide: 14, update_column compact: 2, update_column wide: 7, delete compact: 3 (cache), delete wide: 10 (cache), lightweight_delete compact: 3 (cache), lightweight_delete wide: 3 (cache), update_column compact: 2 (cache), update_column wide: 2 (cache). For a
+  Compact part the table holds the reads besides `data.bin`. A mutation reads `data.bin` with one `GetObject` plus two
+  seeks per granule (`Storages/MergeTree/MergeTreeReaderCompact.cpp:219`), a trailing granule counting when at least
+  half full, at least one pair: `mutation_compact_gets_per_full_granule` = 2, so 1 + 2 × max(1, round(rows /
+  `index_granularity`)). The first form, full granules only, was falsified by its hold-out `mutation.compact-30k` (4
+  pairs at 3.66 granules, consumed). The rounded form fits 1000, 10 000, 30 000 and 100 000 rows (1, 1, 4 and 12
+  pairs); its hold-outs `mutation.compact-20k` and `mutation.compact-45k` (5.49 granules: 5 pairs), predicted before
+  their run, land exactly (12 and 24 `GetObject` for two parts). A Wide part reads one `.bin` range per stream whatever its size. A Compact part read takes one more `GetObject`
+  of `data.bin` in some repeats: the table's tolerance is 1 per part. The exact hold-outs `mutation.update-mixed` and
   `mutation.update-mixed-2` missed by that spread (82 `GetObject` against 80 in one of six records) and are consumed;
   `mutation.update-mixed-3` stated the spread as a stochastic tolerance, which the deterministic card ignores (3 of
   its 6 records fail an exact DeleteObjects check while inside the band): consumed. The hold-out
@@ -228,11 +234,18 @@ both policies unless two are shown (`s3` / `s3_cached`).
 | `drop.partition-3` | consumed hold-out | 4 DeleteObjects, 8 PutObject | 6 DeleteObjects, 24 PutObject |
 | `drop.table-sync` | validation | 0–40 DeleteObject, 1–40 DeleteObjects, 0–200 GetObject, 0–100 PutObject | 1 DeleteObject, 2 DeleteObjects |
 | `drop.ttl` | fit | 0–40 DeleteObject, 1–40 DeleteObjects, 0–200 GetObject, 0–100 PutObject | 2 DeleteObjects, 8 PutObject |
+| `merge-only.narrow-compact-1k` | fit | 8–80 GetObject, 11–19 PutObject | 64 GetObject, 11 PutObject / 24 GetObject, 11 PutObject |
+| `merge-only.narrow-compact-2k` | holdout | 64 GetObject, 11 PutObject | 64 GetObject, 11 PutObject / 24 GetObject, 11 PutObject |
 | `merge-only.narrow-compact-sources` | fit | 64 GetObject, 19 PutObject | 64 GetObject, 19 PutObject / 24 GetObject, 19 PutObject |
 | `merge-only.narrow-wide-sources` | fit | 33 GetObject, 19 PutObject | 33 GetObject, 19 PutObject / 18 GetObject, 19 PutObject |
 | `merge-only.wide-compact-sources` | fit | 129 GetObject, 89 PutObject | 129 GetObject, 89 PutObject / 9 GetObject, 89 PutObject |
 | `merge-only.wide-wide-sources-3` | holdout | 243 GetObject, 89 PutObject | 243 GetObject, 89 PutObject / 123 GetObject, 89 PutObject |
+| `mutation.compact-10k` | fit, validation | 1–2 DeleteObjects, 8–10 GetObject, 23 PutObject | 2 DeleteObjects, 8 GetObject, 23 PutObject |
+| `mutation.compact-20k` | holdout | 1–2 DeleteObjects, 12–14 GetObject, 23 PutObject | 2 DeleteObjects, 12 GetObject, 23 PutObject |
+| `mutation.compact-30k` | consumed hold-out | 1–2 DeleteObjects, 16–18 GetObject, 23 PutObject | 2 DeleteObjects, 20 GetObject, 23 PutObject |
+| `mutation.compact-45k` | holdout | 1–2 DeleteObjects, 24–26 GetObject, 23 PutObject | 2 DeleteObjects, 24 GetObject, 23 PutObject |
 | `mutation.compact-small` | consumed hold-out | 1–2 DeleteObjects, 52–54 GetObject, 23 PutObject | 2 DeleteObjects, 8 GetObject, 23 PutObject |
+| `mutation.compact-small-2` | fit, validation | 1–2 DeleteObjects, 8–10 GetObject, 23 PutObject | 2 DeleteObjects, 8 GetObject, 23 PutObject |
 | `mutation.compact-update-one-column` | fit | 0–40 DeleteObject, 0–40 DeleteObjects, 0–400 GetObject, 4–200 PutObject | 2 DeleteObjects, 52 GetObject, 23 PutObject |
 | `mutation.lightweight-delete` | fit | 0–40 DeleteObject, 0–40 DeleteObjects, 0–400 GetObject, 4–200 PutObject | 4 DeleteObjects, 82 GetObject, 42 PutObject / 4 DeleteObjects, 60–62 GetObject, 42 PutObject |
 | `mutation.update-mixed` | consumed hold-out | 6 DeleteObjects, 99 GetObject, 62 PutObject | 5–6 DeleteObjects, 99 GetObject, 62 PutObject / 5–6 DeleteObjects, 84–85 GetObject, 62 PutObject |
@@ -278,13 +291,14 @@ Every assertion held in every ok record (part types from the registry predicate,
 | `warm_gets_per_stream_read` | measured | 1 | 0 | `cold-select.warm-off` | `cold-select.warm-off-types` |
 | `startup_gets_per_part` | measured | 0/narrow: 15; 0/wide: 50; 1/narrow: 10; 1/wide: 10 | 0 | `startup.intact` | `startup.wide-parts` |
 | `startup_requests` | measured | 0/PutObject: 2; 0/GetObject: 5; 0/DeleteObject: 2; 1/PutObject: 3; 1/GetObject: 6; 1/DeleteObject: 3 | 0 | `startup.intact` | `startup.wide-parts` |
-| `merge_gets_per_source_part` | measured | narrow/compact: 8; narrow/wide: 11; wide/compact: 43; wide/wide: 81 | 0 | `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.wide-wide-sources-3` |
-| `merge_gets_per_source_part_cached` | measured | narrow/compact: 3; narrow/wide: 6; wide/compact: 3; wide/wide: 41 | 0 | `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.wide-wide-sources-3` |
+| `merge_gets_per_source_part` | measured | narrow/compact: 8; narrow/wide: 11; wide/compact: 43; wide/wide: 81 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
+| `merge_gets_per_source_part_cached` | measured | narrow/compact: 3; narrow/wide: 6; wide/compact: 3; wide/wide: 41 | 0 | `merge-only.narrow-compact-1k`, `merge-only.narrow-compact-sources`, `merge-only.narrow-wide-sources`, `merge-only.wide-compact-sources` | `merge-only.narrow-compact-2k`, `merge-only.wide-wide-sources-3` |
 | `delete_calls_per_removed_part` | source | 1 | 0 | `drop.partition`, `drop.ttl`, `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `drop.partition-2`, `drop.partition-3 (consumed)` |
 | `empty_part_objects` | source | 8 | 0 | `drop.partition`, `drop.ttl` | `drop.partition-2`, `drop.partition-3 (consumed)` |
 | `mutation_entry_objects` | source | 1 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.update-mixed-4` |
-| `mutation_objects_written` | measured | delete/compact: 11; delete/wide: 19; lightweight_delete/compact: 11; lightweight_delete/wide: 9; update_column/compact: 11; update_column/wide: 9 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
-| `mutation_gets_per_part` | measured | 0/delete/compact: 27; 0/delete/wide: 16; 0/lightweight_delete/compact: 27; 0/lightweight_delete/wide: 14; 0/update_column/compact: 26; 0/update_column/wide: 7; 1/delete/compact: 27; 1/delete/wide: 10; 1/lightweight_delete/compact: 27; 1/lightweight_delete/wide: 3; 1/update_column/compact: 26; 1/update_column/wide: 2 | abs 1, rel 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
+| `mutation_objects_written` | measured | delete/compact: 11; delete/wide: 19; lightweight_delete/compact: 11; lightweight_delete/wide: 9; update_column/compact: 11; update_column/wide: 9 | 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
+| `mutation_compact_gets_per_full_granule` | measured | 2 | 0 | `mutation.compact-10k`, `mutation.compact-small-2`, `mutation.compact-update-one-column` | `mutation.compact-20k`, `mutation.compact-30k (consumed)`, `mutation.compact-45k` |
+| `mutation_gets_per_part` | measured | 0/delete/compact: 3; 0/delete/wide: 16; 0/lightweight_delete/compact: 3; 0/lightweight_delete/wide: 14; 0/update_column/compact: 2; 0/update_column/wide: 7; 1/delete/compact: 3; 1/delete/wide: 10; 1/lightweight_delete/compact: 3; 1/lightweight_delete/wide: 3; 1/update_column/compact: 2; 1/update_column/wide: 2 | abs 1, rel 0 | `mutation.compact-update-one-column`, `mutation.lightweight-delete`, `mutation.wide-delete`, `mutation.wide-update-one-column` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed (consumed)`, `mutation.update-mixed-2 (consumed)`, `mutation.update-mixed-3 (consumed)`, `mutation.update-mixed-4` |
 
 Source-derived (`source`) counts are exact on the deterministic cards listed as fit; they need no hold-out. Every measured coefficient has a fit edge and a distinct hold-out edge in `coverage.json`, both `done`, per policy.
 
@@ -326,7 +340,12 @@ Each is `evidence.kind: assumed` in the registry or stated in a prediction:
   within 300 s at the rates the page models.
 - **One expired part per expiry operation** by default (`expiry_operations_per_month` = expired parts).
 - **Parts leave retention at their final size** (`expired_parts_per_month` = parts inserted / `merge_size_ratio`).
-- **Mutation counts are the narrow shape's** (5 `UInt64` columns).
+- **Mutation counts are the narrow shape's** (5 `UInt64` columns). The granule rule is measured on `UPDATE`; `DELETE`
+  and lightweight `DELETE` of Compact parts are assumed to seek the same way.
+- **Mutated parts are at their final size** (`mutated_part_rows` = `part_rows` × `merge_size_ratio`), like the
+  expired parts.
+- **A merge result is a first-level merge** (`merge_result_rows` = `part_rows` × `merge_effective_fan_in`) for its
+  part type: most merge results are first-level, and later levels are Wide sooner.
 - **Cache misses scale with missed bytes**: `cache_miss_fraction` is a byte share and multiplies the measured
   segment downloads per part read; the measured query shapes read 3–4 streams.
 - **Large files** of merge results and mutated parts are inputs (`large_objects_per_merge_result`,
@@ -343,9 +362,10 @@ Each is `evidence.kind: assumed` in the registry or stated in a prediction:
 - **Small inserts.** The 1000-row validations `objects-per-part.narrow-compact-1k` and `startup.small`, predicted
   before their run, land exactly: `objects_per_part`, `insert_tx_checks`, `metadata_bytes_per_object` and the startup
   tables reach 1000 rows. `mutation.compact-small` missed and is consumed: a 1000-row Compact part mutates with 4
-  `GetObject`, not 26, because Compact mutation reads scale with the part's granules. The mutation tables keep their
-  measured range (100 000–400 000 rows per part). Merges of 1000-row sources are not covered either: they merge into a
-  Compact result, and the `merges` cell prices Wide results. `object_size_distribution`, `metadata_iops_per_object_write` and `metadata_iops_per_part_write`
+  `GetObject`, not 26. The granule rule above models it, so the mutation tables now reach 1000 rows. Merges of small
+  sources write a Compact result: the `merges` cell takes the result's part type from the part type predicate at
+  the merge result size (`merge_result_part_type`), fitted at 1000-row sources and held out at 2000
+  (`merge-only.narrow-compact-1k`, `-2k`: 11 objects, 8 `GetObject` per source). `object_size_distribution`, `metadata_iops_per_object_write` and `metadata_iops_per_part_write`
   are `reported_only` in `coefficients.json`: no cell prices them, so they keep their measured row range (object sizes
   do change with rows: `data.bin` moves from the 1–32 MiB bucket to 4 KiB–1 MiB).
 - **A TTL merge over several expired parts** is not measured: `drop.ttl` expires one part. The cell's split of

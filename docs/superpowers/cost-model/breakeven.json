@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "cb4471ad8ecb5239",
+ "contract_version": "5cdf6ce598e3c7d6",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -515,7 +515,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -540,7 +540,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -565,7 +565,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -590,7 +590,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -615,7 +615,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -640,7 +640,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -693,7 +693,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -718,7 +718,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -743,7 +743,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -768,7 +768,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -793,7 +793,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -818,7 +818,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -869,7 +869,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -894,7 +894,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -919,7 +919,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,
@@ -944,7 +944,7 @@
         "s3": {
          "value": null,
          "state": "unavailable",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3plain": {
          "value": null,

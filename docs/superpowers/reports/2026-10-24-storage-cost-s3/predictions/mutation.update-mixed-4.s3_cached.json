@@ -34,7 +34,9 @@
     "write_amplification_rule": 1,
     "cache_enabled": "1",
     "shape": "narrow",
-    "part_type": "wide"
+    "part_type": "wide",
+    "mutated_part_rows": 100000,
+    "index_granularity": 8192
   },
   "expected": {
     "foreground": {
