@@ -534,8 +534,8 @@ def reproduction(copies=(), sums=()):
 
 STALE_HINT = "run tools/generate_contract.py generate"
 PENDING = "pending"
-# What the page runs: the manifest hashes these, and the page loads them in this order before ui.js.
-CODE_FILES = ("model.js", "contract.js", "billing.js", "pipeline.js", "presets.js", "urlstate.js", "viewmodel.js")
+# What the page runs, in load order: the manifest hashes these. ui.js is included because it lays out the numbers.
+CODE_FILES = ("model.js", "contract.js", "billing.js", "pipeline.js", "presets.js", "urlstate.js", "viewmodel.js", "ui.js")
 INPUTS = (("registry", "inputs-registry.json"), ("coverage", "coverage.json"), ("billing", "billing-contract.json"))
 REPORT_FILES = ("formulas.json", "coefficients.json", "measurements.jsonl")
 

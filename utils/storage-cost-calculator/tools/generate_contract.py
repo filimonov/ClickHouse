@@ -41,7 +41,7 @@ DEFAULTS = {
 }
 CONTRACT = closure_check.CONTRACT
 CODE_FILES = closure_check.CODE_FILES
-PAGE_SCRIPTS = CODE_FILES + ("ui.js",)
+PAGE_SCRIPTS = CODE_FILES
 STATE_IDS = ("ok", "not_supported", "backlog_grows", "unsupported_cut", "unavailable")
 # A formulas cell outside the domain operations is a card or probe cell: kept for the drill, never evaluated.
 PROBE_PREFIX = "probe_"
