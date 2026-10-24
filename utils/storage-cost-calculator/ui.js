@@ -205,13 +205,15 @@
   // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
   const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code></span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
 
-  function renderField(f, page, simple) {
+  // `simple`: workload knob with a slider. `compact`: a setting in the grid. Both keep helper lines behind (i).
+  function renderField(f, page, simple, compact) {
+    const terse = simple || compact;
     const lock = f.locked === null || f.locked === undefined || page.cannot_reproduce ? ''
       : `<button type="button" class="btn btn-small" data-action="lock" data-id="${esc(f.id)}" aria-pressed="${f.locked}"`
         + ` title="${f.locked ? 'Locked: this value is kept and another member is derived' : 'Lock this value and derive another member'}">${f.locked ? 'Locked' : 'Lock'}</button>`;
     const reset = f.overridden ? `<button type="button" class="btn btn-small" data-action="reset" data-id="${esc(f.id)}">Reset</button>` : '';
-    const derived = f.derived && f.derived_text && f.kind === 'input' ? `<p class="field-note">${esc(f.derived_text)}</p>` : '';
-    const range = f.range_text || '';
+    const derived = !terse && f.derived && f.derived_text && f.kind === 'input' ? `<p class="field-note">${esc(f.derived_text)}</p>` : '';
+    const range = terse ? '' : f.range_text || '';
     const price = f.kind === 'price' ? `<p class="field-note">as of ${esc(f.as_of || 'n/a')}${f.source_url ? ` · ${link(f.source_url)}` : ''}</p>` : '';
     return `<div class="field${f.derived ? ' is-derived' : ''}${f.overridden ? ' is-overridden' : ''}" data-field="${esc(f.id)}">`
       + `<div class="field-head">${fieldLabel(f)}${f.kind === 'price' ? '' : infoButton({ 'info-kind': 'input', id: f.id }, f.short || f.label || f.id)}${fieldTags(f)}${lock}${reset}</div>`
@@ -219,24 +221,24 @@
       + `${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
   }
 
-  const PROFILE_NOTE = 'All other settings describe a typical deployment; change them under Low-level assumptions.';
+  const PROFILE_NOTE = 'Other inputs describe a typical deployment: see Low-level assumptions.';
 
-  // Workload knobs first, then one collapsed block per registry block with its ClickHouse settings, the prices, and
-  // the low-level assumptions at the bottom. Hidden rows (table keys, model constants) are only in the info dialog.
+  // Workload knobs, then every setting in one visible grid, then two closed lines: price rules and low-level
+  // assumptions. Hidden rows (table keys, model constants) are only in the info dialog.
   function renderInputs(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
     const groups = vm.inputs.groups.map((g) => `<p class="group-note">${esc(g.label)}. Lock two; the third is derived.</p>`).join('');
     const of = (b, tier) => b.fields.filter((f) => f.tier === tier);
     const workload = vm.inputs.blocks.flatMap((b) => of(b, 'workload'));
-    const head = `<section class="panel-block" data-block="simple"><h2>Inputs</h2>${groups}${workload.map((f) => renderField(f, page, true)).join('')}`
-      + `<p class="field-note profile-note">${esc(PROFILE_NOTE)}</p></section>`;
+    const head = `<section class="panel-block" data-block="simple" aria-label="Workload inputs">${groups}${workload.map((f) => renderField(f, page, true)).join('')}</section>`;
     const details = (id, label, body, extra) => `<details class="block" data-block="${esc(id)}"${page.open_blocks.includes(id) ? ' open' : ''}>`
       + `<summary>${esc(label)}${extra || ''}</summary><div class="block-body">${body}</div></details>`;
     const overridden = (fs) => (fs.some((f) => f.overridden) ? ` ${badge('overridden', 'accent')}` : '');
-    const settings = vm.inputs.blocks.filter((b) => b.block !== 'prices' && of(b, 'setting').length)
-      .map((b) => details(b.block, b.label, of(b, 'setting').map((f) => renderField(f, page, false)).join(''), overridden(of(b, 'setting')))).join('');
+    const set = vm.inputs.blocks.filter((b) => b.block !== 'prices').flatMap((b) => of(b, 'setting'));
+    const settings = !set.length ? `<p class="field-note profile-note">${esc(PROFILE_NOTE)}</p>` : `<section class="panel-block settings" data-block="settings"><h2>Settings</h2><div class="settings-grid">`
+      + `${set.map((f) => renderField(f, page, false, true)).join('')}</div><p class="field-note profile-note">${esc(PROFILE_NOTE)}</p></section>`;
     const pb = vm.inputs.blocks.find((b) => b.block === 'prices');
-    const prices = pb ? details('prices', pb.label, `${pb.as_of ? `<p class="field-note">Prices as of ${esc(pb.as_of)}</p>` : ''}${pb.note ? `<p class="field-note">${esc(pb.note)}</p>` : ''}`
+    const prices = pb ? details('prices', 'Price rules', `${pb.as_of ? `<p class="field-note">Prices as of ${esc(pb.as_of)}</p>` : ''}${pb.note ? `<p class="field-note">${esc(pb.note)}</p>` : ''}`
       + `${page.price_preset !== 'custom' && !pb.note ? '<button type="button" class="btn btn-small" data-action="edit-prices">Edit prices</button>' : ''}`
       + `${pb.fields.map((f) => renderField(f, page, false)).join('') || '<p class="mute">Nothing to set.</p>'}`, overridden(pb.fields)) : '';
     const low = vm.inputs.blocks.filter((b) => b.block !== 'prices' && of(b, 'advanced').length);
@@ -423,7 +425,7 @@
     const row = (k, v) => (v ? `<tr><th scope="row">${esc(k)}</th><td>${v}</td></tr>` : '');
     const facts = [
       row('ClickHouse name', i.name ? `<code>${esc(i.name)}</code>` : ''), row('Kind', i.kind_text ? esc(i.kind_text) : ''),
-      row('Current value', i.value_text ? esc(i.value_text) : ''),
+      row('Current value', i.value_text ? esc(i.value_text) : ''), row('Derived', i.derived_text ? esc(i.derived_text) : ''),
       row('Measured range', i.range_text ? esc(i.range_text) : ''), row('Default', i.default_text ? esc(i.default_text) : ''),
       row('Evidence', i.measured_by ? esc(i.measured_by) : ''),
     ].join('');

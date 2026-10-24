@@ -42,11 +42,19 @@ test('test_form_places_fields_by_tier', () => {
   const html = parts.inputs;
   const head = html.slice(0, html.indexOf('<details'));
   for (const id of ['data_bytes', 'ingest_rate', 'retention_days', 'replicas']) assert.ok(head.includes(`data-field="${id}"`), id);
-  assert.match(head, /All other settings describe a typical deployment/);
-  // A ClickHouse setting is labelled by its name in code font, inside its block's collapsed disclosure.
-  const inserts = sectionOf(html, '<details class="block" data-block="inserts">');
-  assert.match(inserts, /data-field="inserts_per_month"><div class="field-head"><span class="field-label"><code>async_insert<\/code><\/span><button type="button" class="info-btn"/);
-  assert.match(sectionOf(html, 'data-block="mutations_deletes"'), /<span class="field-label">Mutations per month<\/span>/);
+  assert.match(head, /Other inputs describe a typical deployment/);
+  // The settings are visible in one compact grid under the workload: ClickHouse name in code font, no helper lines.
+  const settings = head.slice(head.indexOf('<section class="panel-block settings" data-block="settings">'));
+  assert.ok(settings.startsWith('<section class="panel-block settings"'), 'settings section before any disclosure');
+  assert.match(settings, /<h2>Settings<\/h2><div class="settings-grid">/);
+  assert.match(settings, /data-field="inserts_per_month"><div class="field-head"><span class="field-label"><code>async_insert<\/code><\/span><button type="button" class="info-btn"/);
+  assert.match(settings, /<span class="field-label">Mutations per month<\/span>/);
+  const grid = settings.slice(0, settings.indexOf('<p class="field-note profile-note">'));
+  assert.equal(grid.includes('field-note'), false, 'helper sentences sit behind (i)');
+  assert.equal(settings.includes('type="range"'), false, 'settings take a box, not a slider');
+  for (const b of ['inserts', 'mutations_deletes']) assert.equal(html.includes(`data-block="${b}"`), false, b);
+  // Prices stay one closed line next to the low-level section.
+  assert.match(html, /<details class="block" data-block="prices"><summary>Price rules<\/summary>/);
   // Advanced fields live only in the one low-level section, which comes last and is closed.
   const low = sectionOf(html, '<details class="block" data-block="advanced">');
   assert.ok(html.trimEnd().endsWith('</details></div>'), 'low-level section is last');

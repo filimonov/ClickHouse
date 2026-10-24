@@ -75,7 +75,9 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   assert.equal(/type="range"[^>]*data-id="inserts_per_month"/.test(parts.inputs), false);
   assert.match(parts.inputs, /type="number" step="1" data-action="input" data-id="inserts_per_month" value="1000"/);
   assert.match(parts.inputs, /class="field is-derived" data-field="data_bytes"/);
-  assert.ok(parts.inputs.includes(`<p class="field-note">${esc('Derived from ingest_rate × retention_days')}</p>`), 'fixture labels equal the ids');
+  // The derivation rule sits behind (i), not under the slider.
+  assert.equal(parts.inputs.includes(esc('Derived from ingest_rate × retention_days')), false);
+  assert.match(page(base(), { info: { kind: 'input', id: 'data_bytes' } }, c).parts.modal, new RegExp(`<th scope="row">Derived</th><td>${esc('Derived from ingest_rate × retention_days')}</td>`));
   // The evidence is one line with an (i); the statement is in the dialog.
   assert.match(parts.evidence, /data-action="info" data-info-kind="evidence"/);
   assert.equal(page(base(), { info: { kind: 'evidence', id: 'evidence' } }).vm.info.description, MINIMAL.evidence_statement);
@@ -226,7 +228,9 @@ test('test_inputs_show_labels_fixed_values_and_view_model_ranges', () => {
   });
   const { parts, vm } = page(base(), {}, c);
   assert.ok(parts.inputs.includes('<span class="field-label">Inserts per month</span>'));
-  assert.ok(parts.inputs.includes('<p class="field-note">measured for 0 to 50,000</p>'));
+  // The measured range of a form field is in its (i) dialog.
+  assert.equal(parts.inputs.includes('measured for 0 to 50,000'), false);
+  assert.match(page(base(), { info: { kind: 'input', id: 'inserts_per_month' } }, c).parts.modal, /<th scope="row">Measured range<\/th><td>measured for 0 to 50,000<\/td>/);
   // A one-value range is a fixed value, shown as text without a slider or a box.
   const fixed = parts.inputs.slice(parts.inputs.indexOf('data-field="replacement_rate"'));
   const fixedField = fixed.slice(0, fixed.indexOf('data-field=', 1));

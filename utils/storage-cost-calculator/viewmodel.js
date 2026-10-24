@@ -721,6 +721,7 @@
         description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: evidence || null,
         range_text: (f && f.range_text) || (validity ? `measured for ${validity}` : 'no measured range: the value is used as entered'),
         value_text: f ? f.value_text : c && typeof c.value === 'number' ? fmtQuantity(c.value, c.dim) : null,
+        derived_text: f && f.derived && f.derived_text ? f.derived_text : null,
         default_text: q ? `${defaultText(q)} (${ev.kind === 'source' ? `ClickHouse default, ${cite(ev.ref, commit)}` : cite(ev.ref, commit)})` : null,
         sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null, lines: [],
       };

@@ -276,3 +276,50 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .scenario-short .info-btn, .evidence-statement .info-btn, td .info-btn, .card-sizing .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .quick { grid-column: 1 / -1; display: flex; gap: 4px; }
 .pill-small { padding: 1px 8px; font-size: 12px; }
+/* Settings: one visible two-column grid of compact rows; the label sits above a box with its unit. */
+.panel-inputs .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
+.panel-inputs .settings-grid .field { grid-template-columns: minmax(0, 1fr); padding: 4px 0; border-top: 0; }
+.panel-inputs .settings-grid .field-control > :not(input[type="range"]) { grid-column: 1; grid-row: 2; }
+.panel-inputs .settings-grid .control input[type="number"], .panel-inputs .settings-grid select:not(.unit) { width: 100%; min-width: 0; }
+.panel-inputs .settings-grid .field-label code { font-size: 12px; }
+.panel-inputs .panel-block h2 { margin: 0 0 6px; }
+.panel-inputs .profile-note { margin-top: 6px; }
+.panel-inputs .field-row { flex-direction: row; align-items: center; gap: 8px; }
+.panel-inputs .inputs > .block[data-block="prices"]:not([open]), .panel-inputs .inputs > .block[data-block="advanced"]:not([open]) { flex-basis: calc(50% - 3px); }
+@media (max-width: 420px) { .panel-inputs .settings-grid { grid-template-columns: minmax(0, 1fr); } }
+.panel-inputs .settings-grid .field-head { flex-wrap: nowrap; }
+.panel-inputs .settings-grid .field-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-inputs .field-row .field-label { white-space: nowrap; margin-right: 0; }
+.panel-inputs .field-row select { flex: 1 1 auto; min-width: 0; }
+/* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
+@media (min-width: 901px) {
+  .layout { grid-template-columns: minmax(320px, 460px) minmax(0, 1fr); }
+  .panel-inputs .panel-block { padding: 10px 14px; margin-bottom: 8px; }
+  .panel-inputs .pill { padding: 2px 10px; font-size: 14px; }
+  .panel-inputs .pills { margin: 2px 0 4px; gap: 4px; }
+  .panel-inputs .scenario-short { margin: 0; font-size: 14px; }
+  .panel-inputs [data-block="simple"] .field { grid-template-columns: minmax(0, 40%) minmax(0, 1fr) minmax(120px, 34%); padding: 3px 0; }
+  .panel-inputs [data-block="simple"] .field-control > input[type="range"] { grid-column: 2; grid-row: 1; }
+  .panel-inputs [data-block="simple"] .field-control > :not(input[type="range"]) { grid-column: 3; grid-row: 1; }
+  .panel-inputs [data-block="simple"] .field > .field-note { grid-column: 1 / -1; font-size: 12px; }
+  .panel-inputs .control input, .panel-inputs .field-control > select { padding-top: 3px; padding-bottom: 3px; }
+  .panel-inputs .settings-grid .field { padding: 2px 0; }
+}
+@media (min-width: 901px) {
+  .panel-inputs .settings-grid .field-label { font-size: 13px; }
+  .panel-inputs .pill { padding: 1px 9px; font-size: 13px; }
+  .panel-inputs .group-note { font-size: 12px; margin: 0 0 2px; padding: 2px 8px; }
+  .panel-inputs [data-block="simple"] .field { grid-template-columns: minmax(0, 46%) minmax(0, 1fr) minmax(120px, 32%); }
+  .panel-inputs .pill-small { padding: 0 8px; font-size: 12px; }
+}
+@media (min-width: 901px) {
+  .panel-inputs .settings-grid .field-head { line-height: 18px; }
+  .panel-inputs .settings-grid .control input, .panel-inputs .settings-grid .field-control > select { padding-top: 2px; padding-bottom: 2px; }
+  .panel-inputs .profile-note { font-size: 12px; margin-top: 4px; }
+  .panel-inputs [data-block="simple"] .control input[type="number"] { min-width: 0; width: 100%; }
+  .panel-inputs [data-block="simple"] .control select.unit { max-width: 88px; flex: 0 0 auto; }
+  .panel-inputs [data-block="simple"] .control { display: flex; gap: 4px; align-items: center; min-width: 0; }
+}
+@media (min-width: 901px) {
+  .panel-inputs [data-block="simple"] .field { grid-template-columns: minmax(0, 44%) minmax(0, 1fr) minmax(150px, 38%); }
+}
