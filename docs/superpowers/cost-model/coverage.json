@@ -1669,7 +1669,7 @@
         ]
       },
       "role": "validation",
-      "prediction_commit": "uncommitted",
+      "prediction_commit": "b28a65478d1",
       "measurement_ids": [],
       "status": "planned"
     },
