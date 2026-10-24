@@ -3,10 +3,10 @@ id: CAS-360
 title: >-
   Stop a writer adopting a blob body that GC deleted between the writer's `HEAD`
   and its marker `GET`
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 20:02'
+updated_date: '2026-10-24 12:24'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -48,16 +48,16 @@ Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md (S9)
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 `CaGcCondemnMarkerGate` splits `WAdopt` into `WHead`/`WMetaRead`; TLC shows the violation with the same-pass marker delete and holds with the deferred delete
-- [ ] #2 gtest with a hook between the writer's `HEAD` and marker `GET`: GC deletes body and marker; the writer republishes instead of adopting
+- [x] #2 gtest with a hook between the writer's `HEAD` and marker `GET`: GC deletes body and marker; the writer republishes instead of adopting
 - [ ] #3 a failed marker delete is retried next round (entry dropped only after the marker delete is confirmed); fsck reports `meta_without_body` as a warning
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -78,4 +78,6 @@ Leak fix in the same change: `applyRedeleteOutcome` passes the deleting round - 
 2026-10-12 model of the chosen fix (`b483e4ea41c`, RESULTS `#cas-360-fix-c`; 61-row battery green): `fix_C_bound` (C + round-1 bound + all faults + deposed delete behind its own cut) green (MaxRounds 5); `fix_C_recur` green — C does not depend on CAS-361; `fix_B_recur` red — B does; `fix_C_orphan_retry` green and `sab_C_orphan_retry` red — the bound closes the leak; `mixed_old`/`mixed_new` red as expected (old writer's own adoption; new writer adopting on an old writer's backfilled `Clean`). A coarser model where a deposed attempt deletes at any time without its own in-degree is red for C and for today's bound alike (`fix_C_*_coarse`); checked against the code: the only source of redeletes is `settleEntry` → `rmr.redelete` (`CasBlobInDegree.cpp`) in the same attempt's fold, whose ref intake follows its `gc/state` read, so every deposed-attempt delete is behind its own cut — the coarse model is not reachable.
 
 2026-10-12: PR https://github.com/Altinity/ClickHouse/pull/2552 (base antalya-26.6-20261008, head e7535fdd40f): adoption rule, marker-delete bound, docs; CAS* release 2626 / ASan 2630; two-model review approved after one fix round.
+
+2026-10-24: PR https://github.com/Altinity/ClickHouse/pull/2552 merged 2026-10-14 at fef96d50e69 (antalya-26.6-20261008); the fix shipped as fix C (adopt only on a `Clean` marker read after the body `HEAD`) plus the marker-delete bound (`applyRedeleteOutcome` passes round - 1). AC #2 is covered by `CASPartWriteTxnMarkerRace.AbsentMarkerAfterHeadRepublishes` / `PresentBodyWithoutMarkerRepublishesOnce` and `CASUploadDetached.*WithoutMetadata*`. AC #1 and AC #3 describe option A (deferred marker delete), which the 2026-10-12 decision rejected; left unchecked as superseded, not as missing work. `meta_without_body` was already an fsck advisory at the base. DoD #1/#2 per the PR note (CAS* release 2626, ASan 2630); docs: part-lifecycle.md, metrics_and_events.md, blob-protocol.md (e7535fdd40f).
 <!-- SECTION:NOTES:END -->

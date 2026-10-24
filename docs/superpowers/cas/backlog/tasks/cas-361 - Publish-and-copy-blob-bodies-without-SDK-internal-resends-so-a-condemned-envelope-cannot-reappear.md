@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-17 10:04'
+updated_date: '2026-10-24 12:24'
 labels:
   - 'area:write-path'
   - 'area:backend'
@@ -40,17 +40,17 @@ Fix (no format change): publish/copy under the single-attempt profile (~40 lines
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `CaBlobPublishCore` gets an `SdkResend` action; TLC fails before the fix and holds after
-- [ ] #2 CAS blob publish and copy issue exactly one wire request per engine attempt (test via request counting on the mock backend)
-- [ ] #3 `NoSuchUpload` on completion surfaces as an ambiguous publication, not success
+- [x] #1 `CaBlobPublishCore` gets an `SdkResend` action; TLC fails before the fix and holds after
+- [x] #2 CAS blob publish and copy issue exactly one wire request per engine attempt (test via request counting on the mock backend)
+- [x] #3 `NoSuchUpload` on completion surfaces as an ambiguous publication, not success
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -71,4 +71,6 @@ Open for the code fix: does the single-attempt write path also disable `WriteBuf
 2026-10-15 (PR #2555 review): the 2026-10-12 decision says the publish path 'refuses an empty result ETag as ambiguous', but the #2555 diff has no such check. CAS does not read `object_etag` on this path and the review found no hole. Close explicitly: either drop the sentence from the decision or add the check. Source: tmp/pr2555/REPORT.md. Follow-ups: CAS-396..CAS-402.
 
 2026-10-17: PR https://github.com/Altinity/ClickHouse/pull/2555 merged (8fefc27bd62). Follow-up: the first failed publication attempt's WARNING reaches clients with send_logs_level=warning (flaky stateless reds) — demoted in a separate PR.
+
+2026-10-24: final head fc72b78e78d; merged into antalya-26.6-20261008 at 8fefc27bd62 (2026-10-17) and into antalya-26.6 via https://github.com/Altinity/ClickHouse/pull/2644 (2026-10-24). Second review round (tmp/pr2555/REPORT.md, Round 2) verified: Error log demoted for single-attempt creation clients, `CASBlobPublishAttemptFailed`/`CASBlobPublishGaveUp`, flag implies the `NO_SUCH_KEY` bound, composition tests through `PartWriteTxn::putBlob`, control-plane `NoSuchUpload` test; fe7609c4371 added the Error-level log-capture control, fc72b78e78d made `copyObjectToAnotherObjectStorage` honour the flag (part of CAS-399). AC #1 by `CaBlobPublishCore_RESULTS.md#sdk-resend-cas-361`; AC #2 by `CASBlobPublishTransport` + `S3SingleAttemptObjectCreation`; AC #3 by `S3ClientSingleAttemptCompletion` + `CASBackend.ConditionalMultipartNoSuchUploadIsUnresolved`; DoD #1/#2 per PR (CAS* release 2632, ASan 2655). Still open after merge: the first-attempt WARNING reaching clients (PR https://github.com/Altinity/ClickHouse/pull/2594, tracked as its own task); the empty-result-ETag sentence in the 2026-10-12 decision (no check in code, no hole found) still needs an explicit close; CAS-329 is unblocked.
 <!-- SECTION:NOTES:END -->

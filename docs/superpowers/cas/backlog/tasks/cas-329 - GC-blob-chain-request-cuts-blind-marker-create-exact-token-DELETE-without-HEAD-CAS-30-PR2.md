@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 18:58'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-10-24 12:24'
 labels:
   - cas
   - gc
@@ -61,4 +61,6 @@ Request-chain reference (base e2dd0f5d343): 1 HEAD blob at condemn; 2 GET .meta;
 2026-10-12 noclock audit: an exact-token DELETE without HEAD is only safe while the token cannot recur; SDK resends of blob publish restore old content ETags on S3/RustFS (docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md B9). Land the single-attempt publish fix first.
 
 Depends on CAS-361.
+
+2026-10-24: dependency CAS-361 landed (https://github.com/Altinity/ClickHouse/pull/2555, 8fefc27bd62, 2026-10-17): blob creating requests are single-attempt, so exact-token deletes without `HEAD` no longer risk matching a resurrected incarnation. Unblocked.
 <!-- SECTION:NOTES:END -->
