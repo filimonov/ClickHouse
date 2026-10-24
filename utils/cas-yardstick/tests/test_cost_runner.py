@@ -236,6 +236,27 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(record['cleanup'], {'aborted_uploads': 0, 'deleted_keys': 0, 'verified_empty': True, 'errors': []})
         self.assertEqual(self.calls[:3], ['list', 'sh_start', 'setup'])
 
+    def test_observer_mutation_replayed_reclassify_and_observe_hooks(self):
+        key = 'run1/s3/fake/small/k0/data/x'
+        self.card.on_measured = lambda ctx: (ctx.proxy.emit(key=key, size=100),
+                                             ctx.proxy.emit(op='DeleteObject', caller='rig', key=key, size=0),
+                                             ctx.proxy.emit(key=key + 'g', size=100))
+        seen = {}
+        # A category attached after the object's creation in both readings; the replay logs it as a `cat` step.
+        self.card.reclassify = lambda ctx, bounds: bounds.reclassify(
+            [('b', key + 'g')], 'garbage', 1 + max(t['t_us'] for i in (bounds.lower, bounds.upper) for t in i.transitions),
+            'drop')
+        self.card.observe = lambda ctx, draft: seen.setdefault('obs', {'garbage_upper': draft['inventory']['byte_hours']['garbage']['upper']})
+        record = self.go()
+        self.assertEqual(record['status'], 'ok')
+        bh = record['inventory']['byte_hours']
+        # The rig's delete retires the first object 10 us after its creation; without it the object lives to window end.
+        self.assertLess(bh['active']['upper'], 100 * 30 / 3.6e9)
+        self.assertGreater(bh['garbage']['lower'], 0)
+        self.assertEqual(record['ledger']['rig']['DeleteObject']['attempts'], 1)
+        self.assertNotIn('DeleteObject', record['ledger']['foreground']['r1'])
+        self.assertEqual(record['observations'], {'part_type': 'compact', 'garbage_upper': bh['garbage']['upper']})
+
     def test_unsupported_record(self):
         record = self.go(policy='cas')
         self.assertEqual(record['status'], 'UNSUPPORTED')
@@ -425,6 +446,9 @@ class OpenUploadsTest(unittest.TestCase):
                 row(11, 'CreateMultipartUpload', f'{p}/f', body={'upload_id': 'u6'}),
                 row(12, 'CompleteMultipartUpload', f'{p}/f', uid='u6', body={'complete_error': 'InternalError'})]
         self.assertEqual(open_uploads(rows, 2, p), [('b', f'{p}/a', 'u1'), ('b', f'{p}/f', 'u6')])
+        # A probe's own abort through the rig port closes the upload, so cleanup does not abort it again.
+        rows.append(row(13, 'AbortMultipartUpload', f'{p}/a', uid='u1', caller='rig'))
+        self.assertEqual(open_uploads(rows, 2, p), [('b', f'{p}/f', 'u6')])
 
 
 def cleanup_order(calls):

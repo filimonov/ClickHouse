@@ -1,0 +1,62 @@
+[
+  {
+    "id": "s3_max_single_part_upload_size",
+    "kind": "scalar",
+    "value": 33554432,
+    "dim": "B",
+    "validity": null,
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/IO/S3Defines.h:26",
+      "version": "26.8@09d0772a842"
+    }
+  },
+  {
+    "id": "s3_min_upload_part_size",
+    "kind": "scalar",
+    "value": 16777216,
+    "dim": "B",
+    "validity": null,
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/IO/S3Defines.h:24",
+      "version": "26.8@09d0772a842"
+    }
+  },
+  {
+    "id": "compressed_block_frame_bytes",
+    "kind": "scalar",
+    "value": 25,
+    "dim": "B",
+    "validity": null,
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Compression/CompressionInfo.h:17",
+      "version": "26.8@09d0772a842"
+    }
+  },
+  {
+    "id": "cas_expect_continue_min_bytes",
+    "kind": "scalar",
+    "value": 1048576,
+    "dim": "B",
+    "validity": null,
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:1279",
+      "version": "26.8@09d0772a842"
+    }
+  },
+  {
+    "id": "cas_inline_cap_bytes",
+    "kind": "scalar",
+    "value": 1048576,
+    "dim": "B",
+    "validity": null,
+    "evidence": {
+      "kind": "source",
+      "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:106",
+      "version": "26.8@09d0772a842"
+    }
+  }
+]

@@ -1,0 +1,34 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "probe_local_volume.gate",
+  "card": "probe_local_volume",
+  "case_id": "gate",
+  "policies": [
+    "local"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "columns": "k UInt64, a1 UInt64, a2 UInt64, a3 UInt64, a4 UInt64, a5 UInt64, s1 String, s2 String, s3 String, s4 String",
+    "order_by": "k",
+    "rows": 20000,
+    "inserts": 200,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS n, n * 3, n * 5, n * 7, n * 11, n * 13, hex(sipHash64(n)), hex(sipHash64(n + 1)), toString(n), repeat('x', n % 17) FROM numbers({rows})"
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 900,
+  "description": "200 inserts of 20 000 rows into a 10-column table on a local disk under strace; local I/O, request sizes and the capacity peak are priced as a gp3 allocation."
+}

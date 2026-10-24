@@ -300,6 +300,8 @@ class ProbeTest(unittest.TestCase):
             code, out = go(tools)
             self.assertEqual(ran, list(cli.PROBES))
             self.assertEqual(len(node), 10)
+            drill = node[0]
+            self.assertEqual(drill[drill.index('--cell') + 1], drill[drill.index('--probe') + 1])
             self.assertEqual([c[1].rsplit('/', 1)[1] for c in node[:2]], ['drill.mjs', 'render_check.mjs'])
             self.assertEqual(code, 2)
             self.assertEqual(out.count('PASS'), 4)
@@ -312,6 +314,40 @@ class ProbeTest(unittest.TestCase):
             self.assertEqual(node, [])
             self.assertEqual(out.count('FAIL'), 5)
             self.assertIn('tool missing', out)
+
+
+    def test_failed_assertion_fails_the_probe_before_node_tools(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            touch(os.path.join(tmp, 'clickhouse'))
+            m, tools = os.path.join(tmp, 'm'), os.path.join(tmp, 'tools')
+            os.makedirs(tools)
+            for name in cli.PROBES:
+                write_manifest(m, name, 'p', ['s3'], repeats=1)
+            for script in ('drill.mjs', 'render_check.mjs'):
+                touch(os.path.join(tools, script))
+            node = []
+
+            def fake_run_case(card, manifest, policy, k, deps):
+                rec = ok_record(manifest['card'], 'p')
+                ok = manifest['card'] != 'probe_multipart_fault'
+                rec['assertions'] = {'a': {'expected': 1, 'actual': 1, 'ok': True},
+                                     'b': {'expected': 1, 'actual': 2, 'ok': ok}}
+                return rec
+
+            def fake_subprocess(cmd, **kw):
+                node.append(cmd)
+                return SimpleNamespace(returncode=0, stdout='', stderr='')
+
+            args = run_args(tmp, [m])
+            args.manifests = m
+            out = io.StringIO()
+            with redirect_stdout(out), mock.patch.object(cli.subprocess, 'run', fake_subprocess):
+                code = cli.cmd_probe(args, run_case=fake_run_case, proxy_factory=FakeProxy, rig_factory=FakeRig,
+                                     rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
+            self.assertEqual(code, 2)
+            self.assertIn('FAIL probe_multipart_fault: assertions failed: b', out.getvalue())
+            self.assertEqual(out.getvalue().count('PASS'), 4)
+            self.assertFalse(any('probe_multipart_fault' in cmd for cmd in node))
 
 
 COVERAGE = {

@@ -1,0 +1,36 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "merge-natural.sample",
+  "card": "merge-natural",
+  "case_id": "sample",
+  "policies": [
+    "s3",
+    "cas",
+    "local"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "measure",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {},
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "columns": "k UInt64, a UInt64, b UInt64, c String, d String",
+    "order_by": "k",
+    "rows": 100000,
+    "inserts": 64,
+    "quiet_s": 5,
+    "quiesce_timeout_s": 60,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS n, n * 3, n * 7, hex(sipHash64(n)), toString(n) FROM numbers({rows})"
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 900,
+  "description": "Sample for the runtime estimate: 64 inserts of 100 000 rows into a 5-column table with natural merges, then a wait for merge quiescence (60 s cap)."
+}

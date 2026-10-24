@@ -116,6 +116,13 @@ class CostCard:
     def inventory_families(self, ctx) -> list:
         return []
 
+    def reclassify(self, ctx, bounds) -> None:
+        """Attach logical categories (`garbage` after a DROP, ...) to the pass replay before byte-hours are taken."""
+
+    def observe(self, ctx, draft) -> dict:
+        """Observations derived from the finished record (inventory, local I/O); merged into `observations`."""
+        return {}
+
     def teardown(self, ctx) -> None:
         # Atomic databases keep tables and ZooKeeper replica entries per replica, so every replica drops its own.
         for client in reversed(ctx.cluster.clients):

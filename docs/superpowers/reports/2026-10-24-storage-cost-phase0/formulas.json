@@ -1,0 +1,240 @@
+[
+  {
+    "schema": "formulas/1",
+    "owner": "phase0",
+    "variant": "s3",
+    "cells": {
+      "probe_s3_insert": {
+        "ledger_rows": [
+          {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 11,
+              "dim": "count"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      },
+      "probe_replicated_fetch": {
+        "ledger_rows": [
+          {
+            "row_type": "request",
+            "op_kind": "PutObject",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 22,
+              "dim": "count"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      },
+      "probe_multipart_fault": {
+        "ledger_rows": [
+          {
+            "row_type": "request",
+            "op_kind": "CreateMultipartUpload",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 1,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "UploadPart",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 3,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "CompleteMultipartUpload",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 0,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "CompleteMultipartUpload",
+            "outcome_class": "server_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 4,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "AbortMultipartUpload",
+            "outcome_class": "ok",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 0,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "request",
+            "op_kind": "AbortMultipartUpload",
+            "outcome_class": "server_error",
+            "category": null,
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "const",
+              "value": 4,
+              "dim": "count"
+            }
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "incomplete_parts",
+            "outcome_class": "all",
+            "category": "incomplete",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_incomplete_gib_months",
+              "dim": "GiB*month"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      }
+    }
+  },
+  {
+    "schema": "formulas/1",
+    "owner": "phase0",
+    "variant": "ebs",
+    "cells": {
+      "probe_local_volume": {
+        "ledger_rows": [
+          {
+            "row_type": "block_capacity",
+            "op_kind": "capacity",
+            "outcome_class": "all",
+            "category": null,
+            "route": null,
+            "scope": "volume",
+            "expr": {
+              "kind": "input",
+              "id": "probe_block_capacity_gib",
+              "dim": "GiB"
+            }
+          },
+          {
+            "row_type": "block_io",
+            "op_kind": "iops",
+            "outcome_class": "all",
+            "category": null,
+            "route": null,
+            "scope": "volume",
+            "expr": {
+              "kind": "input",
+              "id": "probe_block_iops",
+              "dim": "iops"
+            }
+          },
+          {
+            "row_type": "block_io",
+            "op_kind": "mibps",
+            "outcome_class": "all",
+            "category": null,
+            "route": null,
+            "scope": "volume",
+            "expr": {
+              "kind": "input",
+              "id": "probe_block_mibps",
+              "dim": "mibps"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      }
+    }
+  },
+  {
+    "schema": "formulas/1",
+    "owner": "phase0",
+    "variant": "cas",
+    "cells": {
+      "probe_cas_gc_cohort": {
+        "ledger_rows": [
+          {
+            "row_type": "storage",
+            "op_kind": "garbage",
+            "outcome_class": "all",
+            "category": "garbage",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_garbage_gib_months",
+              "dim": "GiB*month"
+            }
+          },
+          {
+            "row_type": "storage",
+            "op_kind": "active",
+            "outcome_class": "all",
+            "category": "active",
+            "route": null,
+            "scope": "variant",
+            "expr": {
+              "kind": "input",
+              "id": "probe_active_gib_months",
+              "dim": "GiB*month"
+            }
+          }
+        ],
+        "allocation": null,
+        "states": [],
+        "notes": []
+      }
+    }
+  }
+]

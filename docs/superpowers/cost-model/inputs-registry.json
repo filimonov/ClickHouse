@@ -222,6 +222,138 @@
       },
       "hint": null,
       "status": "ok"
+    },
+    {
+      "id": "probe_incomplete_gib_months",
+      "block": "reliability",
+      "label": "Probe: incomplete multipart storage",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_garbage_gib_months",
+      "block": "cas",
+      "label": "Probe: CAS garbage awaiting reclamation",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_active_gib_months",
+      "block": "cas",
+      "label": "Probe: active CAS objects",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "GiB*month",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_block_capacity_gib",
+      "block": "ebs",
+      "label": "Probe: local volume capacity peak",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_block_iops",
+      "block": "ebs",
+      "label": "Probe: local volume IOPS demand",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "iops",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "probe_block_mibps",
+      "block": "ebs",
+      "label": "Probe: local volume throughput demand",
+      "kind": "measured",
+      "scope": "volume",
+      "unit": "mibps",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "phase-0 probe observation: docs/superpowers/reports/2026-10-24-storage-cost-phase0",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
     }
   ],
   "sets": {},

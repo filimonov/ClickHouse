@@ -1,0 +1,234 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_replicated_fetch.gate",
+  "policy": "s3",
+  "inputs": {
+    "part_files": [
+      "data.bin",
+      "data.cmrk4",
+      "primary.cidx",
+      "count.txt",
+      "serialization.json",
+      "statistics.packed",
+      "columns.txt",
+      "columns_substreams.txt",
+      "metadata_version.txt",
+      "default_compression_codec.txt",
+      "checksums.txt"
+    ],
+    "receiver_load_reads_expected": 9
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 11,
+        "GetObject": 11
+      },
+      "r2": {
+        "PutObject": 11,
+        "GetObject": {
+          "min": 8,
+          "max": 11
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "1000 rows of 3 columns are far below min_bytes_for_wide_part (10 MiB): the part is Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6403
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10 MiB",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 78
+    },
+    {
+      "claim": "min_bytes_for_full_part_storage is 0, so the part uses Full storage (one object per file), not Packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6407
+    },
+    {
+      "claim": "min_bytes_for_full_part_storage default 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 229
+    },
+    {
+      "claim": "a compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file data + marks extension",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compressed marks with substreams use extension .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "write_marks_for_substreams_in_compact_parts defaults to true",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 414
+    },
+    {
+      "claim": "compress_marks defaults to true",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2240
+    },
+    {
+      "claim": "compress_primary_key defaults to true: the index file is primary.cidx",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 121
+    },
+    {
+      "claim": "uuid.txt only when the part has a UUID (assign_part_uuids is off)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 359
+    },
+    {
+      "claim": "partition.dat only for a partition key (the table has none)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 369
+    },
+    {
+      "claim": "minmax files only for partition-key columns (none)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 376
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json (serialization infos are persisted)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed for full part storage",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to \"basic, uniq_v2\", so statistics exist for every column",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt (MergeTree does not store it in part attributes)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "txn_version.txt is deferred for a non-transactional part that has none",
+      "path": "tmp/src-26.8/src/Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.cpp",
+      "line": 213
+    },
+    {
+      "claim": "each file is one WriteBufferFromS3; a file of at most max_single_part_upload_size is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "max_single_part_upload_size defaults to 32 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 26
+    },
+    {
+      "claim": "check_objects_after_upload defaults to false: no HEAD after upload",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "the post-upload HEAD runs only under check_objects_after_upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 228
+    },
+    {
+      "claim": "zero-copy replication is off by default: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    },
+    {
+      "claim": "without zero-copy the sender ships file contents, not blob references",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "files sent: every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "plus the files without checksums (checksums.txt, columns.txt, codec, metadata version, substreams)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 499
+    },
+    {
+      "claim": "each sent file is read through the disk (one GetObject per object on the sender)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file with writeFile (one PutObject each)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, substreams, checksums, index granularity (marks), primary index, rows count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1527
+    },
+    {
+      "claim": "primary_key_lazy_load = 0 in the DDL loads primary.cidx eagerly",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1543
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "and writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

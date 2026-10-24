@@ -1,0 +1,201 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_multipart_fault.gate",
+  "policy": "s3",
+  "inputs": {
+    "rows": 40000,
+    "s_chars_total": 40938368,
+    "residue_bytes_band": [
+      40939368,
+      40953993
+    ],
+    "part_identities": 2,
+    "part_sizes_at_band_edges": [
+      [
+        33554432,
+        7384936
+      ],
+      [
+        33554432,
+        7399561
+      ]
+    ],
+    "s3_retry_attempts": 1,
+    "http_attempts_per_failing_call": 4
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "CreateMultipartUpload": 1,
+        "UploadPart": 3,
+        "CompleteMultipartUpload": 4,
+        "AbortMultipartUpload": 4,
+        "PutObject": {
+          "min": 1,
+          "max": 14
+        },
+        "DeleteObjects": {
+          "min": 0,
+          "max": 1
+        },
+        "DeleteObject": {
+          "min": 0,
+          "max": 14
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "40000 rows of about 1 KiB exceed min_bytes_for_wide_part: the part is Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6403
+    },
+    {
+      "claim": "string_serialization_version with_size_stream: string sizes go to s.size.bin, s.bin holds only the characters",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 300
+    },
+    {
+      "claim": "the size substream of a String",
+      "path": "tmp/src-26.8/src/DataTypes/Serializations/SerializationString.cpp",
+      "line": 702
+    },
+    {
+      "claim": "hex() of an integer drops leading zero bytes, so a row is 1024 bytes minus 2 per leading zero byte",
+      "path": "tmp/src-26.8/src/Functions/FunctionsBinaryRepresentation.cpp",
+      "line": 54
+    },
+    {
+      "claim": "a compressed block carries a 9-byte header",
+      "path": "tmp/src-26.8/src/Compression/CompressionInfo.h",
+      "line": 17
+    },
+    {
+      "claim": "and a 16-byte CityHash128 checksum",
+      "path": "tmp/src-26.8/src/Compression/CompressedWriteBuffer.cpp",
+      "line": 44
+    },
+    {
+      "claim": "max_compress_block_size defaults to 1 MiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 146
+    },
+    {
+      "claim": "min_compress_block_size defaults to 64 KiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 131
+    },
+    {
+      "claim": "the first buffer is clamp(max_single_part_upload_size, min_upload_part_size, max_upload_part_size) = 32 MiB",
+      "path": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp",
+      "line": 51
+    },
+    {
+      "claim": "later buffers are min_upload_part_size = 16 MiB",
+      "path": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp",
+      "line": 52
+    },
+    {
+      "claim": "min_upload_part_size defaults to 16 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 24
+    },
+    {
+      "claim": "more than one detached buffer at preFinalize starts the multipart upload",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 178
+    },
+    {
+      "claim": "so a 32..48 MiB object is CreateMultipartUpload + 2 parts, then Complete",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 198
+    },
+    {
+      "claim": "disks read request settings with the s3_ prefix, so s3_retry_attempts sets retry_attempts",
+      "path": "tmp/src-26.8/src/IO/S3Settings.cpp",
+      "line": 44
+    },
+    {
+      "claim": "a changed retry_attempts replaces the server default for the disk client",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.cpp",
+      "line": 138
+    },
+    {
+      "claim": "the disk client is built with slow_all_threads_after_retryable_error off",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.cpp",
+      "line": 163
+    },
+    {
+      "claim": "so the SDK retry strategy keeps max_retries = retry_attempts",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 1382
+    },
+    {
+      "claim": "the SDK retries while attemptedRetries < max_retries: 2 HTTP attempts per SDK call with retry_attempts 1",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 116
+    },
+    {
+      "claim": "the SDK loop itself (contrib/aws at 22f694afbdc: AWSClient::AttemptExhaustively)",
+      "path": "contrib/aws/src/aws-cpp-sdk-core/source/client/AWSClient.cpp",
+      "line": 357
+    },
+    {
+      "claim": "ClickHouse wraps every SDK call in its own loop of max_retries + 1 calls for retryable errors: 2 x 2 = 4 HTTP attempts",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 823
+    },
+    {
+      "claim": "a closed connection without a response becomes a retryable NETWORK_CONNECTION error",
+      "path": "tmp/src-26.8/src/IO/S3/PocoHTTPClient.cpp",
+      "line": 828
+    },
+    {
+      "claim": "so the dropped part 2 is resent once with the same body and succeeds: UploadPart = 3",
+      "path": "tmp/src-26.8/src/IO/S3/Client.cpp",
+      "line": 886
+    },
+    {
+      "claim": "Complete retries above the client only for NoSuchKey/InvalidPart; InternalError 500 throws after one call",
+      "path": "tmp/src-26.8/src/IO/S3Common.cpp",
+      "line": 48
+    },
+    {
+      "claim": "the non-transient Complete error is thrown",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 718
+    },
+    {
+      "claim": "a failed finalize cancels the buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBuffer.cpp",
+      "line": 102
+    },
+    {
+      "claim": "cancel aborts the multipart upload once (cancel is idempotent)",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 244
+    },
+    {
+      "claim": "cancel is a no-op on an already canceled buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBuffer.cpp",
+      "line": 76
+    },
+    {
+      "claim": "the abort is one SDK call: 4 HTTP attempts, all answered 500 by the proxy",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 492
+    },
+    {
+      "claim": "the other part files (k, s.size streams, marks, index, metadata files) are single PutObjects whose count depends on how far finalization got before the Complete error",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 159
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

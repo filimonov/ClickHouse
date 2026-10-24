@@ -1,0 +1,33 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_local_volume.gate",
+  "policy": "local",
+  "inputs": {
+    "write_syscall": "write"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "data_dir_write_syscalls": [
+        "write"
+      ]
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "file writes go through WriteBufferFromFileDescriptor, which calls ::write (not pwrite)",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromFileDescriptor.cpp",
+      "line": 60
+    },
+    {
+      "claim": "pwrite appears only on the AIO path, which part writes do not use",
+      "path": "tmp/src-26.8/src/IO/AIO.cpp",
+      "line": 174
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

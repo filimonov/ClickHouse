@@ -278,6 +278,29 @@ class MainTest(unittest.TestCase):
             self.assertIn('measurements.jsonl:2: bad JSON line', text)
             self.assertIn('measurements.jsonl:3: expected a JSON object', text)
 
+    def test_report_formulas_file_may_hold_an_array(self):
+        def formulas(variant, qid):
+            row = {'row_type': 'request', 'op_kind': 'PutObject', 'outcome_class': 'ok', 'category': None,
+                   'route': None, 'scope': 'variant', 'expr': inp(qid)}
+            return {'schema': 'formulas/1', 'owner': 'o', 'variant': variant,
+                    'cells': {'c': {'ledger_rows': [row], 'allocation': None, 'states': [], 'notes': []}}}
+        with tempfile.TemporaryDirectory() as d:
+            cm, report = os.path.join(d, 'cm'), os.path.join(d, 'rep-1')
+            os.makedirs(cm)
+            os.makedirs(report)
+            with open(os.path.join(cm, 'inputs-registry.json'), 'w') as f:
+                json.dump(registry(quantity('x')), f)
+            args = ['--mode', 'dev', '--cost-model', cm, '--reports', os.path.join(d, 'rep-*')]
+            with open(os.path.join(report, 'formulas.json'), 'w') as f:
+                json.dump([formulas('s3', 'x'), formulas('cas', 'x')], f)
+            self.assertEqual(run_main(args), 0)
+            with open(os.path.join(report, 'formulas.json'), 'w') as f:
+                json.dump([formulas('s3', 'x'), formulas('cas', 'y')], f)
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                self.assertEqual(cc.main(args), 1)
+            self.assertIn('formulas[1] (cas): unknown input y', err.getvalue())
+
     def test_seeds_pass_dev_mode(self):
         self.assertEqual(run_main(['--mode', 'dev']), 0)
 

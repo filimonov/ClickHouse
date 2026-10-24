@@ -44,8 +44,9 @@ class TwoTables(CostCard):
 
 
 class DefaultsTest(unittest.TestCase):
-    def test_cards_registry_is_empty_dict(self):
-        self.assertEqual(cards.CARDS, {})
+    def test_cards_registry_holds_the_phase0_cards(self):
+        self.assertEqual(sorted(cards.CARDS), ['gc-scale', 'merge-natural', 'probe_cas_gc_cohort', 'probe_local_volume',
+                                               'probe_multipart_fault', 'probe_replicated_fetch', 'probe_s3_insert'])
 
     def test_class_defaults(self):
         card = TwoTables()

@@ -1,0 +1,68 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "probe_multipart_fault.gate",
+  "card": "probe_multipart_fault",
+  "case_id": "gate",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.s3.s3_retry_attempts": "1"
+    }
+  },
+  "params": {
+    "columns": "k UInt64, s String CODEC(NONE)",
+    "order_by": "k",
+    "rows": 40000,
+    "inserts": 1,
+    "expected_rows": 0,
+    "faults": [
+      {
+        "caller": "r1",
+        "op": "UploadPart",
+        "part_number": 2,
+        "nth": 1,
+        "action": {
+          "type": "drop_response"
+        }
+      },
+      {
+        "caller": "r1",
+        "op": "CompleteMultipartUpload",
+        "nth": "*",
+        "action": {
+          "type": "status",
+          "status": 500,
+          "send_upstream": false
+        }
+      },
+      {
+        "caller": "r1",
+        "op": "AbortMultipartUpload",
+        "nth": "*",
+        "action": {
+          "type": "status",
+          "status": 500,
+          "send_upstream": false
+        }
+      }
+    ],
+    "insert": "INSERT INTO {table} SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers({rows})"
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 300,
+  "description": "One INSERT whose CODEC(NONE) String column object exceeds the multipart threshold; the proxy drops the first response of part 2 and answers Complete and Abort with 500 without forwarding them, so the INSERT fails and the parts stay incomplete until the rig aborts."
+}

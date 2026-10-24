@@ -1,0 +1,37 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "gc-scale.sample",
+  "card": "gc-scale",
+  "case_id": "sample",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "measure",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "min_bytes_for_wide_part": 0
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.cas_gc_interval_sec": "5"
+    }
+  },
+  "params": {
+    "columns": "k UInt64, c1 UInt64, c2 UInt64, c3 UInt64, c4 UInt64, c5 UInt64, c6 UInt64, c7 UInt64, c8 UInt64, c9 UInt64, c10 UInt64, c11 UInt64, c12 UInt64, c13 UInt64, c14 UInt64, c15 UInt64, c16 UInt64, c17 UInt64, c18 UInt64, c19 UInt64, c20 UInt64, c21 UInt64, c22 UInt64, c23 UInt64, c24 UInt64, c25 UInt64, c26 UInt64, c27 UInt64, c28 UInt64, c29 UInt64, c30 UInt64, c31 UInt64, c32 UInt64, c33 UInt64, c34 UInt64, c35 UInt64, c36 UInt64, c37 UInt64, c38 UInt64, c39 UInt64, c40 UInt64, c41 UInt64, c42 UInt64, c43 UInt64, c44 UInt64, c45 UInt64, c46 UInt64, c47 UInt64, c48 UInt64, c49 UInt64, c50 UInt64, c51 UInt64, c52 UInt64, c53 UInt64, c54 UInt64, c55 UInt64, c56 UInt64, c57 UInt64, c58 UInt64, c59 UInt64, c60 UInt64, c61 UInt64, c62 UInt64, c63 UInt64, c64 UInt64, c65 UInt64, c66 UInt64, c67 UInt64, c68 UInt64, c69 UInt64, c70 UInt64, c71 UInt64, c72 UInt64, c73 UInt64, c74 UInt64, c75 UInt64, c76 UInt64, c77 UInt64, c78 UInt64, c79 UInt64, c80 UInt64, c81 UInt64, c82 UInt64, c83 UInt64, c84 UInt64, c85 UInt64, c86 UInt64, c87 UInt64, c88 UInt64, c89 UInt64, c90 UInt64, c91 UInt64, c92 UInt64, c93 UInt64, c94 UInt64, c95 UInt64, c96 UInt64, c97 UInt64, c98 UInt64, c99 UInt64",
+    "order_by": "k",
+    "rows": 8,
+    "inserts": 1000,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS n, n * 3 + 1, n * 5 + 2, n * 7 + 3, n * 9 + 4, n * 11 + 5, n * 13 + 6, n * 15 + 7, n * 17 + 8, n * 19 + 9, n * 21 + 10, n * 23 + 11, n * 25 + 12, n * 27 + 13, n * 29 + 14, n * 31 + 15, n * 33 + 16, n * 35 + 17, n * 37 + 18, n * 39 + 19, n * 41 + 20, n * 43 + 21, n * 45 + 22, n * 47 + 23, n * 49 + 24, n * 51 + 25, n * 53 + 26, n * 55 + 27, n * 57 + 28, n * 59 + 29, n * 61 + 30, n * 63 + 31, n * 65 + 32, n * 67 + 33, n * 69 + 34, n * 71 + 35, n * 73 + 36, n * 75 + 37, n * 77 + 38, n * 79 + 39, n * 81 + 40, n * 83 + 41, n * 85 + 42, n * 87 + 43, n * 89 + 44, n * 91 + 45, n * 93 + 46, n * 95 + 47, n * 97 + 48, n * 99 + 49, n * 101 + 50, n * 103 + 51, n * 105 + 52, n * 107 + 53, n * 109 + 54, n * 111 + 55, n * 113 + 56, n * 115 + 57, n * 117 + 58, n * 119 + 59, n * 121 + 60, n * 123 + 61, n * 125 + 62, n * 127 + 63, n * 129 + 64, n * 131 + 65, n * 133 + 66, n * 135 + 67, n * 137 + 68, n * 139 + 69, n * 141 + 70, n * 143 + 71, n * 145 + 72, n * 147 + 73, n * 149 + 74, n * 151 + 75, n * 153 + 76, n * 155 + 77, n * 157 + 78, n * 159 + 79, n * 161 + 80, n * 163 + 81, n * 165 + 82, n * 167 + 83, n * 169 + 84, n * 171 + 85, n * 173 + 86, n * 175 + 87, n * 177 + 88, n * 179 + 89, n * 181 + 90, n * 183 + 91, n * 185 + 92, n * 187 + 93, n * 189 + 94, n * 191 + 95, n * 193 + 96, n * 195 + 97, n * 197 + 98, n * 199 + 99 FROM numbers({rows})"
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 3600,
+  "description": "Sample for the runtime estimate: 1000 inserts into a 100-column Wide table on the CAS disk (one blob per column file; about 100 000 objects), then one GC round with a 5 s interval."
+}

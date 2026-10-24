@@ -459,7 +459,8 @@ def main(argv=None):
     if args.mode == "final" and not reports:
         problems.append(f"missing artifact: no report directory matches {args.reports}")
     paths = sorted(cm.glob("formulas*.json")) + [r / "formulas.json" for r in reports if (r / "formulas.json").exists()]
-    formulas = [f for f in (_load(p, problems) for p in paths) if f is not None]
+    # A report's formulas.json may hold one formulas/1 object or an array of them (one per variant).
+    formulas = [x for f in (_load(p, problems) for p in paths) if f is not None for x in (f if isinstance(f, list) else [f])]
     coefficients, measurements, predictions = [], [], []
     for r in reports:
         if (r / "coefficients.json").exists():

@@ -51,15 +51,18 @@ def _now_us() -> int:
 
 
 def open_uploads(rows: list, after_seq: int, key_prefix: str) -> list:
-    """`(bucket, key, upload_id)` of multipart uploads a workload caller created and never completed or aborted."""
+    """`(bucket, key, upload_id)` of multipart uploads a workload caller created and nobody completed or aborted.
+
+    A probe may abort an upload itself through the proxy's `rig` port; that abort closes the upload too.
+    """
     created, closed = {}, set()
     for a in rows:
-        if a.get('kind') != 'attempt' or a['seq'] <= after_seq or a['caller'] not in ledger_mod.WORKLOAD_CALLERS:
+        if a.get('kind') != 'attempt' or a['seq'] <= after_seq:
             continue
         if a['upstream']['outcome'] != 'ok' or not (a.get('key') or '').startswith(key_prefix + '/'):
             continue
         body = a.get('response_body') or {}
-        if a['op'] == 'CreateMultipartUpload' and body.get('upload_id'):
+        if a['op'] == 'CreateMultipartUpload' and body.get('upload_id') and a['caller'] in ledger_mod.WORKLOAD_CALLERS:
             created[(a['bucket'], a['key'], body['upload_id'])] = True
         elif a['op'] in CLOSING_OPS and not body.get('complete_error'):
             closed.add((a['bucket'], a['key'], a.get('upload_id')))
@@ -224,6 +227,7 @@ class _Pass:
                              observations=result.get('observations', {}), unit_count=result['unit_count'],
                              wall_s=wall_s)
         self.collect_ledger()
+        self.sections['observations'] = {**self.sections['observations'], **card.observe(self.ctx, dict(self.sections))}
         self.sections['assertions'] = {
             name: {'expected': expected, 'actual': actual, 'ok': expected == actual}
             for name, (expected, actual) in card.assertions(self.ctx, dict(self.sections)).items()}
@@ -283,8 +287,11 @@ class _Pass:
             'rig': ledger_mod.summarize(split['rig']).get('rig', {})}
         if crossing and self.card.mode == 'deterministic':
             raise CaseFailure('window_crossing', f'attempts {crossing} cross a window boundary in a deterministic card')
-        attempts = sorted(sum(workload.values(), []), key=lambda a: a['seq'])
+        # Observer mutations (a probe's own abort through the rig port) stay in the lifecycle replay although
+        # their requests are excluded from the workload counts above.
+        attempts = sorted(pass_rows, key=lambda a: a['seq'])
         bounds = ledger_mod.replay(attempts, Inventory(), self.families)
+        self.card.reclassify(self.ctx, bounds)
         uncertain = {t['id'] for inv in (bounds.lower, bounds.upper) for t in inv.transitions if t['uncertain']}
         self.sections['inventory'] = {'initial': 'empty_verified', 'byte_hours': ledger_mod.byte_hours(bounds, t_w0, t_w1),
                                       'uncertain_identities': len(uncertain)}
@@ -294,7 +301,7 @@ class _Pass:
     def pass_rows(self) -> list:
         self.deps.proxy.flush()
         return [r for r in ledger_mod.read_rows(self.deps.proxy.ledger_path)
-                if r['seq'] > self.setup_seq and r.get('kind') == 'attempt' and r['caller'] != 'rig']
+                if r['seq'] > self.setup_seq and r.get('kind') == 'attempt']
 
     def replay_so_far(self):
         return ledger_mod.replay(self.pass_rows(), Inventory(), self.families)

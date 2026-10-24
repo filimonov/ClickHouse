@@ -239,8 +239,11 @@ def cmd_probe(args, *, run_case=run_case, proxy_factory=LedgerProxy, rig_factory
             records = _execute(mine, deps, run_id, cards, run_case)
             drill_json = os.path.join(run_dir, f'drill-{probe}.json')
             reason = next((f'run {r["status"]}' for r in records if r['status'] != 'ok'), None)
+            failed = sorted(n for r in records for n, a in r.get('assertions', {}).items() if not a['ok'])
+            reason = reason or (f'assertions failed: {", ".join(failed)}' if failed else None)
+            # Several probes share a variant; each probe's formulas cell is named after the probe.
             reason = reason or _node(tools_dir, 'drill.mjs', os.path.join(run_dir, 'measurements.jsonl'), '--probe',
-                                     probe, '--out', drill_json)
+                                     probe, '--cell', probe, '--out', drill_json)
             reason = reason or _node(tools_dir, 'render_check.mjs', drill_json, '--probe', probe)
             results[probe] = ('FAIL' if reason else 'PASS', reason, drill_json)
         for probe, (verdict, reason, path) in results.items():

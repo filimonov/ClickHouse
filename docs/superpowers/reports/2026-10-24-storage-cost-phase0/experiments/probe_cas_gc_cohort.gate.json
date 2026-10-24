@@ -1,0 +1,37 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "probe_cas_gc_cohort.gate",
+  "card": "probe_cas_gc_cohort",
+  "case_id": "gate",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "measure",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.cas_gc_interval_sec": "5"
+    }
+  },
+  "params": {
+    "columns": "k UInt64, a UInt64, b String",
+    "order_by": "k",
+    "rows": 1000,
+    "inserts": 20,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS n, n * 7, hex(sipHash64(n)) FROM numbers({rows})",
+    "reclaim_timeout_s": 300
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 600,
+  "description": "20 inserts into one table on the CAS disk, then DROP TABLE SYNC; the blobs and manifests the inserts created are one garbage cohort, reclaimed by GC rounds every 5 s."
+}

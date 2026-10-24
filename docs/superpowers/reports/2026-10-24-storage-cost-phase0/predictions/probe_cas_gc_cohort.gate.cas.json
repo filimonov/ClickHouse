@@ -1,0 +1,134 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_cas_gc_cohort.gate",
+  "policy": "cas",
+  "inputs": {
+    "expect_negotiated_rows": 0,
+    "blob_files_per_part": [
+      "data.bin"
+    ],
+    "parts": 20
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 40,
+          "max": 2000
+        },
+        "HeadObject": {
+          "min": 20,
+          "max": 2000
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "payload family: blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "the .meta sibling of a blob is GC freshness state, not payload",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 120
+    },
+    {
+      "claim": "manifest family: cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "control family: ref streams under cas/ns/stream",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 151
+    },
+    {
+      "claim": "control family: ref state under cas/ns/state",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 152
+    },
+    {
+      "claim": "control family: ref catalog",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 473
+    },
+    {
+      "claim": "control family: gc/state, gc/maintenance_state, gc/hb, gc/gen/...",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 332
+    },
+    {
+      "claim": "control family (lease): gc/server-roots/<srid>/{owner,epoch,mount}",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 420
+    },
+    {
+      "claim": "control family: _pool_meta",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 466
+    },
+    {
+      "claim": "control family: roots/ plain mountpoint objects",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 397
+    },
+    {
+      "claim": ".bin and marks files always stay blobs; small part files ride inline in the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 77
+    },
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "blob publication is an ordinary unconditional write (no If-None-Match)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp",
+      "line": 897
+    },
+    {
+      "claim": "conditional writes (manifests, refs, gc state) go through the single-attempt client",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp",
+      "line": 828
+    },
+    {
+      "claim": "the single-attempt client negotiates Expect: 100-continue from 1 MiB unless the disk sets expect_continue_min_bytes",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp",
+      "line": 1281
+    },
+    {
+      "claim": "Expect is sent only for a conditional PUT whose body is at least expect_continue_min_bytes",
+      "path": "tmp/src-26.8/src/IO/S3/PocoHTTPClient.cpp",
+      "line": 665
+    },
+    {
+      "claim": "every conditional body here is a small manifest, ref record or GC record (< 1 MiB): no Expect row is predicted",
+      "path": "tmp/src-26.8/src/IO/S3/PocoHTTPClient.cpp",
+      "line": 649
+    },
+    {
+      "claim": "GC deletes zero-in-degree blobs with exact-token deletes one round after condemning them",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/README.md",
+      "line": 70
+    },
+    {
+      "claim": "owner-removed manifest bodies are deleted by GC rounds (cas_gc_log.manifests_deleted)",
+      "path": "tmp/src-26.8/src/Interpreters/ContentAddressedGarbageCollectionLog.cpp",
+      "line": 48
+    },
+    {
+      "claim": "cas_gc_interval_sec is the GC round period",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}
