@@ -292,13 +292,16 @@ class FramingTest(ProxyBase):
         row = self.wait_attempts(1)[0]
         self.assertTrue(row['expect_negotiated'])
         self.assertEqual(row['req_headers']['expect'], '100-continue')
+        self.assertEqual(row['wire_bytes_bound'], 'exact')  # the store took the body it was sent
         self.assertEqual(validate_ledger_row(row), [])
 
     def test_no_expect_means_not_negotiated(self):
         c = self.conn()
         c.request('PUT', '/b/k', b'abc')
         c.getresponse().read()
-        self.assertFalse(self.wait_attempts(1)[0]['expect_negotiated'])
+        row = self.wait_attempts(1)[0]
+        self.assertFalse(row['expect_negotiated'])
+        self.assertEqual(row['wire_bytes_bound'], 'exact')
 
     def test_chunked_request_rejected_411_recorded(self):
         s = self.raw()
@@ -689,6 +692,26 @@ class BrokenUpstreamTest(ProxyBase):
         with self.assertRaisesRegex(RuntimeError, 'ledger row .* was not written'):
             self.proxy.stop()
         self.assertIsNone(self.proxy._file)
+
+    def test_expect_rejected_upstream_flags_wire_bytes_as_upper_bound(self):
+        # The proxy said `100 Continue` and streamed the body; a store that rejects the conditional write would,
+        # with its own Expect handling, have refused before the body: the recorded wire bytes are an upper bound.
+        self.point_at(b'HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\n\r\n')
+        s = self.raw()
+        s.sendall(b'PUT /b/k HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nIf-None-Match: *\r\n'
+                  b'Content-Length: 5\r\n\r\n')
+        self.assertEqual(read_until(s, b'\r\n\r\n'), b'HTTP/1.1 100 Continue\r\n\r\n')
+        s.sendall(b'hello')
+        try:
+            read_response(s)
+        except (ConnectionError, OSError):
+            pass
+        s.close()
+        row = self.wait_attempts(1)[0]
+        self.assertTrue(row['expect_negotiated'])
+        self.assertNotEqual(row['upstream']['outcome'], 'ok')
+        self.assertEqual(row['wire_bytes_bound'], 'upper')
+        self.assertEqual(validate_ledger_row(row), [])
 
     def test_connect_refused_answers_502_and_row_present_right_after_flush(self):
         with socket.socket() as probe:

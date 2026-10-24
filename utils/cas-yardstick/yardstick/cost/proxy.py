@@ -274,7 +274,7 @@ class Attempt:
             't_end_us': None, 'method': '', 'path': '', 'query': {}, 'req_headers': {}, 'resp_headers': {},
             'bucket': '', 'key': '', 'op': 'Other', 'upload_id': None, 'part_number': None, 'copy_source': None,
             'req_payload_bytes': 0, 'req_wire_bytes': 0, 'resp_payload_bytes': 0, 'resp_wire_bytes': 0,
-            'payload_sha256': None, 'expect_negotiated': False,
+            'payload_sha256': None, 'expect_negotiated': False, 'wire_bytes_bound': 'exact',
             'downstream': {'outcome': 'dropped', 'status': None},
             'upstream': {'outcome': 'unknown', 'http_status': None, 's3_code': None},
             'response_body': {'upload_id': None, 'etag': None, 'complete_error': None, 'completed_parts': None,
@@ -381,6 +381,10 @@ class LedgerProxy:
         with self._lock:
             self._last_us = max(self._last_us, time.time_ns() // 1000)
             attempt.row['t_end_us'] = self._last_us
+            # The proxy answered `100 Continue` itself and streamed the body; a store that refused the request
+            # would have refused it before the body, so the recorded request wire bytes only bound the real ones.
+            if attempt.row['expect_negotiated'] and attempt.row['upstream']['outcome'] != 'ok':
+                attempt.row['wire_bytes_bound'] = 'upper'
             try:
                 self._write(attempt.row)
             except BaseException:

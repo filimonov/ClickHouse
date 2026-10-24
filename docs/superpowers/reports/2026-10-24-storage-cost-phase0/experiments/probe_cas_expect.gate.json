@@ -1,0 +1,36 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "probe_cas_expect.gate",
+  "card": "probe_cas_expect",
+  "case_id": "gate",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {
+      "storage_configuration.disks.cas.expect_continue_min_bytes": "1"
+    }
+  },
+  "params": {
+    "columns": "k UInt64, a UInt64, b String",
+    "order_by": "k",
+    "rows": 1000,
+    "inserts": 3,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS n, n * 7, hex(sipHash64(n)) FROM numbers({rows})"
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 300,
+  "description": "3 inserts into one table on the CAS disk with GC off and the disk's expect_continue_min_bytes set to 1, so every conditional PUT (manifests, ref records) negotiates Expect: 100-continue through the proxy."
+}

@@ -1,0 +1,133 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "probe_cas_expect.gate",
+  "policy": "cas",
+  "inputs": {
+    "expect_negotiated_rows_min": 1,
+    "blob_files_per_part": [
+      "data.bin"
+    ],
+    "parts": 3
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 6,
+          "max": 2000,
+          "basis": "assumption",
+          "reason": "the lower bound follows from the inserts (one blob and one manifest per insert); no source path bounds the CAS control traffic, so 2000 is a generous assumed ceiling"
+        },
+        "HeadObject": {
+          "min": 3,
+          "max": 2000,
+          "basis": "assumption",
+          "reason": "the lower bound follows from the inserts (one mandatory blob HEAD per insert); no source path bounds the CAS control traffic, so 2000 is a generous assumed ceiling"
+        }
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "payload family: blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "manifest family: cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "control family: ref streams under cas/ns/stream",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 151
+    },
+    {
+      "claim": "control family: ref state under cas/ns/state",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 152
+    },
+    {
+      "claim": "control family: ref catalog",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 473
+    },
+    {
+      "claim": "control family: gc/state, gc/maintenance_state, gc/hb, gc/gen/...",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 332
+    },
+    {
+      "claim": "control family (lease): gc/server-roots/<srid>/{owner,epoch,mount}",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 420
+    },
+    {
+      "claim": "control family: _pool_meta",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 466
+    },
+    {
+      "claim": "control family: roots/ plain mountpoint objects",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 397
+    },
+    {
+      "claim": ".bin and marks files always stay blobs; small part files ride inline in the manifest",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp",
+      "line": 77
+    },
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "blob publication is an ordinary unconditional write (no If-None-Match)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp",
+      "line": 897
+    },
+    {
+      "claim": "conditional writes (manifests, refs, gc state) go through the single-attempt client",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp",
+      "line": 828
+    },
+    {
+      "claim": "the disk setting expect_continue_min_bytes is read from <disk>.expect_continue_min_bytes in the disk config",
+      "path": "tmp/src-26.8/src/IO/S3AuthSettings.cpp",
+      "line": 73
+    },
+    {
+      "claim": "expect_continue_min_bytes reaches the S3 client configuration of the disk",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.cpp",
+      "line": 186
+    },
+    {
+      "claim": "the single-attempt CAS client keeps the disk's expect_continue_min_bytes when it is set (1 MiB only when unset)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp",
+      "line": 1279
+    },
+    {
+      "claim": "a conditional PUT (If-None-Match / If-Match) whose body is at least expect_continue_min_bytes sends Expect: 100-continue",
+      "path": "tmp/src-26.8/src/IO/S3/PocoHTTPClient.cpp",
+      "line": 665
+    },
+    {
+      "claim": "with expect_continue_min_bytes = 1 every conditional PUT with a body negotiates, so at least one row carries expect_negotiated",
+      "path": "tmp/src-26.8/src/IO/S3/PocoHTTPClient.cpp",
+      "line": 649
+    },
+    {
+      "claim": "cas_gc_enabled = 0 (controls gc off) starts no GC scheduler, so no GC round runs",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 912
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

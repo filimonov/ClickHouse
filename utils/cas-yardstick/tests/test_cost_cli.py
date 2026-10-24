@@ -318,9 +318,9 @@ class ProbeTest(unittest.TestCase):
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
             self.assertEqual(code, 2)
             self.assertIn('FAIL probe_s3_insert: run FAILED', out.getvalue())
-            self.assertEqual(len(node), 8)
+            self.assertEqual(len(node), 2 * (len(cli.PROBES) - 1))
             self.assertFalse(any('probe_s3_insert' in cmd for cmd in node))
-    def test_probe_runs_five_with_drill_and_render_checks(self):
+    def test_probe_runs_six_with_drill_and_render_checks(self):
         with tempfile.TemporaryDirectory() as tmp:
             touch(os.path.join(tmp, 'clickhouse'))
             m, tools = os.path.join(tmp, 'm'), os.path.join(tmp, 'tools')
@@ -353,14 +353,14 @@ class ProbeTest(unittest.TestCase):
 
             code, out = go(tools)
             self.assertEqual(ran, list(cli.PROBES))
-            self.assertEqual(len(node), 10)
+            self.assertEqual(len(node), 2 * len(cli.PROBES))
             drill = node[0]
             self.assertEqual(drill[drill.index('--cell') + 1], drill[drill.index('--probe') + 1])
             # The drill reads predictions and formulas from the report directory the manifests came from.
             self.assertEqual(drill[drill.index('--report-dir') + 1], m)
             self.assertEqual([c[1].rsplit('/', 1)[1] for c in node[:2]], ['drill.mjs', 'render_check.mjs'])
             self.assertEqual(code, 2)
-            self.assertEqual(out.count('PASS'), 4)
+            self.assertEqual(out.count('PASS'), len(cli.PROBES) - 1)
             self.assertIn('FAIL probe_local_volume: render check failed', out)
 
             node.clear()
@@ -368,7 +368,7 @@ class ProbeTest(unittest.TestCase):
             code, out = go(tools)
             self.assertEqual(code, 2)
             self.assertEqual(node, [])
-            self.assertEqual(out.count('FAIL'), 5)
+            self.assertEqual(out.count('FAIL'), len(cli.PROBES))
             self.assertIn('tool missing', out)
 
 
@@ -403,7 +403,7 @@ class ProbeTest(unittest.TestCase):
                                      rustfs=FakeRustfs(False), cards={n: object() for n in cli.PROBES}, tools_dir=tools)
             self.assertEqual(code, 2)
             self.assertIn('FAIL probe_multipart_fault: assertions failed: b', out.getvalue())
-            self.assertEqual(out.getvalue().count('PASS'), 4)
+            self.assertEqual(out.getvalue().count('PASS'), len(cli.PROBES) - 1)
             self.assertFalse(any('probe_multipart_fault' in cmd for cmd in node))
 
 

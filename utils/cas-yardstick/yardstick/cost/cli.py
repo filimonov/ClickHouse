@@ -24,7 +24,7 @@ DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
 DEFAULT_RUNS_DIR = os.path.join(REPO, 'tmp', 'cas-yardstick', 'runs')
 PROBE_MANIFESTS = os.path.join(REPO, 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-phase0', 'experiments')
 PROBES = ('probe_s3_insert', 'probe_replicated_fetch', 'probe_multipart_fault', 'probe_cas_gc_cohort',
-          'probe_local_volume')
+          'probe_local_volume', 'probe_cas_expect')
 PUT_CLASS = ('PutObject', 'UploadPart', 'CreateMultipartUpload', 'CompleteMultipartUpload', 'CopyObject')
 GET_CLASS = ('GetObject', 'HeadObject')
 ENSURE_ALREADY_UP = 3
@@ -376,7 +376,7 @@ def add_parsers(sub) -> None:
     r.add_argument('--keep-prefix', action='store_true')
     r.set_defaults(func=cmd_run)
 
-    p = csub.add_parser('probe', help='run the five probes, then drill and render checks; exit 2 on FAIL')
+    p = csub.add_parser('probe', help='run the phase-0 probes, then drill and render checks; exit 2 on FAIL')
     common(p)
     p.add_argument('--manifests', default=PROBE_MANIFESTS)
     p.add_argument('--replicas', type=int, default=2, help='servers the rig may start; each pass runs its card\'s count')

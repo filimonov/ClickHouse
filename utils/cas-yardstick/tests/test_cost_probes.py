@@ -498,6 +498,62 @@ class CasGcCohortTest(unittest.TestCase):
                              ['cohort_nonempty', 'deletes_by_r1', 'garbage_byte_hours>0', 'reclaim_delay_s>0'])
 
 
+class CasExpectTest(unittest.TestCase):
+    """The `Expect: 100-continue` probe: a low `expect_continue_min_bytes` makes CAS conditional PUTs negotiate."""
+
+    def run_probe(self, tmp, expect=True, duplicate=False, gc_log=False):
+        card = CARDS['probe_cas_expect']
+        led = Ledger(os.path.join(tmp, 'ledger'))
+        led.add('PutObject', BLOB, req_payload_bytes=1000)
+        led.add('PutObject', MANIFEST_KEY, req_payload_bytes=200, expect_negotiated=expect,
+                req_headers={'if-none-match': '*', 'expect': '100-continue'} if expect else {})
+        led.add('PutObject', f'{CAS_P}/gc/server-roots/yardstick-r1/mount', req_payload_bytes=50)  # lease renewal
+        answers = {"name = 'cas_gc_log'": '1\n' if gc_log else '0\n', 'GROUP BY round_id': '10\t20\t1\t1\n',
+                   'count() FROM yardstick.t': '3000\n'}
+        ctx = ctx_for(card, tmp, led, 'cas', FakeCluster(1, answers), cas_probe.CAS_FAMILIES)
+        card.complete(ctx)
+        split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
+        if duplicate:
+            split['foreground'].append(led.rows[2])
+        end = led.rows[-1]['seq'] + 1
+        draft = {'ledger': {'foreground': L.summarize(split['foreground']), 'maintenance': L.summarize(split['maintenance'])},
+                 'window': {'crossing': [], 'start_seq': 1, 'end_seq': end, 't_start_us': led.rows[0]['t_us'],
+                            't_end_us': led.t + 1000},
+                 'inventory': {'byte_hours': L.byte_hours(ctx.replay(), led.rows[0]['t_us'], led.t + 1000)}}
+        draft['observations'] = card.observe(ctx, draft)
+        return card, ctx, draft
+
+    def test_manifest_lowers_the_expect_threshold_and_gc_is_off(self):
+        m = manifest('probe_cas_expect')
+        self.assertEqual(m['settings']['server'], {'storage_configuration.disks.cas.expect_continue_min_bytes': '1'})
+        self.assertEqual((m['controls']['gc'], m['replicas'], CARDS['probe_cas_expect'].replicas), ('off', 1, 1))
+        pred = probes.prediction('probe_cas_expect.gate', 'cas')
+        self.assertTrue(any('expect_continue_min_bytes' in r['claim'] for r in pred['source_refs']))
+        self.assertIn('probe_cas_expect', cli.PROBES)
+
+    def test_assertions_both_directions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft = self.run_probe(tmp)
+            obs = draft['observations']
+            self.assertEqual((obs['expect_negotiated_rows'], obs['request_attribution']['method']),
+                             (1, 'control_families'))
+            # The lease renewal is maintenance although GC is off; foreground holds the blob and manifest PUTs.
+            self.assertEqual(draft['ledger']['foreground']['r1']['PutObject']['attempts'], 2)
+            pred = copy.deepcopy(card.predicted(ctx))
+            pred['expected']['foreground'] = {'r1': {'PutObject': {'min': 2, 'max': 2}}}
+            with mock.patch.object(type(card), 'predicted', return_value=pred):
+                self.assertEqual(failing(card.assertions(ctx, draft)), [])
+                with tempfile.TemporaryDirectory() as tmp2:
+                    _, ctx2, bad = self.run_probe(tmp2, expect=False, duplicate=True)
+                    self.assertEqual(failing(card.assertions(ctx2, bad)),
+                                     ['expect_attempts_counted_once', 'expect_negotiated_rows>=1', 'ledger.r1.PutObject'])
+
+    def test_gc_rounds_in_the_log_fail_the_gc_off_card(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            card, ctx, draft = self.run_probe(tmp, gc_log=True)
+            self.assertIn('no_gc_rounds', failing(card.assertions(ctx, draft)))
+
+
 STRACE = """101 1.000001 write(5</d/local/r1/store/t/all_1_1_0/data.bin>, "..."..., 4096) = 4096
 101 1.000002 write(6</d/r1/server.log>, "x", 1) = 1
 101 1.000003 pwrite64(7</d/r1/data/other.bin>, "..."..., 512, 0) = 512

@@ -16,7 +16,7 @@ import time
 from .. import ledger as L
 from . import CARDS
 from .base import DATABASE
-from .probes import CREATE_OPS, ManifestCard, _count, category, window_rows
+from .probes import CREATE_OPS, ManifestCard, _count, category, integrated, window_rows
 
 # CAS key families (tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h).
 # Anchored on the layout's own suffix shapes so the pass prefix (which contains `/cas/` as the policy name) never
@@ -181,4 +181,64 @@ class CasGcCohort(ManifestCard):
         out['garbage_byte_hours>0'] = (True, bh['lower'] > 0 and bh['upper'] > 0)
         out['expect_negotiated_rows'] = (self.predicted(ctx)['inputs']['expect_negotiated_rows'],
                                          obs['expect_negotiated_rows'])
+        return out
+
+
+@_register
+class CasExpect(ManifestCard):
+    """CAS conditional PUTs with `Expect: 100-continue`: the manifest lowers the disk's `expect_continue_min_bytes`
+    so every conditional PUT negotiates, and the proxy answers `100 Continue` itself. Stochastic like every CAS
+    card: lease renewals and ref-log writes run on the server's own schedule."""
+    name = 'probe_cas_expect'
+    policies = ('cas',)
+    mode = 'stochastic'
+
+    def inventory_families(self, ctx):
+        return CAS_FAMILIES
+
+    def complete(self, ctx, timeout_s=300):
+        super().complete(ctx, timeout_s)
+        # `gc: off`: no round may run. A GC log that exists is read, never assumed empty, so a round still shows.
+        rounds = {}
+        for n, client in enumerate(ctx.cluster.clients, 1):
+            exists = _count(client, "SELECT count() FROM system.tables WHERE database = 'system' AND name = 'cas_gc_log'")
+            rounds[f'r{n}'] = gc_rounds(client) if exists else []
+        self.state(ctx)['gc_rounds'] = rounds
+
+    def classify(self, ctx, attempts, families):
+        st = self.state(ctx)
+        if 'gc_rounds' not in st:
+            raise RuntimeError('GC rounds were not collected; request origin cannot be attributed')
+        return attribute(attempts, st['gc_rounds'], families)
+
+    def window_attempts(self, ctx, draft) -> list:
+        w = draft['window']
+        return [r for r in L.read_rows(ctx.proxy.ledger_path) if r.get('kind') == 'attempt'
+                and w['start_seq'] < r['seq'] < w['end_seq'] and r['caller'] in L.WORKLOAD_CALLERS]
+
+    def observe(self, ctx, draft):
+        rows = self.window_attempts(ctx, draft)
+        by_op: dict = {}
+        for r in rows:
+            by_op[r['op']] = by_op.get(r['op'], 0) + 1
+        counted: dict = {}
+        for ops in integrated(draft).values():
+            for op, c in ops.items():
+                counted[op] = counted.get(op, 0) + c['attempts']
+        expect = [r['seq'] for r in rows if r.get('expect_negotiated')]
+        return {**super().observe(ctx, draft),
+                'request_attribution': {'method': 'control_families',
+                                        'rounds': {r: len(v) for r, v in self.state(ctx)['gc_rounds'].items()}},
+                'expect_negotiated_rows': len(expect), 'expect_negotiated_seqs_distinct': len(set(expect)),
+                'wire_bytes_upper_rows': sum(1 for r in rows if r.get('wire_bytes_bound') == 'upper'),
+                'window_rows_by_op': dict(sorted(by_op.items())), 'window_attempts_by_op': dict(sorted(counted.items()))}
+
+    def assertions(self, ctx, draft):
+        out = super().assertions(ctx, draft)
+        obs = draft['observations']
+        want = self.predicted(ctx)['inputs']['expect_negotiated_rows_min']
+        out[f'expect_negotiated_rows>={want}'] = (True, obs['expect_negotiated_rows'] >= want)
+        # One negotiated PUT is one attempt: the interim `100 Continue` never adds a row or an attempt.
+        out['expect_attempts_counted_once'] = (obs['window_rows_by_op'], obs['window_attempts_by_op'])
+        out['no_gc_rounds'] = (0, sum(obs['request_attribution']['rounds'].values()))
         return out
