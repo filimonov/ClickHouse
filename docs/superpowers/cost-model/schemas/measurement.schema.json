@@ -161,6 +161,18 @@
           "type": "string",
           "description": "HEAD of the rig worktree that produced the record"
         },
+        "rig_dirty": {
+          "type": "boolean",
+          "description": "`git status --porcelain -- utils/cas-yardstick` was non-empty when the run started (run with `--allow-dirty`); absent on records written before the field existed"
+        },
+        "store_version": {
+          "type": "string",
+          "description": "version of the object store build (`rustfs --version`, or `--store-version` for an external endpoint); absent on records written before the field existed"
+        },
+        "store_sha256": {
+          "type": "string",
+          "description": "sha256 of the object store binary (pinned in `rustfs-bin.sh`, or `--store-sha256` for an external endpoint); absent on records written before the field existed"
+        },
         "pass_dir": {
           "type": "string"
         },
@@ -823,6 +835,18 @@
           "type": "string",
           "description": "HEAD of the rig worktree that produced the record"
         },
+        "rig_dirty": {
+          "type": "boolean",
+          "description": "`git status --porcelain -- utils/cas-yardstick` was non-empty when the run started (run with `--allow-dirty`); absent on records written before the field existed"
+        },
+        "store_version": {
+          "type": "string",
+          "description": "version of the object store build (`rustfs --version`, or `--store-version` for an external endpoint); absent on records written before the field existed"
+        },
+        "store_sha256": {
+          "type": "string",
+          "description": "sha256 of the object store binary (pinned in `rustfs-bin.sh`, or `--store-sha256` for an external endpoint); absent on records written before the field existed"
+        },
         "pass_dir": {
           "type": "string"
         },
@@ -929,6 +953,18 @@
         "rig_commit": {
           "type": "string",
           "description": "HEAD of the rig worktree that produced the record"
+        },
+        "rig_dirty": {
+          "type": "boolean",
+          "description": "`git status --porcelain -- utils/cas-yardstick` was non-empty when the run started (run with `--allow-dirty`); absent on records written before the field existed"
+        },
+        "store_version": {
+          "type": "string",
+          "description": "version of the object store build (`rustfs --version`, or `--store-version` for an external endpoint); absent on records written before the field existed"
+        },
+        "store_sha256": {
+          "type": "string",
+          "description": "sha256 of the object store binary (pinned in `rustfs-bin.sh`, or `--store-sha256` for an external endpoint); absent on records written before the field existed"
         },
         "pass_dir": {
           "type": "string"

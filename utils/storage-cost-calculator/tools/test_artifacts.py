@@ -139,6 +139,15 @@ class MeasurementTests(ArtifactTestCase):
         self.assert_rejects(artifacts.validate_measurement, with_value(
             ok, ("window", "open_attempts"), [{"seq": 1, "caller": "r1", "op": "PutObject"}]), "key")
 
+    def test_measurement_store_identity_and_dirty_flag_are_optional_and_typed(self):
+        for name in ("measurement-ok.json", "measurement-unsupported.json", "measurement-failed.json"):
+            rec = load(name)
+            full = with_value(with_value(with_value(rec, ("store_version",), "1.0.0-beta.9"),
+                                         ("store_sha256",), "b" * 64), ("rig_dirty",), False)
+            self.assert_valid(artifacts.validate_measurement, full)
+            self.assert_rejects(artifacts.validate_measurement, with_value(full, ("rig_dirty",), "no"), "rig_dirty")
+            self.assert_rejects(artifacts.validate_measurement, with_value(full, ("store_sha256",), ""), "store_sha256")
+
     def test_measurement_unsupported_requires_reason(self):
         u = load("measurement-unsupported.json")
         self.assert_each_detected(artifacts.validate_measurement, u, top_level(u))

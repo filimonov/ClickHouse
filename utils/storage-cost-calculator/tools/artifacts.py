@@ -204,7 +204,10 @@ _COMMON = {
     "binary_sha256": nonempty_string, "binary_download_sha256": nullable(nonempty_string),
     "commit": nonempty_string, "rig_commit": nonempty_string, "pass_dir": nonempty_string,
     "status": enum("ok", "UNSUPPORTED", "FAILED"),
+    "rig_dirty": boolean, "store_version": nonempty_string, "store_sha256": nonempty_string,
 }
+# Run identity fields added after the first committed runs; older records lack them.
+_COMMON_OPTIONAL = ("rig_dirty", "store_version", "store_sha256")
 
 _LOCAL_REPLICA = obj({
     "paths": list_of(string), "peak_allocated_bytes": integer,
@@ -275,7 +278,8 @@ def validate_measurement(d):
         spec["cleanup"] = _CLEANUP
     else:
         return [f"$.status: expected ok, UNSUPPORTED or FAILED, got {_short(status)}"]
-    problems = _run(obj_optional(spec, optional=("partial", "cleanup") if status == "FAILED" else ("cleanup",) if status == "ok" else ()), d)
+    optional = ("partial", "cleanup") if status == "FAILED" else ("cleanup",) if status == "ok" else ()
+    problems = _run(obj_optional(spec, optional=optional + _COMMON_OPTIONAL), d)
     problems += _check_identity(d)
     return problems
 
