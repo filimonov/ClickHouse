@@ -162,3 +162,35 @@ class MergeOnlyTest(unittest.TestCase):
         n = len(log)
         card.measured(ctx)
         self.assertEqual(log[n:], ['OPTIMIZE TABLE yardstick.t FINAL'])
+
+
+class RemovalWaitTest(unittest.TestCase):
+    def test_completion_waits_until_the_replay_shows_the_replaced_objects_deleted(self):
+        # system.parts drops an outdated part before its DeleteObjects reply reaches the ledger: poll the replay.
+        card, m = CARDS['mutation'], manifest('mutation.wide-update-one-column')
+        ctx = ctx_for(m, FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''}))
+        st = card.state(ctx)
+        st.update(layout_before=layout('tw', 'all_1_1_0', ['a', 'b']), parts_before=parts('tw', ['all_1_1_0'], 'Wide'))
+        views = iter([{'a', 'b'}, {'a'}, set()])
+        Inv = type('I', (), {})
+        def replay():
+            inv = Inv()
+            inv.objects = {('bucket', k): None for k in next(views)}
+            return type('B', (), {'upper': inv})()
+        ctx.replay = replay
+        card.complete(ctx)
+        self.assertEqual(st['live_keys'], set())
+
+    def test_completion_gives_up_after_the_timeout_and_keeps_the_live_keys(self):
+        card, m = CARDS['mutation'], manifest('mutation.wide-update-one-column')
+        ctx = ctx_for(m, FakeCluster({'FROM system.parts': '', 'remote_data_paths': ''}))
+        st = card.state(ctx)
+        st.update(layout_before=layout('tw', 'all_1_1_0', ['a']), parts_before=parts('tw', ['all_1_1_0'], 'Wide'))
+        Inv = type('I', (), {})
+        def replay():
+            inv = Inv()
+            inv.objects = {('bucket', 'a'): None}
+            return type('B', (), {'upper': inv})()
+        ctx.replay = replay
+        card.complete(ctx, timeout_s=0)
+        self.assertEqual(st['live_keys'], {'a'})

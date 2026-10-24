@@ -10,7 +10,7 @@ import os
 import time
 
 from .. import ledger as L
-from .base import DATABASE
+from .base import DATABASE, POLL_S
 from .probes import _count, register, window_rows
 from .shapes import S3Card, tree_allocated
 
@@ -59,12 +59,22 @@ class OperationCard(S3Card):
         n = self.run_statements(ctx)
         return {'unit_count': n, 'effective_counts': {'statements': n}, 'observations': {}}
 
+    def expected_gone(self, ctx) -> set:
+        """Objects the operation removes: those of the setup's parts that no part lists any more."""
+        st = self.state(ctx)
+        return layout_keys(st.get('layout_before', {})) - layout_keys(st.get('layout', {}))
+
     def complete(self, ctx, timeout_s=300):
         super().complete(ctx, timeout_s)
         st = self.state(ctx)
-        # The replay holds every object the store keeps right now; read before the teardown drops the database.
-        bounds = ctx.replay()
-        st['live_keys'] = {ident[1] for ident in bounds.upper.objects}
+        # system.parts forgets an outdated part before the reply of its DeleteObjects reaches the ledger, so the
+        # replay is polled until the removed objects are gone; on timeout the assertion reports what is left.
+        gone, deadline = self.expected_gone(ctx), time.monotonic() + timeout_s
+        while True:
+            st['live_keys'] = {ident[1] for ident in ctx.replay().upper.objects}
+            if not gone & st['live_keys'] or time.monotonic() >= deadline:
+                break
+            time.sleep(POLL_S)
 
     def deleted(self, ctx, draft) -> dict:
         ops = self.ops_of(ctx, draft)
@@ -134,9 +144,17 @@ class Drop(OperationCard):
                 client.query('SYSTEM FLUSH LOGS')
             st['rows'] = [0]
             st['parts'], st['layout'] = [], {}
-            st['live_keys'] = {ident[1] for ident in ctx.replay().upper.objects}
+            gone, deadline = self.dropped_keys(ctx), time.monotonic() + timeout_s
+            while True:
+                st['live_keys'] = {ident[1] for ident in ctx.replay().upper.objects}
+                if not gone & st['live_keys'] or time.monotonic() >= deadline:
+                    break
+                time.sleep(POLL_S)
             return
         super().complete(ctx, timeout_s)
+
+    def expected_gone(self, ctx) -> set:
+        return self.dropped_keys(ctx)
 
     def dropped_keys(self, ctx) -> set:
         st, scope = self.state(ctx), self.p(ctx)['dropped']
