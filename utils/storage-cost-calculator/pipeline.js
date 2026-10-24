@@ -467,7 +467,9 @@
       return Object.assign(base, { page_state: 'cannot_reproduce', page_reason: found.problem, variants: {}, cheapest: null, deltas: {}, sweep: null, problems: [found.problem] });
     }
     const preset = found.preset;
-    const pricesMissing = !!preset.structure_only;
+    // An edited preset with a missing or invalid price shows quantities without money, never a $0 line.
+    const badPrices = billingMod().priceProblems(preset);
+    const pricesMissing = !!preset.structure_only || badPrices.length > 0;
     const cut = unsupportedRefs(contract);
     const ctx = buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), cut);
     const variants = {};
@@ -498,7 +500,8 @@
     }
     const deltas = {};
     for (const v of contract.variants) deltas[v] = { vs_ebs: delta(variants[v], variants.ebs), vs_s3: delta(variants[v], variants.s3) };
-    const result = Object.assign(base, { page_state: pricesMissing ? 'prices_missing' : 'ok', page_reason: pricesMissing ? `price preset ${preset.id} has no prices (structure only)` : null, variants, cheapest, deltas, sweep: null });
+    const result = Object.assign(base, { page_state: pricesMissing ? 'prices_missing' : 'ok', page_reason: !pricesMissing ? null
+      : preset.structure_only ? `price preset ${preset.id} has no prices (structure only)` : `price preset ${preset.id} has invalid prices: ${badPrices.join('; ')}`, variants, cheapest, deltas, sweep: null });
     if (opts.sweep) result.sweep = sweep(contract, inputs, pricePreset, opts.sweep.inputId, opts.sweep.values, { outcome_mix: opts.outcome_mix, lockOrder: opts.lockOrder });
     return result;
   }

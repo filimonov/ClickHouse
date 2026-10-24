@@ -286,6 +286,39 @@
     return { lines, total: lines.reduce((s, l) => s + l.money, 0), provisioning };
   }
 
+  // Every price a priced preset bills with must be a finite number >= 0; a missing price never bills as $0.
+  // Storage tiers ascend and end with an open tier (`up_to_gb: null`). Only the internet route may be unpriced.
+  function priceProblems(preset) {
+    const out = [];
+    if (!preset || typeof preset !== 'object') return ['price preset: expected an object'];
+    if (preset.structure_only) return out;
+    const price = (v, where) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) out.push(`${where}: expected a finite number >= 0, got ${JSON.stringify(v === undefined ? null : v)}`); };
+    const id = preset.id || '?';
+    for (const [i, c] of (Array.isArray(preset.request_classes) ? preset.request_classes : []).entries()) price(c && c.price_per_1000, `${id}.request_classes[${i}]${c && c.id ? ` (${c.id})` : ''}.price_per_1000`);
+    if (!Array.isArray(preset.request_classes)) out.push(`${id}.request_classes: expected a list`);
+    const tiers = preset.storage && Array.isArray(preset.storage.tiers) ? preset.storage.tiers : null;
+    if (!tiers || !tiers.length) out.push(`${id}.storage.tiers: expected a non-empty list`);
+    else {
+      let prev = 0;
+      tiers.forEach((t, i) => {
+        price(t && t.price_per_gb_month, `${id}.storage.tiers[${i}].price_per_gb_month`);
+        const up = t ? t.up_to_gb : undefined;
+        const last = i === tiers.length - 1;
+        if (last && up !== null) out.push(`${id}.storage.tiers[${i}].up_to_gb: the last tier must be open (null), got ${JSON.stringify(up === undefined ? null : up)}`);
+        if (!last && !(typeof up === 'number' && Number.isFinite(up) && up > prev)) out.push(`${id}.storage.tiers[${i}].up_to_gb: expected a number above ${prev}, got ${JSON.stringify(up === undefined ? null : up)}`);
+        if (typeof up === 'number') prev = up;
+      });
+    }
+    for (const [i, r] of (Array.isArray(preset.transfer) ? preset.transfer : []).entries()) {
+      if (r && r.id === 'internet' && r.price_per_gb === null) continue;
+      price(r && r.price_per_gb, `${id}.transfer[${i}]${r && r.id ? ` (${r.id})` : ''}.price_per_gb`);
+    }
+    const g = preset.block && preset.block.gp3;
+    if (!g) out.push(`${id}.block.gp3: missing`);
+    else for (const k of ['price_per_gib_month', 'iops_price', 'mibps_price', 'iops_baseline', 'mibps_baseline']) price(g[k], `${id}.block.gp3.${k}`);
+    return out;
+  }
+
   const blockRowOf = (ruleId, r) => (ruleId === 'block_capacity' ? r.row_type === 'block_capacity' : r.row_type === 'block_io');
 
   // Quantity a cell contributes to one aggregate billing line; allocation is proportional to it.
@@ -364,7 +397,7 @@
     return { instance_class: best.instance_class, max_mibps: best.max_mibps, throughput_mibps: throughput, source_url: best.source_url, reason: null };
   }
 
-  const billing = { bill, billVariant, allocate, instanceClass, allocateVolumes, toPresetGb, UNITS };
+  const billing = { bill, billVariant, allocate, instanceClass, allocateVolumes, toPresetGb, priceProblems, UNITS };
   root.SCC = root.SCC || {};
   root.SCC.billing = billing;
   if (typeof module !== 'undefined' && module.exports) module.exports = billing;

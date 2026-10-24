@@ -15,6 +15,7 @@
 
   const typeOf = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
   const model = () => root.SCC.model || require('./model.js');
+  const billingLib = () => root.SCC.billing || require('./billing.js');
 
   function mergeFormulas(files) {
     const formulas = {};
@@ -92,6 +93,10 @@
     }
     if (typeOf(c.billing) === 'object' && c.billing.schema !== 'billing/1') {
       problems.push(`billing.schema: expected billing/1, got ${JSON.stringify(c.billing.schema)}`);
+    }
+    // A shipped price preset with a missing or invalid price would bill it as $0 in state ok.
+    if (typeOf(c.billing) === 'object' && Array.isArray(c.billing.presets)) {
+      for (const p of c.billing.presets) for (const x of billingLib().priceProblems(p)) problems.push(`billing.presets: ${x}`);
     }
   }
 
