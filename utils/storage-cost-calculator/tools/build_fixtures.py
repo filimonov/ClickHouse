@@ -3,9 +3,9 @@
 
 For every coverage evidence edge with status `done` and role `fit` or `holdout`, joins the report's prediction
 (`predictions/<experiment_id>.<policy>.json`), each cited measurement and the report's formulas cells for the
-measured variant, and writes one fixture per (edge, measurement). An edge whose report has no cells for the card and
-whose prediction has no foreground request rows fits a coefficient without a request path to replay: it is listed in
-`_coefficient_only.json` instead. The output directory is rebuilt from scratch so a fixture never outlives its
+measured variant, and writes one fixture per (edge, measurement). An edge whose report has no cell for the card on
+the measured variant is listed in `_coefficient_only.json` instead: the card reconciled its request rows itself and
+the record's status carries that verdict. The output directory is rebuilt from scratch so a fixture never outlives its
 evidence. Exit 1 with every problem listed when an edge does not resolve.
 
     python3 tools/build_fixtures.py --reports 'docs/superpowers/reports/2026-10-24-storage-cost-*/' \\
@@ -54,17 +54,26 @@ def _cells(report, variant, card):
     for f in files:
         if f.get("variant") == variant:
             cells.update({k: v for k, v in f.get("cells", {}).items() if k == card or k.startswith(card + ".")})
-    if not cells:
-        return None, f"{path}: no {variant} cell for card {card}"
     return cells, None
+
+
+def _references(node, coefficient):
+    if isinstance(node, dict):
+        if (node.get("kind") == "coef" and node.get("id") == coefficient) or \
+                (node.get("kind") == "lookup" and node.get("table_id") == coefficient):
+            return True
+        return any(_references(v, coefficient) for v in node.values())
+    if isinstance(node, list):
+        return any(_references(v, coefficient) for v in node)
+    return False
 
 
 def _coefficients(report):
     path = report / "coefficients.json"
     if not path.exists():
-        return []
+        return None, f"{report}: no coefficients.json"
     doc = _load(path)
-    return doc if isinstance(doc, list) else doc.get("coefficients", [])
+    return (doc if isinstance(doc, list) else doc.get("coefficients", [])), None
 
 
 def _flatten(foreground, value):
@@ -104,7 +113,6 @@ def build(report_dirs, coverage):
             continue
         if not e["measurement_ids"]:
             problems.append(f"{where}: done edge cites no measurement")
-        has_requests = any(ops for ops in pred["expected"]["foreground"].values())
         without_cells = False
         for k, mid in enumerate(e["measurement_ids"]):
             if mid not in measurements:
@@ -122,9 +130,16 @@ def build(report_dirs, coverage):
                 problems.append(f"{where}: measurement {mid} is {m['experiment_id']}.{m['policy']}")
                 continue
             cells, problem = _cells(report, m["variant"], m["card"])
-            if problem and not has_requests:
+            if problem:
+                problems.append(f"{where}: {problem}")
+                continue
+            if not cells:
                 without_cells = True
                 continue
+            if not any(_references(c, e["coefficient"]) for c in cells.values()):
+                problems.append(f"{where}: no {m['variant']} cell of card {m['card']} references {e['coefficient']}")
+                continue
+            coefficients, problem = _coefficients(report)
             if problem:
                 problems.append(f"{where}: {problem}")
                 continue
@@ -135,12 +150,12 @@ def build(report_dirs, coverage):
                 "measured_rows": _flatten(m["ledger"]["foreground"], lambda c: c["attempts"]),
                 "tolerance": pred["tolerance"], "measurement_id": mid,
                 "variant": m["variant"], "mode": m["mode"], "card": m["card"], "report": str(report),
-                "cells": cells, "coefficients": _coefficients(report),
+                "cells": cells, "coefficients": coefficients,
             }
         if without_cells:
             coefficient_only.append({"edge_id": edge_id, "coefficient": e["coefficient"], "role": e["role"],
                                      "experiment_id": e["experiment_id"], "policy": e["policy"],
-                                     "measurement_ids": e["measurement_ids"]})
+                                     "measurement_ids": e["measurement_ids"], "request_rows_reconciled_by": "card"})
     return fixtures, coefficient_only, problems
 
 

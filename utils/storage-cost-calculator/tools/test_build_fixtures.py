@@ -77,7 +77,8 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual(only["coverage"], str((SAMPLE / "coverage.json").resolve()))
         self.assertEqual(only["edges"], [{"edge_id": "evidence[3]", "coefficient": "flush_interval", "role": "holdout",
                                           "experiment_id": "lifecycle_only.gate", "policy": "s3_default",
-                                          "measurement_ids": ["run42/s3_default/lifecycle_only/gate/k0"]}])
+                                          "measurement_ids": ["run42/s3_default/lifecycle_only/gate/k0"],
+                                          "request_rows_reconciled_by": "card"}])
 
     def test_coefficient_only_edge_still_needs_its_measurement(self):
         cov = self.coverage()
@@ -115,16 +116,45 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("coverage: $.evidence[0].role", err)
 
-    def test_card_without_cells_fails(self):
+    def copy_report(self):
         reports = self.tmp / "reports"
         shutil.copytree(REPORT, reports / REPORT.name)
-        f = reports / REPORT.name / "formulas.json"
+        return reports, reports / REPORT.name
+
+    def test_card_without_cells_is_coefficient_only_even_with_request_rows(self):
+        # The card reconciled its own request rows; the record's status carries that verdict.
+        reports, rep = self.copy_report()
+        f = rep / "formulas.json"
         doc = json.loads(f.read_text())
         del doc["cells"]["insert_basic.write"]
         f.write_text(json.dumps(doc))
         code, err = self.run_main(reports=reports / "*/")
+        self.assertEqual(code, 0, err)
+        only = json.loads((self.out / "_coefficient_only.json").read_text())
+        self.assertEqual([(e["edge_id"], e["request_rows_reconciled_by"]) for e in only["edges"]],
+                         [("evidence[0]", "card"), ("evidence[3]", "card")])
+        self.assertEqual([p.name for p in self.out.iterdir()], ["_coefficient_only.json"])
+
+    def test_cell_not_referencing_the_coefficient_fails(self):
+        cov = self.coverage()
+        cov["evidence"][0]["coefficient"] = "puts_per_wide_part"
+        code, err = self.run_main(cov)
         self.assertEqual(code, 1)
-        self.assertIn("no s3 cell for card insert_basic", err)
+        self.assertIn("no s3 cell of card insert_basic references puts_per_wide_part", err)
+
+    def test_missing_coefficients_file_fails(self):
+        reports, rep = self.copy_report()
+        (rep / "coefficients.json").unlink()
+        code, err = self.run_main(reports=reports / "*/")
+        self.assertEqual(code, 1)
+        self.assertIn("no coefficients.json", err)
+
+    def test_missing_formulas_file_fails(self):
+        reports, rep = self.copy_report()
+        (rep / "formulas.json").unlink()
+        code, err = self.run_main(reports=reports / "*/")
+        self.assertEqual(code, 1)
+        self.assertIn("no formulas.json", err)
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
