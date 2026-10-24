@@ -201,15 +201,26 @@ def derived_refs(node, registry):
 
 
 def assumed_keys(coefficients):
-    """Coefficient id -> the table keys its owner assumed rather than measured (`tolerance.assumed_keys`)."""
-    return {c["id"]: set(c["tolerance"]["assumed_keys"]) for c in coefficients or ()
-            if isinstance(c, dict) and isinstance(c.get("tolerance"), dict) and c["tolerance"].get("assumed_keys")}
+    """Coefficient id -> {table key its owner assumed rather than measured (`tolerance.assumed_keys`): the assumption}.
+
+    The assumption is the `<key>: ASSUMPTION ...` sentence of `fit.method`; None when the owner did not state one.
+    """
+    out = {}
+    for c in coefficients or ():
+        if not (isinstance(c, dict) and isinstance(c.get("tolerance"), dict) and c["tolerance"].get("assumed_keys")):
+            continue
+        method = str((c.get("fit") or {}).get("method") or "")
+        notes = out.setdefault(c["id"], {})
+        for key in c["tolerance"]["assumed_keys"]:
+            m = re.search(rf"(?:^|\.\s){re.escape(str(key))}:\s*(ASSUMPTION\b.*?)(?=\.\s|\.?$)", method)
+            notes[key] = m.group(1) if m else None
+    return out
 
 
 def _assumed_hits(node, registry, assumed):
-    """Ids of coefficients in `assumed` that a lookup below `node` may read at an assumed key.
+    """(coefficient id, key) pairs in `assumed` that a lookup below `node` may read.
 
-    A key that is not a constant may take any value, so it counts as a hit.
+    A key that is not a constant may take any value, so it reaches every assumed key of the table.
     """
     rules = {q["id"]: q["rule"] for q in (registry or {}).get("quantities", []) if q.get("kind") == "derivation" and q.get("rule")}
     hits, seen, todo = set(), set(), [node]
@@ -222,9 +233,12 @@ def _assumed_hits(node, registry, assumed):
             continue
         if n.get("kind") == "lookup" and n.get("table_id") in assumed:
             keys = n.get("keys") or []
-            if not all(isinstance(k, dict) and k.get("kind") == "const" for k in keys) \
-                    or "|".join(str(k["value"]) for k in keys) in assumed[n["table_id"]]:
-                hits.add(n["table_id"])
+            if all(isinstance(k, dict) and k.get("kind") == "const" for k in keys):
+                key = "|".join(str(k["value"]) for k in keys)
+                if key in assumed[n["table_id"]]:
+                    hits.add((n["table_id"], key))
+            else:
+                hits |= {(n["table_id"], key) for key in assumed[n["table_id"]]}
         if n.get("kind") == "input" and n.get("id") in rules and n["id"] not in seen:
             seen.add(n["id"])
             todo.append(rules[n["id"]])
@@ -232,7 +246,8 @@ def _assumed_hits(node, registry, assumed):
     return hits
 
 
-def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None, assumed=None):
+def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None, assumed=None,
+                   assumptions=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
     A cell with no rows whose states include a `not_supported` one prices nothing, so it needs no evidence either.
@@ -251,7 +266,9 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
 
     A row backs only the variant of its own `policy` (a row with `borrowed_from` states that the value measured on
     that policy carries over). A coefficient read at a key its owner assumed (`assumed`, from `assumed_keys`) has
-    no measurement behind that read, so the cell stays pending for the coefficient's families.
+    no measurement behind that read: the owner's stated assumption backs it instead, and each such backing is
+    appended to `assumptions` as (variant, operation, family, coefficient, key, assumption). An assumed key with no
+    stated assumption backs nothing.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
@@ -293,12 +310,18 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
                     continue
                 if entry["unsupported"]:
                     continue
-                own = {c for c in entry["coefs"] if fam in families_of.get(c, set())}
-                orphans = {c for c in entry["coefs"] if c in (measured or ()) and c not in families_of}
-                backed = not orphans and (all(measured_ok(c, fam, v) and c not in entry["assumed"] for c in own) if own
-                                          else pinned_ok(entry["quantities"] | entry["coefs"], fam, v))
+                stated = {(c, k) for c, k in entry["assumed"] if assumed[c][k] is not None}
+                unstated = {c for c, k in entry["assumed"]} - {c for c, _ in stated}
+                by_assumption = {c for c, _ in stated} - unstated
+                own = {c for c in entry["coefs"] if fam in families_of.get(c, set())} - by_assumption
+                orphans = {c for c in entry["coefs"] if c in (measured or ()) and c not in families_of} - by_assumption
+                mine = {c for c in by_assumption if fam in families_of.get(c, {fam})}
+                backed = not orphans and (all(measured_ok(c, fam, v) and c not in unstated for c in own) if own
+                                          else bool(mine) or pinned_ok(entry["quantities"] | entry["coefs"], fam, v))
                 if not backed:
                     pending.append((v, op, fam))
+                elif assumptions is not None:
+                    assumptions.extend((v, op, fam, c, k, assumed[c][k]) for c, k in sorted(stated) if c in mine)
     return pending
 
 
@@ -587,7 +610,8 @@ def replay_problems(record, raw_path):
         Path(f.name).unlink()
     # Exit 1 means mismatches, each printed on stdout; exit 1 with nothing printed is a crash, like any other code.
     if done.returncode not in (0, 1) or (done.returncode == 1 and not done.stdout.strip()):
-        tail = "\n".join(x for x in (done.stdout.strip(), done.stderr.strip()) if x)[-500:]
+        # The rig names the failure on stdout; stderr only adds the traceback, so only stderr is cut.
+        tail = "\n".join(x for x in (done.stdout.strip(), done.stderr.strip()[-500:]) if x)
         return [f"{record.get('measurement_id')}: replay failed (exit {done.returncode}): {tail}"]
     return [f"{record.get('measurement_id')}: {line}" for line in done.stdout.splitlines() if line.strip()]
 

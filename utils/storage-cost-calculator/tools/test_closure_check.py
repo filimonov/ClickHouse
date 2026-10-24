@@ -322,6 +322,10 @@ class ReplayExitTest(unittest.TestCase):
         self.assertIn('boom', found)
         self.assertIn('replay failed (exit -9)', self.replay(-9)[0])
 
+    def test_the_stdout_reason_survives_a_long_traceback(self):
+        found = self.replay(2, "replay failed: KeyError: 'policy'\n", 'Traceback\n' + 'frame\n' * 400)[0]
+        self.assertIn("replay failed: KeyError: 'policy'", found)
+
 
 class ProvenanceTest(unittest.TestCase):
     """A hold-out or validation prediction must be reachable from HEAD and committed before the run."""
@@ -627,7 +631,7 @@ class PerFamilyBackingTest(unittest.TestCase):
         self.assertEqual(cc._pending_cells(cov, self.files(expr), self.APP), [])
 
 class EvidenceScopeTest(unittest.TestCase):
-    """Evidence backs the variant of the row's policy only, never an assumed key, and owners come from the reports."""
+    """Evidence backs the variant of the row's policy only, a stated assumption backs its key, and owners come from the reports."""
 
     COV = {"domain": {"variants": ["s3", "cas"], "operations": ["gc"], "families": ["fam"]},
            "cards": [{"name": "card", "family": "fam", "model_variants": ["s3", "cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]}]}
@@ -648,16 +652,29 @@ class EvidenceScopeTest(unittest.TestCase):
         self.assertEqual(self.pending(self.rows("s3")), [("cas", "gc", "fam")])
         self.assertEqual(self.pending(self.rows("s3") + self.rows("cas", borrowed_from="s3")), [])
 
-    def test_an_assumed_key_is_not_backed_by_the_coefficient_rows(self):
-        rows = self.rows("s3") + self.rows("cas", borrowed_from="s3")
-        self.assertEqual(self.pending(rows, key="k2", assumed={"t": {"k2"}}), [("s3", "gc", "fam"), ("cas", "gc", "fam")])
-        self.assertEqual(self.pending(rows, key="k1", assumed={"t": {"k2"}}), [])
-        self.assertEqual(cc.assumed_keys([{"id": "t", "tolerance": {"rel": 0.1, "assumed_keys": ["k2"]}}, {"id": "u", "tolerance": {}}]),
-                         {"t": {"k2"}})
+    def test_an_assumed_key_with_a_stated_assumption_backs_the_cell_and_is_listed(self):
+        found = []
+        note = {"t": {"k2": "ASSUMPTION 0, below the idle baseline"}}
+        self.assertEqual(cc._pending_cells(dict(self.COV, evidence=[]), self.files("k2"), self.APP, assumed=note,
+                                           assumptions=found), [])
+        self.assertEqual(found, [("s3", "gc", "fam", "t", "k2", "ASSUMPTION 0, below the idle baseline"),
+                                 ("cas", "gc", "fam", "t", "k2", "ASSUMPTION 0, below the idle baseline")])
+        # A measured key of the same table still needs its rows; an unstated assumption backs nothing.
+        self.assertEqual(self.pending([], key="k1", assumed=note), [("s3", "gc", "fam"), ("cas", "gc", "fam")])
+        self.assertEqual(self.pending(self.rows("s3") + self.rows("cas", borrowed_from="s3"), key="k2", assumed={"t": {"k2": None}}),
+                         [("s3", "gc", "fam"), ("cas", "gc", "fam")])
+
+    def test_assumed_keys_take_the_assumption_from_the_fit_method(self):
+        method = ("mutations: mean per unit. deletes: ASSUMPTION, the largest record (273 kB fit: no carry). "
+                  "recovery: ASSUMPTION 0, below the idle baseline. Reads are not modelled")
+        got = cc.assumed_keys([{"id": "t", "tolerance": {"assumed_keys": ["deletes", "recovery", "other"]}, "fit": {"method": method}},
+                               {"id": "u", "tolerance": {}}])
+        self.assertEqual(got, {"t": {"deletes": "ASSUMPTION, the largest record (273 kB fit: no carry)",
+                                     "recovery": "ASSUMPTION 0, below the idle baseline", "other": None}})
 
     def test_a_non_constant_key_may_reach_an_assumed_one(self):
         expr = {"kind": "lookup", "table_id": "t", "keys": [{"kind": "input", "id": "op", "dim": "enum:k"}], "dim": "count"}
-        self.assertEqual(cc._assumed_hits({"ledger_rows": [{"expr": expr}]}, None, {"t": {"k2"}}), {"t"})
+        self.assertEqual(cc._assumed_hits({"ledger_rows": [{"expr": expr}]}, None, {"t": {"k2": "x"}}), {("t", "k2")})
 
     def test_coverage_rows_cite_records_of_their_policy_or_say_what_they_borrow(self):
         import artifacts

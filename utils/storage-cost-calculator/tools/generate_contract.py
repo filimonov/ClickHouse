@@ -278,7 +278,9 @@ def build(opts, mode="dev"):
     problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final", applicability=app,
                                       coefficients=coefficients)
     # Counted here, not taken from `support`, so the evidence statement is the same in both modes.
-    support_pending = closure_check._pending_cells(cov, formulas_list, app, reg, assumed=closure_check.assumed_keys(coefficients))
+    assumptions = []
+    support_pending = closure_check._pending_cells(cov, formulas_list, app, reg, assumed=closure_check.assumed_keys(coefficients),
+                                                   assumptions=assumptions)
     problems += closure_check.evidence(cov, coefficients, measurement_ids, coefficient_identity(coefficients, coef_owner, evidence))
     problems += closure_check.billing(bil)
     if support_pending and mode == "dev":
@@ -292,7 +294,8 @@ def build(opts, mode="dev"):
     manifest["evidence"] = evidence
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
-        "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending), measured_build(evidence)),
+        "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending), measured_build(evidence),
+                                                 assumptions),
         "registry": with_verified_range(with_measured_by(reg["quantities"], coefficients, coef_owner, evidence)),
         "sets": reg["sets"], "precedence": reg["precedence"],
         "coefficients": with_verified_range(coefficients), "billing": bil,
@@ -451,7 +454,7 @@ def evidence_by_variant(formulas, coefficients, cov):
     return out
 
 
-def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, build=None):
+def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, build=None, assumptions=()):
     kinds = [(c.get("evidence") or {}).get("kind") for c in coefficients if isinstance(c, dict)]
     p1 = {f"{c['name']}.{k['case_id']}" for c in cov["cards"] for k in c["cases"] if k["priority"] == "P1"}
     closed = sorted({e["coefficient"] for e in cov["evidence"] if e["experiment_id"] in p1 and e["role"] == "holdout" and e["status"] == "done"}
@@ -463,7 +466,17 @@ def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, buil
             f"{kinds.count('measured')} measured, {kinds.count('source')} pinned to source. "
             f"{len(closed)} P1 coefficient(s) have a done fit and a done hold-out. "
             f"Registry {reg['version']}, coverage {cov['version']}, billing {bil['version']}. "
-            f"{pending_cells} variant x operation x family cell(s) have no evidence yet.")
+            f"{pending_cells} variant x operation x family cell(s) have no evidence yet."
+            + assumption_text(assumptions))
+
+
+def assumption_text(assumptions):
+    """One sentence per assumed coefficient key, naming the cells it backs and the owner's assumption."""
+    cells = {}
+    for v, op, fam, coef, key, note in assumptions:
+        cells.setdefault((coef, key, note), []).append(f"{v}/{op}/{fam}")
+    return "".join(f" Assumption {coef}[{key}] backs {', '.join(sorted(set(where)))}: {note}."
+                   for (coef, key, note), where in sorted(cells.items()))
 
 
 def embed(contract):

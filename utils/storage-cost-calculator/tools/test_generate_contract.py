@@ -441,6 +441,17 @@ class VerifiedRangeTest(unittest.TestCase):
         self.assertEqual(out[2], {"id": "c"})
 
 
+class AssumptionTextTest(unittest.TestCase):
+    def test_each_assumed_key_is_listed_once_with_its_cells_and_note(self):
+        rows = [("ebs", "deletes", "c", "op_write_bytes", "deletes", "ASSUMPTION, the largest record"),
+                ("ebs", "deletes", "c", "op_write_bytes", "deletes", "ASSUMPTION, the largest record"),
+                ("ebs", "recovery", "c", "op_write_bytes", "recovery", "ASSUMPTION 0")]
+        self.assertEqual(gc.assumption_text(rows),
+                         " Assumption op_write_bytes[deletes] backs ebs/deletes/c: ASSUMPTION, the largest record."
+                         " Assumption op_write_bytes[recovery] backs ebs/recovery/c: ASSUMPTION 0.")
+        self.assertEqual(gc.assumption_text([]), "")
+
+
 class RegistryUiTest(unittest.TestCase):
     def registry(self, settings):
         qs = [{"id": f"s{i}", "kind": "input", "ui": {"tier": "setting", "name": None, "short": "x"}} for i in range(settings)]
