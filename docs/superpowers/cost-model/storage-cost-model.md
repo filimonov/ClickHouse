@@ -63,8 +63,8 @@ number. Request prices come from the billing preset `aws-us-east-1` (AWS price l
 | 76-77 | `PUT`, `COPY` or `LIST` costs about $0.005 per thousand | Agrees. `put_copy_post_list` is $0.005 per 1,000. It also bills multipart calls and `POST`, and treats `ListParts` as a `LIST`. |
 | 77-78 | The write tier is about 12.5× the read tier | Agrees. 0.005 / 0.0004 = 12.5. |
 | 78 | `DELETE` is free | Agrees. `delete_cancel` is $0 and also covers `DeleteObjects` and `AbortMultipartUpload`. |
-| 79-81 | Writes scale to about 3,500 requests per second per prefix; bursts past that get `503 Slow Down` | Not modelled. The calculator prices request counts and has no rate limits. |
-| 88-93 | The collector never `LIST`s the pool on the normal path | Partly contradicted by `probe_cas_gc_cohort`: 14 `LIST` requests in the priced cell (20 inserts, `DROP TABLE`, 3 GC rounds). The probe does not show whether they scan the pool. Model: no priced cell yet (Plan 2 pending). |
+| 79-81 | Writes scale to at least about 3,500 requests per second per prefix; bursts past that get `503 Slow Down` | Not modelled. The calculator prices request counts and has no rate limits. |
+| 88-93 | The collector never `LIST`s the pool on the normal path | Not checked. `probe_cas_gc_cohort` recorded 14 `LIST` requests in the priced cell (20 inserts, `DROP TABLE`, 3 GC rounds). The probe does not show whether they scan the pool. Model: no priced cell yet (Plan 2 pending). |
 | 95-99 | A naive commit takes four to six sequential round trips and adds over a second to every insert | Not modelled. The calculator has no latency. |
 | 121-123 | An early configuration issued about 5,100 `HEAD` per second, two-thirds of reads failing | Not modelled. This is a soak observation, not a steady-state rate. |
 | 163-172 | A commit costs the new blob `PUT`s, one tree `PUT` and exactly one manifest CAS `PUT`; at most two control writes under contention | Model: no priced cell yet (Plan 2 pending). `probe_cas_expect` (phase-0 report) recorded 27 foreground `PUT` for 3 inserts: 3 blobs and 24 conditional writes, which is 8 per insert, and 3 `HEAD` (one per blob). It does not split the conditional writes into tree, manifest and control. |
@@ -100,7 +100,7 @@ Pinned inputs, from `docs/superpowers/reports/2026-10-24-storage-cost-phase0/REA
        --runs-dir tmp/cas-yardstick/cost-runs --manifests <report directory> --cases all
    ```
 
-   The manifests are the report's `experiments` directory. Reports: `docs/superpowers/reports/2026-10-24-storage-cost-phase0`
+   `--manifests` takes the report directory itself; the rig reads its `experiments/*.json`. Reports: `docs/superpowers/reports/2026-10-24-storage-cost-phase0`
    and `docs/superpowers/reports/2026-10-24-storage-cost-lifecycle`.
 
 3. Regenerate the contract, the page copy, the measured fixtures and the `Formulas` and `Inputs` blocks. Sweep the

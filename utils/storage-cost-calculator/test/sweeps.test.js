@@ -19,7 +19,7 @@ test('test_breakeven_matches_independent_cases', async () => {
   const { buildBreakeven } = await import('../tools/sweeps.mjs');
   const c = fixture();
   // Case 1, by hand: x GiB on gp3 costs 0.08 x; CAS costs 0.023 x + 1.3 (130 000 inserts x 2 PUTs at 0.005 per 1 000).
-  // Equal at x = 1.3 / 0.057 = 22.8, so the order flips between 20 and 30. S3 stays far above EBS.
+  // Equal at x = 1.3 / 0.057 = 22.8, so the order flips between 20 and 30. The s3 assertion below only checks that no crossing involves s3; its totals are not hand-derived.
   const one = buildBreakeven(code, c, scenario(130000), { data_bytes: [10, 20, 30, 40] }, AWS).a.sweeps.data_bytes;
   const at = (x) => one.points.find((p) => p.x === x).totals;
   close(at(20).ebs.value, 1.6);
@@ -79,5 +79,22 @@ test('test_ladders_are_geometric', async () => {
   const { LADDERS } = await import('../tools/sweeps.mjs');
   for (const [id, xs] of Object.entries(LADDERS)) {
     for (let i = 2; i < xs.length; i++) close(xs[i] / xs[i - 1], xs[1] / xs[0], id);
+  }
+});
+
+test('test_cli_writes_breakeven_file', () => {
+  const { execFileSync } = require('node:child_process');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweeps-'));
+  try {
+    const out = path.join(dir, 'breakeven.json');
+    execFileSync('node', [path.join(ROOT, 'tools', 'sweeps.mjs'), '--contract', path.join(ROOT, 'model-contract.json'), '--out', out]);
+    const doc = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(doc.schema, 'breakeven/1');
+    assert.equal(doc.contract_version, JSON.parse(fs.readFileSync(path.join(ROOT, 'model-contract.json'), 'utf8')).version);
+    assert.deepEqual(Object.keys(doc.scenarios), Object.keys(presets.SCENARIOS));
+    assert.throws(() => execFileSync('node', [path.join(ROOT, 'tools', 'sweeps.mjs'), '--out', out], { stdio: 'pipe' }));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
