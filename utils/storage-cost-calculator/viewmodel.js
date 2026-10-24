@@ -13,6 +13,7 @@
   const OPERATION_LABELS = {
     storage: 'Storage', inserts: 'Inserts', merges: 'Merges', mutations: 'Mutations', deletes: 'Deletes',
     reads: 'Reads', recovery: 'Recovery', replacement: 'Replica replacement', local_disk: 'Local disk',
+    gc: 'Garbage collection', lease: 'Mount lease',
   };
   // Advanced block order follows spec §4.2; `simple` is always visible.
   const BLOCKS = [

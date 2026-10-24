@@ -380,3 +380,18 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   const d = view({}, { ui: { openCell: { variant: 'cas', operation: 'storage' } } }).vm.drill;
   assert.deepEqual(d.composition.map((x) => x.label), ['Stored data']);
 });
+
+test('test_every_domain_operation_has_a_label', () => {
+  // The live contract and the coverage domain (which may list operations before any contract cell exists).
+  const coverage = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'docs', 'superpowers', 'cost-model', 'coverage.json'), 'utf8'));
+  const ops = new Set([...LIVE_JSON.operations, ...coverage.domain.operations, 'gc', 'lease']);
+  for (const op of ops) assert.ok(Object.prototype.hasOwnProperty.call(vmod.OPERATION_LABELS, op), `operation ${op} has no label`);
+  assert.equal(vmod.OPERATION_LABELS.gc, 'Garbage collection');
+  assert.equal(vmod.OPERATION_LABELS.lease, 'Mount lease');
+  // An operation without a label is still reported, not silently shown by its id.
+  const odd = load((x) => {
+    x.operations.push('mystery');
+    for (const v of x.variants) x.applicability[v].mystery = Object.fromEntries(x.families.map((f) => [f, 'supported']));
+  });
+  assert.match(view({}, { contract: odd }).vm.problems.join('\n'), /operation mystery has no label in viewmodel\.js/);
+});
