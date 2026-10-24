@@ -100,7 +100,7 @@ Two hold-outs predicted from the first fit missed and were consumed; both correc
 
 ## Cases and reconciliation {#reconciliation}
 
-Deterministic cases compare every op of the window exactly. Fit cases of the first run carry assumption ranges; every other prediction is exact. Values are equal in all repeats.
+Deterministic cases compare every op of the window exactly. Fit cases of the first run carry assumption ranges; every other prediction is exact. Values are equal in every ok pass.
 
 | Case | Role | Predicted (`s3plain` / `s3plain_cached`) | Measured | Verdict |
 |---|---|---|---|---|
@@ -116,7 +116,7 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `drop.partition-3` | consumed hold-out | 50 CopyObject, 104 DeleteObject, 51 HeadObject, 17 PutObject | 72 CopyObject, 150 DeleteObject, 75 HeadObject, 45 PutObject | falsified (consumed) |
 | `drop.table-sync` | fit | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 50 DeleteObject, 23 HeadObject, 4 PutObject | within the fit ranges |
 | `drop.ttl` | fit | 0–200 CopyObject, 0–400 DeleteObject, 0–40 DeleteObjects, 0–200 GetObject, 0–200 HeadObject, 0–20 ListObjectsV2, 0–100 PutObject | 23 CopyObject, 48 DeleteObject, 24 HeadObject, 15 PutObject | within the fit ranges |
-| `merge-only.narrow-compact-removal` | holdout, validation | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | exact |
+| `merge-only.narrow-compact-removal` | fit, holdout, validation | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | 88 CopyObject, 184 DeleteObject, 64 GetObject, 89 HeadObject, 29 PutObject / 88 CopyObject, 184 DeleteObject, 24 GetObject, 89 HeadObject, 29 PutObject | exact |
 | `merge-only.narrow-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 64 GetObject, 1 HeadObject, 21 PutObject / 24 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
 | `merge-only.narrow-wide-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 19–60 PutObject | 33 GetObject, 1 HeadObject, 21 PutObject / 18 GetObject, 1 HeadObject, 21 PutObject | within the fit ranges |
 | `merge-only.wide-compact-sources` | fit, validation | 0–40 CopyObject, 0–40 DeleteObject, 0–10 DeleteObjects, 0–2000 GetObject, 0–10 HeadObject, 0–20 ListObjectsV2, 89–130 PutObject | 129 GetObject, 1 HeadObject, 91 PutObject or 130 GetObject, 1 HeadObject, 91 PutObject / 9 GetObject, 1 HeadObject, 91 PutObject | within the fit ranges |
@@ -137,6 +137,24 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `startup.intact` | fit, validation | 0–10 CopyObject, 0–20 DeleteObject, 0–4 DeleteObjects, 0–200 GetObject, 0–20 HeadObject, 1–40 ListObjectsV2, 0–10 PutObject | 1 CopyObject, 2 DeleteObject, 53 GetObject, 1 HeadObject, 9 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 39 GetObject, 2 HeadObject, 9 ListObjectsV2, 2 PutObject | within the fit ranges |
 | `startup.wide-parts` | holdout, validation | 1 CopyObject, 2 DeleteObject, 107 GetObject, 1 HeadObject, 8 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 28 GetObject, 2 HeadObject, 8 ListObjectsV2, 2 PutObject | 1 CopyObject, 2 DeleteObject, 107 GetObject, 1 HeadObject, 8 ListObjectsV2, 1 PutObject / 2 CopyObject, 4 DeleteObject, 28 GetObject, 2 HeadObject, 8 ListObjectsV2, 2 PutObject | exact |
 
+**Edges on fewer than three passes.** The report run's timing misses leave these cases with fewer than K = 3 ok
+passes behind their edges; each remaining pass is exact:
+
+| Case | Policy | Passes behind the edges | Missing passes |
+|---|---|---|---|
+| `drop.partition-2` | `s3plain_cached` | 1 | k1, k3 `window_crossing` |
+| `merge-only.wide-wide-removal` | `s3plain` / `s3plain_cached` | 2 / 1 | k2 `window_crossing` / k1 `window_crossing`, k2 `DeleteObject` 481 of 537 |
+| `merge-only.narrow-compact-removal` | both | 2 | `s3plain` k1 `GetObject` 65 of 64 (one retried GET, seq 30733 then 30734); `s3plain_cached` k3 `DeleteObject` 183 of 184 |
+| `cold-select.cache-on` | `s3plain_cached` | 2 | k2 `window_crossing` |
+| `merge-only.wide-compact-sources` | `s3plain` | 2 | k1 is ok against its fit range but sent 130 `GetObject` (one retried), so it backs no edge |
+
+`drop.ttl` (k2 `window_crossing` on `s3plain`) backs no edge: TTL removal is not the `deletes` cell's path.
+
+**Inputs edited after the run.** The prediction `inputs` (model inputs, not the expected counts) gained `insert_rows`
+and `merge_result_part_type` after the report run, and `drop.partition-2` changed `expired_parts_per_month` from 1 to
+2: its committed `expected` already encoded two dropped parts (30 `PutObject`, 50 `HeadObject`), the inputs did not.
+No expected count changed.
+
 ## Coefficients {#coefficients}
 
 | Coefficient | Evidence | Value |
@@ -153,7 +171,7 @@ Deterministic cases compare every op of the window exactly. Fit cases of the fir
 | `plain_startup_requests` | measured | 0/fixed/PutObject: 1, 0/fixed/HeadObject: 1, 0/fixed/GetObject: 5, 0/per_dir/GetObject: 1, 0/fixed/CopyObject: 1, 0/fixed/DeleteObject: 2, 0/fixed/ListObjectsV2: 6, 0/per_dir/ListObjectsV2: 1, 1/fixed/PutObject: 2, 1/fixed/HeadObject: 2, 1/fixed/GetObject: 6, 1/per_dir/GetObject: 1, 1/fixed/CopyObject: 2, 1/fixed/DeleteObject: 4, 1/fixed/ListObjectsV2: 6, 1/per_dir/ListObjectsV2: 1 |
 | `plain_local_metadata_bytes_per_object` | source (Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h:87) | 0 |
 
-Every coefficient a cell uses has fit and hold-out edges in `coverage.json` per plain policy; `plain_copy_on_hardlink` is used by no cell (no supported operation hard-links).
+Every s3plain coefficient a cell uses has fit and hold-out edges in `coverage.json` per plain policy; `plain_copy_on_hardlink` is used by no cell (no supported operation hard-links). The reused `s3` merge `GetObject` counts (`merge_gets_per_source_part`, `_cached`) have s3plain fit and hold-out edges; the other reused `s3` coefficients have s3plain `validation` edges.
 
 ## Formulas and applicability {#formulas}
 
@@ -163,9 +181,9 @@ Every coefficient a cell uses has fit and hold-out edges in `coverage.json` per 
 |---|---|---|
 | `storage` | none | `lifecycle` |
 | `inserts` | per part: `plain_meta_objects_per_part` × (`plain_dir_create_requests` + `plain_rename_requests`) | `objects_per_part_by_shape`, `thresholds`, `multipart_graph` |
-| `merges` | directory requests of the result; sources removed file by file (`plain_unlink_requests`, `plain_dir_remove_requests`) instead of `DeleteObjects`; `not_supported` when `large_objects_per_part` > 0 (multipart copy of the removed file, unmeasured) | `lifecycle` |
+| `merges` | directory requests of the result; sources removed file by file (`plain_unlink_requests`, `plain_dir_remove_requests`) instead of `DeleteObjects`; the removal rows are `unavailable` when `large_objects_per_part` + `large_objects_per_merge_result` > 0 (multipart copy of a removed file, unmeasured) | `lifecycle` |
 | `mutations` | unconditional `not_supported` state with the gate's reason; no rows | — |
-| `deletes` | one empty covering part of `plain_empty_part_objects` files per expired part, with its directory requests; expired parts (shape files + `plain_expired_part_extra_files`) and empty parts removed file by file; `not_supported` when `large_objects_per_part` > 0 | `mutation_deletes` |
+| `deletes` | one empty covering part of `plain_empty_part_objects` files per expired part, with its directory requests; expired parts (shape files + `plain_expired_part_extra_files`) and empty parts removed file by file; removal rows `unavailable` under the same condition | `mutation_deletes` |
 | `reads` | none | `reads_cache` |
 | `recovery` | the `s3` fixed term (`startup_requests`) replaced by `plain_startup_requests`: fixed + per part directory; part loads cover active and outdated parts (`Storages/MergeTree/MergeTreeData.cpp:3656`) | `startup_recovery` |
 | `local_disk` | no metadata files (`plain_local_metadata_bytes_per_object` = 0); the cache size | `objects_per_part_by_shape` |
@@ -191,19 +209,18 @@ plain records add `validation` edges for them.
 ## Open items and limits {#open-items}
 
 - **Multipart copy on removal.** A part file past 32 MiB is copied aside by multipart copy
-  (`IO/S3/copyS3File.cpp:673`, pieces of `min_upload_part_size`, `:347`). No case measured it; `merges` and `deletes`
-  are `not_supported` for workloads with `large_objects_per_part` > 0 until a case does.
+  (`IO/S3/copyS3File.cpp:673`, pieces of `min_upload_part_size`, `:347`). No case measured it; the removal rows of `merges` and `deletes`
+  are `unavailable` for workloads with large part files until a case does.
 - **TTL-only expiry** removes parts with `ttl.txt` (one extra file), not the two partition files the cell assumes.
 - **Lightweight `UPDATE`** (patch parts) is possible on `s3plain` with both block columns enabled; no cell prices it.
 - **Replication** applicability is recorded here; its requests are measured by the replication report.
 - **Lifecycle seeds** (`small-inserts`, `merge-natural`, `merge-forced` with `s3plain` policies) stay `planned`: the
   `s3plain` merges are measured by `merge-only` cases instead.
-- **Removal at the window edge.** The report run `cost-20261024T142405Z` has 9 `FAILED` passes, all timing: 7
-  `window_crossing` (a background unlink or cache read finished after the window) in `drop.ttl`, `drop.partition-2`,
-  `merge-only.*-removal` and `cold-select.cache-on`, and 3 counts off by the tail of a removal (`DeleteObject` 481 or
-  183 of 537 or 184) or one retried `GetObject` (65 of 64; `wide-compact-sources` 130 of 129 in one pass). The cards
-  wait for the outdated parts to leave `system.parts`, not for the copies' deletes. Every case has at least one exact
-  pass per policy; the failed passes are not in `measurements.jsonl`.
+- **Removal at the window edge.** The report run has 9 `FAILED` passes, all timing: 6 `window_crossing` (an unlink or
+  cache read finished after the window) and 3 `assertions_failed` (`DeleteObject` 481 of 537 and 183 of 184: removal
+  tails after the window; `GetObject` 65 of 64: one retried GET). The cards wait for the outdated parts to leave
+  `system.parts`, not for the copies' deletes. They are not in `measurements.jsonl`; §Reconciliation lists the edges
+  they thin out.
 
 ## Review {#review}
 
@@ -215,7 +232,7 @@ change, the predictions of `2f20606ffe6`, the draft cells and the builders: 6 MA
 | M1 | The mutation refusal is too broad: a lightweight `UPDATE` (patch parts) passes once both block columns are enabled (`MergeTreeData.cpp:12630`) | Closed by scope: the gate refuses the mutation kinds the cost model prices (`ALTER UPDATE`, `ALTER DELETE`, lightweight `DELETE`); its reason now names the patch-part exception and cites `:12630`, `:12635`. No variant's cells price patch parts |
 | M2 | `types` predictions miss the empty-file blobs (348 / 340, not 324 / 316) | Confirmed by the run: `objects-per-part.types-holdout` falsified and consumed. Fixed: `plain_objects_per_part` (own counts); fresh hold-out `objects-per-part.types-holdout-single` |
 | M3 | Delete cells use 11 files for partitioned and TTL parts (13 / 12 measured) | Fixed: `plain_expired_part_extra_files` (2, one partition key column); the TTL-only case (one extra file) is an assumption in §Assumptions |
-| M4 | Removing a file past 32 MiB is a multipart copy (`copyS3File.cpp:673`), not one `CopyObject` | Fixed fail-closed: `merges` and `deletes` carry a `not_supported` state when `large_objects_per_part` > 0; open item |
+| M4 | Removing a file past 32 MiB is a multipart copy (`copyS3File.cpp:673`), not one `CopyObject` | Fixed fail-closed: the removal rows of `merges` and `deletes` evaluate to `unavailable` when `large_objects_per_part` + `large_objects_per_merge_result` > 0 (merge sources are usually merge results); open item |
 | M5 | `plain_empty_part_objects` is used but not registered | Fixed: registered (pinned, `DiskObjectStorageTransaction.cpp:313`) |
 | M6 | Recovery loads files of active parts only; outdated parts are loaded too (`MergeTreeData.cpp:3656`) | Fixed in the `s3plain` cell (active + outdated); the same term of the `s3` cell is reported to its owner |
 | m1 | Hard-link edges rest on unlink cases; the startup note claims three cached access checks | Fixed: no edges for `plain_copy_on_hardlink`; the note says one check, two with the cache |
