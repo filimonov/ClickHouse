@@ -427,7 +427,7 @@
           "timeout_s": 900,
           "duration_s": 120,
           "priority": "P2",
-          "status": "run"
+          "status": "cut"
         },
         {
           "case_id": "steady",
@@ -440,7 +440,7 @@
           "timeout_s": 900,
           "duration_s": 120,
           "priority": "P2",
-          "status": "run"
+          "status": "cut"
         },
         {
           "case_id": "async-inserts",
@@ -455,7 +455,7 @@
           "timeout_s": 900,
           "duration_s": 120,
           "priority": "P2",
-          "status": "planned"
+          "status": "cut"
         }
       ]
     },
@@ -480,7 +480,7 @@
           "timeout_s": 9000,
           "duration_s": 7260,
           "priority": "P2",
-          "status": "planned"
+          "status": "cut"
         },
         {
           "case_id": "amplification-run",
@@ -495,7 +495,7 @@
           "timeout_s": 14400,
           "duration_s": 7200,
           "priority": "P2",
-          "status": "planned"
+          "status": "cut"
         }
       ]
     },
@@ -1655,7 +1655,7 @@
       "status": "done"
     },
     {
-      "coefficient": "write_amplification_rule",
+      "coefficient": "merge_effective_fan_in",
       "experiment_id": "amplification-run.2h",
       "policy": "s3",
       "span": {
@@ -1671,57 +1671,7 @@
       "role": "validation",
       "prediction_commit": "b28a65478d1",
       "measurement_ids": [],
-      "status": "planned"
-    },
-    {
-      "coefficient": "async_insert_flush_rule",
-      "experiment_id": "async-inserts.steady",
-      "policy": "s3",
-      "span": {
-        "insert_rate": [
-          20,
-          20
-        ],
-        "insert_clients": [
-          16,
-          16
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "2d931d33a05",
-      "measurement_ids": [
-        "cost-20261024T064154Z/s3/async-inserts/steady/k1",
-        "cost-20261024T064154Z/s3/async-inserts/steady/k2",
-        "cost-20261024T064154Z/s3/async-inserts/steady/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "async_insert_flush_rule",
-      "experiment_id": "async-inserts.bursty",
-      "policy": "s3",
-      "span": {
-        "burst_size": [
-          100,
-          100
-        ],
-        "burst_pause_s": [
-          2,
-          2
-        ],
-        "insert_clients": [
-          100,
-          100
-        ]
-      },
-      "role": "holdout",
-      "prediction_commit": "2d931d33a05",
-      "measurement_ids": [
-        "cost-20261024T064154Z/s3/async-inserts/bursty/k1",
-        "cost-20261024T064154Z/s3/async-inserts/bursty/k2",
-        "cost-20261024T064154Z/s3/async-inserts/bursty/k3"
-      ],
-      "status": "done"
+      "status": "cut"
     }
   ],
   "domain": {

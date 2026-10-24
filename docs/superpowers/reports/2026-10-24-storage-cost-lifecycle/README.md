@@ -369,6 +369,13 @@ replay, 647 retirement entries over 18 merge records replay, the nine raw checks
 | R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
 | R4-2 | the observation cutoff is not in the records | Fixed in the card (`quiet_cutoff_us`, `cutoff_us` observations; test `test_observation_cutoff_is_recorded`). The report run predates it: its nine natural-merge records carry the assertion's verdict, not the timestamps; the next run of these cards (Task 7's `amplification-run.2h`) is the first to carry them |
 
+**Cut by owner directive D14.** The campaign deadline cuts every P2 case (spec §5.5): `async-inserts.steady`,
+`async-inserts.bursty` and `amplification-run.2h` have `status: cut` in `coverage.json`. Their manifests and
+predictions stay. The async records already in `measurements.jsonl` stay as data; their edges are removed, so
+`async_insert_flush_rule` and `inserts_per_async_flush` remain source-pinned or assumed with no measured edge. The 2 h
+validation edge of `merge_effective_fan_in` is `cut`; the coefficient keeps its done fit and hold-out edges. No
+registry quantity rested only on a cut case, so none becomes `unsupported`.
+
 ## How to re-run {#rerun}
 
 ```bash

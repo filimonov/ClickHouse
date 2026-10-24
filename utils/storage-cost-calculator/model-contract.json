@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "bcb6b0e1689c99b4",
+ "version": "2aece3539cf0bd26",
  "manifest": {
   "code_sha256": "e2bd5508f2ca072376f8de3e49c5762becf4187d2066c9b43508fb5fef4fe082",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ff54fdb075460b1558025c8156397e865a1754c3e4d717a6a6412b0e9a49a81f"
   },
   "code_missing": [],
-  "contract_version": "bcb6b0e1689c99b4",
+  "contract_version": "2aece3539cf0bd26",
   "registry_version": "0.2.0",
   "registry_sha256": "c175bfc5b3bbf3695a9983c5897a129634a685c313187043ef7bba0448e1cb6d",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "e25ab07e8c99b8eaa02a0df63010898148fabb1849fc1ae842143116221018b7",
+  "coverage_sha256": "63ba42604868c86ba466edcf62787964ad11e057f4c79ce9ea3a5d19fe6c2931",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
