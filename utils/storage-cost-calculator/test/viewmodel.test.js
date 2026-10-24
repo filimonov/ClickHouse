@@ -306,13 +306,13 @@ test('test_out_of_range_note_once_per_param', () => {
   const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows');
   const fmt = (n) => n.toLocaleString('en-US');
   const range = (d) => `[${fmt(d.range[0])}, ${fmt(d.range[1])}]`;
-  // 10,000 is below 20,000-400,000 and 100,000-400,000 only: two owners with two different ranges, one note.
-  const low = notesFor(10000);
+  // 2,000,000 is above the 1,000-100,000, 1,000-400,000 and 1,000-600,000 maxima: several owners with different ranges, one note.
+  const low = notesFor(2000000);
   assert.equal(low.length, 1, JSON.stringify(low));
-  const hit = domains.filter((d) => 10000 < d.range[0] || 10000 > d.range[1]);
+  const hit = domains.filter((d) => 2000000 < d.range[0] || 2000000 > d.range[1]);
   assert.ok(new Set(hit.map((d) => d.range.join())).size >= 2);
   assert.deepEqual(low[0].owners, hit.map((d) => d.owner));
-  assert.equal(low[0].text, `insert_rows = 10,000 is outside the measured range of ${hit.map((d) => `${d.owner} ${range(d)}`).join(', ')}; dependent numbers are extrapolated`);
+  assert.equal(low[0].text, `insert_rows = 2,000,000 is outside the measured range of ${hit.map((d) => `${d.owner} ${range(d)}`).join(', ')}; dependent numbers are extrapolated`);
   // Outside every range: still one note, one shared-range-free list naming all owners.
   const all = notesFor(10000000);
   assert.equal(all.length, 1);
