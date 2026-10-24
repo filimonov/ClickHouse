@@ -121,7 +121,11 @@
       owner.set(rec.id, { ref, kind: rec.kind });
       if (rec.kind === 'table') {
         if (!isObj(rec.value)) problems.push(`coefficients[${i}] (${rec.id}).value: table coefficient needs {index, values}, got ${typeOf(rec.value)}`);
-        else tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim, validity: rec.validity || null };
+        else {
+          // A derived table is exact outside its verified range: it never marks a lookup extrapolated.
+          const range = model().rangeOf(rec);
+          tables[rec.id] = { index: rec.value.index, values: rec.value.values, dim: rec.dim, validity: model().basisOf(rec) === 'derived' ? null : range, verified_range: range, basis: model().basisOf(rec) };
+        }
       }
     });
     return new Map([...owner].map(([id, o]) => [id, o.kind]));

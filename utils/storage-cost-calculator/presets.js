@@ -218,8 +218,9 @@
   // Every validity domain in the contract: coefficients and registry rows. Returns [{id, owner, param, range}].
   function validityDomains(contract) {
     const out = [];
-    for (const c of contract.coefficients) for (const [param, range] of Object.entries(c.validity || {})) out.push({ id: c.id, owner: `coefficient ${c.id}`, param, range });
-    for (const q of contract.registry) for (const [param, range] of Object.entries(q.validity || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range });
+    const M = root.SCC.model || require('./model.js');
+    for (const c of contract.coefficients) for (const [param, range] of Object.entries(M.rangeOf(c) || {})) out.push({ id: c.id, owner: `coefficient ${c.id}`, param, range, basis: M.basisOf(c) });
+    for (const q of contract.registry) for (const [param, range] of Object.entries(M.rangeOf(q) || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range, basis: 'fitted' });
     return out;
   }
 

@@ -367,8 +367,8 @@
     }
     for (const [id, value] of coefs) {
       const c = coefById.get(id);
-      const validity = c && c.validity ? Object.entries(c.validity).map(([p, r]) => `${p} in [${r[0]}, ${r[1]}]`).join(', ') : null;
-      inputLines.push({ id, label: id, value, unit: c ? c.dim : null, kind: 'coef', evidence_kind: c ? c.evidence.kind : null, validity: c ? c.validity || null : null,
+      const validity = c && model().rangeOf(c) ? Object.entries(model().rangeOf(c)).map(([p, r]) => `${p} in [${r[0]}, ${r[1]}]`).join(', ') : null;
+      inputLines.push({ id, label: id, value, unit: c ? c.dim : null, kind: 'coef', evidence_kind: c ? c.evidence.kind : null, validity: c ? model().rangeOf(c) : null,
         text: `${id} = ${typeof value === 'number' ? fmtQuantity(value, c && c.dim) : 'not available'}${validity ? `; measured over ${validity}` : ''}` });
       if (!c) problems.push(`drill: coefficient ${id} is not in the contract`);
       else addSource({ kind: c.evidence.kind, ref: c.evidence.ref, version: c.evidence.version || null, id });
@@ -492,13 +492,13 @@
       } else if (q.kind === 'derivation') {
         f.derived = true;
         f.rule_text = q.rule ? R.render(q.rule, contract.registry) : null;
-        f.validity = q.validity || null;
+        f.validity = model().rangeOf(q);
       } else if (q.kind === 'measured') {
         const c = coefById.get(q.coef);
         if (!c) problems.push(`registry ${q.id}: coefficient ${q.coef} is not in the contract`);
         else {
           f.value = c.kind === 'table' ? null : c.value;
-          f.validity = c.validity || null;
+          f.validity = model().rangeOf(c);
           if (c.kind === 'table') f.value_text = `table of ${Object.keys(c.value.values).length} entries by ${c.value.index.join(', ')}`;
         }
       }
@@ -614,7 +614,7 @@
       const ids = (c && c.evidence && c.evidence.measurement_ids) || [];
       const evidence = ui.measured_by ? cite(ui.measured_by, commit)
         : [ev.kind ? `${ev.kind}: ${cite(ev.ref, commit)}` : null, ids.length ? `${ids.length} measurement(s)` : null].filter(Boolean).join('; ');
-      const validity = c && c.validity ? Object.entries(c.validity).map(([k, r]) => `${k} from ${fmtQuantity(r[0])} to ${fmtQuantity(r[1])}`).join('; ') : null;
+      const validity = c && model().rangeOf(c) ? Object.entries(model().rangeOf(c)).map(([k, r]) => `${k} from ${fmtQuantity(r[0])} to ${fmtQuantity(r[1])}`).join('; ') : null;
       return {
         kind: 'input', id: open.id, title: ui.short || (q && q.label) || open.id, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: kindText(q, c),
         description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: evidence || null,

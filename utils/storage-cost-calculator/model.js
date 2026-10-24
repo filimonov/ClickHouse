@@ -463,7 +463,18 @@
     return r(node, 0);
   }
 
-  const model = { evaluate, evaluateCell, checkDims, render };
+  // The measured range of a coefficient or registry row: `verified_range`, or `validity` in contracts that predate it.
+  const rangeOf = (x) => (x && x.verified_range !== undefined ? x.verified_range : x && x.validity !== undefined ? x.validity : null) || null;
+  // How a coefficient was obtained. `derived` formulas come from the source and stay exact outside their verified
+  // range; `fitted` and `assumed` ones extrapolate. A record without `basis` predates the field and was fitted.
+  const BASES = ['derived', 'fitted', 'assumed'];
+  function basisOf(x) {
+    const b = x && x.basis !== undefined ? x.basis : 'fitted';
+    if (!BASES.includes(b)) throw new Error(`${x && x.id}: unknown basis ${JSON.stringify(b)}`);
+    return b;
+  }
+
+  const model = { evaluate, evaluateCell, checkDims, render, rangeOf, basisOf, BASES };
   root.SCC = root.SCC || {};
   root.SCC.model = model;
   if (typeof module !== 'undefined' && module.exports) module.exports = model;

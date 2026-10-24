@@ -73,7 +73,7 @@ function contractCoefficients(registry, coefFile) {
   const have = new Set(out.map((c) => c.id));
   for (const q of registry.quantities) {
     if (!q.coef || q.value_type === 'table' || have.has(q.coef)) continue;
-    out.push({ id: q.coef, kind: 'scalar', dim: q.unit, value: q.default, validity: q.validity, evidence: { ref: q.evidence.ref } });
+    out.push({ id: q.coef, kind: 'scalar', dim: q.unit, value: q.default, validity: q.verified_range !== undefined ? q.verified_range : q.validity, evidence: { ref: q.evidence.ref } });
     have.add(q.coef);
   }
   return out;
@@ -143,7 +143,7 @@ function buildCtx(c, prediction, record, problems, where) {
   }
   const coefs = new Map();
   for (const rec of c.coefficients) {
-    if (rec.kind !== 'table' && rec.value !== null && rec.value !== undefined) coefs.set(rec.id, { kind: 'scalar', value: rec.value, validity: rec.validity || null, dim: rec.dim });
+    if (rec.kind !== 'table' && rec.value !== null && rec.value !== undefined) coefs.set(rec.id, { kind: 'scalar', value: rec.value, validity: (rec.verified_range !== undefined ? rec.verified_range : rec.validity) || null, dim: rec.dim });
   }
   const tables = new Map(Object.entries(c.tables));
   const ctx = { inputs, coefs, tables, sets: new Map(Object.entries(c.sets || {})), vars: new Map(), prices: null };

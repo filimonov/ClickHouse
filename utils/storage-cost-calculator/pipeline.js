@@ -165,7 +165,8 @@
     const resolved = new Map();
     for (const x of inputs) {
       const value = values.has(x.id) ? values.get(x.id) : null;
-      const range = x.validity && x.validity[x.id];
+      const own = model().rangeOf(x);
+      const range = own && own[x.id];
       const gi = groupOf.get(x.id);
       if (value !== null) resolved.set(x.id, value);
       fields[x.id] = {
@@ -208,7 +209,8 @@
     const coefs = new Map();
     for (const c of contract.coefficients) {
       if (c.kind === 'table' || cut.coefs.has(c.id) || c.value === null || c.value === undefined) continue;
-      coefs.set(c.id, { value: c.value, validity: c.validity || null });
+      // A derived coefficient is exact outside its verified range, so it never marks a number extrapolated.
+      coefs.set(c.id, { value: c.value, validity: model().basisOf(c) === 'derived' ? null : model().rangeOf(c), verified_range: model().rangeOf(c), basis: model().basisOf(c) });
     }
     const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
     const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set() };
