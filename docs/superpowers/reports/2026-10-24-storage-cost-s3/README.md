@@ -194,7 +194,7 @@ sources (`merge-forced.default`) and 16 for 2 are 8 per 5-column Compact source.
   (`Storages/MergeTree/MergeTreeData.cpp:3289`): `statistics.packed` once per column plus its index. Narrow Compact:
   15 per part (50 = 3 × 15 + 5); hold-out wide Wide: 50 per part (105 = 2 × 50 + 5). With the cache, the archive is
   one segment: 10 per part (36 and 26).
-- **History.** Outdated parts load in the background after start (`Storages/MergeTree/MergeTreeData.cpp:3234`) with
+- **History.** Outdated parts load in the background after start (`Storages/MergeTree/MergeTreeData.cpp:3234`, loaded at `:3656`) with
   the same reads per part, and a plain `MergeTree` reads its retained `mutation_<n>.txt` files
   (`Storages/StorageMergeTree.cpp:1655`). The cards have no history; the cell prices both from `outdated_parts` and
   `retained_mutation_entries` as assumptions.
