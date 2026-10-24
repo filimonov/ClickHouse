@@ -231,6 +231,22 @@ class AccountingTest(unittest.TestCase):
         loose['tolerance'] = {'abs': {'PutObject': 1}, 'rel': {}}
         self.assertEqual(cc.accounting([stochastic], [loose], node_test_cmd=['true']), [])
 
+    def test_observation_bounds_and_distributions_follow_the_card_check(self):
+        self.assertTrue(cc.observation_holds({'min': 1, 'max': 2}, 1.5))
+        self.assertFalse(cc.observation_holds({'min': 1, 'max': 2}, 2.5))
+        self.assertFalse(cc.observation_holds({'min': 1}, None))
+        self.assertTrue(cc.observation_holds({'reference': {'a': 0.5, 'b': 0.5}, 'max_tv': 0.1}, {'a': 0.55, 'b': 0.45}))
+        self.assertFalse(cc.observation_holds({'reference': {'a': 0.5, 'b': 0.5}, 'max_tv': 0.1}, {'a': 0.7, 'b': 0.3}))
+        self.assertTrue(cc.observation_holds([1, 2], [1, 2]))
+        self.assertFalse(cc.observation_holds({'x': 1}, {'x': 2}))
+        m, p = example('measurement-ok.json'), example('prediction.json')
+        bounded = copy.deepcopy(p)
+        bounded['expected']['observations'] = {'ratio': {'min': 0.5, 'max': 1.5}}
+        inside, outside = copy.deepcopy(m), copy.deepcopy(m)
+        inside['observations']['ratio'], outside['observations']['ratio'] = 1.0, 2.0
+        self.assertEqual(cc.accounting([inside], [bounded], node_test_cmd=['true']), [])
+        self.assertTrue(any('ratio' in x for x in cc.accounting([outside], [bounded], node_test_cmd=['true'])))
+
 
 REPORT = os.path.join(HERE, '..', '..', '..', 'docs', 'superpowers', 'reports', '2026-10-24-storage-cost-phase0')
 

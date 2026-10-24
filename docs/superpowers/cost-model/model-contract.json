@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "4fcaab8d65d7226f",
+ "version": "60725a0afee41488",
  "manifest": {
   "code_sha256": "e29c1bfa4ce2c0212b98ba35c9636270512297d1c486b4116cc11b07c00a1903",
   "code_files": {
@@ -14,7 +14,7 @@
    "viewmodel.js": "23ea3fb2148c0ee7e1dd73f9deed90cee2d2e778118ec1c8614ed4547c7ef37f"
   },
   "code_missing": [],
-  "contract_version": "4fcaab8d65d7226f",
+  "contract_version": "60725a0afee41488",
   "registry_version": "0.3.0",
   "registry_sha256": "340db1dfa01aa209bbdb768fa3973d758f843fe8886a9bdccb8abe762549137c",
   "coverage_version": "0.2.0",
@@ -51,9 +51,9 @@
     "raw_sha256sums": "9a9a2fb0e9067c5cbad534ab849fc94926202fb04d56d4742c1df78ed292390a"
    }
   ],
-  "breakeven_sha256": null
+  "breakeven_sha256": "b636947715b4a5ee63017e266c6ea0ad43b80e6a6685010ed87a1531b2fbe000"
  },
- "evidence_statement": "Built from 4 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 11 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 4 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 10 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -11999,7 +11999,7 @@
     "mutation_deletes": "not_applicable",
     "reads_cache": "not_applicable",
     "startup_recovery": "supported",
-    "replication": "supported",
+    "replication": "not_applicable",
     "faults": "not_applicable",
     "cas_branches": "not_applicable",
     "cas_gc": "not_applicable",
@@ -12504,13 +12504,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Each replica keeps a full copy (no zero-copy). Merged-away parts stay outdated for old_parts_lifetime: their bytes are the merge sources written per second times that lifetime.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "inserts": {
     "ledger_rows": [
@@ -12760,23 +12754,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Every replica stores its own copy: the writer by INSERT, the others by fetch (one write per object each).",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "Follower fetches read every object of the part from the sender; replication-owned acquire_requests[s3][insert] refines this row (pending_owner: replication).",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "Write-through caching needs enable_filesystem_cache_on_write_operations; it is off by default, so cache_enabled changes no insert request.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "merges": {
     "ledger_rows": [
@@ -12937,18 +12915,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Each replica merges locally (acquisition_rule default); the fetch share is replication-owned (pending_owner: replication).",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "Merge results are priced as Wide parts and sources at the inserted part type; merged-away sources are removed after old_parts_lifetime, one DeleteObjects call each.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "mutations": {
     "ledger_rows": [
@@ -13107,18 +13074,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "A Compact part is rewritten in full; a Wide part rewrites the changed streams and 7 part metadata files and keeps the other objects by hard link.",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "mutation_objects_written and mutation_gets_per_part are exact for the narrow shape (5 UInt64 columns).",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "deletes": {
     "ledger_rows": [
@@ -13198,13 +13154,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Expiry by TTL or DROP PARTITION covers the part with an empty part (empty_part_objects) and removes both: two DeleteObjects calls per expired part.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "reads": {
     "ledger_rows": [
@@ -13423,18 +13373,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Without the cache, a part read loads statistics.packed once per column file and reads each stream as one .bin range and its marks file.",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "With the cache, a cached range sends no request; a miss downloads segments (cached_miss_gets_per_part_read, measured for the query shapes of cold-select) and writes them to the cache volume.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    },
    "recovery": {
     "ledger_rows": [
@@ -13620,14 +13559,40 @@
      }
     ],
     "allocation": null,
-    "states": [],
-    "notes": [
+    "states": [
      {
-      "kind": "const",
-      "value": "pending_owner: replication. Catch-up after a restart is a GetObject row of missed_parts_per_restart x catchup_requests_per_missed_part[s3], added when the replication report defines that coefficient: the contract loader rejects a reference to a coefficient no report carries.",
-      "dim": "1"
+      "id": "not_supported",
+      "reason": "pending_owner: replication. Catch-up after a restart is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; the replication report has not published them yet",
+      "cond": {
+       "kind": "branch",
+       "dim": "bool",
+       "cond": {
+        "op": ">",
+        "a": {
+         "kind": "input",
+         "id": "missed_parts_per_restart",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "const",
+         "value": 0,
+         "dim": "count"
+        }
+       },
+       "then": {
+        "kind": "const",
+        "value": 1,
+        "dim": "bool"
+       },
+       "else": {
+        "kind": "const",
+        "value": 0,
+        "dim": "bool"
+       }
+      }
      }
-    ]
+    ],
+    "notes": []
    },
    "local_disk": {
     "ledger_rows": [
@@ -13830,18 +13795,7 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": [
-     {
-      "kind": "const",
-      "value": "Local metadata: one small file per object of every active part (metadata_bytes_per_object, allocated); the cache volume holds cache_size_gib.",
-      "dim": "1"
-     },
-     {
-      "kind": "const",
-      "value": "Write calls are syscall counts of the server process (proc io syscw), not device I/O; EBS accounting of them is the EBS report's.",
-      "dim": "1"
-     }
-    ]
+    "notes": []
    }
   },
   "s3plain": {},
@@ -18670,7 +18624,40 @@
  },
  "states": {
   "ebs": [],
-  "s3": [],
+  "s3": [
+   {
+    "id": "not_supported",
+    "reason": "pending_owner: replication. Catch-up after a restart is missed_parts_per_restart x catchup_requests_per_missed_part[s3], and startup_requests_after_restart[s3] replaces the startup rows; the replication report has not published them yet",
+    "cond": {
+     "kind": "branch",
+     "dim": "bool",
+     "cond": {
+      "op": ">",
+      "a": {
+       "kind": "input",
+       "id": "missed_parts_per_restart",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "const",
+       "value": 0,
+       "dim": "count"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "bool"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "bool"
+     }
+    },
+    "operation": "recovery"
+   }
+  ],
   "s3plain": [],
   "cas": [
    {

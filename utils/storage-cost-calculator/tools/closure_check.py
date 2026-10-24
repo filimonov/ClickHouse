@@ -346,8 +346,21 @@ def _compare(m, pred):
             problems += [f"{mid}: unpredicted {caller}.{op} ({c['attempts']} attempts)" for op, c in ops.items()
                          if c["attempts"] and op not in pred["expected"]["foreground"].get(caller, {})]
         problems += [f"{mid}: observation {k} is {m['observations'].get(k)!r}, predicted {v!r}"
-                     for k, v in pred["expected"]["observations"].items() if m["observations"].get(k) != v]
+                     for k, v in pred["expected"]["observations"].items() if not observation_holds(v, m["observations"].get(k))]
     return problems
+
+
+def observation_holds(want, got):
+    """A predicted observation as the cards check it: a value (exact), `{min, max}` (either side may be absent) or
+    `{reference, max_tv}` (a distribution within total-variation distance of the reference)."""
+    if isinstance(want, dict) and "reference" in want:
+        if not isinstance(got, dict):
+            return False
+        ref = want["reference"]
+        return 0.5 * sum(abs(ref.get(k, 0.0) - got.get(k, 0.0)) for k in set(ref) | set(got)) <= want["max_tv"]
+    if isinstance(want, dict) and ({"min", "max"} & set(want)) and not {"model"} & set(want):
+        return isinstance(got, (int, float)) and want.get("min", float("-inf")) <= got <= want.get("max", float("inf"))
+    return got == want
 
 
 def _node_fixtures(cmd, mode):
