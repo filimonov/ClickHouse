@@ -17460,6 +17460,1466 @@
         "cost-20261024T174727Z/local/merge-natural/wide/k3"
       ],
       "status": "consumed"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "small-inserts.default",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          375.16,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/small-inserts/default/k1",
+        "cost-20261024T064154Z/s3/small-inserts/default/k2",
+        "cost-20261024T064154Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.default",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/default/k1",
+        "cost-20261024T064154Z/s3/merge-natural/default/k2",
+        "cost-20261024T064154Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.wide",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "small-inserts.default",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          375.16,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/small-inserts/default/k1",
+        "cost-20261024T064154Z/s3/small-inserts/default/k2",
+        "cost-20261024T064154Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.default",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/default/k1",
+        "cost-20261024T064154Z/s3/merge-natural/default/k2",
+        "cost-20261024T064154Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.wide",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "s3plain",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "small-inserts.default",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          375.16,
+          472.95
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/small-inserts/default/k1",
+        "cost-20261024T064154Z/s3/small-inserts/default/k2",
+        "cost-20261024T064154Z/s3/small-inserts/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.default",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "2d931d33a05",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/default/k1",
+        "cost-20261024T064154Z/s3/merge-natural/default/k2",
+        "cost-20261024T064154Z/s3/merge-natural/default/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.wide",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          32.0,
+          32.0
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "b652973295f",
+      "measurement_ids": [
+        "cost-20261024T064154Z/s3/merge-natural/wide/k1",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k2",
+        "cost-20261024T064154Z/s3/merge-natural/wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "merge-natural.validation",
+      "policy": "cas",
+      "span": {
+        "merge_size_ratio": [
+          18.21,
+          20.82
+        ],
+        "insert_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/s3/merge-natural/validation/k1",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k2",
+        "cost-20261024T154049Z/s3/merge-natural/validation/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "validation report, merge-natural.validation: \"Same on every variant. The merge selector does not read the disk: all nine records merged 64 parts in 11 merges\" (s3, s3plain and cas records)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-compact",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-compact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-compact",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-compact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-wide",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/narrow-wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-wide",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          400000,
+          400000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/narrow-wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-compact",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-compact",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          20000,
+          20000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-wide",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-wide",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-wide/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-compact-2",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          25000,
+          25000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "5519040a680",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact-2/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact-2/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/wide-compact-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.wide-compact-2",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          25000,
+          25000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "5519040a680",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact-2/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact-2/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/wide-compact-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.types-holdout",
+      "policy": "s3plain",
+      "span": {
+        "objects_per_part": [
+          158,
+          158
+        ],
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3/objects-per-part/types-holdout/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.types-holdout",
+      "policy": "s3plain_cached",
+      "span": {
+        "objects_per_part": [
+          158,
+          158
+        ],
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k1",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k2",
+        "cost-20261024T094831Z/s3_cached/objects-per-part/types-holdout/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-compact-1k",
+      "policy": "s3plain",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "ffeb16cdbbf",
+      "measurement_ids": [
+        "cost-20261024T123052Z/s3/objects-per-part/narrow-compact-1k/k1",
+        "cost-20261024T123052Z/s3/objects-per-part/narrow-compact-1k/k2",
+        "cost-20261024T123052Z/s3/objects-per-part/narrow-compact-1k/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "insert_tx_checks",
+      "experiment_id": "objects-per-part.narrow-compact-1k",
+      "policy": "s3plain_cached",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "ffeb16cdbbf",
+      "measurement_ids": [
+        "cost-20261024T123052Z/s3_cached/objects-per-part/narrow-compact-1k/k1",
+        "cost-20261024T123052Z/s3_cached/objects-per-part/narrow-compact-1k/k2",
+        "cost-20261024T123052Z/s3_cached/objects-per-part/narrow-compact-1k/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: the plain inserts reuse the `s3` insert graph plus directory requests; `insert_tx_checks` has done `validation` edges on s3plain (boundaries.compact-below-bytes, boundaries.wide-above-bytes, big-insert-multipart.multipart)"
+    },
+    {
+      "coefficient": "cached_miss_gets_per_part_read",
+      "experiment_id": "cold-select.cache-on",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "cached_miss_gets_per_part_read",
+      "experiment_id": "cold-select.cache-on-types",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "cached_miss_gets_per_part_read",
+      "experiment_id": "cold-select.cache-on-types-2",
+      "policy": "s3plain_cached",
+      "span": {
+        "k_range": [
+          20000,
+          100000
+        ],
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "5519040a680",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types-2/k1",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types-2/k2",
+        "cost-20261024T094831Z/s3_cached/cold-select/cache-on-types-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "cached_miss_gets_per_part_read",
+      "experiment_id": "cold-select.cache-on-narrow",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "58679585889",
+      "measurement_ids": [
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k1",
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k2",
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "cached_miss_gets_per_part_read",
+      "experiment_id": "cold-select.cache-on-narrow-2",
+      "policy": "s3plain_cached",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          60000,
+          60000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "58679585889",
+      "measurement_ids": [
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow-2/k1",
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow-2/k2",
+        "cost-20261024T180805Z/s3_cached/cold-select/cache-on-narrow-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "gets_per_stream_read",
+      "experiment_id": "cold-select.cache-off",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "streams_read": [
+          3,
+          3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "gets_per_stream_read",
+      "experiment_id": "cold-select.cache-off-types",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "streams_read": [
+          4,
+          4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "gets_per_stream_read",
+      "experiment_id": "cold-select.cache-off-types-2",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "streams_read": [
+          4,
+          4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "202d45aadbc",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "gets_per_stream_read",
+      "experiment_id": "cold-select.cache-off-narrow",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "streams_read": [
+          3,
+          3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "58679585889",
+      "measurement_ids": [
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k1",
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k2",
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "stats_gets_per_column",
+      "experiment_id": "cold-select.cache-off",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "streams_read": [
+          3,
+          3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "stats_gets_per_column",
+      "experiment_id": "cold-select.cache-off-types",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "streams_read": [
+          4,
+          4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "stats_gets_per_column",
+      "experiment_id": "cold-select.cache-off-types-2",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "streams_read": [
+          4,
+          4
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "202d45aadbc",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "stats_gets_per_column",
+      "experiment_id": "cold-select.cache-off-narrow",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          5,
+          5
+        ],
+        "streams_read": [
+          3,
+          3
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "58679585889",
+      "measurement_ids": [
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k1",
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k2",
+        "cost-20261024T180805Z/s3/cold-select/cache-off-narrow/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "warm_gets_per_stream_read",
+      "experiment_id": "cold-select.warm-off",
+      "policy": "s3plain",
+      "span": {
+        "streams_read": [
+          3,
+          3
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "09e9319a11f",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/warm-off/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "warm_gets_per_stream_read",
+      "experiment_id": "cold-select.warm-off-types",
+      "policy": "s3plain",
+      "span": {
+        "streams_read": [
+          4,
+          4
+        ],
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "09e9319a11f",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/warm-off-types/k1",
+        "cost-20261024T094831Z/s3/cold-select/warm-off-types/k2",
+        "cost-20261024T094831Z/s3/cold-select/warm-off-types/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "shape_columns",
+      "experiment_id": "cold-select.cache-off",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "shape_columns",
+      "experiment_id": "cold-select.cache-off-types",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "shape_columns",
+      "experiment_id": "cold-select.cache-off-types-2",
+      "policy": "s3plain",
+      "span": {
+        "columns": [
+          21,
+          21
+        ],
+        "rows_per_insert": [
+          80000,
+          80000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "202d45aadbc",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k1",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k2",
+        "cost-20261024T094831Z/s3/cold-select/cache-off-types-2/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.intact",
+      "policy": "s3plain",
+      "span": {
+        "active_parts": [
+          3,
+          3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/startup/intact/k1",
+        "cost-20261024T094831Z/s3/startup/intact/k2",
+        "cost-20261024T094831Z/s3/startup/intact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.wide-parts",
+      "policy": "s3plain",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/startup/wide-parts/k1",
+        "cost-20261024T094831Z/s3/startup/wide-parts/k2",
+        "cost-20261024T094831Z/s3/startup/wide-parts/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.intact",
+      "policy": "s3plain_cached",
+      "span": {
+        "active_parts": [
+          3,
+          3
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/startup/intact/k1",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k2",
+        "cost-20261024T094831Z/s3_cached/startup/intact/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.wide-parts",
+      "policy": "s3plain_cached",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ],
+        "columns": [
+          40,
+          40
+        ],
+        "rows_per_insert": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/startup/wide-parts/k1",
+        "cost-20261024T094831Z/s3_cached/startup/wide-parts/k2",
+        "cost-20261024T094831Z/s3_cached/startup/wide-parts/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.small",
+      "policy": "s3plain",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "ffeb16cdbbf",
+      "measurement_ids": [
+        "cost-20261024T123052Z/s3/startup/small/k1",
+        "cost-20261024T123052Z/s3/startup/small/k2",
+        "cost-20261024T123052Z/s3/startup/small/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "startup_gets_per_part",
+      "experiment_id": "startup.small",
+      "policy": "s3plain_cached",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ],
+        "columns": [
+          5,
+          5
+        ],
+        "rows_per_insert": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "ffeb16cdbbf",
+      "measurement_ids": [
+        "cost-20261024T123052Z/s3_cached/startup/small/k1",
+        "cost-20261024T123052Z/s3_cached/startup/small/k2",
+        "cost-20261024T123052Z/s3_cached/startup/small/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "s3plain report: \"The cells reuse `s3`-owned coefficients where the plain requests equal the `s3` ones (merge and read `GetObject`s, `startup_gets_per_part`); the plain records add `validation` edges for them.\" and \"Merges and reads send the same `GetObject`s as `s3`.\""
+    },
+    {
+      "coefficient": "multipart_parts",
+      "experiment_id": "big-insert-multipart.multipart",
+      "policy": "cas",
+      "span": {
+        "objects_per_part": [
+          15,
+          15
+        ],
+        "upload_parts": [
+          3,
+          3
+        ],
+        "columns": [
+          2,
+          2
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3/big-insert-multipart/multipart/k1",
+        "cost-20261024T094831Z/s3/big-insert-multipart/multipart/k2",
+        "cost-20261024T094831Z/s3/big-insert-multipart/multipart/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3",
+      "note": "cas report: \"A body above the first upload buffer is a multipart upload (lifecycle report, `multipart_sizing_rule`).\" The sizing rule is source-pinned and shared by every object storage disk"
+    },
+    {
+      "coefficient": "multipart_parts",
+      "experiment_id": "big-insert-multipart.multipart",
+      "policy": "cas_cached",
+      "span": {
+        "objects_per_part": [
+          15,
+          15
+        ],
+        "upload_parts": [
+          3,
+          3
+        ],
+        "columns": [
+          2,
+          2
+        ],
+        "rows_per_insert": [
+          600000,
+          600000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "80cd02f1c27",
+      "measurement_ids": [
+        "cost-20261024T094831Z/s3_cached/big-insert-multipart/multipart/k1",
+        "cost-20261024T094831Z/s3_cached/big-insert-multipart/multipart/k2",
+        "cost-20261024T094831Z/s3_cached/big-insert-multipart/multipart/k3"
+      ],
+      "status": "done",
+      "borrowed_from": "s3_cached",
+      "note": "cas report: \"A body above the first upload buffer is a multipart upload (lifecycle report, `multipart_sizing_rule`).\" The sizing rule is source-pinned and shared by every object storage disk"
+    },
+    {
+      "coefficient": "part_type",
+      "experiment_id": "boundaries.compact-below-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          9437160,
+          9437160
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/compact-below-bytes/k3"
+      ],
+      "status": "done",
+      "note": "cas boundary records: the part type each insert produced, the part_type derivation's output"
+    },
+    {
+      "coefficient": "part_type",
+      "experiment_id": "boundaries.wide-above-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          11534360,
+          11534360
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/wide-above-bytes/k3"
+      ],
+      "status": "done",
+      "note": "cas boundary records: the part type each insert produced, the part_type derivation's output"
+    },
+    {
+      "coefficient": "part_type",
+      "experiment_id": "boundaries.wide-equal-bytes",
+      "policy": "cas",
+      "span": {
+        "bytes_uncompressed": [
+          10485760,
+          10485760
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k1",
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k2",
+        "cost-20261024T154049Z/cas/boundaries/wide-equal-bytes/k3"
+      ],
+      "status": "done",
+      "note": "cas boundary records: the part type each insert produced, the part_type derivation's output"
     }
   ],
   "domain": {

@@ -661,6 +661,8 @@ class EvidenceScopeTest(unittest.TestCase):
                              "prediction_commit": None, "measurement_ids": ["cost-20261024T000000Z/s3/card/x/k1"], "status": "done"}]}
         self.assertTrue(any("needs borrowed_from" in p for p in artifacts.validate_coverage(cov)))
         cov["evidence"][0]["borrowed_from"] = "s3"
+        self.assertTrue(any("says why" in p for p in artifacts.validate_coverage(cov)))
+        cov["evidence"][0]["note"] = "the merge selector does not read the disk"
         self.assertEqual(artifacts.validate_coverage(cov), [])
         cov["evidence"][0]["borrowed_from"] = "cas"
         self.assertTrue(any("equals the row's policy" in p for p in artifacts.validate_coverage(cov)))

@@ -161,6 +161,10 @@
           "borrowed_from": {
             "type": "string",
             "description": "The policy whose records back this row; the row applies them to its own policy's variant. Without it, a row backs only its own policy's variant."
+          },
+          "note": {
+            "type": "string",
+            "description": "Why the row holds; required with borrowed_from (the owning report's statement that the value carries over)."
           }
         },
         "required": [

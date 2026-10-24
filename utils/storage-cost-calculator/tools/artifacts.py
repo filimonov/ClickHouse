@@ -382,7 +382,8 @@ def validate_coverage(d):
         "span": dict_of(pair(number)), "role": enum("fit", "holdout", "validation"),
         "prediction_commit": nullable(nonempty_string), "measurement_ids": list_of(nonempty_string),
         "status": enum("planned", "done", "consumed", "cut"), "borrowed_from": nonempty_string,
-    }, {"borrowed_from"})
+        "note": nonempty_string,
+    }, {"borrowed_from", "note"})
     spec = {
         "schema": literal("coverage/1"), "version": nonempty_string,
         "cards": list_of(card), "evidence": list_of(evidence),
@@ -405,6 +406,8 @@ def validate_coverage(d):
             source = row.get("borrowed_from", row["policy"])
             if source == row["policy"] and "borrowed_from" in row:
                 problems.append(f"$.evidence[{i}].borrowed_from: equals the row's policy {source}")
+            if "borrowed_from" in row and "note" not in row:
+                problems.append(f"$.evidence[{i}].note: a borrowed row says why the value carries over")
             for m in row["measurement_ids"]:
                 parts = m.split("/")
                 if len(parts) > 2 and parts[1] != source:
