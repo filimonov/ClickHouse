@@ -1,0 +1,114 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "io-sizes.narrow-compact-10k",
+  "policy": "local",
+  "inputs": {
+    "role": "holdout",
+    "model": "inserts write bytes per byte = r_large + c / insert_rows: a fixed per-part overhead (marks, checksums, columns, count, serialization and statistics files, page rounding) that does not grow with rows",
+    "r_large": 1.032244389270919,
+    "c_rows": 1330.4843655164304,
+    "c_rows_range": [
+      1257.5449077354554,
+      1475.8382760043273
+    ],
+    "fit_measurement_ids": [
+      "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k1",
+      "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k2",
+      "cost-20261024T171231Z/local/io-sizes/narrow-compact-1k/k3"
+    ],
+    "interpolation": "1.1653 at 10 000 rows; range = c range / 10000 +- the scalar rule (2 x spread + 10 % + 0.005)"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "baseline.write_bps.r1": {
+        "min": 0,
+        "basis": "derived",
+        "reason": "a counter delta is never negative"
+      },
+      "inserts.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "merges.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.max_request_bucket.write": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "reads.max_request_bucket.read": {
+        "max": 1048576,
+        "basis": "derived",
+        "reason": "write and read buffers are 1 MiB"
+      },
+      "inserts.io_bytes.write": {
+        "min": 0.9782144386241423,
+        "max": 1.3596126582916739,
+        "basis": "fit",
+        "reason": "r_large + c / 10000, c from io-sizes.narrow-compact-1k"
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part files are written through a buffer of DBMS_DEFAULT_BUFFER_SIZE",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromFile.h",
+      "line": 34
+    },
+    {
+      "claim": "DBMS_DEFAULT_BUFFER_SIZE is 1 MiB: a buffer flush writes at most that much",
+      "path": "tmp/src-26.8/src/Core/Defines.h",
+      "line": 22
+    },
+    {
+      "claim": "local reads use max_read_buffer_size_local_fs = 128 KiB",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 407
+    },
+    {
+      "claim": "it takes precedence over max_read_buffer_size for the local filesystem",
+      "path": "tmp/src-26.8/src/Interpreters/Context.cpp",
+      "line": 8979
+    },
+    {
+      "claim": "local_filesystem_read_method is pread_threadpool: reads are pread syscalls",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7168
+    },
+    {
+      "claim": "min_bytes_to_use_direct_io is 0: reads go through the page cache",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 1820
+    },
+    {
+      "claim": "fsync_after_insert is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 615
+    },
+    {
+      "claim": "fsync_part_directory is off",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 619
+    }
+  ],
+  "prediction_commit": "pending"
+}
