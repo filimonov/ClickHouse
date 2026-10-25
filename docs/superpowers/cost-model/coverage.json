@@ -2996,6 +2996,19 @@
           "status": "run"
         },
         {
+          "case_id": "n40",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
           "case_id": "n150",
           "policies": [
             "cas"
@@ -20938,6 +20951,23 @@
       ],
       "status": "consumed",
       "note": "predicted from the uncapped 1-16 fit; the refit with the 20-namespace sweep cap uses these records and needs a fresh hold-out"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n40",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          40,
+          40
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "d48e456e190",
+      "measurement_ids": [
+        "cost-20261025T080040Z/cas/gc-tables/n40/k1"
+      ],
+      "status": "done"
     }
   ],
   "domain": {

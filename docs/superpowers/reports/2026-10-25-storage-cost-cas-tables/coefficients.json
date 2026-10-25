@@ -44,7 +44,8 @@
     "cost-20261025T060213Z/cas/gc-tables/n16/k1",
     "cost-20261025T070618Z/cas/gc-tables/n8/k1",
     "cost-20261025T072322Z/cas/gc-tables/n150/k1",
-    "cost-20261025T072322Z/cas/gc-tables/n500/k1"
+    "cost-20261025T072322Z/cas/gc-tables/n500/k1",
+    "cost-20261025T080040Z/cas/gc-tables/n40/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -53,7 +54,7 @@
   "rule": "requests of one GC fold round in steady state, without its heartbeat pulse: the intake reads per changed table its new manifests and new log records, 1 _ckpt and up to 3 mount objects (2 answer 404; fewer as the process ages at 150-500 tables); the orphan-manifest sweep builds a protection view for at most sweep_namespace_budget namespaces per round (gc_round_sweep_namespace_budget = 20, Pool/CasPool.h:114), each reading its whole tail since the last snapshot plus 4 stream objects and 1 _ckpt; from the fourth fold GC prunes an old generation (LIST +1, DELETE 2). Deferred terms hold while the pool-wide cas/ns/stream/ listing fits one page: at 150 and 500 tables Deferred rounds listed up to 51 pages",
   "fit": {
    "method": "per family over folds 2-12 at 1, 4, 8, 16 tables (all family counts exact) and 150, 500 tables (stream and _ckpt exact except one 150-table fold that swept 8 namespaces at a page wrap); mount-object reads and the paged stream listing are not fitted",
-   "holdout": "consumed: gc-tables.n150 and gc-tables.n500 (run cost-20261025T072322Z) were predicted from the uncapped fit (fold GET 57534 and 191234) and measured 18665 and 43615; this refit needs a fresh hold-out",
+   "holdout": "done: gc-tables.n40 (run cost-20261025T080040Z, predictions d48e456e190) matched the capped law exactly per family in all 12 folds, mount objects at the 3N+1 bound (121 per fold), fold GET 9794. gc-tables.n150 and gc-tables.n500 (run cost-20261025T072322Z) were predicted from the uncapped fit (fold GET 57534 and 191234), measured 18665 and 43615, and are fit records of this law",
    "residuals": {}
   }
  },

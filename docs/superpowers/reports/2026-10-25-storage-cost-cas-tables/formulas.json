@@ -16,8 +16,15 @@
      "expr": {
       "kind": "add",
       "a": {
-       "kind": "input",
-       "id": "gc_round_requests_fold_get",
+       "kind": "lookup",
+       "table_id": "gc_round_requests_steady",
+       "keys": [
+        {
+         "kind": "const",
+         "value": "fold_get",
+         "dim": "enum:gc_round_term"
+        }
+       ],
        "dim": "count"
       },
       "b": {
@@ -30,8 +37,15 @@
          "dim": "count"
         },
         "b": {
-         "kind": "input",
-         "id": "gc_round_requests_fold_get_per_manifest",
+         "kind": "lookup",
+         "table_id": "gc_round_requests_steady",
+         "keys": [
+          {
+           "kind": "const",
+           "value": "fold_get_per_manifest",
+           "dim": "enum:gc_round_term"
+          }
+         ],
          "dim": "count"
         },
         "dim": "count"
@@ -55,8 +69,15 @@
           "dim": "count"
          },
          "b": {
-          "kind": "input",
-          "id": "gc_round_requests_fold_get_per_new_log_record",
+          "kind": "lookup",
+          "table_id": "gc_round_requests_steady",
+          "keys": [
+           {
+            "kind": "const",
+            "value": "fold_get_per_new_log_record",
+            "dim": "enum:gc_round_term"
+           }
+          ],
           "dim": "count"
          },
          "dim": "count"
@@ -71,8 +92,15 @@
            "dim": "count"
           },
           "b": {
-           "kind": "input",
-           "id": "gc_round_requests_fold_get_per_changed_table",
+           "kind": "lookup",
+           "table_id": "gc_round_requests_steady",
+           "keys": [
+            {
+             "kind": "const",
+             "value": "fold_get_per_changed_table",
+             "dim": "enum:gc_round_term"
+            }
+           ],
            "dim": "count"
           },
           "dim": "count"
@@ -88,8 +116,15 @@
              "dim": "count"
             },
             {
-             "kind": "input",
-             "id": "gc_round_sweep_namespace_budget",
+             "kind": "lookup",
+             "table_id": "gc_round_requests_steady",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "sweep_namespace_budget",
+               "dim": "enum:gc_round_term"
+              }
+             ],
              "dim": "count"
             }
            ],
@@ -105,15 +140,29 @@
              "dim": "count"
             },
             "b": {
-             "kind": "input",
-             "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+             "kind": "lookup",
+             "table_id": "gc_round_requests_steady",
+             "keys": [
+              {
+               "kind": "const",
+               "value": "fold_get_per_swept_tail_log_record",
+               "dim": "enum:gc_round_term"
+              }
+             ],
              "dim": "count"
             },
             "dim": "count"
            },
            "b": {
-            "kind": "input",
-            "id": "gc_round_requests_fold_get_per_swept_table",
+            "kind": "lookup",
+            "table_id": "gc_round_requests_steady",
+            "keys": [
+             {
+              "kind": "const",
+              "value": "fold_get_per_swept_table",
+              "dim": "enum:gc_round_term"
+             }
+            ],
             "dim": "count"
            },
            "dim": "count"
@@ -138,8 +187,15 @@
      "scope": "variant",
      "basis": "measured",
      "expr": {
-      "kind": "input",
-      "id": "gc_round_requests_fold_put",
+      "kind": "lookup",
+      "table_id": "gc_round_requests_steady",
+      "keys": [
+       {
+        "kind": "const",
+        "value": "fold_put",
+        "dim": "enum:gc_round_term"
+       }
+      ],
       "dim": "count"
      }
     },
@@ -152,8 +208,15 @@
      "scope": "variant",
      "basis": "measured",
      "expr": {
-      "kind": "input",
-      "id": "gc_round_requests_fold_list",
+      "kind": "lookup",
+      "table_id": "gc_round_requests_steady",
+      "keys": [
+       {
+        "kind": "const",
+        "value": "fold_list",
+        "dim": "enum:gc_round_term"
+       }
+      ],
       "dim": "count"
      }
     },
@@ -166,8 +229,15 @@
      "scope": "variant",
      "basis": "measured",
      "expr": {
-      "kind": "input",
-      "id": "gc_round_requests_fold_delete",
+      "kind": "lookup",
+      "table_id": "gc_round_requests_steady",
+      "keys": [
+       {
+        "kind": "const",
+        "value": "fold_delete",
+        "dim": "enum:gc_round_term"
+       }
+      ],
       "dim": "count"
      }
     }
