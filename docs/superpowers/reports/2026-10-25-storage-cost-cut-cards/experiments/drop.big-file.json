@@ -1,0 +1,66 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "drop.big-file",
+  "card": "drop",
+  "case_id": "big-file",
+  "policies": [
+    "s3plain"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1,
+      "old_parts_lifetime": 1,
+      "cleanup_delay_period": 1,
+      "max_cleanup_delay_period": 1,
+      "cleanup_delay_period_random_add": 0
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "tp",
+        "columns": "k UInt64, s FixedString(40) CODEC(NONE)",
+        "order_by": "k",
+        "partition_by": "k % 2",
+        "row_bytes": 48
+      }
+    ],
+    "inserts": [
+      {
+        "table": "tp",
+        "rows": 1000000,
+        "count": 1,
+        "insert": "INSERT INTO {table} SELECT number * 2 AS k, toFixedString(leftPad(toString(sipHash64(k, {seed})), 40, '0'), 40) AS s FROM numbers({rows})"
+      },
+      {
+        "table": "tp",
+        "rows": 1000,
+        "count": 1,
+        "insert": "INSERT INTO {table} SELECT number * 2 + 1 AS k, toFixedString(leftPad(toString(sipHash64(k, {seed})), 40, '0'), 40) AS s FROM numbers({rows})"
+      }
+    ],
+    "statements": [
+      {
+        "sql": "ALTER TABLE {db}.tp DROP PARTITION 0"
+      }
+    ],
+    "dropped": "tp/0",
+    "wait_outdated_removed": true,
+    "expected_rows": 1000
+  },
+  "scale": 1.0,
+  "repeats": 2,
+  "timeout_s": 600,
+  "description": "DROP PARTITION of one Wide part whose s.bin is 40 003 075 B (1 000 000 rows of FixedString(40) CODEC(NONE)), past the 32 MiB single-copy limit, on s3_plain_rewritable; a 1 000-row part stays."
+}

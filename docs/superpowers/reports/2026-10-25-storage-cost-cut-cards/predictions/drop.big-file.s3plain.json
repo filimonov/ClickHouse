@@ -1,0 +1,155 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "drop.big-file",
+  "policy": "s3plain",
+  "inputs": {
+    "dropped_part_files": 15,
+    "empty_cover_objects": 11,
+    "big_file_bytes": 40003075,
+    "min_upload_part_size": 16777216,
+    "max_single_operation_copy_size": 33554432,
+    "rule": "from drop.partition-2/-3 per dropped part: PUT = empty cover objects + 4; file copies = dropped part files + empty cover objects; HEAD = copies + 1; DELETE = 2 x copies + 2. A file past max_single_operation_copy_size is copied by CreateMultipartUpload + ceil(size / min_upload_part_size) UploadPartCopy + CompleteMultipartUpload instead of one CopyObject",
+    "layout": "clickhouse local reproduction with the same binary: Wide part of 15 files, s.bin 40 003 075 B"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 15,
+        "HeadObject": 27,
+        "CopyObject": 25,
+        "CreateMultipartUpload": 1,
+        "UploadPartCopy": 3,
+        "CompleteMultipartUpload": 1,
+        "DeleteObject": 54
+      }
+    },
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "a file object is stored as is under its directory's random prefix",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.cpp",
+      "line": 34
+    },
+    {
+      "claim": "an insert creates the temporary part directory",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 974
+    },
+    {
+      "claim": "a new directory writes its prefix.path object",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 111
+    },
+    {
+      "claim": "and reads its metadata back (HeadObject)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 125
+    },
+    {
+      "claim": "the part is renamed to its final name",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 983
+    },
+    {
+      "claim": "a rename rewrites prefix.path of every directory of the subtree",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 239
+    },
+    {
+      "claim": "a removed part is first renamed to delete_tmp_",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 1120
+    },
+    {
+      "claim": "then its files are unlinked one by one",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 1266
+    },
+    {
+      "claim": "an unlink copies the file aside",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 390
+    },
+    {
+      "claim": "a copy reads the source size first (HeadObject)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp",
+      "line": 1082
+    },
+    {
+      "claim": "deletes the source",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 393
+    },
+    {
+      "claim": "and deletes the copy at finalize",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 414
+    },
+    {
+      "claim": "the empty directory drops its prefix.path",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 297
+    },
+    {
+      "claim": "a recursive removal moves the subtree aside",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 644
+    },
+    {
+      "claim": "and deletes all its objects in one batch",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp",
+      "line": 706
+    },
+    {
+      "claim": "DROP PARTITION covers the dropped parts with an empty part",
+      "path": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp",
+      "line": 2949
+    },
+    {
+      "claim": "DROP PARTITION is allowed on a plain-rewritable disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 8249
+    },
+    {
+      "claim": "DROP TABLE drops all data",
+      "path": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp",
+      "line": 529
+    },
+    {
+      "claim": "a copy above max_single_operation_copy_size is a multipart copy",
+      "path": "tmp/src-26.8/src/IO/S3/copyS3File.cpp",
+      "line": 673
+    },
+    {
+      "claim": "parts of min_upload_part_size",
+      "path": "tmp/src-26.8/src/IO/S3/copyS3File.cpp",
+      "line": 347
+    },
+    {
+      "claim": "max_single_operation_copy_size defaults to 32 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 34
+    },
+    {
+      "claim": "min_upload_part_size defaults to 16 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 24
+    }
+  ],
+  "prediction_commit": "pending"
+}
