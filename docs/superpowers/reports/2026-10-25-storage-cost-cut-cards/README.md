@@ -16,6 +16,7 @@ each predicted and committed before its run. Results:
 |---|---|---|
 | Paced natural merges (§[Amplification](#amplification-result)) | rule fails: amplification 8.8 against 4.6 | `merge_effective_fan_in` valid for 50 000–100 000-row inserts only |
 | Chain-regime amplification law (§[Hold-out](#amplification-holdout)) | fails its hold-out: 8.258 against 7.754 ± 0.4465 | none; the law is evidence only |
+| Chain amplification constant (§[Constant](#amplification-constant)) | fails its hold-out at 8/s: 9.228 against 8.258–8.816 | none; the registry row notes the measured 1.8–2.0× |
 | EBS `peak_factor` (§[Peak bound](#peak-bound)) | constant fails: 28.2, 15.5 and 19.8; the peak is the largest merge | stays assumed, default 1; `ebs_peak_mibps_bound` shown as a note on the EBS merges cell |
 | `cas_relink_bytes_per_part` (§[Relink](#relink-derivation)) | constant fails below 30 000 rows; revised form passes | registry derivation from part type, granules and rows (basis fitted); the constant is retired |
 | `inserts_per_async_flush` (§[Async](#async-revised)) | rule fails below 20/s; revised rule passes | registry rule returns 1 when 1 / rate ≥ `async_insert_busy_timeout_min_ms` |
@@ -119,6 +120,32 @@ tables.
 - **What a reader can use:** for steady inserts of about 1 000 rows, expect write amplification 8.3–8.8 on local
   disk and at RustFS speed, about twice `write_amplification_rule`. A law for other part sizes needs runs at
   other part sizes; none were run.
+
+### Chain constant and its hold-out at 8/s {#amplification-constant}
+
+A second law, a constant for 1 000-row inserts, also fails its hold-out. `write_amplification_rule` keeps its form;
+its registry row now notes the measured gap.
+
+**Law.** Amplification of 1 000-row inserts that merges keep up with is a constant: 8.5371, the mean of the four chain
+records (16/s local burst, 1/s, 2/s, 4/s). Residuals −0.2791…+0.2703; tolerance = the largest, 0.2791.
+
+**Hold-out** (`amplification-run.8hz-10m`, 4 800 inserts at 8/s, `local` and `s3`; prediction `ff164ba5339`):
+
+| Run | Policy | Merges | Largest final part, inserts | Measured | Predicted | Verdict | Rule |
+|---|---|---|---|---|---|---|---|
+| `cost-20261025T160242Z` | `local` | 934 | 3 823 | 9.228 | 8.258–8.816 | fail | 5.233 |
+| `cost-20261025T160242Z` | `s3` | 934 | 3 823 | 9.228 | 8.258–8.816 | fail | 5.233 |
+
+The fan-in distribution also exceeded its bound (TV 0.0173 against 0.0156). The `s3` record has 31 ledger rows past
+the window cutoff.
+
+- **Amplification is not constant: it rises 0.4–0.5 each time the largest part grows about threefold.** Largest
+  final part and amplification: 398 inserts and 8.26 (600 inserts), 1 053 and 8.75–8.81 (1 200–2 400), 3 823 and
+  9.23 (4 800). The chain sets a floor near 8.3; merges of chain results add to it as the table grows. A law needs
+  the largest part as a function of the inserts per partition, which these runs do not cover past 4 800 inserts.
+- **Measured against the rule:** 8.26–9.23 against 4.08–5.23 at 1–8 inserts/s, 1.8–2.0× on `local` and `s3`
+  alike. Presets with 1 000-row inserts price merge writes at about half the measured value; the
+  `merge_effective_fan_in` range narrowing marks them extrapolated.
 
 ## CAS relink bytes per part {#relink}
 

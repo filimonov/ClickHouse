@@ -4939,7 +4939,7 @@
     {
       "id": "write_amplification_rule",
       "block": "merges",
-      "label": "Write amplification: bytes written by inserts and merges per inserted byte: 1 + rewrite levels at merge_size_ratio with effective fan-in merge_effective_fan_in (levels capped at 12)",
+      "label": "Write amplification: bytes written by inserts and merges per inserted byte: 1 + rewrite levels at merge_size_ratio with effective fan-in merge_effective_fan_in (levels capped at 12) Measured 1.8-2.0x this value for paced or local 1000-row inserts (8.26-9.23 against 4.08-5.23 at 1-8 inserts/s): the selector chains small parts; no law for that passed a hold-out (see the cut-cards report).",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",

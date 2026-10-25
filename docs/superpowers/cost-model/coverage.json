@@ -787,6 +787,20 @@
           "duration_s": 660,
           "priority": "P2",
           "status": "run"
+        },
+        {
+          "case_id": "8hz-10m",
+          "policies": [
+            "local",
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 660,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -22505,6 +22519,50 @@
       ],
       "status": "done",
       "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "write_amplification_rule",
+      "experiment_id": "amplification-run.8hz-10m",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          4800
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "ff164ba5339",
+      "measurement_ids": [
+        "cost-20261025T160242Z/local/amplification-run/8hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "fitted constant 8.5371 +- 0.2791 failed: measured 9.228 (one more level at 4800 inserts); the rule gives 5.233"
+    },
+    {
+      "coefficient": "write_amplification_rule",
+      "experiment_id": "amplification-run.8hz-10m",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          4800
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "ff164ba5339",
+      "measurement_ids": [
+        "cost-20261025T160242Z/s3/amplification-run/8hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "fitted constant 8.5371 +- 0.2791 failed: measured 9.228 (one more level at 4800 inserts); the rule gives 5.233"
     }
   ],
   "domain": {
