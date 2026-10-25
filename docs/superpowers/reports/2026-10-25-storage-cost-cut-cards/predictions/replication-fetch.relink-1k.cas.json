@@ -1,0 +1,124 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-fetch.relink-1k",
+  "policy": "cas",
+  "inputs": {
+    "parts": 3,
+    "part_rows": 1000,
+    "part_type": "Compact",
+    "coefficient": "cas_relink_bytes_per_part (replication report)",
+    "checked_quantity": "observations.interserver.relay0.from_target (originator to follower), checked offline",
+    "constant": {
+      "value_per_part": 19428.8,
+      "total": 58286.4,
+      "min": 55372.1,
+      "max": 61200.7,
+      "reason": "the registry constant with its tolerance rel 0.05"
+    },
+    "form": {
+      "rule": "per part: a + g x granules + f x (files - 11) + inline bytes; inline bytes = sum of the part files that are not .bin, marks or primary.idx (partFileMustStayBlob), sizes from a clickhouse local reproduction of the same inserts with the same binary",
+      "a": 2547.0,
+      "g": 16.65,
+      "f": 23.0,
+      "parts": [
+        {
+          "rows": 1000,
+          "part_type": "Compact",
+          "bytes_on_disk": 32067,
+          "files": 11,
+          "inline_bytes": 10440
+        },
+        {
+          "rows": 1000,
+          "part_type": "Compact",
+          "bytes_on_disk": 32144,
+          "files": 11,
+          "inline_bytes": 10481
+        },
+        {
+          "rows": 1000,
+          "part_type": "Compact",
+          "bytes_on_disk": 32203,
+          "files": 11,
+          "inline_bytes": 10522
+        }
+      ],
+      "per_part": [
+        13003.6,
+        13044.6,
+        13085.6
+      ],
+      "total": 39133.9,
+      "min": 38742.6,
+      "max": 39525.3,
+      "tolerance": "rel 0.01: the five fit records sit within 0.02 %, the 1 000-row record (not in the fit) within 0.11 %",
+      "fit_measurement_ids": [
+        "cost-20261024T115147Z/cas/replication-fetch/{insert,insert-wide,merge,mutation}/k1..k3",
+        "validation report replication-fetch.insert-3 k1..k3"
+      ]
+    }
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "fetched_parts": 3
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "the sender sends every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "each sent file is read through the disk: one GetObject per object on the sender",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file: one PutObject per file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, checksums, index granularity, primary index and row count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a fetch writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "on a content-addressed disk the sender offers a relink: the manifest, not the blobs",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 425
+    },
+    {
+      "claim": "the receiver builds the part from shared-pool blob references, stages its own manifest and precommits it",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h",
+      "line": 199
+    }
+  ],
+  "prediction_commit": "pending"
+}
