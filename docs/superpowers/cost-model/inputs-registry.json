@@ -7683,27 +7683,110 @@
     {
       "id": "cas_table_drops_per_s",
       "block": "cas",
-      "label": "DROP TABLE per second",
-      "kind": "input",
+      "label": "DROP TABLE per second: tables dropped per month / 2 628 000 s",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "1/s",
       "value_type": "number",
       "enum": null,
       "table": null,
-      "default": 0,
-      "rule": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_month",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+      },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
-        "ref": "preset default",
+        "ref": "a month is 730 h (2 628 000 s), the month of every per-month input",
         "version": "0.3.0"
       },
       "hint": null,
       "ui": {
-        "tier": "advanced",
+        "tier": "hidden",
         "name": null,
         "short": "DROP TABLE per second"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_table_create_requests",
+      "block": "cas",
+      "label": "Requests of one CREATE TABLE on a CAS disk: GET 9, GET 404 2, HEAD 404 1, PUT 4, LIST 5 (21); catalog birth, first _ckpt, ref-log recovery, format_version.txt, table-start listings",
+      "kind": "derivation",
+      "scope": "replica",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "a": {
+          "kind": "add",
+          "a": {
+            "kind": "add",
+            "a": {
+              "kind": "add",
+              "a": {
+                "kind": "const",
+                "value": 9,
+                "dim": "count"
+              },
+              "b": {
+                "kind": "const",
+                "value": 2,
+                "dim": "count"
+              },
+              "dim": "count"
+            },
+            "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "count"
+            },
+            "dim": "count"
+          },
+          "b": {
+            "kind": "const",
+            "value": 4,
+            "dim": "count"
+          },
+          "dim": "count"
+        },
+        "b": {
+          "kind": "const",
+          "value": 5,
+          "dim": "count"
+        },
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:1297",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Requests per CREATE TABLE"
       },
       "status": "ok"
     },
@@ -8050,7 +8133,7 @@
     {
       "id": "cas_tables",
       "block": "cas",
-      "label": "Tables on the CAS disk with inserts",
+      "label": "MergeTree tables on the CAS disk",
       "kind": "input",
       "scope": "cluster",
       "unit": "count",
@@ -8066,11 +8149,80 @@
         "ref": "preset default",
         "version": "0.3.0"
       },
-      "hint": null,
+      "hint": {
+        "sql": "SELECT count() FROM system.tables WHERE engine LIKE '%MergeTree' AND storage_policy = '<cas policy>'",
+        "mapping": {
+          "cas_tables": "count()"
+        }
+      },
       "ui": {
-        "tier": "advanced",
+        "tier": "workload",
         "name": null,
-        "short": "Tables on the CAS disk"
+        "short": "Tables on the disk"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_table_creates_per_month",
+      "block": "cas",
+      "label": "CREATE TABLE statements per month for MergeTree tables on the CAS disk",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Create' AND query ILIKE 'CREATE TABLE%' AND event_date >= today() - 30",
+        "mapping": {
+          "cas_table_creates_per_month": "CREATE TABLE statements over 30 days"
+        }
+      },
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Tables created per month"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_table_drops_per_month",
+      "block": "cas",
+      "label": "DROP TABLE statements per month for MergeTree tables on the CAS disk",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Drop' AND query ILIKE 'DROP TABLE%' AND event_date >= today() - 30",
+        "mapping": {
+          "cas_table_drops_per_month": "DROP TABLE statements over 30 days"
+        }
+      },
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Tables dropped per month"
       },
       "status": "ok"
     },

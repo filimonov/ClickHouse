@@ -1450,39 +1450,230 @@
       "a": {
        "kind": "mul",
        "a": {
-        "kind": "input",
-        "id": "cas_table_drops_per_s",
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_parts_per_dropped_table",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 2,
+           "dim": "1"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "const",
+          "value": 3,
+          "dim": "count"
+         },
+         "dim": "count"
+        },
         "dim": "1/s"
        },
        "b": {
-        "kind": "add",
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "input",
+       "id": "replicas",
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
         "a": {
-         "kind": "mul",
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "add",
          "a": {
-          "kind": "input",
-          "id": "cas_parts_per_dropped_table",
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_parts_per_dropped_table",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 2,
+           "dim": "1"
+          },
           "dim": "count"
          },
          "b": {
           "kind": "const",
           "value": 2,
-          "dim": "1"
+          "dim": "count"
          },
          "dim": "count"
         },
-        "b": {
-         "kind": "const",
-         "value": 3,
-         "dim": "count"
-        },
-        "dim": "count"
+        "dim": "1/s"
        },
-       "dim": "1/s"
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
       },
       "b": {
-       "kind": "const",
-       "value": 2628000,
-       "dim": "s"
+       "kind": "input",
+       "id": "replicas",
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "HeadObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "input",
+       "id": "replicas",
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "input",
+       "id": "replicas",
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_drops_per_s",
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2,
+         "dim": "count"
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "input",
+       "id": "replicas",
+       "dim": "count"
       },
       "dim": "count"
      }
@@ -1501,38 +1692,53 @@
        "kind": "mul",
        "a": {
         "kind": "input",
-        "id": "cas_table_drops_per_s",
-        "dim": "1/s"
-       },
-       "b": {
-        "kind": "add",
-        "a": {
-         "kind": "mul",
-         "a": {
-          "kind": "input",
-          "id": "cas_parts_per_dropped_table",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "const",
-          "value": 2,
-          "dim": "1"
-         },
-         "dim": "count"
-        },
-        "b": {
-         "kind": "const",
-         "value": 2,
-         "dim": "count"
-        },
+        "id": "cas_table_creates_per_month",
         "dim": "count"
        },
-       "dim": "1/s"
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
       },
       "b": {
        "kind": "const",
-       "value": 2628000,
-       "dim": "s"
+       "value": 9,
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "client_error",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "predicted",
+     "status": 404,
+     "expr": {
+      "kind": "mul",
+      "a": {
+       "kind": "mul",
+       "a": {
+        "kind": "input",
+        "id": "cas_table_creates_per_month",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "const",
+       "value": 2,
+       "dim": "count"
       },
       "dim": "count"
      }
@@ -1540,38 +1746,39 @@
     {
      "row_type": "request",
      "op_kind": "HeadObject",
-     "outcome_class": "ok",
+     "outcome_class": "client_error",
      "category": null,
      "route": null,
      "scope": "variant",
      "basis": "predicted",
+     "status": 404,
      "expr": {
       "kind": "mul",
       "a": {
        "kind": "mul",
        "a": {
         "kind": "input",
-        "id": "cas_table_drops_per_s",
-        "dim": "1/s"
-       },
-       "b": {
-        "kind": "const",
-        "value": 1,
+        "id": "cas_table_creates_per_month",
         "dim": "count"
        },
-       "dim": "1/s"
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
       },
       "b": {
        "kind": "const",
-       "value": 2628000,
-       "dim": "s"
+       "value": 1,
+       "dim": "count"
       },
       "dim": "count"
      }
     },
     {
      "row_type": "request",
-     "op_kind": "DeleteObject",
+     "op_kind": "PutObject",
      "outcome_class": "ok",
      "category": null,
      "route": null,
@@ -1583,20 +1790,20 @@
        "kind": "mul",
        "a": {
         "kind": "input",
-        "id": "cas_table_drops_per_s",
-        "dim": "1/s"
-       },
-       "b": {
-        "kind": "const",
-        "value": 1,
+        "id": "cas_table_creates_per_month",
         "dim": "count"
        },
-       "dim": "1/s"
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
       },
       "b": {
        "kind": "const",
-       "value": 2628000,
-       "dim": "s"
+       "value": 4,
+       "dim": "count"
       },
       "dim": "count"
      }
@@ -1615,20 +1822,20 @@
        "kind": "mul",
        "a": {
         "kind": "input",
-        "id": "cas_table_drops_per_s",
-        "dim": "1/s"
-       },
-       "b": {
-        "kind": "const",
-        "value": 2,
+        "id": "cas_table_creates_per_month",
         "dim": "count"
        },
-       "dim": "1/s"
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
       },
       "b": {
        "kind": "const",
-       "value": 2628000,
-       "dim": "s"
+       "value": 5,
+       "dim": "count"
       },
       "dim": "count"
      }
@@ -1640,6 +1847,11 @@
     {
      "kind": "input",
      "id": "cas_foreground_ref_removal_requests",
+     "dim": "count"
+    },
+    {
+     "kind": "input",
+     "id": "cas_table_create_requests",
      "dim": "count"
     }
    ]

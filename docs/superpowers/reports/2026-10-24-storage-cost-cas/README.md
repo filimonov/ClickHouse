@@ -30,7 +30,7 @@ exactly on `cas` and `cas_cached` against a per-stream and per-part rule, each w
   through the whole run on the pinned RustFS 1.0.0-beta.9 binary, sha256 `bf4aca66af21…`.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`.
 - **Cards:** `utils/cas-yardstick/yardstick/cost/cards/cas.py` (`CasBranches`, `CasDrop`, `GcLifecycle`, `GcIdle`,
-  `GcScale`, `Lease`, `GcUnderLoad`) and `cards/ops.py` (`ColdSelect`, `Startup`, on `cas` and `cas_cached`);
+  `GcScale`, `GcTables`, `Lease`, `GcUnderLoad`) and `cards/ops.py` (`ColdSelect`, `Startup`, on `cas` and `cas_cached`);
   manifests in `experiments/`, predictions in `predictions/`.
 - **Cut to meet the campaign deadline** (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)): `gc-scale.mounts-2.10k`, `gc-scale.refgrowth-low.10k`,
   `gc-scale.refgrowth-high.10k`. The `mounts` and `ref_growth` terms of `gc_round_requests` are unsupported.
@@ -297,6 +297,50 @@ per ref log record, PUT 5, LIST 4. Deferred rounds: GET 12, PUT 1, LIST 3.
 The mount object takes one `PutObject` per renewal and nothing else. The GET and LIST are the table cleanup listing,
 priced in the `lease` cell.
 
+### Table count {#results-tables}
+
+Run `cost-20261025T060213Z` (start 06:02:13Z) at rig commit `a2004c7dd62`, `rig_dirty` false, RustFS 1.0.0-beta.9
+(sha256 `bf4aca66af21…`), one pass per case, `cas` only. Predictions were committed in `049fbdc4a6c` from the formulas
+of that commit, before the run. One uncited smoke pass of a 2-table, 2-minute variant ran before it
+(`cost-20261025T060047Z`). **Every hold-out except one table failed:** the fold base and the fixed start requests grow
+with the number of tables.
+
+- **`gc-tables.n{1,4,16}`:** N tables on one pool, one Compact part (5 columns, 20 000 rows) per table per minute for
+  12 minutes. Under `SYSTEM CAS GC STOP` the card runs 6 rounds a minute, 10 s apart, the first after the inserts, so
+  inserts and rounds never overlap. 12 minutes hold 2 cleanup periods (305 s).
+- **`startup.cas-tables-{1,4,16}`:** N tables of 2 Compact parts each; stop, start and `count()` per table in the window.
+
+| Case | N | Predicted | Measured | Deviation |
+|---|---|---|---|---|
+| `gc-tables`, 12 fold rounds, GET | 1 | 462 | 616 | +154 (+33 %) |
+| | 4 | 1 200 | 1 762 | +562 (+47 %) |
+| | 16 | 4 152 | 6 346 | +2 194 (+53 %) |
+| `gc-tables`, 12 fold rounds, PUT / LIST / DELETE | 1, 4, 16 | 72 / 48 / 0 | 72 / 57 / 18 | LIST +9, DELETE +18 |
+| `gc-tables`, 60 Deferred rounds, GET / PUT / LIST | 1, 4, 16 | 780 / 120 / 180 | 780 / 120 / 180 | 0 |
+| `gc-tables`, cleanup listings per table | 1, 4, 16 | 1–12 | 2 | inside |
+| `gc-tables`, foreground (inserts and listings) | 1, 4, 16 | PUT 9, HEAD 1, GET 7 per insert + 1 per table | as predicted | 0 |
+| `startup.cas-tables-1`, GET / PUT / LIST | 1 | 40 / 11–12 / 7 | 40 / 11 / 7 | 0 (ok) |
+| `startup.cas-tables-4`, GET / PUT / LIST | 4 | 64 / 11–12 / 7 | 106 / 17 / 22 | +42 / +5 / +15 |
+| `startup.cas-tables-16`, GET / PUT / LIST | 16 | 160 / 11–12 / 7 | 370 / 41 / 82 | +210 / +29 / +75 |
+
+HEAD 6 and DELETE 3 per start held at every N. Fit from the three points; residual 0 for every fold after the first
+of a process and for every start:
+
+- **Fold round**, without its heartbeat pulse: GET 19 + 1 per new manifest + 1 per tail log record + **12 per
+  table**; PUT 5; LIST 4. Per table: 7 `ref_stream` GETs beyond the tail (2xx), 2 `_ckpt` GETs and 3 GETs of the
+  table's mount objects under `gc/server-roots/<srid>/store/…/mount` (2 of them 404). From the fourth fold on, GC
+  also lists an old `gc/gen/<n>/` and deletes its 2 objects: LIST 5, DELETE 2.
+- **First fold of a process:** GET 13 + per table 1 `_ckpt` and 3 mount objects, plus the new manifests and records.
+- **Deferred round:** GET 12, PUT 1, LIST 3 at every N, as fitted at one table.
+- **Start**, besides parts and log records: answered 2xx GET 17 + **11 per table**, PUT 7 + **2 per table**, LIST 2 +
+  **5 per table**, HEAD 3, DELETE 2; answered 4xx GET 1 + **3 per table**, PUT 2, HEAD 3, DELETE 1. At one table
+  these are the fitted `cas_startup_requests` and `cas_startup_error_requests`.
+- **Fold duration** (folds after the first): 28–52 ms at N 1, 53–115 ms at N 4, 125–339 ms at N 16.
+
+The fit on N 1 and N 16 reproduces N 4 exactly, but it was not committed before the run: the six hold-outs are
+consumed and the per-table terms need a fresh hold-out (another N, or tables that do not all take inserts). Every
+table took inserts each minute; a fold over idle tables is not measured.
+
 ### Cold reads and startup {#results-reads}
 
 Run `cost-20261024T201554Z`; foreground of caller `r1`, every outcome. Predictions committed at `80e7b064858`,
@@ -435,6 +479,7 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 | run `cost-20261024T075656Z` | `drop-60s` foreground PUT range assumed 70–110, measured 113 (the graph gives 113) | consumed; `drop-60s-12` with derived ranges predicted before its run |
 | run `cost-20261024T082909Z` | the lease cases expected no foreground; an idle table lists its files once per cleanup run | lease rate made source-pinned with both cases as validation; the listing recorded as a gap |
 | smoke `cost-20261024T200614Z` | `cold-select` and `startup` read `system.remote_data_paths` inside the window; on a CAS disk that query reads the catalog, lists the table and probes roots (GET 17, HEAD 6, LIST 6 per read) | card fix: CAS policies snapshot the layout in the teardown (`test_cas_policies_snapshot_the_layout_in_the_teardown_before_the_drop`) |
+| run `cost-20261025T060213Z` | fold rounds and starts were priced with no per-table base; each table adds 12 GETs to a fold and GET 14, PUT 2, LIST 5 to a start | hold-outs consumed; per-table terms fitted at 1, 4 and 16 tables, awaiting a fresh hold-out (§[Table count](#results-tables)) |
 
 ## Gaps and limitations {#gaps}
 
@@ -452,10 +497,21 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
   has one blob (`data.bin`) and inline marks.
 - **Cached misses** are priced at the bound of 2 per stream. The cases measured fewer (1.08 to 1.5 per part and
   stream) because their equal marks files share one blob across columns and parts; distinct marks reach the bound.
-- **Startup with more tables.** The fixed start requests were measured with one table on the disk
-  (`cas_tables` 1); catalog, `_ckpt` and table file reads per extra table are not measured. Outdated parts and retained
+- **Startup with more tables.** A start costs per extra table GET 14 (3 of them 404), PUT 2 and LIST 5, measured at
+  1–16 tables (§[Table count](#results-tables)); the cells still price the one-table fixed requests. Outdated parts and retained
   mutation entries are priced from the source like active parts; the cases have neither. The log replay assumes no
   snapshot within the tail (`cas_ref_log_tail_records` ≤ 256).
+- **Table count, CREATE and DROP TABLE.** The page takes tables on the disk and tables created and dropped per month
+  as workload. The per-table terms (cleanup listing in `lease`, ref log tail in `recovery` and `gc`) are formulas
+  from source verified at one table. CREATE TABLE is 21 requests per replica in `deletes`
+  (`cas_table_create_requests`, `basis: derived`), the same in each of the 43 fresh CREATEs of the rig's setup
+  ledgers: catalog GET 6 and PUT 2 for the namespace birth (`Pool/CasRefLedger.cpp:640`, `:4952`, `:1323`;
+  `Pool/CasRefCatalog.cpp:667`, `:698`, `:643`), `_ckpt` GET 404 and PUT (`Pool/CasRefCatalog.cpp:616`), `_ckpt` GET 2
+  and `_log` GET 404 for the first recovery (`Pool/CasRefLedger.cpp:840`, `:967`, `:1267`), `format_version.txt` HEAD
+  404 and PUT (`src/Storages/MergeTree/MergeTreeData.cpp:613`, `Pool/CasPlainObjects.cpp:19`), and at table start 5
+  LISTs of the table files (`ContentAddressedMetadataStorage.cpp:1898`; `src/Storages/MergeTree/MergeTreeData.cpp:2980`,
+  `:4028`, `src/Storages/StorageMergeTree.cpp:1634`) plus one catalog GET seen in the ledgers but not traced to a line.
+  A DROP or CREATE runs on each replica's own namespace, so both are priced per replica.
 - **Multipart blobs.** A blob above the first upload buffer (32 MiB) is a multipart upload; the `inserts` cell prices
   one `PutObject` per blob. `staging-peak` blobs were 32 012 225 B, just below the buffer.
 - **Snapshot regime.** Past 256 ref log records since a table's last snapshot, a fold reads each record about twice
