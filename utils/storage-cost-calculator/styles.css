@@ -28,7 +28,7 @@
 }
 
 * { box-sizing: border-box; }
-/* clip, not hidden: hidden makes body a scroll container and the sticky inputs panel stops sticking. */
+/* clip, not hidden: hidden makes body a scroll container. */
 html, body { margin: 0; overflow-x: clip; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 0 24px 48px; }
 h1, h2, h3, h4 { margin: 0 0 8px; line-height: 1.25; }
@@ -48,7 +48,7 @@ button, input, select { font: inherit; color: inherit; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0; max-width: 1400px; margin: 0 auto; }
 .sub { color: var(--mute); margin: 4px 0 0; }
 .layout { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; align-items: start; max-width: 1400px; margin: 0 auto; }
-.panel-inputs { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.panel-inputs { min-width: 0; }
 .panel-results { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .panel-results > div:empty { display: none; }
 
@@ -203,6 +203,10 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
 @media (max-width: 600px) {
   /* The breakdown stacks: one block per workload type, each cell labelled with its column. */
   .breakdown thead { display: none; }
+  /* Phone: the form first, so the inputs are on the first screen; then the cards, then the breakdown. */
+  #presets { order: -3; }
+  #inputs { order: -2; }
+  #cards { order: -1; }
   .breakdown, .breakdown tbody, .breakdown tr, .breakdown th, .breakdown td { display: block; width: 100%; }
   .breakdown tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
   .breakdown th[scope="row"] { border: 0; padding: 4px 0; }
@@ -295,6 +299,12 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .field-row select { flex: 1 1 auto; min-width: 0; }
 /* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
 @media (min-width: 901px) {
+/* The price list closes the preset row; the preset sentence is one line, the rest is behind its (i). */
+.price-pick { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
+.price-pick .field-label { margin: 0; white-space: nowrap; }
+.price-pick select { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
+.scenario-short { display: flex; align-items: center; min-width: 0; }
+.scenario-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .layout { grid-template-columns: minmax(320px, 460px) minmax(0, 1fr); }
   .panel-inputs .panel-block { padding: 10px 14px; margin-bottom: 8px; }
   .panel-inputs .pill { padding: 2px 10px; font-size: 14px; }
@@ -324,4 +334,18 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 }
 @media (min-width: 901px) {
   .panel-inputs [data-block="simple"] .field { grid-template-columns: minmax(0, 44%) minmax(0, 1fr) minmax(150px, 38%); }
+}
+/* Desktop form density: the form with every disclosure closed fits a 900 px high screen at 1440 px wide. */
+@media (min-width: 901px) {
+  .panel-inputs .panel-block h2 { margin: 0 0 2px; font-size: 16px; }
+  .panel-inputs [data-block="simple"] .field { padding: 1px 0; }
+  .panel-inputs .settings-grid .field { padding: 1px 0; row-gap: 1px; }
+  .panel-inputs .settings-grid .control input, .panel-inputs .settings-grid .field-control > select { padding-top: 1px; padding-bottom: 1px; }
+  .panel-inputs .quick { flex-wrap: nowrap; }
+  .panel-inputs .quick .pill-small { white-space: nowrap; padding: 0 6px; font-size: 11px; line-height: 18px; }
+}
+/* Wide screens: each Notes cell is one line; narrower tables let it wrap rather than scroll sideways. */
+@media (min-width: 1400px) {
+  .col-note { white-space: nowrap; }
+  .notes-row td { padding-left: 4px; padding-right: 4px; }
 }

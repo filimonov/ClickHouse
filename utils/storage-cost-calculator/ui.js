@@ -156,10 +156,11 @@
     const sc = page.scenarios.map((s) => `<button type="button" class="pill" data-action="scenario" data-id="${esc(s.id)}" aria-pressed="${s.id === page.scenario}">${esc(s.label)}</button>`).join('');
     const current = page.scenarios.find((s) => s.id === page.scenario);
     const pr = page.prices.map((p) => `<option value="${esc(p.id)}"${p.id === page.price_preset ? ' selected' : ''}>${esc(p.label)}</option>`).join('');
+    // The price list sits in the preset row: one line less on a form that has to fit one screen.
     return '<section class="panel-block"><h2>Workload</h2>'
-      + `<div class="pills" role="group" aria-label="Scenario">${sc}</div>`
-      + `${current ? `<p class="mute scenario-short">${esc(shortText(current.description))}${infoButton({ 'info-kind': 'scenario', id: current.id }, current.label)}</p>` : ''}`
-      + `<label class="field-row"><span class="field-label">Prices</span><select data-action="price">${pr}</select></label></section>`;
+      + `<div class="pills" role="group" aria-label="Scenario">${sc}`
+      + `<label class="price-pick"><span class="field-label">Prices</span><select data-action="price">${pr}</select></label></div>`
+      + `${current ? `<p class="mute scenario-short"><span class="scenario-text">${esc(shortText(current.description))}</span>${infoButton({ 'info-kind': 'scenario', id: current.id }, current.label)}</p>` : ''}</section>`;
   }
 
   function fieldTags(f) {
@@ -226,10 +227,9 @@
   // assumptions. Hidden rows (table keys, model constants) are only in the info dialog.
   function renderInputs(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
-    const groups = vm.inputs.groups.map((g) => `<p class="group-note">${esc(g.label)}. Lock two; the third is derived.</p>`).join('');
     const of = (b, tier) => b.fields.filter((f) => f.tier === tier);
     const workload = vm.inputs.blocks.flatMap((b) => of(b, 'workload'));
-    const head = `<section class="panel-block" data-block="simple" aria-label="Workload inputs">${groups}${workload.map((f) => renderField(f, page, true)).join('')}</section>`;
+    const head = `<section class="panel-block" data-block="simple" aria-label="Workload inputs">${workload.map((f) => renderField(f, page, true)).join('')}</section>`;
     const details = (id, label, body, extra) => `<details class="block" data-block="${esc(id)}"${page.open_blocks.includes(id) ? ' open' : ''}>`
       + `<summary>${esc(label)}${extra || ''}</summary><div class="block-body">${body}</div></details>`;
     const overridden = (fs) => (fs.some((f) => f.overridden) ? ` ${badge('overridden', 'accent')}` : '');
