@@ -130,15 +130,12 @@
   const REQUEST_LABELS = {
     put_copy_post_list: 'PUT, COPY, POST and LIST requests', get_and_other: 'GET and other requests', delete_cancel: 'DELETE and cancel requests',
     class_a: 'Class A operations', class_b: 'Class B operations', free_ops: 'Free operations',
-    write_ops: 'Write operations', list_create_container_ops: 'List and create container operations', read_ops: 'Read operations',
-    other_ops: 'All other operations', delete_free: 'Delete operations', no_request: 'S3 calls with no Blob Storage request',
   };
   const BLOCK_SUFFIX = { block_capacity: 'capacity', block_iops: 'IOPS above baseline', block_mibps: 'throughput above baseline' };
   // The billing contract keeps AWS rule ids (`block.gp3`, `ec2_*` routes) for every provider; these are the words a
   // non-AWS preset shows instead. `custom` copies AWS and keeps its words.
   const PROVIDER_WORDS = {
     gcs: { storage: 'GCS storage', block: 'Hyperdisk Balanced', ec2_s3_same_region: 'Transfer VM to GCS in the same region', ec2_ec2_cross_az: 'Transfer VM to VM across zones' },
-    azure: { storage: 'Blob storage', block: 'Premium SSD v2', ec2_s3_same_region: 'Transfer VM to Blob storage in the same region', ec2_ec2_cross_az: 'Transfer VM to VM across availability zones' },
   };
   const words = (preset) => PROVIDER_WORDS[preset.id] || {};
   function transferLabel(ruleId, preset) {
@@ -162,7 +159,8 @@
   const PRICES = {
     'aws-us-east-1': { label: 'AWS us-east-1', source: 'contract', structure_only: false },
     gcs: { label: 'GCS us-central1', source: 'contract', structure_only: false },
-    azure: { label: 'Azure East US', source: 'contract', structure_only: false },
+    // ClickHouse on Azure Blob Storage is not supported by this model yet; the preset stays without prices.
+    azure: { label: 'Azure', source: 'contract', structure_only: true, note: 'not supported' },
     custom: { label: 'Custom', source: 'custom', base: 'aws-us-east-1', structure_only: false },
   };
 
