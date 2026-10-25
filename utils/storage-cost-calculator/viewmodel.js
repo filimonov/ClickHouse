@@ -190,7 +190,8 @@
   const joinWords = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
   // One plain sentence per column state; the full reason with families and source cites is in the info dialog.
-  function cardSentence(v, vr, contract, inputs) {
+  const blockOf = (preset) => (preset ? presets().blockName(preset) : 'gp3');
+  function cardSentence(v, vr, contract, inputs, preset) {
     if (vr.state === 'ok') return null;
     const label = variantLabel(v);
     const hit = REASONS.find(([re]) => re.test(vr.reason || ''));
@@ -209,10 +210,11 @@
       }
       case 'unavailable': {
         const bad = infeasibleLayout(vr.reason);
+        const blk = blockOf(preset);
         if (bad && bad.need_gib !== null) {
-          return `${label} needs ${fmtSize(bad.need_gib)} per replica; the largest gp3 layout is ${bad.volumes} volumes of ${fmtQuantity(bad.max_gib, 'GiB')} (${fmtQuantity(bad.volumes * bad.max_gib, 'GiB')})`;
+          return `${label} needs ${fmtSize(bad.need_gib)} per replica; the largest ${blk} layout is ${bad.volumes} volumes of ${fmtQuantity(bad.max_gib, 'GiB')} (${fmtQuantity(bad.volumes * bad.max_gib, 'GiB')})`;
         }
-        if (bad) return `${label}: no gp3 volume layout meets this workload's demand`;
+        if (bad) return `${label}: no ${blk} volume layout meets this workload's demand`;
         const manual = /manual provisioning with volumes_per_replica = \S+ needs (\w+)/.exec(vr.reason || '');
         if (manual) return `${label}: the manual volume layout needs a value for ${(contract.registry.find((q) => q.id === manual[1]) || {}).label || manual[1]}`;
         return ops.length ? `${label}: ${joinWords(ops.map(opWord))} not measured` : `${label}: not measured for this workload`;
@@ -335,17 +337,20 @@
 
   function buildCards(result, contract, preset, pageState, inputs, split) {
     const best = cheapestOf(result, contract, split, preset);
+    // An input the page refused is the reason a column has no result.
+    const refusals = inputs ? inputs.blocks.flatMap((b) => b.fields).filter((f) => f.refused).map((f) => f.refused) : [];
     return contract.variants.map((v) => {
       const vr = result.variants[v];
       if (!vr) throw new Error(`result has no variant ${v}`);
       if (result.cheapest === v && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
       const cheapest = best.variant === v && pageState === 'ok';
       const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr, split, preset) : [];
-      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated || exCells.length > 0,
+      const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs, preset), extrapolated: !!vr.extrapolated || exCells.length > 0,
         extrapolated_cells: exCells.length, extrapolated_text: exCells.length ? `extrapolated: ${exCells.length} ${exCells.length === 1 ? 'cell' : 'cells'}` : vr.extrapolated ? 'extrapolated' : null, cheapest,
         cheapest_text: cheapest ? best.text : null, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
       if (vr.state !== 'ok') {
         card.state_text = stateText(vr.state);
+        if (vr.state === 'unavailable' && refusals.length) card.state_text += `: ${refusals.join('; ')}`;
         return card;
       }
       if (pageState === 'prices_missing') {
@@ -636,7 +641,7 @@
       if (q.kind === 'input') {
         const fl = fields[q.id];
         if (!fl) problems.push(`input ${q.id} is missing from the resolved fields`);
-        else Object.assign(f, { value: fl.value, locked: fl.locked, derived: fl.derived, overridden: fl.overridden, out_of_range: fl.out_of_range, range: fl.validity, rule_text: fl.rule_text });
+        else Object.assign(f, { value: fl.value, locked: fl.locked, derived: fl.derived, overridden: fl.overridden, out_of_range: fl.out_of_range, range: fl.validity, rule_text: fl.rule_text, refused: fl.refused ? fl.refused.text : null, refused_value: fl.refused ? fl.refused.value : null });
         // Under cannot_reproduce only what the user entered is shown; a derived value is a model result.
         if (pageState === 'cannot_reproduce' && f.derived) f.value = null;
       } else if (q.kind === 'pinned') {
@@ -656,7 +661,7 @@
       }
       if (!f.value_text) f.value_text = f.kind === 'derivation' ? `derived: ${f.rule_text}` : valueText(f.value, q);
       f.display_unit = plainUnit(f.rate ? q.unit.replace(/\/day$/, `/${per}`) : f.unit);
-      f.display_value = roundDisplay(shown(q, f.value));
+      f.display_value = roundDisplay(shown(q, f.value === null && f.refused_value !== undefined ? f.refused_value : f.value));
       f.display_range = f.range ? f.range.map((x) => roundDisplay(shown(q, x))) : null;
       if (f.rule_text) f.derived_text = `Derived from ${worded(f.rule_text)}`;
       if (f.kind === 'derivation') f.value_text = f.derived_text;
@@ -713,6 +718,7 @@
     const p = vr.provisioning;
     if (vr.state !== 'ok' || !p || !p.per_replica) return null;
     const g = preset && preset.block && preset.block.gp3;
+    const blk = blockOf(preset);
     const r = p.per_replica;
     const val = (id) => (fields && fields[id] && typeof fields[id].value === 'number' ? fields[id].value : null);
     const headroom = val('ebs_capacity_headroom');
@@ -727,8 +733,8 @@
     let brief;
     let tag;
     if (r.feasible === false) {
-      verdict = `no feasible gp3 layout: ${(r.notes || []).join('; ')}`;
-      brief = 'no gp3 layout fits';
+      verdict = `no feasible ${blk} layout: ${(r.notes || []).join('; ')}`;
+      brief = `no ${blk} layout fits`;
       tag = brief;
     } else if (r.volumes > 1) {
       // Why one volume is not enough decides what the reader should look at: the peak or the size.
@@ -737,17 +743,17 @@
         : g && g.size_gib && (d.capacity_gib || 0) > g.size_gib[1] ? `one volume holds at most ${fmtQuantity(g.size_gib[1], 'GiB')}`
           : r.layout;
       const cost = !priced ? null : extra ? `+${extra}/month per replica above the baseline` : 'no charge above the baseline';
-      verdict = [`${r.volumes} striped gp3 volumes of ${fmtQuantity(r.size_gib, 'GiB')}`, why, cost].filter(Boolean).join('; ');
+      verdict = [`${r.volumes} striped ${blk} volumes of ${fmtQuantity(r.size_gib, 'GiB')}`, why, cost].filter(Boolean).join('; ');
       brief = `${r.volumes} striped volumes${extra ? `, +${extra}/month` : ''}`;
       tag = `${r.volumes} volumes`;
     } else if (g && r.iops <= g.iops_baseline && r.mibps <= g.mibps_baseline) {
-      verdict = 'gp3 baseline sufficient';
-      brief = 'gp3 baseline ok';
-      tag = 'gp3 ok';
+      verdict = `${blk} baseline sufficient`;
+      brief = `${blk} baseline ok`;
+      tag = `${blk} ok`;
     } else {
       verdict = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${priced ? ` (+${fmtMoney(above / p.replicas, preset.currency)}/month per replica)` : ''}`;
       brief = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${extra ? `, +${extra}/month` : ''}`;
-      tag = 'gp3 above baseline';
+      tag = `${blk} above baseline`;
     }
     const components = [];
     for (const [op, c] of Object.entries(vr.cells || {})) {
@@ -765,7 +771,7 @@
     const lines = [
       `Volume size per replica: ${fmtSize(d.capacity_gib || 0)}${stored !== null ? ` (stored data ${fmtSize(stored)} × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
       `Peak demand per replica: ${need}${peak !== null ? ` (average × ${fmtQuantity(peak)} peak_factor)` : ''}`,
-      g ? `gp3 baseline per volume: ${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s included` : null,
+      g ? `${blk} baseline per volume: ${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s included` : null,
       `${r.manual ? 'Manual layout' : 'Cheapest feasible layout'}: ${r.volumes} × ${fmtQuantity(r.size_gib, 'GiB')}, ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s, on ${p.replicas} ${p.replicas === 1 ? 'replica' : 'replicas'}`,
       `Verdict: ${verdict}`,
       ...components.map((x) => `Demand from ${x}`),
@@ -776,17 +782,17 @@
     return {
       variant: v, replicas: p.replicas, capacity_gib: d.capacity_gib, peak_iops: d.peak_iops, peak_mibps: d.peak_mibps, headroom, peak_factor: peak,
       volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
-      short: empty ? `Local disk, nothing persistent: the minimum gp3 volume (${fmtSize(r.size_gib)}) per replica`
+      short: empty ? `Local disk, nothing persistent: the minimum ${blk} volume (${fmtSize(r.size_gib)}) per replica`
         : `${holds}: ${fmtSize(d.capacity_gib || 0)} per replica${stored !== null ? ` (${fmtSize(stored)} + ${fmtQuantity(Math.round((headroom - 1) * 100))}% headroom)` : ''}`
           + ` · ${iopsNeed > 0 || mibpsNeed > 0 ? `needs ${need}` : '0 IOPS'}: ${verdict}`,
       // The notes row: what the volume holds, its size per replica and the verdict, in about 26 characters so four
       // notes stay on one line at 1440 px; per replica, IOPS and MiB/s are in the dialog.
-      line: empty ? `nothing local · ${fmtSize(r.size_gib)} gp3` : `${word} ${fmtSize(d.capacity_gib || 0)} · ${tag}`,
+      line: empty ? `nothing local · ${fmtSize(r.size_gib)} ${blk}` : `${word} ${fmtSize(d.capacity_gib || 0)} · ${tag}`,
       instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
     };
   }
 
-  // A block column that no gp3 layout can hold: the billing reason lists each layout and the limit it breaks.
+  // A block column that no block-volume layout can hold: the billing reason lists each layout and the limit it breaks.
   function infeasibleLayout(reason) {
     const m = /no feasible volume allocation: (.*)$/s.exec(String(reason || ''));
     if (!m) return null;
@@ -827,7 +833,7 @@
       const bad = vr.state !== 'ok' ? infeasibleLayout(vr.reason) : null;
       const by = (contract.evidence_by_variant || {})[v];
       out[v] = sz ? sz.line
-        : bad ? (bad.need_gib !== null ? `no gp3 layout fits ${fmtSize(bad.need_gib)}/replica` : 'no gp3 layout fits')
+        : bad ? (bad.need_gib !== null ? `no ${blockOf(preset)} layout fits ${fmtSize(bad.need_gib)}/replica` : `no ${blockOf(preset)} layout fits`)
           // The card says why a column is off; the Notes row names the state and its (i) has the sentence.
           : vr.state !== 'ok' ? cellText(vr.state)
             : by ? `evidence: ${by.fit_and_holdout} fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumed`
@@ -1107,16 +1113,22 @@
       const lines = [...(sz ? [sz.short] : []), ...exLine, ...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
         ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing').map((n) => n.text),
         ...(vr.state === 'ok' ? [] : segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`))];
-      return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs),
+      return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs, preset),
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
     }
     if (open.kind === 'variant') {
-      return { kind: 'variant', id: open.variant, title: variantLabel(open.variant), name: null, description: cardSentence(open.variant, vr, contract, inputs),
+      return { kind: 'variant', id: open.variant, title: variantLabel(open.variant), name: null, description: cardSentence(open.variant, vr, contract, inputs, preset),
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`) };
     }
     const assumed = assumedCoefs(contract);
-    const lead = (used, extrapolated) => (vr.state !== 'ok' ? stateText(vr.state) : used.length ? 'Priced from a stated assumption.'
-      : extrapolated ? 'Priced, extrapolated outside the measured range.' : 'Priced from measured coefficients.');
+    // A Source line that says ASSUMPTION is an assumption the price rests on, so the lead must not say "measured" alone.
+    const lead = (used, extrapolated, source) => {
+      if (vr.state !== 'ok') return stateText(vr.state);
+      if (used.length) return 'Priced from a stated assumption.';
+      const n = (source || []).filter((l) => /\bASSUMPTION\b/.test(l)).length;
+      const more = n === 0 ? '' : n === 1 ? ' and one assumption' : ` and ${n} assumptions`;
+      return extrapolated ? `Priced, extrapolated outside the measured range${more}.` : `Priced from measured coefficients${more}.`;
+    };
     const measuredBy = commit ? `Measured on ClickHouse ${commit}.` : null;
     if (open.kind === 'transfer') {
       const per = Object.entries(vr.cells || {}).map(([op, c]) => [op, transferMoney(c, preset)]).filter(([, m]) => m > 0);
@@ -1135,7 +1147,7 @@
       }
       const ex = vr.state === 'ok' && transferExtrapolated(vr);
       if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
-      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, ex), measured_by: measuredBy, lines, source };
+      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, ex, source), measured_by: measuredBy, lines, source };
     }
     const op = open.operation;
     const cell = vr.cells[op];
@@ -1163,7 +1175,7 @@
     // The assumption is said above in words; its contract sentence names ids and record names.
     for (const n of cell.notes || []) if (!n.assumption) source.push(cite(sourceNote(contract, n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
-      description: lead(used, ex), measured_by: measuredBy, lines, source };
+      description: lead(used, ex, source), measured_by: measuredBy, lines, source };
   }
 
   // ---- notes, chart -------------------------------------------------------------------------------

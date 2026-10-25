@@ -149,6 +149,8 @@
     gcs: { storage: 'GCS storage', block: 'Hyperdisk Balanced', ec2_s3_same_region: 'Transfer VM to GCS in the same region', ec2_ec2_cross_az: 'Transfer VM to VM across zones' },
   };
   const words = (preset) => PROVIDER_WORDS[preset.id] || {};
+  // The block device of a preset: the page says gp3 only for AWS prices.
+  const blockName = (preset) => words(preset).block || 'gp3';
   function transferLabel(ruleId, preset) {
     const w = words(preset)[ruleId] || TRANSFER_LABELS[ruleId];
     if (!w) throw new Error(`transfer rule ${ruleId} has no label in presets.js`);
@@ -156,7 +158,7 @@
   }
   function ruleLabel(ruleId, preset) {
     if (ruleId === 'storage') return words(preset).storage || 'S3 storage';
-    if (BLOCK_SUFFIX[ruleId]) return `${words(preset).block || 'gp3'} ${BLOCK_SUFFIX[ruleId]}`;
+    if (BLOCK_SUFFIX[ruleId]) return `${blockName(preset)} ${BLOCK_SUFFIX[ruleId]}`;
     if ((preset.transfer || []).some((t) => t.id === ruleId)) return transferLabel(ruleId, preset);
     if ((preset.request_classes || []).some((c) => c.id === ruleId)) {
       if (!REQUEST_LABELS[ruleId]) throw new Error(`request class ${ruleId} has no label in presets.js`);
@@ -391,6 +393,6 @@
 
   function coverageProblems(contract, scenario) { return coverageReport(contract, scenario).problems; }
 
-  SCC.presets = { lookupMisses, substitutionsReached, SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
+  SCC.presets = { lookupMisses, substitutionsReached, SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, blockName, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -37,9 +37,9 @@
   // The page models one shard: it holds at most 200 TiB, one day cannot add more than that, and data is kept at most
   // 100 years. Above a bound the input is refused, whether typed or derived from its group partners.
   const INPUT_LIMITS = {
-    data_bytes: { max: 204800, why: 'a single shard holds at most 200 TiB; multi-shard is out of scope' },
-    ingest_rate: { max: 204800, why: 'one day cannot add more than a 200 TiB shard holds' },
-    retention_days: { max: 36500, why: 'retention is at most 100 years' },
+    data_bytes: { name: 'data size', max: 204800, why: 'a single shard holds at most 200 TiB; multi-shard is out of scope' },
+    ingest_rate: { name: 'ingest', max: 204800, why: 'one day cannot add more than a 200 TiB shard holds' },
+    retention_days: { name: 'retention', max: 36500, why: 'retention is at most 100 years' },
   };
   // A `<name>_fraction` of unit 1 is a share of a whole: a value above 1 would price negative requests.
   const isFraction = (q) => q.unit === '1' && /_fraction$/.test(q.id);
@@ -207,6 +207,8 @@
     });
 
     const plainUnit = (u) => (u === 'day' ? 'days' : u);
+    // A refused value stays visible on its field with the reason, so the form never blanks without saying why.
+    const refused = new Map();
     for (const [id, lim] of Object.entries(INPUT_LIMITS)) {
       const v = values.get(id);
       if (typeof v !== 'number' || !(v > lim.max)) continue;
@@ -214,6 +216,7 @@
       const rule = derivedIds.has(id) && ruleText.has(id) ? ` (${ruleText.get(id)})` : '';
       const n = (x) => Number(x.toPrecision(6)).toLocaleString('en-US');
       problems.push(`${id}: ${n(v)} ${plainUnit(q.unit)}${rule} is above ${n(lim.max)} ${plainUnit(q.unit)}: ${lim.why}`);
+      refused.set(id, { value: v, text: `${lim.name} above ${n(lim.max)} ${plainUnit(q.unit)} is not supported` });
       values.delete(id);
     }
 
@@ -243,6 +246,7 @@
         // Read only by formulas from source: outside the range is exact, so the form shows no warning.
         verified_only: derivedOnlyInputs(contract).has(x.id),
         preset_from: presetOf.get(x.id) || null,
+        refused: refused.get(x.id) || null,
       };
       if (fields[x.id].verified_only) fields[x.id].out_of_range = false;
     }

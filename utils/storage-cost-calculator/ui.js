@@ -234,7 +234,7 @@
     return `<div class="field${f.derived ? ' is-derived' : ''}${f.overridden ? ' is-overridden' : ''}" data-field="${esc(f.id)}">`
       + `<div class="field-head">${fieldLabel(f)}${f.kind === 'price' ? '' : infoButton({ 'info-kind': 'input', id: f.id }, f.short || f.label || f.id)}${fieldTags(f)}${lock}${reset}</div>`
       + `<div class="field-control">${control(f, page, simple)}</div>${quickPicks(f, page)}${derived}`
-      + `${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
+      + `${f.refused ? `<p class="field-note field-error" role="alert">${esc(f.refused)}</p>` : ''}${range ? `<p class="field-note">${esc(range)}</p>` : ''}${price}</div>`;
   }
 
   const PROFILE_NOTE = 'Other inputs describe a typical deployment: see Low-level assumptions.';

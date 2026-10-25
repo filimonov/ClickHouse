@@ -86,6 +86,7 @@ button, input, select { font: inherit; color: inherit; }
 .field.is-derived input[type="range"] { accent-color: var(--mute); opacity: 0.6; }
 select:disabled { opacity: 0.6; cursor: not-allowed; }
 .field-note { color: var(--mute); font-size: 13px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.field-note.field-error { color: var(--warn); }
 .group-note { font-size: 13px; color: var(--mute); background: var(--soft); border-radius: 8px; padding: 6px 10px; }
 .field-row { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .value { overflow-wrap: anywhere; }
@@ -199,13 +200,15 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
 @media (max-width: 900px) {
   body { padding: 0 16px 32px; }
   /* One column, money first: the panels dissolve so the cards can be ordered before the inputs. */
-  .layout { display: flex; flex-direction: column; gap: 20px; }
+  .layout { display: flex; flex-direction: column; align-items: stretch; gap: 20px; }
   .panel-inputs, .panel-results { display: contents; }
   #cards { order: -2; }
   #presets { order: -1; }
   #presets .panel-block, #inputs .panel-block { margin-bottom: 0; }
   #inputs .block { margin-bottom: 8px; }
   .top { flex-wrap: wrap; }
+  /* A flex item defaults to min-width:auto; a wide select inside would push the panel past the gutter. */
+  .layout > *, #presets, #inputs, #cards { min-width: 0; }
 }
 @media (max-width: 600px) {
   /* Phone: the form first, so the inputs are on the first screen; then the cards, then the breakdown. */
@@ -314,7 +317,7 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 /* The price list closes the preset row; the preset sentence is one line, the rest is behind its (i). */
 .price-pick { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .price-pick .field-label { margin: 0; white-space: nowrap; }
-.price-pick select { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
+.price-pick select { flex: 1 1 0; width: 0; min-width: 0; text-overflow: ellipsis; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
 .scenario-short { display: flex; align-items: center; min-width: 0; }
 .scenario-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
