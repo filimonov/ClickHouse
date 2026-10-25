@@ -550,6 +550,7 @@ def _coefficient_rows(contract, refs):
 
 
 def _cell_section(contract, title, anchor, cell, rendered, owner):
+    commit = measured_build(contract["manifest"]["evidence"])
     out = [f"### {title} {{#{anchor}}}", "", f"Owner: `{owner}`.", ""]
     if cell["ledger_rows"]:
         out += ["| Row | Op | Outcome | Scope | Caller | Expression |", "|---|---|---|---|---|---|"]
@@ -562,16 +563,16 @@ def _cell_section(contract, title, anchor, cell, rendered, owner):
         out += ["", "Allocation shares:", ""] + [f"- {_code(s['cell'])}: {_code(t)}" for s, t in zip(cell["allocation"]["shares"], rendered["shares"])]
     if cell.get("states"):
         out += ["", "| State | Condition | Reason |", "|---|---|---|"]
-        out += [f"| {_code(s['id'])} | {_code(t) if t is not None else 'always'} | {_cell_text(s['reason'])} |"
+        out += [f"| {_code(s['id'])} | {_code(t) if t is not None else 'always'} | {_cell_text(cite(s['reason'], commit))} |"
                 for s, t in zip(cell["states"], rendered["states"])]
     if cell.get("notes"):
         out += ["", "Notes:", ""] + [f"- {_code(t)}" for t in rendered["notes"]]
     for e in cell.get("excluded") or []:
-        out.append(f"- Excluded {e['kind']} {_code(e['id'])}: {_cell_text(e['reason'])}")
+        out.append(f"- Excluded {e['kind']} {_code(e['id'])}: {_cell_text(cite(e['reason'], commit))}")
     refs = {ref for kind, ref in closure_check._walk(cell, []) if kind in ("coef", "table")}
     if refs:
         out += ["", "| Coefficient | Value | Dim | Evidence | Ref | Version | Validity | Owner |", "|---|---|---|---|---|---|---|---|"]
-        out += ["| " + " | ".join(_code(x) if i in (0, 1, 2, 6) else _cell_text(x or "") for i, x in enumerate(row)) + " |"
+        out += ["| " + " | ".join(_code(x) if i in (0, 1, 2, 6) else _cell_text(cite(x or "", commit) if i == 4 else x or "") for i, x in enumerate(row)) + " |"
                 for row in _coefficient_rows(contract, refs)]
     return out + [""]
 
@@ -602,6 +603,7 @@ def formulas_block(contract, rendered):
 
 
 def inputs_block(contract, rendered):
+    commit = measured_build(contract["manifest"]["evidence"])
     out = [f"Registry version `{contract['manifest']['registry_version']}`. Generated; do not edit.", "",
            "| Id | Block | Label | Kind | Scope | Unit | Default | Validity | Rule | Evidence | Status |",
            "|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -610,7 +612,7 @@ def inputs_block(contract, rendered):
         out.append(f"| {_code(q['id'])} | {_code(q['block'])} | {_cell_text(q['label'])} | {_code(q['kind'])} | "
                    f"{_code(q['scope'])} | {_code(q['unit'])} | {_code(json.dumps(q['default'])) if q['default'] is not None else ''} | "
                    f"{_code(json.dumps(artifacts.verified_range(q))) if artifacts.verified_range(q) else ''} | {_code(rendered['rules'].get(q['id']))} | "
-                   f"{_cell_text(ev['kind'])}: {_cell_text(ev['ref'])} ({_cell_text(ev['version'])}) | {_code(q['status'])} |")
+                   f"{_cell_text(ev['kind'])}: {_cell_text(cite(ev['ref'], commit))} ({_cell_text(ev['version'])}) | {_code(q['status'])} |")
     out += ["", "Form placement. `workload` and `setting` inputs make up the default form (at most "
             f"{MAX_SETTING_INPUTS} settings); `advanced` inputs sit in the collapsed low-level section; `hidden` inputs are "
             "model constants or table keys, shown only in the info dialog. Rule: a product manager can set it after one "
