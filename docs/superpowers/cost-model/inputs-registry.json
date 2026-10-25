@@ -7395,7 +7395,7 @@
       "id": "gc_round_redelete_budget",
       "block": "cas",
       "label": "Blob deletes a GC round may issue (cas_gc_round_redelete_budget; 0 = unbounded)",
-      "kind": "pinned",
+      "kind": "input",
       "scope": "pool",
       "unit": "count",
       "value_type": "number",
@@ -7415,6 +7415,11 @@
         "mapping": {
           "gc_round_redelete_budget": "5000 when absent"
         }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "CAS GC deletes per round"
       },
       "status": "ok"
     },
@@ -8204,7 +8209,7 @@
       "id": "gc_round_graduation_budget",
       "block": "cas",
       "label": "Blobs a GC round may graduate to delete_pending (cas_gc_round_graduation_budget; 0 = unbounded)",
-      "kind": "pinned",
+      "kind": "input",
       "scope": "pool",
       "unit": "count",
       "value_type": "number",
@@ -8219,7 +8224,17 @@
         "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:65",
         "version": "26.8@09d0772a842"
       },
-      "hint": null,
+      "hint": {
+        "sql": "read <cas_gc_round_graduation_budget> from the disk config",
+        "mapping": {
+          "gc_round_graduation_budget": "5000 when absent"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "CAS GC graduations per round"
+      },
       "status": "ok"
     },
     {
@@ -10357,7 +10372,149 @@
     {
       "id": "cas_relink_bytes_per_part",
       "block": "replication",
-      "label": "Interserver bytes a CAS relink sends per fetched part: the manifest, not the blobs",
+      "label": "Interserver bytes a CAS relink sends per fetched part: the manifest, not the blobs. Compact: a base plus bytes per granule; Wide: a larger base; both plus the inline files (checksums, columns, statistics and other small files), which grow with rows and level off near 30 000 rows",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "B",
+        "a": {
+          "kind": "branch",
+          "dim": "B",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+            },
+            "b": {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+            }
+          },
+          "then": {
+            "kind": "coef",
+            "id": "cas_relink_wide_base_bytes",
+            "dim": "B"
+          },
+          "else": {
+            "kind": "add",
+            "dim": "B",
+            "a": {
+              "kind": "coef",
+              "id": "cas_relink_compact_base_bytes",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "mul",
+              "dim": "B",
+              "a": {
+                "kind": "coef",
+                "id": "cas_relink_bytes_per_granule",
+                "dim": "B"
+              },
+              "b": {
+                "kind": "ceil_to",
+                "dim": "1",
+                "x": {
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "input",
+                    "id": "part_rows",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "index_granularity",
+                    "dim": "count"
+                  }
+                },
+                "step": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              }
+            }
+          }
+        },
+        "b": {
+          "kind": "sub",
+          "dim": "B",
+          "a": {
+            "kind": "coef",
+            "id": "cas_relink_inline_ceiling_bytes",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "mul",
+            "dim": "B",
+            "a": {
+              "kind": "coef",
+              "id": "cas_relink_inline_deficit_bytes",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "div",
+              "dim": "1",
+              "on_zero": "unavailable",
+              "a": {
+                "kind": "coef",
+                "id": "cas_relink_inline_half_rows",
+                "dim": "count"
+              },
+              "b": {
+                "kind": "add",
+                "dim": "count",
+                "a": {
+                  "kind": "input",
+                  "id": "part_rows",
+                  "dim": "count"
+                },
+                "b": {
+                  "kind": "coef",
+                  "id": "cas_relink_inline_half_rows",
+                  "dim": "count"
+                }
+              }
+            }
+          }
+        }
+      },
+      "coef": null,
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
+        "mapping": {
+          "cas_relink_bytes_per_part": "interserver bytes sent / DownloadPart rows"
+        }
+      },
+      "status": "ok",
+      "basis": "fitted"
+    },
+    {
+      "id": "cas_relink_compact_base_bytes",
+      "block": "replication",
+      "label": "CAS relink bytes per fetched Compact part besides granules and inline files",
       "kind": "measured",
       "scope": "cluster",
       "unit": "B",
@@ -10366,22 +10523,232 @@
       "table": null,
       "default": null,
       "rule": null,
-      "coef": "cas_relink_bytes_per_part",
+      "coef": "cas_relink_compact_base_bytes",
       "verified_range": {
         "insert_rows": [
-          100000,
+          1000,
           300000
         ]
       },
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_relink_bytes_per_granule",
+      "block": "replication",
+      "label": "CAS relink bytes per granule of a fetched Compact part",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_bytes_per_granule",
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_relink_wide_base_bytes",
+      "block": "replication",
+      "label": "CAS relink bytes per fetched Wide part besides inline files",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_wide_base_bytes",
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_relink_inline_ceiling_bytes",
+      "block": "replication",
+      "label": "Ceiling of the inline file bytes a CAS relink sends per part",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_inline_ceiling_bytes",
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_relink_inline_deficit_bytes",
+      "block": "replication",
+      "label": "Inline file bytes below the ceiling at zero rows",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_inline_deficit_bytes",
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_relink_inline_half_rows",
+      "block": "replication",
+      "label": "Rows at which inline file bytes are halfway to the ceiling",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_inline_half_rows",
+      "verified_range": {
+        "insert_rows": [
+          1000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+        "version": "0.2.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "ebs_peak_mibps_bound",
+      "block": "ebs",
+      "label": "Bound on the 1-s write peak of one replica, MiB/s: the largest merge written in one second (1.02-1.06 x its bytes on a local SSD). The largest merge is at most max_bytes_to_merge_at_max_space_in_pool and at most the data. Not priced: on EBS a merge past the provisioned throughput runs longer; peak_factor stays 1",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "MiB/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "MiB/s",
+        "on_zero": "unavailable",
+        "a": {
+          "kind": "mul",
+          "dim": "B",
+          "a": {
+            "kind": "const",
+            "value": 1.055,
+            "dim": "1"
+          },
+          "b": {
+            "kind": "min",
+            "dim": "B",
+            "args": [
+              {
+                "kind": "input",
+                "id": "max_bytes_to_merge_at_max_space_in_pool",
+                "dim": "B"
+              },
+              {
+                "kind": "mul",
+                "dim": "B",
+                "a": {
+                  "kind": "input",
+                  "id": "data_bytes",
+                  "dim": "GiB"
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 1073741824,
+                  "dim": "B/GiB"
+                }
+              }
+            ]
+          }
+        },
+        "b": {
+          "kind": "mul",
+          "dim": "B*s/MiB",
+          "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "s"
+          },
+          "b": {
+            "kind": "const",
+            "value": 1048576,
+            "dim": "B/MiB"
+          }
+        }
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#peak-bound",
+        "version": "0.2.0"
       },
       "hint": {
-        "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
+        "sql": "SELECT max(size_in_bytes) / 1048576 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
         "mapping": {
-          "cas_relink_bytes_per_part": "interserver bytes sent / DownloadPart rows"
+          "ebs_peak_mibps_bound": "the largest merge of the week in MiB, written in one second"
         }
       },
       "status": "ok"

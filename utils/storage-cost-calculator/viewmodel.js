@@ -189,6 +189,18 @@
   const opWord = (op) => (OPERATION_LABELS[op] || op).toLowerCase();
   const joinWords = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
+  // The numbers behind a backlog state: what a round retires against what it may graduate and delete.
+  function backlogSentence(d) {
+    const budget = (b) => (b === 0 ? 'unbounded' : fmtQuantity(b));
+    const b = d.budgets;
+    const fix = d.max_interval !== null && d.max_interval > 0
+      ? `keep \`cas_gc_interval_sec\` at or below ${(Math.floor(d.max_interval * 10) / 10).toFixed(1)} s for this workload, or raise`
+      : 'no GC interval keeps up with this workload; raise';
+    return `a GC round retires ${fmtQuantity(d.retired)} blobs (rate ${fmtQuantity(d.rate)} blobs/s × (interval ${fmtQuantity(d.interval)} s + fold ${fmtQuantity(d.fold)} s)) `
+      + `against a per-round budget of ${budget(b.gc_round_graduation_budget)} (graduation) / ${budget(b.gc_round_redelete_budget)} (redelete); `
+      + `${fix} \`cas_gc_round_graduation_budget\` and \`cas_gc_round_redelete_budget\` in the disk config (0 = unbounded)`;
+  }
+
   // One plain sentence per column state; the full reason with families and source cites is in the info dialog.
   const blockOf = (preset) => (preset ? presets().blockName(preset) : 'gp3');
   function cardSentence(v, vr, contract, inputs, preset) {
@@ -220,7 +232,11 @@
         return ops.length ? `${label}: ${joinWords(ops.map(opWord))} not measured` : `${label}: not measured for this workload`;
       }
       case 'unsupported_cut': return `${label}: a measurement this workload needs for ${ops.length ? joinWords(ops.map(opWord)) : 'one operation'} is missing`;
-      case 'backlog_grows': return `${label}: ${ops.length ? joinWords(ops.map(opWord)) : 'the background work'} cannot keep up with this workload; the backlog grows`;
+      case 'backlog_grows': {
+        const d = vr.backlog;
+        if (d) return `${label}: ${backlogSentence(d)}`;
+        return `${label}: ${ops.length ? joinWords(ops.map(opWord)) : 'the background work'} cannot keep up with this workload; the backlog grows`;
+      }
       default: throw new Error(`unknown variant state ${JSON.stringify(vr.state)}`);
     }
   }

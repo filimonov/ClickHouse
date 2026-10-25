@@ -576,6 +576,38 @@
     return [...out];
   }
 
+  // The numbers behind a `backlog_grows` state, read from the rule's own sub-expressions: each guarded comparison
+  // `rate × round duration > budget` yields the retired blobs per round. Round duration is linear in the GC
+  // interval, so one evaluation at a second interval gives the slope and the largest interval that meets a budget.
+  // Returns null when a number is unavailable; the caller then keeps the generic sentence.
+  function backlogDetail(cond, ctx) {
+    const cmps = [];
+    walk(cond, (n) => {
+      if (n.kind === 'branch' && n.cond && n.cond.op === '>' && n.cond.b && n.cond.b.kind === 'input' && /^gc_round_/.test(n.cond.b.id)
+        && n.cond.a && n.cond.a.kind === 'mul') cmps.push(n.cond);
+    });
+    if (!cmps.length) return null;
+    const num = (node, c) => { const r = model().evaluate(node, c); return r.state === 'ok' && typeof r.value === 'number' ? r.value : null; };
+    const interval = ctx.inputs.get('cas_gc_interval_s');
+    if (typeof interval !== 'number') return null;
+    const probe = Object.assign({}, ctx, { inputs: new Map(ctx.inputs).set('cas_gc_interval_s', interval + 1) });
+    const budgets = {};
+    let retired = null, rate = null, duration = null, slope = null;
+    for (const c of cmps) {
+      const b = ctx.inputs.get(c.b.id);
+      if (typeof b !== 'number') return null;
+      budgets[c.b.id] = b;
+      const n = num(c.a, ctx), n1 = num(c.a, probe);
+      if (n === null || n1 === null) return null;
+      retired = n; rate = num(c.a.a, ctx); duration = num(c.a.b, ctx); slope = n1 - n;
+    }
+    if (rate === null || duration === null) return null;
+    // Both budgets must hold: the binding one gives the smallest interval; 0 = unbounded imposes none.
+    const limits = Object.values(budgets).filter((b) => b > 0).map((b) => interval + (b - retired) / slope);
+    const maxInterval = slope > 0 && limits.length ? Math.min(...limits) : null;
+    return { retired, rate, interval, fold: duration - interval, budgets, max_interval: maxInterval };
+  }
+
   // Evaluates one variant's cells. Returns {cells, states: [{id, reason}], extrapolated}.
   function evaluateVariant(contract, v, ctx, cut) {
     const states = [];
@@ -628,7 +660,11 @@
           if (live.length) states.push({ id: 'unsupported_cut', reason: `${v}.${op}: cut for ${cutFams.join(', ')}, the cell has no rows and ${live.join(', ')} is non-zero` });
         }
       }
-      for (const st of ev.states) if (st.active) states.push({ id: st.id, reason: `${v}.${op}: ${st.reason}` });
+      ev.states.forEach((st, i) => {
+        if (!st.active) return;
+        const detail = st.id === 'backlog_grows' ? backlogDetail(effective.states[i].cond, ctx) : null;
+        states.push(Object.assign({ id: st.id, reason: `${v}.${op}: ${st.reason}` }, detail ? { detail } : {}));
+      });
       const unavailableRows = ev.rows.map((r, i) => (r.state === 'ok' ? null : `${r.row_type} ${r.op_kind}: unavailable (${[...missingRefs(effective.ledger_rows[i].expr, ctx), ...missingKeys(r.trace)].join(', ') || 'see trace'})`)).filter(Boolean);
       if (!taints.length && (unavailableRows.length || ev.state !== 'ok')) {
         states.push({ id: 'unavailable', reason: `${v}.${op}: ${[...unavailableRows, ev.reason].filter(Boolean).join('; ')}` });
@@ -731,6 +767,8 @@
       if (top) {
         out.state = top;
         out.reason = ev.states.filter((s) => s.id === top).map((s) => s.reason).join('; ');
+        const d = ev.states.find((s) => s.id === top && s.detail);
+        if (d) out.backlog = d.detail;
       } else if (!pricesMissing) {
         const billed = billVariantResult(out, ev, preset, opts, ctx.inputs);
         if (billed.problem) { out.state = 'unavailable'; out.reason = `${v}: ${billed.problem}`; }

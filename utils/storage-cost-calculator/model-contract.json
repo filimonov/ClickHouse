@@ -1,22 +1,22 @@
 {
  "schema": "contract/1",
- "version": "0aba74da6565e52c",
+ "version": "e735c9548c35ac32",
  "manifest": {
-  "code_sha256": "112c1ad7701f25b929603e309abda6e93f57839dfd47a4fc857675c0ebf61e43",
+  "code_sha256": "26d9879991e7e0e9cf8161ee72049bfef77e2559c8a7abf758a3f9264d8ecc7c",
   "code_files": {
    "billing.js": "6992c901b510841e76af2ba6690bdf194ac207d4179c17948681dd8cb0272063",
    "contract.js": "ba4653168b64f0921f86550ee5c4b15fd7d39b276314971f3049054602951b1c",
    "model.js": "27d0184486ebfe9a9cc71bab56352771ddadbfb261f34461053a15b660e35efd",
-   "pipeline.js": "1323d6c0461c7b4fd8e6c4a1645ac3b72dfd5d0e1a5db8564006de788226ead9",
-   "presets.js": "5ad339257724bbc34e003a44c51cdc08c0ab1de7f7d2c48ba7e90fdac589036d",
+   "pipeline.js": "74493da182c0d952a23be8c00866362a2872e5a7afe6a9feaca39470f1cdc6f1",
+   "presets.js": "d1cb89dbf3b93e67c7ebe9e3dde776befd99567facda9147a6caac2e0de43a66",
    "urlstate.js": "e0722c2c47ba25c94b728eefc390c5d3fe96d07c1c7abaff4b4f3bd68a5b7b86"
   },
   "code_missing": [],
-  "contract_version": "0aba74da6565e52c",
+  "contract_version": "e735c9548c35ac32",
   "registry_version": "0.3.0",
-  "registry_sha256": "9745fb4621c84f0a9dacaa97ae8bbc285316f4777a4f7f2c1993c7f2f9c8b7e5",
+  "registry_sha256": "b49e92676e7a28022face7d4f0319d3c78b0ab83c4a120900268c4bf3ecaafa9",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "dc10cd44f8e04c29eb047cc54ac97f0430c8aea64428e4de8e579dccc37b3ed7",
+  "coverage_sha256": "b18053d015a7ca00c967e3ad7d556d9f797bf5d7b9adf8f768cb68873d21e6fd",
   "billing_version": "0.2.0",
   "billing_sha256": "e36cf9a51930dec31327f03e6881bbe8a3e15320509455b3ed7f3b9a77cb648d",
   "evidence": [
@@ -82,11 +82,25 @@
     "rig_commit": "a2004c7dd62e68c7b542bf911ecbe4a5277b44e4",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "4d689cc7e3e320130c358dce6dc26a2e619b12ab0e5d97bdbe420ba553d56bc8"
+   },
+   {
+    "report": "2026-10-25-storage-cost-cut-cards",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "df8d6526e3e0969dd9fef8bec95d769ade989dac",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "44f854b001024739728dbb000831aeb43b3baf34005da2a01bfa0f3a51715c11"
+   },
+   {
+    "report": "2026-10-25-storage-cost-ttl-move",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "7186870ad4cca5b02966d074bb41327e948773de",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "1d2e68d8118f216061a61bc7210f1fad0441016e8fb901ff91cca0b3657d051a"
    }
   ],
-  "breakeven_sha256": "273deb8070a55a5c9935db48c71dd260e8a16658f9d9a07eea103296cec097f9"
+  "breakeven_sha256": null
  },
- "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 9 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables. 73 coefficient(s): 48 measured, 25 pinned to source. 70 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 5 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
+ "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 11 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables, 2026-10-25-storage-cost-cut-cards, 2026-10-25-storage-cost-ttl-move. 74 coefficient(s): 49 measured, 25 pinned to source. 71 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 33 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
  "registry": [
   {
    "id": "data_bytes",
@@ -3723,7 +3737,7 @@
   {
    "id": "inserts_per_async_flush",
    "block": "inserts",
-   "label": "Async inserts sharing one flush, an estimate for evenly spaced arrivals: the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / entry bytes) entries (decoded bytes for native, raw for inline), at most one per waiting client, at most async_insert_max_query_number with deduplication on (the default). Bursts share more, a shorter adaptive timeout less.",
+   "label": "Async inserts sharing one flush, an estimate for evenly spaced arrivals: 1 when arrivals are further apart than async_insert_busy_timeout_min_ms (the adaptive timeout then stays at its minimum); otherwise the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / entry bytes) entries (decoded bytes for native, raw for inline), at most one per waiting client (an upper bound: 4 waiting clients shared 2.8-3.6), at most async_insert_max_query_number with deduplication on (the default). Bursts share more.",
    "kind": "derivation",
    "scope": "cluster",
    "unit": "1",
@@ -3745,17 +3759,10 @@
       "dim": "1",
       "args": [
        {
-        "kind": "add",
+        "kind": "branch",
         "dim": "1",
-        "a": {
-         "kind": "const",
-         "value": 1,
-         "dim": "1"
-        },
-        "b": {
-         "kind": "div",
-         "dim": "1",
-         "on_zero": "unavailable",
+        "cond": {
+         "op": "<",
          "a": {
           "kind": "mul",
           "dim": "ms/s",
@@ -3766,7 +3773,7 @@
           },
           "b": {
            "kind": "input",
-           "id": "async_insert_busy_timeout_max_ms",
+           "id": "async_insert_busy_timeout_min_ms",
            "dim": "ms"
           }
          },
@@ -3774,6 +3781,44 @@
           "kind": "const",
           "value": 1000,
           "dim": "ms/s"
+         }
+        },
+        "then": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        },
+        "else": {
+         "kind": "add",
+         "dim": "1",
+         "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "b": {
+          "kind": "div",
+          "dim": "1",
+          "on_zero": "unavailable",
+          "a": {
+           "kind": "mul",
+           "dim": "ms/s",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "async_insert_busy_timeout_max_ms",
+            "dim": "ms"
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 1000,
+           "dim": "ms/s"
+          }
          }
         }
        },
@@ -3883,10 +3928,15 @@
    },
    "coef": null,
    "basis": "assumed",
-   "verified_range": null,
+   "verified_range": {
+    "insert_rate": [
+     0.01,
+     50
+    ]
+   },
    "evidence": {
-    "kind": "assumed",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle#parts-per-insert",
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#async-revised",
     "version": "0.2.0"
    },
    "hint": {
@@ -3896,7 +3946,12 @@
     }
    },
    "status": "ok",
-   "validity": null
+   "validity": {
+    "insert_rate": [
+     0.01,
+     50
+    ]
+   }
   },
   {
    "id": "parts_per_insert",
@@ -7714,7 +7769,7 @@
    "id": "gc_round_redelete_budget",
    "block": "cas",
    "label": "Blob deletes a GC round may issue (cas_gc_round_redelete_budget; 0 = unbounded)",
-   "kind": "pinned",
+   "kind": "input",
    "scope": "pool",
    "unit": "count",
    "value_type": "number",
@@ -7734,6 +7789,12 @@
     "mapping": {
      "gc_round_redelete_budget": "5000 when absent"
     }
+   },
+   "ui": {
+    "tier": "advanced",
+    "name": null,
+    "short": "CAS GC deletes per round",
+    "measured_by": "Default from src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:66 @ 09d0772a842."
    },
    "status": "ok",
    "validity": null
@@ -8571,7 +8632,7 @@
    "id": "gc_round_graduation_budget",
    "block": "cas",
    "label": "Blobs a GC round may graduate to delete_pending (cas_gc_round_graduation_budget; 0 = unbounded)",
-   "kind": "pinned",
+   "kind": "input",
    "scope": "pool",
    "unit": "count",
    "value_type": "number",
@@ -8586,7 +8647,18 @@
     "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:65",
     "version": "26.8@09d0772a842"
    },
-   "hint": null,
+   "hint": {
+    "sql": "read <cas_gc_round_graduation_budget> from the disk config",
+    "mapping": {
+     "gc_round_graduation_budget": "5000 when absent"
+    }
+   },
+   "ui": {
+    "tier": "advanced",
+    "name": null,
+    "short": "CAS GC graduations per round",
+    "measured_by": "Default from src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp:65 @ 09d0772a842."
+   },
    "status": "ok",
    "validity": null
   },
@@ -8756,6 +8828,639 @@
     "short": "Tables dropped per month",
     "measured_by": "Assumed: preset default."
    },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "hot_tier_days",
+   "block": "tiering",
+   "label": "Days a part stays on the local disk before a TTL move to object storage; 0 keeps one tier",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
+    "mapping": {
+     "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days; 0 without one"
+    }
+   },
+   "ui": {
+    "tier": "workload",
+    "name": null,
+    "short": "Hot tier days",
+    "measured_by": "Assumed: preset default."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_gc_interval_s",
+   "block": "tiering",
+   "label": "GC round interval of the CAS disk in the cold tier (cas_gc_interval_sec)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "s",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3600,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "cold data changes rarely, so GC can run hourly; the disk default is 60 s",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT extractAllGroups(..) -- read <cas_gc_interval_sec> from the cold CAS disk config",
+    "mapping": {
+     "cold_gc_interval_s": "cas_gc_interval_sec of the cold disk"
+    }
+   },
+   "ui": {
+    "tier": "advanced",
+    "name": null,
+    "short": "Cold tier GC interval",
+    "measured_by": "Assumed: cold data changes rarely, so GC can run hourly; the disk default is 60 s."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_mutations_per_month",
+   "block": "tiering",
+   "label": "ALTER UPDATE/DELETE per month that rewrite a part in the cold tier",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() * 730 / 24 / 30 FROM system.part_log WHERE event_type = 'MutatePart' AND disk_name = '<cold disk>' AND event_date >= today() - 30",
+    "mapping": {
+     "cold_mutations_per_month": "MutatePart rows on the cold disk per month"
+    }
+   },
+   "ui": {
+    "tier": "advanced",
+    "name": null,
+    "short": "Cold tier mutations per month",
+    "measured_by": "Assumed: preset default."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_select_part_reads_per_day",
+   "block": "tiering",
+   "label": "Parts in the cold tier read by SELECT queries per day",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count/day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday() -- queries over cold partitions",
+    "mapping": {
+     "cold_select_part_reads_per_day": "sum of SelectedParts of queries that reach cold partitions"
+    }
+   },
+   "ui": {
+    "tier": "advanced",
+    "name": null,
+    "short": "Cold tier part reads per day",
+    "measured_by": "Assumed: preset default."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "hot_data_bytes",
+   "block": "tiering",
+   "label": "Data in the hot tier: ingest_rate x hot_tier_days",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "GiB",
+    "a": {
+     "kind": "input",
+     "id": "ingest_rate",
+     "dim": "GiB/day"
+    },
+    "b": {
+     "kind": "input",
+     "id": "hot_tier_days",
+     "dim": "day"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_retention_days",
+   "block": "tiering",
+   "label": "Days a part stays in the cold tier: retention_days - hot_tier_days",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "day",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "sub",
+    "dim": "day",
+    "a": {
+     "kind": "input",
+     "id": "retention_days",
+     "dim": "day"
+    },
+    "b": {
+     "kind": "input",
+     "id": "hot_tier_days",
+     "dim": "day"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_data_bytes",
+   "block": "tiering",
+   "label": "Data in the cold tier: data_bytes - hot_data_bytes",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "GiB",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "sub",
+    "dim": "GiB",
+    "a": {
+     "kind": "input",
+     "id": "data_bytes",
+     "dim": "GiB"
+    },
+    "b": {
+     "kind": "input",
+     "id": "hot_data_bytes",
+     "dim": "GiB"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_insert_rate",
+   "block": "tiering",
+   "label": "Parts moved to the cold tier per second, each at its final size: insert_rate x parts_per_insert / merge_size_ratio",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "1/s",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "1/s",
+    "a": {
+     "kind": "mul",
+     "dim": "1/s",
+     "a": {
+      "kind": "input",
+      "id": "insert_rate",
+      "dim": "1/s"
+     },
+     "b": {
+      "kind": "input",
+      "id": "parts_per_insert",
+      "dim": "1"
+     }
+    },
+    "b": {
+     "kind": "input",
+     "id": "merge_size_ratio",
+     "dim": "1"
+    },
+    "on_zero": "unavailable"
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_insert_rows",
+   "block": "tiering",
+   "label": "Rows of a moved part: part_rows x merge_size_ratio",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "count",
+    "a": {
+     "kind": "input",
+     "id": "part_rows",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "input",
+     "id": "merge_size_ratio",
+     "dim": "1"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_insert_bytes_uncompressed",
+   "block": "tiering",
+   "label": "Uncompressed bytes of a moved part: part_bytes_uncompressed x merge_size_ratio",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "mul",
+    "dim": "B",
+    "a": {
+     "kind": "input",
+     "id": "part_bytes_uncompressed",
+     "dim": "B"
+    },
+    "b": {
+     "kind": "input",
+     "id": "merge_size_ratio",
+     "dim": "1"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_mutated_wide_parts_per_month",
+   "block": "tiering",
+   "label": "Wide parts cold mutations rewrite per month: one moved part per mutation, wide when it is at least min_bytes_for_wide_part",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "branch",
+    "dim": "count",
+    "cond": {
+     "op": "<",
+     "a": {
+      "kind": "input",
+      "id": "cold_insert_bytes_uncompressed",
+      "dim": "B"
+     },
+     "b": {
+      "kind": "input",
+      "id": "min_bytes_for_wide_part",
+      "dim": "B"
+     }
+    },
+    "then": {
+     "kind": "const",
+     "value": 0,
+     "dim": "count"
+    },
+    "else": {
+     "kind": "input",
+     "id": "cold_mutations_per_month",
+     "dim": "count"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "a cold mutation rewrites one moved part; a mutation over N parts is N mutations here",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_mutated_compact_parts_per_month",
+   "block": "tiering",
+   "label": "Compact parts cold mutations rewrite per month: one moved part per mutation, compact below min_bytes_for_wide_part",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "branch",
+    "dim": "count",
+    "cond": {
+     "op": "<",
+     "a": {
+      "kind": "input",
+      "id": "cold_insert_bytes_uncompressed",
+      "dim": "B"
+     },
+     "b": {
+      "kind": "input",
+      "id": "min_bytes_for_wide_part",
+      "dim": "B"
+     }
+    },
+    "then": {
+     "kind": "input",
+     "id": "cold_mutations_per_month",
+     "dim": "count"
+    },
+    "else": {
+     "kind": "const",
+     "value": 0,
+     "dim": "count"
+    }
+   },
+   "coef": null,
+   "basis": "assumed",
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "a cold mutation rewrites one moved part; a mutation over N parts is N mutations here",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_merge_size_ratio",
+   "block": "tiering",
+   "label": "Merge size ratio in the cold tier: 1, a moved part is already final-sized and the merge selector gains nothing from merging it",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "TTL moves final-sized parts; merges of cold parts are not modelled",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cold_parts_per_insert",
+   "block": "tiering",
+   "label": "Parts a TTL move writes per moved part: 1, the mover clones the whole part to the new disk",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:223",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "move_load_gets_per_part",
+   "block": "tiering",
+   "label": "GETs to load a part moved to an s3 or s3plain cold disk: part_load_files + 1 (ttl.txt)",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "add",
+    "dim": "count",
+    "a": {
+     "kind": "coef",
+     "id": "part_load_files",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "const",
+     "value": 1,
+     "dim": "count"
+    }
+   },
+   "coef": null,
+   "basis": "derived",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (verdict 4baf61f997b: move.ttl matched the rule): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; ttl.txt: tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:2493",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cas_move_load_gets_per_part",
+   "block": "tiering",
+   "label": "GETs to load a part moved to a CAS cold disk: one manifest, plus the first marks blob of a Wide part",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "add",
+    "dim": "count",
+    "a": {
+     "kind": "const",
+     "value": 1,
+     "dim": "count"
+    },
+    "b": {
+     "kind": "branch",
+     "dim": "count",
+     "cond": {
+      "op": "==",
+      "a": {
+       "kind": "input",
+       "id": "part_type",
+       "dim": "enum:part_type"
+      },
+      "b": {
+       "kind": "const",
+       "value": "wide",
+       "dim": "enum:part_type"
+      }
+     },
+     "then": {
+      "kind": "const",
+      "value": 1,
+      "dim": "count"
+     },
+     "else": {
+      "kind": "const",
+      "value": 0,
+      "dim": "count"
+     }
+    }
+   },
+   "coef": null,
+   "basis": "derived",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (verdict 4baf61f997b: move.ttl matched the rule): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; manifest GET: tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.cpp:56",
+    "version": "0.3.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cas_move_follower_hash_hit_fraction",
+   "block": "tiering",
+   "label": "Share of blobs a follower replica finds already published when it moves a part the first replica moved: 1, every blob takes the hash-hit branch (HEAD and .meta GET, no blob PUT)",
+   "kind": "pinned",
+   "scope": "cluster",
+   "unit": "1",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 1,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move#results (bd731b623d1: move-replicated.ttl-cas, moves one replica after the other, exact on both replicas; overlapping moves not measured)",
+    "version": "0.3.0"
+   },
+   "hint": null,
    "status": "ok",
    "validity": null
   },
@@ -19373,6 +20078,88 @@
     "cas_tables": [
      1,
      500
+    ]
+   }
+  },
+  {
+   "id": "ttl_move_table_once_requests",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "variant_id",
+     "replication_op"
+    ],
+    "values": {
+     "s3|PutObject": 0,
+     "s3|GetObject": 0,
+     "s3|HeadObject": 0,
+     "s3plain|PutObject": 1,
+     "s3plain|GetObject": 0,
+     "s3plain|HeadObject": 1,
+     "cas|PutObject": 3,
+     "cas|GetObject": 13,
+     "cas|HeadObject": 0
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "active_parts": [
+     5,
+     5
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T142655Z/s3plain/move/ttl/k1",
+     "cost-20261025T142655Z/s3plain/move/ttl/k2",
+     "cost-20261025T142655Z/cas/move/ttl/k1",
+     "cost-20261025T142655Z/cas/move/ttl/k2",
+     "cost-20261025T142655Z/cas/move/ttl-holdout/k1",
+     "cost-20261025T142655Z/cas/move/ttl-holdout/k2"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "requests once per table and replica at the first TTL move onto a cold disk, on top of the insert write and the load of each moved part: s3plain creates <table>/moving/ (PutObject + HeadObject); CAS births the table namespace on the pool (ref_catalog PUT 2 GET 8, _ckpt PUT 1 GET 4 with one 404, _log GET 1, a 404)",
+   "fit": {
+    "method": "measured remainder of move.ttl (5 parts) after the insert write and the per-part load: s3plain source term (Disks/IDisk.cpp:165 creates moving/ through createDirectories), exact in both passes; CAS: every extra request precedes the first part publish in both passes",
+    "residuals": {
+     "cost-20261025T142655Z/s3plain/move/ttl/k1": {
+      "PutObject": 0,
+      "GetObject": 0,
+      "HeadObject": 0
+     },
+     "cost-20261025T142655Z/s3plain/move/ttl/k2": {
+      "PutObject": 0,
+      "GetObject": 0,
+      "HeadObject": 0
+     },
+     "cost-20261025T142655Z/cas/move/ttl/k1": {
+      "PutObject": 0,
+      "GetObject": 0,
+      "HeadObject": 0
+     },
+     "cost-20261025T142655Z/cas/move/ttl/k2": {
+      "PutObject": 0,
+      "GetObject": 0,
+      "HeadObject": 0
+     }
+    },
+    "holdout": "ok, exact: move.ttl-holdout on cas (4 Compact, 1 Wide part; cost-20261025T142655Z, predicted in aed33b5c352): PUT 70, GET 54, HEAD 16 in both passes. The s3plain term has no separate hold-out: it is one source-cited directory"
+   },
+   "validity": {
+    "active_parts": [
+     5,
+     5
     ]
    }
   }
@@ -36202,6 +36989,7 @@
    "startup_requests": "2026-10-24-storage-cost-s3",
    "startup_requests_after_restart": "2026-10-24-storage-cost-replication",
    "stats_gets_per_column": "2026-10-24-storage-cost-s3",
+   "ttl_move_table_once_requests": "2026-10-25-storage-cost-ttl-move",
    "warm_gets_per_stream_read": "2026-10-24-storage-cost-s3",
    "zero_copy_requests": "2026-10-24-storage-cost-replication"
   },
@@ -36251,8 +37039,8 @@
  },
  "evidence_by_variant": {
   "cas": {
-   "fit_and_holdout": 5,
-   "fit_only": 1,
+   "fit_and_holdout": 6,
+   "fit_only": 0,
    "assumption": 4
   },
   "ebs": {

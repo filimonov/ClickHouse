@@ -21857,6 +21857,654 @@
       ],
       "status": "consumed",
       "note": "chain-regime law (ladder at fan-in 2.3348) predicted 7.754 +- 0.4465, measured 8.258; the rule gives 4.08"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_compact_base_bytes",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_granule",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_wide_base_bytes",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_ceiling_bytes",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_deficit_bytes",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
+    },
+    {
+      "coefficient": "cas_relink_inline_half_rows",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "insert_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": null,
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "relink derivation fit point (with the replication and validation cases at 1 000-300 000 rows)"
     }
   ],
   "domain": {
