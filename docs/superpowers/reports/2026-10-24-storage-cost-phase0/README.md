@@ -20,7 +20,7 @@ numbers below are from that run. Each pass now starts exactly its card's replica
 |---|---|
 | Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` (`tmp/bin/SHA256SUMS`; record field `binary_download_sha256`) |
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`binary_sha256`): the self-extracting download decompressed itself in place on its first start |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` (`commit`) |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit (record field `commit`) |
 | Rig commit | `8a9806dd0b75ba3a5daca197a00a8c7b0955e70a` (`rig_commit`), a clean tree for `utils/` |
 | Gate run | `cost-20261024T035215Z`; earlier gate runs: `cost-20261024T024945Z` (phase-0 review), `cost-20261024T015941Z` |
 | Store | RustFS binary behind the ledger proxy, bucket `yardstick-cost` |
@@ -179,7 +179,7 @@ month (the IOPS-per-GiB cap sets the size). The drill shows the workstation limi
 
 ## Source facts established {#source-facts}
 
-All paths are under `tmp/src-26.8/`. The prediction files list every reference with its claim.
+All paths are repository paths at `09d0772a842`. The prediction files list every reference with its claim.
 
 - **A compact part on a remote disk is 11 objects.** `data.bin`, `data.cmrk4`, `primary.cidx`, `count.txt`,
   `serialization.json`, `statistics.packed`, `columns.txt`, `columns_substreams.txt`, `metadata_version.txt`,
@@ -275,14 +275,14 @@ planned scale in `cost-20261024T014123Z` (records in `raw/estimate/`):
   decide the total; `amplification-run`, a P2 case, alone is 30 h of P2 (4 policies x 3 repeats x 2 h, with the reserve).
   The earlier estimate (P1 14.5 h, P1 + P2 17.8 h) budgeted a tenth of `timeout_s` per pass and put
   `amplification-run` at minutes. Per-case lines are in `raw/estimate/estimate.txt`.
-- **Sample shape deviation:** a compact part on CAS is one blob, so the plan's "500 inserts of a 100-column
-  compact table" would create about 1000 objects. The sample uses a Wide table instead (one blob per column file).
+- **Sample shape deviation:** a compact part on CAS is one blob, so a sample of 500 inserts into a
+  100-column compact table would create about 1000 objects. The sample uses a Wide table instead (one blob per column file).
 
 ## How to re-run {#rerun}
 
 ```
 utils/cas-yardstick/rustfs-bin.sh ensure
-YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost probe --binary tmp/bin/26.8/clickhouse \
+python3 utils/cas-yardstick/yardstick.py cost probe --binary tmp/bin/26.8/clickhouse \
     --runs-dir tmp/cas-yardstick/cost-runs > tmp/cost_probe.log 2>&1; echo $?
 python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
     --runs-dir tmp/cas-yardstick/cost-runs --manifests docs/superpowers/reports/2026-10-24-storage-cost-phase0 \
@@ -290,6 +290,9 @@ python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhou
 python3 utils/cas-yardstick/yardstick.py cost estimate docs/superpowers/reports/2026-10-24-storage-cost-phase0/raw/estimate
 python3 utils/storage-cost-calculator/tools/closure_check.py --mode dev
 ```
+
+`cost probe` exits 1 when a probe fails; the exit codes are in [Reproduce](../../cost-model/storage-cost-model.md#reproduce).
+`cost run` and `cost probe` take `tmp/yardstick.lock` themselves. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.
 
 Layout of this directory follows `docs/superpowers/cost-model/schemas/report-directory.md`. `raw/<probe>/` holds
 the ledger slice, relay logs, strace output (gzip) and the drill-down of each gate pass; `raw/estimate/` holds the

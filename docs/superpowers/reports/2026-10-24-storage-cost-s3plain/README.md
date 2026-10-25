@@ -17,11 +17,11 @@ mutations. Every measured request count reconciles exactly with the graph below 
 | Item | Value |
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit |
 | Runs | report run `cost-20261024T164541Z` (rig `855db66b453`); consumed hold-outs from `cost-20261024T103803Z`; `measurements.jsonl` holds 179 records (137 ok, 30 `UNSUPPORTED`, 12 `FAILED` of consumed hold-outs) |
 | Predictions | fit `0f1ad12f2a2`; hold-outs, validations and insert re-fits `2f20606ffe6`; fresh hold-outs `types-holdout-single` and `drop.partition-2` and the `types-fit` re-fit `6bc64458fd8`; the 1 000-row validation `8679a5b7813`; each before the first run of its case |
 | Policies | `s3plain` (`plain_rewritable` metadata over the RustFS bucket) and `s3plain_cached` (a `cache` disk over it) |
-| Cuts | P2 cases (`detach-attach`, `cache-eviction`): cut by owner directive D14, no manifest |
+| Cuts | P2 cases (`detach-attach`, `cache-eviction`): cut to meet the campaign deadline (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)), no manifest |
 
 Cases reuse the `s3` and lifecycle manifests unchanged (same `params`, `settings`, `controls`) with the plain
 policies. `merge-only.narrow-compact-removal` and `merge-only.wide-wide-removal` are new: their window also holds the
@@ -43,7 +43,7 @@ The `mutations` cell is `not_supported` only when the workload mutates: `mutatio
 `mutated_compact_parts_per_month` and `mutated_wide_parts_per_month` all zero leaves the column comparable, and any
 non-zero value disables it with the reason below.
 
-Paths are under `tmp/src-26.8/src/`. Every mutation case runs on both plain policies and produces an `UNSUPPORTED`
+Paths are under `src/` at `09d0772a842`. Every mutation case runs on both plain policies and produces an `UNSUPPORTED`
 record with this reason and its cites. The server answers the same: `Mutations are not supported for immutable
 disk` (`SUPPORT_IS_DISABLED`).
 
@@ -60,7 +60,7 @@ own copy. Replicated mutations are refused by the same `checkMutationIsPossible`
 
 ## Operation graphs {#operation-graphs}
 
-Paths are under `tmp/src-26.8/src/`. `OPS` is
+Paths are under `src/` at `09d0772a842`. `OPS` is
 `Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.cpp`,
 `MS` is `MetadataStorageFromPlainRewritableObjectStorage.cpp` in the same directory.
 
@@ -228,27 +228,15 @@ plain records add `validation` edges for them.
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; log `tmp/codex_s3plain_r1.log`) on the gate, the card
-change, the predictions of `2f20606ffe6`, the draft cells and the builders: 6 MAJOR, 1 MINOR.
-
-| # | Finding | Disposition |
-|---|---|---|
-| M1 | The mutation refusal is too broad: a lightweight `UPDATE` (patch parts) passes once both block columns are enabled (`MergeTreeData.cpp:12630`) | Closed by scope: the gate refuses the mutation kinds the cost model prices (`ALTER UPDATE`, `ALTER DELETE`, lightweight `DELETE`); its reason now names the patch-part exception and cites `:12630`, `:12635`. No variant's cells price patch parts |
-| M2 | `types` predictions miss the empty-file blobs (348 / 340, not 324 / 316) | Confirmed by the run: `objects-per-part.types-holdout` falsified and consumed. Fixed: `plain_objects_per_part` (own counts); fresh hold-out `objects-per-part.types-holdout-single` |
-| M3 | Delete cells use 11 files for partitioned and TTL parts (13 / 12 measured) | Fixed: `plain_expired_part_extra_files` (2, one partition key column); the TTL-only case (one extra file) is an assumption in §Assumptions |
-| M4 | Removing a file past 32 MiB is a multipart copy (`copyS3File.cpp:673`), not one `CopyObject` | Fixed: the removal rows of `merges` and `deletes` price the multipart copy from source, not measured (§Open items) |
-| M5 | `plain_empty_part_objects` is used but not registered | Fixed: registered (pinned, `DiskObjectStorageTransaction.cpp:313`) |
-| M6 | Recovery loads files of active parts only; outdated parts are loaded too (`MergeTreeData.cpp:3656`) | Fixed in the `s3plain` cell (active + outdated); the same term of the `s3` cell is reported to its owner |
-| m1 | Hard-link edges rest on unlink cases; the startup note claims three cached access checks | Fixed: no edges for `plain_copy_on_hardlink`; the note says one check, two with the cache |
-
-The run of `2f20606ffe6` also falsified `drop.partition-3` (consumed): `DROP PARTITION` over three parts made three
-empty covering parts, not one. Fresh hold-out: `drop.partition-2`.
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## Reproduce {#reproduce}
 
 ```
 utils/cas-yardstick/rustfs-bin.sh ensure
-YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-s3plain --cases all --policies s3plain,s3plain_cached \
   --repeats 3 --runs-dir tmp/cas-yardstick/cost-runs
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.

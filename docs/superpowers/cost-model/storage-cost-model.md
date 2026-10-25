@@ -21,41 +21,166 @@ python3 utils/storage-cost-calculator/tools/generate_contract.py check
 
 ## Evidence policy {#evidence-policy}
 
+Formulas come from the pinned source; measurements verify them. Rulings D14–D25 in
+[LEDGER.md](../reports/2026-10-23-storage-cost-calculator/LEDGER.md#decisions) record the decisions behind this policy.
+
 Every coefficient and input carries one evidence kind:
 
 | Kind | Meaning |
 |---|---|
-| `source` | A code path at the pinned commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, cited as `path:line` |
-| `measured` | Fitted on rig measurements; a P1 coefficient also has a validity domain and a separate hold-out |
+| `source` | A code path at commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, cited as `src/<path>:<line>` |
+| `measured` | Measured on the rig; a P1 coefficient has a fit and a separate hold-out |
 | `provider` | A dated provider document, such as an AWS price page |
-| `assumed` | A preset or user value |
+| `assumed` | A preset value, a standard deployment profile value, or an explicit assumption row |
 
-- **Measured counts** are validated on RustFS behind the ledger proxy, not on AWS. No AWS bill was reconciled.
-- **EBS I/O** is derived from measured ClickHouse I/O with AWS accounting rules, not measured on EBS.
-- **Outside a validity domain** a value is still shown, labelled "extrapolated".
+Commit `09d0772a842` is the source of the measured binary `26.8.27.20001.altinityantalya`: `antalya-26.8` merged into
+the CAS disk-transactions branch.
+
+Every coefficient also has a basis. It decides what happens outside the verified range:
+
+| Basis | Meaning | Outside the verified range |
+|---|---|---|
+| `derived` | A formula over user-visible quantities (columns, rows, bytes, settings such as `min_bytes_for_wide_part`) taken from the source; rig cases confirm it | The formula applies unchanged. The cell gets the informational mark "formula from source; verified at …" |
+| `fitted` | An empirical term with no source derivation, such as EBS I/O per byte, merge fan-in or GC round duration | The column is `extrapolated` |
+| none | Not yet classified; the page treats it as `fitted` | The column is `extrapolated` |
+
+In the committed reports the bases split as follows:
+
+- **Derived:** object counts per part on every object-store variant, multipart sizing, `s3` and `s3plain` request
+  counts per part, file removal and directory requests, `GET`s per stream read (cold, warm, cache miss) on `s3` and
+  CAS, and CAS startup `GET`s per part and per log record.
+- **Fitted:** EBS I/O demand, lifecycle merge shape, replication acquisition and catch-up, `s3` object sizes, bytes
+  per `GET`, local metadata and cache I/O, merge and mutation source reads, CAS branch population, GC round requests
+  and duration, reclaim delays, and CAS startup requests.
+- **Assumed:** EBS deletes, restarts, reads and capacity headroom (D17), `peak_factor` (D16), and every preset default.
+
+Further rules:
+
+- **Store.** Measured counts are validated on RustFS behind the ledger proxy, not on AWS. No AWS bill was reconciled.
+- **EBS I/O.** Demand is measured ClickHouse I/O converted with AWS accounting rules. IOPS use the provider's
+  merged-stream rate, a lower bound (D16).
+- **Verified range.** The range the rig covered. The page shows it in the (i) dialog only.
 - **Applicability** is per variant × operation × family. A family that no report lists for a variant is
   `not_applicable`: it needs no evidence and adds nothing to the column. Only `supported` families need evidence.
-- **Unavailable columns** have no total, no savings delta and no "cheapest" mark. The states are `not_supported`,
-  `backlog_grows`, `unsupported_cut` and `unavailable`.
+
+## What the page shows {#page}
+
+`utils/storage-cost-calculator/index.html` evaluates this contract in the browser. It prices one workload on four
+columns: EBS, S3, S3 plain rewritable and CAS.
+
+### Input tiers {#input-tiers}
+
+Every registry input has a page tier (D21, D23). The `Form placement` table at the end of [Inputs](#inputs) lists
+each input's tier.
+
+| Tier | Where on the page | Rule |
+|---|---|---|
+| `workload` | Always visible: data size, ingest rate, retention, replicas, shards, replica placement | Describes the workload |
+| `setting` | Default form, at most 10, named by the ClickHouse setting in code font where one exists | A product manager sets it after one sentence, and it moves money for a typical workload |
+| `advanced` | The collapsed "Low-level assumptions" section at the bottom of the page | Settable, but rarely matters |
+| `hidden` | Never an input; value and evidence appear in the (i) dialog | Needs more than one sentence, or is a table key |
+
+Data size, ingest rate and retention are linked: data = ingest × retention. Two of the three can be locked, and the
+third is derived. Every other input defaults to a standard deployment profile, so the default page prices all four
+columns (D22).
+
+### The (i) dialog {#info-dialog}
+
+Each input, cell and column has an (i) button. All open one dialog (D26); Esc closes it and returns focus. It shows:
+
+- **Facts:** ClickHouse name, kind, current value, the derivation rule, the measured (verified) range, the default
+  and the evidence: report, measurement ids, and source cites as `src/<path>:<line> @ 09d0772a842`.
+- **Why or Details:** the cell's reasons and notes, or a column's sizing and notes.
+- **Reports:** links to the report directories behind the value.
+- **Fill from your cluster:** a SQL query and its column mapping, when the registry has one.
+
+Cell notes sit on their cell as an (i) marker. Column notes sit in the table's Notes row under that column.
+
+### States {#states}
+
+Page states:
+
+| State | Meaning |
+|---|---|
+| `ok` | Every price is present; columns show their own states |
+| `prices_missing` | An edited price preset has a missing or invalid price. Quantities are shown, money is not |
+| `cannot_reproduce` | The link was made with another contract or code version, or names a price preset this contract lacks. No number is shown, only the values the user entered |
+
+Column states and marks:
+
+| State or mark | Card | Meaning |
+|---|---|---|
+| `ok` | Total, deltas, rank | Every cell priced inside its verified range |
+| `extrapolated` | Total with an "extrapolated: N cells" badge | A fitted term outside its verified range, a lookup that used the nearest measured key, or an assumption row |
+| informational mark | Total, no badge; the note is in the (i) dialog | A derived formula outside its verified range: "formula from source; verified at …". It never lowers the state |
+| `not_supported` | One sentence, no total | The product cannot run the workload, such as `s3plain` with mutations > 0 |
+| `backlog_grows` | One sentence, no total | CAS GC cannot keep up with retirement, so no steady-state month exists |
+| `unavailable`, `unsupported_cut` | "not available", no total | A missing cell or measurement. D22 makes both internal errors that no preset may produce |
+
+The "cheapest of N priced" badge needs at least two columns with a total. It names extrapolation when the winner is
+`extrapolated`.
+
+### EBS sizing {#ebs-sizing}
+
+The EBS card shows one line: volume size per replica, the IOPS and MiB/s it needs, and a verdict (D25). The column's
+(i) dialog expands it:
+
+| Line | Source |
+|---|---|
+| Volume size per replica | Stored data × `ebs_capacity_headroom` (assumed, default 1.3) |
+| Peak demand per replica | Mean demand × `peak_factor` (assumed, default 1) |
+| gp3 baseline per volume | 3,000 IOPS and 125 MiB/s included, from the price preset |
+| Layout | The cheapest feasible gp3 layout, or the manual one: volumes × size, IOPS, MiB/s, replicas |
+| Verdict | Baseline sufficient; provision N IOPS and M MiB/s at the stated monthly extra; several volumes; or no feasible layout |
+| Demand by operation | IOPS and MiB/s of each operation cell |
+
+The same block covers the local disk of the `s3`, `s3plain` and `cas` columns (cache and metadata). A column that
+keeps nothing locally pays the minimum gp3 volume per replica.
+
+### Formulas from source, measurements verify {#formulas-from-source}
+
+A coefficient is a formula over quantities a user can read from a cluster (D24). Rig table shapes are verification
+points, not lookup keys:
+
+| Shape | Columns | Streams per column | Skip-index files | Projections | Empty files per Wide part | Cases (`s3` report) |
+|---|---|---|---|---|---|---|
+| `narrow` | 5 (`UInt64`) | 1 | 0 | 0 | 0 | `objects-per-part.narrow-compact`, `.narrow-wide`, `.narrow-compact-1k` |
+| `wide` | 40 | 1 | 0 | 0 | 0 | `objects-per-part.wide-compact`, `.wide-wide`, `.wide-compact-2` |
+| `types` | 21 (typed) | 3.19 | 1 | 1 | 12 | `objects-per-part.types-fit`, `.types-fit-compact`, `.types-fit-wide` |
+| hold-outs | 20 (`mid-wide`); 21 at 3.29 streams (`types-holdout`) | | | | | `objects-per-part.mid-wide`, `.types-holdout` |
+
+The `s3` and `s3plain` object-count formulas reproduce every point above exactly. The `columns` input offers narrow
+and wide as quick picks. Outside 5–40 columns or 1–3.29 streams the formulas still apply and carry the informational
+mark.
 
 ## Known inaccuracies {#known-inaccuracies}
 
-<!-- known-inaccuracies: refresh after Plan 2 -->
-
 ### Model limits {#model-limits}
 
-- Operations without evidence: the closure check lists every variant × operation × family cell that has neither
-  evidence nor a `not_supported` state. The page shows such a column as `unavailable`.
-- Card and probe cells (`card_cells` in the contract) reconcile single cards. The page does not evaluate them.
-- Break-even sweeps need priced cells. Until the research reports land, every sweep total is `unavailable` and
-  every crossing is `none`.
+States below match the presets and the [Break-even](#break-even) block.
+
+- **Coverage.** Every preset prices all four columns, except `s3plain` on `analytics_batch`. That preset has
+  mutations, and a plain rewritable disk refuses every mutation, so the column is `not_supported`.
+- **Metrics preset.** The EBS column is `extrapolated`. Its 1,000-row inserts lie outside the 30k–400k-row range of
+  `op_write_bytes`, so the mutations, deletes and recovery cells extrapolate (D18).
+- **Cross-AZ CAS.** With `topology = cross_az` the CAS column is `extrapolated`. `acquire_bytes` has no CAS key,
+  because CAS interserver bytes do not scale with part bytes. The transfer row uses the `s3plain` value instead.
+- **EBS assumptions.** Deletes use the largest measured write per dropped part. Restarts cost 0 because they write
+  less than an idle server. Reads are a full-scan derivation without page-cache hits, priced as IOPS only (D17).
+- **EBS IOPS.** The merged-stream rate is a lower bound. Syscall-level counts on the rig were 1.3–6.5× higher, so
+  small-I/O workloads may be underpriced. The gp3 3,000-IOPS baseline usually dominates (D16).
+- **Cut P2 cards.** `async-inserts`, `amplification-run`, `detach-attach`, `cache-eviction`, `replacement` and
+  `fault-fetch` were not run. A 36-hour deadline cut them (D14). A non-zero replacement rate is not modelled.
+- **No rates or latency.** The model prices request counts and bytes. S3 rate limits, `503 Slow Down` and commit
+  latency are not modelled.
+- **Card cells.** `card_cells` reconcile single rig cards; the page does not evaluate them.
 
 ### Blog claims against the model {#blog-claims}
 
 Source: `docs/superpowers/blog/2026-cas-storage-model/part4-cheap-self-sufficient.md` on branch `cas-blog-article`
 (`git show cas-blog-article:<path>`). The table lists each quantitative or categorical claim about storage cost.
-"Model: no priced cell yet (Plan 2 pending)" means the contract has no formulas cell for it, so the model gives no
-number. Request prices come from the billing preset `aws-us-east-1` (AWS price list, checked 2026-10-24).
+Request prices come from the billing preset `aws-us-east-1` (AWS price list, checked 2026-10-24). Counts cite the
+CAS report, `docs/superpowers/reports/2026-10-24-storage-cost-cas`.
 
 | Line | Blog claim | Model's current answer |
 |---|---|---|
@@ -64,29 +189,20 @@ number. Request prices come from the billing preset `aws-us-east-1` (AWS price l
 | 77-78 | The write tier is about 12.5× the read tier | Agrees. 0.005 / 0.0004 = 12.5. |
 | 78 | `DELETE` is free | Agrees. `delete_cancel` is $0 and also covers `DeleteObjects` and `AbortMultipartUpload`. |
 | 79-81 | Writes scale to at least about 3,500 requests per second per prefix; bursts past that get `503 Slow Down` | Not modelled. The calculator prices request counts and has no rate limits. |
-| 88-93 | The collector never `LIST`s the pool on the normal path | Not checked. `probe_cas_gc_cohort` recorded 14 `LIST` requests in the priced cell (20 inserts, `DROP TABLE`, 3 GC rounds). The probe does not show whether they scan the pool. Model: no priced cell yet (Plan 2 pending). |
+| 88-93 | The collector never `LIST`s the pool on the normal path | Agrees at the measured scale. `gc_round_requests` has no per-blob-object term: a round lists a fixed number of times, fitted at 1k–10k objects. The `cas` / `gc` cell prices `ListObjectsV2` per round. |
 | 95-99 | A naive commit takes four to six sequential round trips and adds over a second to every insert | Not modelled. The calculator has no latency. |
 | 121-123 | An early configuration issued about 5,100 `HEAD` per second, two-thirds of reads failing | Not modelled. This is a soak observation, not a steady-state rate. |
-| 163-172 | A commit costs the new blob `PUT`s, one tree `PUT` and exactly one manifest CAS `PUT`; at most two control writes under contention | Model: no priced cell yet (Plan 2 pending). `probe_cas_expect` (phase-0 report) recorded 27 foreground `PUT` for 3 inserts: 3 blobs and 24 conditional writes, which is 8 per insert, and 3 `HEAD` (one per blob). It does not split the conditional writes into tree, manifest and control. |
+| 163-172 | A commit costs the new blob `PUT`s, one tree `PUT` and exactly one manifest CAS `PUT`; at most two control writes under contention | Disagrees. The `cas` / `inserts` cell prices a fixed set of control `PutObject` and `GetObject` per published part beyond the blob writes (7 each at this contract), measured exactly on the uncontended path. `probe_cas_expect` (phase-0 report) recorded 24 conditional writes for 3 inserts. |
 | 169-172 | No Keeper operation at all | Not modelled. The ledger counts object-store requests only. |
 | 198-199 | A beta RustFS build leaked about 74 GB across 18 keys in an hour | Not modelled. This is a backend defect on the test store. |
-| 268-275 | The read path issues no `HEAD` and no `LIST` | Model: no priced cell yet (Plan 2 pending). No `reads` cell exists for `cas`. |
-| 293-294 | A part marked in round R is deleted in round R+1 | Not checked. `probe_cas_gc_cohort` reclaimed all 40 cohort objects 14.3 s after `DROP TABLE` with rounds every 5 s; it does not record the round of each mark and delete. |
+| 268-275 | The read path issues no `HEAD` and no `LIST` | Agrees. The `cas` / `reads` cell has `GetObject` rows only: 2 per stream on a first read (marks blob and `.bin` range), 1 when warm. A server start (`cas` / `recovery`) does send `HeadObject` and `ListObjectsV2`. |
+| 293-294 | A part marked in round R is deleted in round R+1 | Not checked per round. `reclaim_delay_periods` measures delays from retirement: condemn after about 0.8 GC periods, blob delete after about 2.75. The garbage storage row uses that delay. |
 | 305-306 | About 80,000 audit events in twenty minutes at two writers | Not modelled. This is a soak observation. |
 
 ## Review {#review}
 
-Codex (`gpt-6-astra`, high effort, one round) reviewed the calculator code against the contract-only rule and the state and closure rules. It reported 5 MAJOR and 2 MINOR findings. The first MAJOR is a spec question; each other MAJOR is closed with a named test.
-
-| Finding | Severity | Disposition |
-|---|---|---|
-| Rate unit conversion in `pipeline.js`, delta subtraction, bar-segment sums in `viewmodel.js` are arithmetic outside the contract | MAJOR | Not a violation. Rate conversion parses an input (§4.2, the unit selector: month = 730 h). A delta is a difference of two contract totals, an output of the model (§4.5, deltas as outputs). A bar segment is display grouping the contract does not evaluate. No change. |
-| `allocate` re-bills each cell with the default outcome mix, so cell money disagrees with the billed total | MAJOR | Closed. `allocate` takes the outcome mix of the aggregate bill. Test `test_allocation_keeps_the_outcome_mix`. |
-| An operation whose families are all `not_applicable` is still evaluated and billed | MAJOR | Closed. `evaluateVariant` skips such an operation. Test `test_all_not_applicable_operation_contributes_nothing`. |
-| Extrapolation is lost through registry derivations and table coefficients | MAJOR | Closed. Derived values carry the flag into every `input` node that reads them. Table coefficients keep `validity` and lookups apply it. Test `test_extrapolation_survives_derivations_and_table_validity`. |
-| Support closure credits a card's evidence to every variant in `model_variants`, though no case policy measured it | MAJOR | Closed. `support` rejects a card whose `model_variants` lists a variant that no case policy measures. Test `test_card_variant_without_a_measuring_policy_is_flagged`. |
-| Registry and precedence expressions get no generic dimension check | MINOR | Parked. Needs a dimension checker over registry and precedence expressions, well over 10 lines. No registry expression has a wrong dimension today. |
-| Pinned registry defaults are missing from the evaluation context | MINOR | Closed (3 lines). `buildCtx` reads a pinned quantity's default. Test `test_pinned_quantity_default_reaches_expressions`. |
+Review findings on the calculator code and the measurement contract, with dispositions:
+[REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## Reproduce {#reproduce}
 
@@ -96,28 +212,65 @@ Pinned inputs, from `docs/superpowers/reports/2026-10-24-storage-cost-phase0/REA
 |---|---|
 | Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (the download decompresses itself on first start) |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
-| Store | RustFS behind the ledger proxy, bucket `yardstick-cost` |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`; `--source-dir` defaults to a checkout of it at `tmp/src-26.8` |
+| Store | RustFS 1.0.0-beta.9 behind the ledger proxy, bucket `yardstick-cost`. `rustfs-bin.sh` runs only that build, checked by sha256. The committed runs were identified as this build after the fact ([measurement contract](measurement-contract.md#identities)) |
 
-1. Run the rig gate. It runs the six acceptance probes, then the drill and render checks, and exits 2 on a failure:
+`cost run` and `cost probe` take `tmp/yardstick.lock` themselves for the whole session. A second session exits 3 and
+names the holder. Exit codes of `cost run`, `cost probe` and `cost estimate`:
+
+| Exit | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | measurement failure: a `FAILED` record, a failed cleanup, a failed probe, or a run with no `ok` record |
+| 2 | usage: bad flags or selection, unknown card, missing source commit, missing or empty run directory |
+| 3 | environment: lock held, dirty rig, store not the pinned build, services not answering, run directory exists |
+
+1. Run the rig gate. It runs the six acceptance probes, then the drill and render checks:
 
    ```bash
    utils/cas-yardstick/rustfs-bin.sh ensure
-   YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost probe \
+   python3 utils/cas-yardstick/yardstick.py cost probe \
        --binary tmp/bin/26.8/clickhouse --runs-dir tmp/cas-yardstick/cost-runs
    ```
 
-2. Run the experiments of a research report. `measurements.jsonl` and `raw/` are written to the report directory:
+2. Run the experiments of a research report:
 
    ```bash
    python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
        --runs-dir tmp/cas-yardstick/cost-runs --manifests <report directory> --cases all
    ```
 
-   `--manifests` takes the report directory itself; the rig reads its `experiments/*.json`. Reports: `docs/superpowers/reports/2026-10-24-storage-cost-phase0`
-   and `docs/superpowers/reports/2026-10-24-storage-cost-lifecycle`.
+   `--manifests` takes the report directory and reads its `experiments/*.json`. Each report README names its
+   policies and cases. The run writes `<runs-dir>/<run_id>/ledger.jsonl`, `measurements.jsonl` and one directory per
+   pass; it writes nothing into the report. `--runs-dir` defaults to `tmp/cas-yardstick/runs`. Reports:
 
-3. Regenerate the contract, the page copy, the measured fixtures and the `Formulas` and `Inputs` blocks. Sweep the
+   | Report | Content |
+   |---|---|
+   | `docs/superpowers/reports/2026-10-24-storage-cost-phase0` | Six acceptance probes and the runtime estimate |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-lifecycle` | Part types, multipart sizing, parts per insert, merges |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-s3` | `s3` operation graphs |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-s3plain` | `s3_plain_rewritable` graphs and capability matrix |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-cas` | CAS graphs, GC, lease, cold reads and startup |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-replication` | Replication, recovery and fault graphs |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-ebs` | EBS demand and conversion |
+   | `docs/superpowers/reports/2026-10-24-storage-cost-validation` | Fresh hold-outs and the hold-out ledger |
+
+3. Export a run into its report. No rig command does this; the committed reports were exported by hand with scripts
+   that are not in the repository. The steps were:
+
+   - Append the run's `measurements.jsonl` records to the report's `measurements.jsonl`.
+   - For each cited record, copy the ledger rows from its `setup_start` mark to its `teardown_end` mark (labels
+     `<mark>@<measurement_id>`) into `raw/<card>/<run_id>/ledger.jsonl`. Gzip it when it exceeds 64 KiB.
+   - Gzip the pass's relay logs and strace output beside it.
+   - Regenerate the checksums as `docs/superpowers/cost-model/schemas/report-directory.md` states:
+
+     ```bash
+     cd raw && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+     ```
+
+   `closure_check.py` replays every cited record from its slice and checks `raw/SHA256SUMS`.
+
+4. Regenerate the contract, the page copy, the measured fixtures and the `Formulas` and `Inputs` blocks. Sweep the
    new contract, then generate again so the manifest hashes the sweep. The sweep does not change the contract version:
 
    ```bash
@@ -128,14 +281,14 @@ Pinned inputs, from `docs/superpowers/reports/2026-10-24-storage-cost-phase0/REA
    python3 utils/storage-cost-calculator/tools/generate_contract.py generate
    ```
 
-4. Check that every generated file matches a fresh render, then run the closure checks:
+5. Check that every generated file matches a fresh render, then run the closure checks:
 
    ```bash
    python3 utils/storage-cost-calculator/tools/generate_contract.py check --mode final
    python3 utils/storage-cost-calculator/tools/closure_check.py --mode final
    ```
 
-5. Run the tests:
+6. Run the tests:
 
    ```bash
    SCC_DEV=1 node --test 'utils/storage-cost-calculator/test/*.test.js'

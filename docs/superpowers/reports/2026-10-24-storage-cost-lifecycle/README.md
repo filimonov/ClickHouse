@@ -10,7 +10,7 @@ doc_type: 'reference'
 # Storage cost calculator — lifecycle rules (R5) {#lifecycle}
 
 Every lifecycle rule below reconciles on the `s3` policy of the pinned binary: 13 evidence cases plus 2 cut cases
-with data (`async-inserts.*`, cut by owner directive D14), × K=3, 45 records, all ok.
+with data (`async-inserts.*`, cut to meet the campaign deadline: D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)), × K=3, 45 records, all ok.
 Part types, part sizes and upload part sequences match their predictions exactly, including both source hold-outs
 (`boundaries.merge-cross`, `boundaries.multipart-equal`). The fitted hold-out `merge-natural.wide` lands inside its
 committed bounds. The write amplification rule fits with effective fan-in 6.14, and merged-away parts are accounted
@@ -20,7 +20,7 @@ as outdated storage.
 |---|---|
 | Binary, downloaded | `tmp/bin/26.8/clickhouse`, sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46` |
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit |
 | Report run | `cost-20261024T064154Z`, rig commit `474392fb9ad`; `measurements.jsonl` holds its 45 records |
 | Earlier runs | `cost-20261024T044126Z` (rig `199348a48f3`, 42 records): the fit data of the `merge-natural.wide` prediction. `cost-20261024T045917Z` (rig `5e8f5165369`, 45 records): the first hold-out run, before the review fixes. `cost-20261024T054012Z` (rig `9dbe21126be`) and `cost-20261024T061359Z` (rig `d53e470cdb5`), 45 records each: after the round-1 and round-2 fixes. All ok, archived as `raw/runs/<run>/measurements.jsonl.gz` |
 | Predictions | source-only `2d931d33a05` (+ `fcaec9179c7` for `insert-split`), fitted `b652973295f`; each before every run that it predicts. Citations corrected in `9dbe21126be` without changing any expected value |
@@ -28,7 +28,7 @@ as outdated storage.
 
 Shared lifecycle definitions every variant's cost cells build on: which part type an insert or a merge produces,
 how a part file is split into upload requests, how many parts an insert creates, how merges grow parts and rewrite
-bytes, and when a replica fetches a result instead of producing it. Each rule cites `tmp/src-26.8` at
+bytes, and when a replica fetches a result instead of producing it. Each rule cites `src/` at
 `09d0772a842c5d73cf3ef35b4c8b017d838215a0`; the registry quantities carrying them are in
 `docs/superpowers/cost-model/inputs-registry.json` (blocks `schema`, `inserts`, `merges`, `replication`).
 
@@ -190,8 +190,8 @@ missing or covered (`:105`, `:122`), or when the entry is at least the time thre
 size, 1.1 × the source's bytes on disk with expired-TTL parts excluded (`:138`; `Compaction/CompactionStatistics.cpp:36`,
 `:48`), reaches the size threshold while a replica has the result (`:140`). The single-replica branch (`:162`) never
 fires: the picker accepts merge entries only. Zero-copy as for merges (`:199`). Else mutate locally, keeping the
-source part type. Registry: `acquisition_rule` and its settings. Measuring the split is Task 5 (`replication-*`
-cards).
+source part type. Registry: `acquisition_rule` and its settings. The replication report measures the split
+(`replication-*` cards).
 
 ## Cases and reconciliation {#reconciliation}
 
@@ -255,8 +255,8 @@ them is the hold-out at 32, so the validity range spans an unmeasured gap.
   prediction's `inputs.tolerance_rules`: amplification abs = largest fit residual + half the largest K=3 range;
   distribution TV = 2 × largest fit TV + 1 / predicted merges.
 - **Validation.** `amplification-run.2h` (one 1000-row insert per second for 2 h) keeps its manifest and a prediction
-  with the registry formula and this fit (f = 6.1437, abs 0.2502). It is cut by owner directive D14 (`coverage.json`
-  status `cut`); no task runs it.
+  with the registry formula and this fit (f = 6.1437, abs 0.2502). It is cut (D14; `coverage.json`
+  status `cut`) and was not run.
 
 ## Pass durations {#durations}
 
@@ -309,75 +309,11 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
 
 ## Review {#review}
 
-Codex (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_lifecycle_prompt.txt`, log
-`tmp/codex_lifecycle_r1.log`) round 1 found 12 MAJOR and 6 MINOR. It confirmed that all 45 records' request counts
-reconcile with their raw windows, the fitted values reproduce, the hold-out predictions precede their runs, and the
-wide hold-out tolerances reproduce from the pre-run data. Fixes are in `9dbe21126be`; the cards were re-run.
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
-| # | Finding | Disposition |
-|---|---|---|
-| 1 | MAJOR: `part_type` omits the Wide overrides | Fixed: `adaptive_granularity` and `quantize_pq_codec` branches; `lifecycle_rules.test.js` |
-| 2 | MAJOR: multipart omits the strict size and one-buffer multipart | Fixed: strict branch in `multipart_parts`, new `multipart_upload`, README; test |
-| 3 | MAJOR: `parts_per_insert` makes `INSERT SELECT` async | Fixed: `insert_kind`, oversized data synchronous; test |
-| 4 | MAJOR: squashing formula is not whole source blocks | Fixed: emitted rows rounded up to `insert_source_block_rows`; Codex's 111 195 300-row example gives 100; test |
-| 5 | MAJOR: async sharing labelled source-derived | Fixed: evidence `assumed`, upper-bound estimate with payload, client and dedup caps; test |
-| 6 | MAJOR: natural-merge bounds ignore TTL and force merges | Fixed: claims scoped to the simple selector; the cards' tables have no TTL and force merge off |
-| 7 | MAJOR: acquisition rule misses branches, remote threshold misattributed | Fixed: ordered fetch, wait and skip branches; the remote threshold only gates the picker's refresh |
-| 8 | MAJOR: mutation sizing and age boundary | Fixed: 1.1 × source bytes on disk without expired TTL parts; age inclusive |
-| 9 | MAJOR: amplification fitted to another formula than the registry's | Fixed: fit to `write_amplification_rule` at the row-weighted size (f = 6.2271), hint corrected; test `test_amplification_rule_is_the_registry_formula_at_the_row_weighted_ratio`; committed prediction reported apart |
-| 10 | MAJOR: hold-out TVs refer to the previous fit | Fixed: `coefficients.json` records both distances, against the committed reference and the current table |
-| 11 | MAJOR: `quiesced` misses merges between polls | Fixed test-first (`test_quiet_period_counts_a_merge_finished_between_polls`): the part log's last merge end resets the quiet period; re-run |
-| 12 | MAJOR: merged-away objects stay active | Fixed test-first (`test_merged_away_parts_become_outdated_at_their_merge`): `reclassify` marks them `outdated` at the merge; assertion `inventory.outdated_byte_hours>0`; re-run |
-| 13 | MINOR: wrong citation anchors | Fixed in the predictions' `source_refs` and the README |
-| 14 | MINOR: `old_parts_lifetime` is an eligibility age | Fixed: label and README say minimum age |
-| 15 | MINOR: ladders differ past 12 levels | Fixed: the Python ladder caps at 12; test |
-| 16 | MINOR: async bounds do not test batching | Closed by D14 cut: the async cases are cut, data only |
-| 17 | MINOR: two coverage spans misdescribe their cases | Fixed: `level-cross` spans its merge result, `bursty` states burst size, pause and clients |
-| 18 | MINOR: the stated domain excludes the hold-out | Fixed: README and the coefficients' `domain` separate fit and hold-out |
+## Cuts {#cuts}
 
-Round 2 (prompt `tmp/codex_lifecycle_prompt_r2.txt`, log `tmp/codex_lifecycle_r2.log`) closed MAJORs 6, 8, 9, 10
-and every MINOR, kept 8 MAJORs open and found one new MAJOR. It confirmed that the re-run records replay, the
-checksums match, and no hold-out expected value changed after its prediction commit. Fixes are in `d53e470cdb5`; the
-cards were re-run again.
-
-| Finding | Round 2 | Disposition |
-|---|---|---|
-| 1 | hint can give the wrong `adaptive_granularity` | Fixed: the hint states the whole predicate (mixed granularity or no non-adaptive part) |
-| 2 | a clamped first buffer below 32 MiB is missed | Fixed: `multipart_upload` compares with the smaller of the first buffer and the single-PUT limit; test |
-| 3 | native admission measured as inline | Fixed: `insert_protocol`; native decoded bytes < limit, inline raw bytes ≤ limit; test |
-| 4 | client blocks are not fixed; disabled minimums give unavailable | Fixed: `insert_data_block_rows` input; a disabled minimum is skipped, both off emit every block; tests |
-| 5 | wrong dedup predicate; mean-rate bound; client hint | Fixed: `deduplicate_insert` (on by default) drives the 450 cap; the estimate states evenly spaced arrivals; the client hint reads `PendingAsyncInsert`; test |
-| 7 | the "wait" branches fetch | Fixed: README and label say "try to fetch, quietly retrying" |
-| 11 | a merge can slip past the last flush | Fixed test-first (`test_completion_waits_again_when_the_final_part_log_shows_a_later_merge`): the part log read after the final flush is the cutoff, a later merge or a running one restarts the wait |
-| 12 | long runs lose part-to-object mappings | Fixed test-first (`test_layout_accumulates_across_snapshots`, `test_long_runs_snapshot_the_layout_while_inserting`): snapshots every 60 s accumulate |
-| new | the 2 h prediction mixes fits | Fixed: every field recomputed from the report run's six fit records with the registry formula |
-
-Round 3 (`tmp/codex_lifecycle_prompt_r3.txt`, `tmp/codex_lifecycle_r3.log`) closed round-2 findings 2, 3, 7, 12
-and the 2 h prediction, kept 1, 4, 5, 11 open and found one MINOR. It confirmed the re-run replays, the fit
-reproduces (6.2845998), every 2 h prediction field reproduces, and no hold-out expected value changed after its
-prediction commit. Fixes are in `474392fb9ad`; the cards were re-run.
-
-| Finding | Round 3 | Disposition |
-|---|---|---|
-| 1 | the hint's creation-date shortcut | Fixed: removed; the hint says to check for non-adaptive marks files |
-| 4 | native async overflow forwards one combined block | Domain: stated as not covered in the `parts_per_insert` label and the README |
-| 5 | backward-compatible dedup with table-only async reads `insert_deduplicate` | Fixed: `async_insert_source` and `insert_deduplicate`; test |
-| 11 | a merge can start after the final flush | Fixed test-first (`test_completion_waits_again_when_an_active_part_has_no_part_log_row`, `test_no_workload_request_after_the_observation_cutoff`): active parts must be explained by the part log, and a request after the cutoff fails the pass |
-| new MINOR | "serialized sizes" of native entries | Fixed: decoded `Block::bytes` for native, raw length for inline |
-
-Round 4 (`tmp/codex_lifecycle_prompt_r4.txt`, `tmp/codex_lifecycle_r4.log`) closed every open finding (1, 4, 5, 11
-and the wording MINOR) and re-checked 9, 12 and the 2 h prediction: **0 MAJOR open**. It confirmed all 45 records
-replay, 647 retirement entries over 18 merge records replay, the nine raw checksums match, and the fit reproduces
-(6.1436930). It found two MINORs:
-
-| Finding | Round 4 | Disposition |
-|---|---|---|
-| R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
-| R4-2 | the observation cutoff is not in the records | Closed: the natural-merge records of the validation report (`cost-20261024T154049Z`, `s3` and `s3plain`) carry `quiet_cutoff_us` and `cutoff_us`; replaying `window.no_workload_after_cutoff` from their raw ledger finds 0 workload attempts after the cutoff, as recorded (`docs/superpowers/reports/2026-10-24-storage-cost-validation` §Amplification) |
-
-MINOR totals over the four rounds: 7 fixed, 1 closed by the D14 cut (#16), 1 closed by the validation report (R4-2).
-
-**Cut by owner directive D14.** The campaign deadline cuts every P2 case (spec §5.5): `async-inserts.steady`,
+The campaign deadline cut every P2 case (D14) (spec §5.5): `async-inserts.steady`,
 `async-inserts.bursty` and `amplification-run.2h` have `status: cut` in `coverage.json`. Their manifests and
 predictions stay. The async records already in `measurements.jsonl` stay as data; their edges are removed, so
 `async_insert_flush_rule` and `inserts_per_async_flush` remain source-pinned or assumed with no measured edge. The 2 h
@@ -388,12 +324,14 @@ registry quantity rested only on a cut case, so none becomes `unsupported`.
 
 ```bash
 utils/cas-yardstick/rustfs-bin.sh ensure
-YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-lifecycle --policies s3 --repeats 3 \
   --cases <experiment ids> --runs-dir tmp/cas-yardstick/cost-runs
 utils/cas-yardstick/rustfs-bin.sh stop
 python3 utils/storage-cost-calculator/tools/closure_check.py --mode dev
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.
 
 The deterministic cases alone: `YARDSTICK_LIVE=1 python3 -m unittest tests.live_lifecycle -v` from
 `utils/cas-yardstick`.

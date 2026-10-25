@@ -14,13 +14,13 @@ A follower acquires every inserted part by fetch and, with default settings, exe
 | Item | Value |
 |---|---|
 | Binary, executed | sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` (`tmp/bin/26.8/clickhouse`) |
-| Source commit | `tmp/src-26.8` at `09d0772a842c5d73cf3ef35b4c8b017d838215a0` |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit |
 | Report runs | `cost-20261024T115147Z`, `cost-20261024T121344Z`, `cost-20261024T123232Z`; `measurements.jsonl` holds their 174 records, 168 ok and 6 FAILED (kept: they are open reconciliation items) |
 | Rig | every run executes the cards from a detached worktree at `f35fd96a730`, so all records name one rig commit; manifests and predictions are read from this directory |
 | Earlier runs | `cost-20261024T093949Z` (smoke, s3, K=1: found the zero-copy receiver `HeadObject`); `cost-20261024T113828Z` (stopped after 66 records: local had no window start, CAS windows crossed, s3plain sent `HeadObject` the assumed ranges missed, CAS republishes a failed blob 8 times). Neither is in `measurements.jsonl` |
 | Predictions | per file (`prediction_commit`): the natural hold-out `replication-natural-holdout.wide` on `s3`, `cas` and `local` at `630bc885ee4`, before any run; its `s3plain` file at `2c006846dbc`, where its mutation split became `null` because s3plain refuses mutations; every other case at `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs; after the report runs `bac037b336d` turns the s3 `fetch.merge` sender read into a range and adds the fresh hold-out `faults.multipart-abort-part3c` |
 | Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
-| Cuts | `replacement.default` and `faults.fetch` (P2), owner directive D14: no manifest and no coefficient; the registry has no rows for them |
+| Cuts | `replacement.default` and `faults.fetch` (P2), cut to meet the campaign deadline (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)): no manifest and no coefficient; the registry has no rows for them |
 
 Cards: `utils/cas-yardstick/yardstick/cost/cards/replication.py` (`replication-fetch`, `replication-local`,
 `replication-zero-copy`, `replication-natural-fit`, `replication-natural-holdout`, `restart-catchup`) and
@@ -30,7 +30,7 @@ acquisition assertion); live: `tests/live_replication.py`.
 
 ## Operation graphs {#operation-graphs}
 
-Paths are under `tmp/src-26.8/src/`.
+Paths are under `src/` at `09d0772a842`.
 
 ### Which path a follower takes {#acquisition}
 
@@ -417,29 +417,15 @@ Values are in `coefficients.json`. The cut cases measure no replacement or fetch
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only), run while the natural and restart runs were in
-progress: 9 MAJOR, 1 MINOR, verdict REVISE. Dispositions (rows 1–9 MAJOR, row 10 the MINOR):
-
-| # | Finding | Disposition |
-|---|---|---|
-| 1 | Failed repeats are discarded before fitting | Closed by record: failed records stay in `measurements.jsonl` and are open items in §[Gaps](#gaps); CAS residue has no value; the s3 sender re-read sets `abs` 1 |
-| 2 | "Exact" s3plain checks accept broad ranges | Closed: exactness is claimed for `s3` and `ebs` only; s3plain and CAS are stated as checked against assumed ranges (§[Measured graphs](#graphs-measured)) |
-| 3 | Consumed hold-outs reused as independent evidence | Closed: every hold-out whose prediction changed in `0bc1e557850` is `consumed`; done hold-outs are on `s3` and `ebs` |
-| 4 | Hold-out edges done without a residual check | Closed: each hold-out edge is checked against the fit (table in §[Cases](#reconciliation)); a failing check makes the edge `consumed`. Object-proportional fetch ops scale with objects per part; CAS `acquire_bytes` is valid for the Compact shape only |
-| 5 | Stochastic tolerances not from K=3 | Closed for CAS: `abs` = half the widest K=3 range. Restart stays K=1 (controller ruling 8) with an assumed `rel` 0.25, labelled |
-| 6 | CAS relink "no blob reads" is false | Closed: the receiver's load reads blobs after promotion (`DataPartsExchange.cpp:1705`); text corrected |
-| 7 | Acquisition branches missing from graphs and coverage | Closed by exclusion: clone-instead-of-fetch, CAS byte-fetch fallbacks and zero-copy fallback are listed in §[Branches not exercised](#branches-excluded) with the reason each is outside the measured topology |
-| 8 | Restart accounting mixes acquisition, local execution and maintenance | Closed: startup and catch-up are recomputed from the raw ledger with maintenance excluded; follower local merges are reported per record (0 means the catch-up is fetches only) |
-| 9 | Retry outcomes discarded | Closed in the coefficient: `retry_outcome_mix` has an `attempt_kind` key (`attempts`, `store_reached`). The card-level assertion of the split is parked: it needs a new rig commit and a rerun of every fault case |
-| 10 | Retry formula stated too generally | Closed: scoped to the retryable writes; `GetObject` bypasses the outer loop |
-
-The MINOR (row 10) is closed; no finding is parked except the card assertion of #9.
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## Reproduce {#reproduce}
 
 ```
 utils/cas-yardstick/rustfs-bin.sh ensure
-YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-replication --cases all \
   --policies s3,s3plain,cas,local --replicas 2 --runs-dir tmp/cas-yardstick/cost-runs
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.

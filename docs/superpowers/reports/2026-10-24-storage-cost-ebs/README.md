@@ -23,6 +23,7 @@ EBS cells price one replica's gp3 volumes from three things:
 | Item | Value |
 |---|---|
 | Binary | antalya-26.8 `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit |
 | Rig policy / model variant | `local` / `ebs` |
 | Report run | `cost-20261024T174727Z`: all cases, K = 3, one rig commit |
 | Ops predictions | `be94501e681` (manifests of the s3 report on `local`) |
@@ -50,7 +51,7 @@ registry quantities (`insert_rows`, `mutated_part_rows`), so scale 0.05 and the 
   written seconds earlier are cached, so `/proc/<pid>/io` `read_bytes` is near 0. Returned bytes do not bound cold
   device reads in either direction: readahead and block rounding add bytes, cached re-reads repeat them. They are
   the operation's read demand as the server issues it. Reads include `preadv2(RWF_NOWAIT)`, the thread-pool reader's
-  page-cache path (`tmp/src-26.8/src/IO/preadNoWait.cpp:54`). The first fit run missed it: a full scan traced as
+  page-cache path (`src/IO/preadNoWait.cpp:54` @ `09d0772a842`). The first fit run missed it: a full scan traced as
   0.1 % of its bytes. `fcbd30ea391` adds it.
 - **Request sizes are syscall sizes at scale 0.05.** strace (`-f -ttt -T -yy`) attributes each call to a path:
   `table` (the `local` disk), `keeper` (r1's Keeper directory, excluded) and `server` (r1's other files). Paths off
@@ -135,7 +136,7 @@ Two hold-outs were consumed before the one that counts:
    joined the fit, and `ebs_ios_per_mib` became an upper envelope.
 2. `io-sizes.mixed-holdout` (predicted in `dcd7f48fcf8`) passed on `cost-20261024T140341Z`. It failed on
    `cost-20261024T140702Z`: merge reads gave 99–106 I/Os per MiB against a limit of 89, and insert reads were
-   inflated by `/proc` reads (Codex F1). The envelope does not generalise. `ebs_ios_per_mib` became the pinned rate,
+   inflated by `/proc` reads (review finding F1 in [REVIEW-HISTORY.md](REVIEW-HISTORY.md)). The envelope does not generalise. `ebs_ios_per_mib` became the pinned rate,
    and the F1 fix changed the read observations.
 
 3. `io-sizes.mixed-holdout-2` (predicted from `cost-20261024T145139Z` in `956cd4ec795`) failed on
@@ -197,7 +198,7 @@ The measurement does not identify a property of the workload:
 
 The hold-out is consumed and `peak_factor` is an assumed input with default 1: provisioning for the mean rate. On
 EBS a merge does not fail when it lacks throughput; it runs longer, within the provisioned rate. A measured value
-needs a paced natural-merge case, and Tier 1 has none: the paced `amplification-run.2h` is cut by D14. Both
+needs a paced natural-merge case, and Tier 1 has none: the paced `amplification-run.2h` was cut to meet the campaign deadline (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)). Both
 measurements stay in coverage: the fit edge is `done`, the hold-out edge `consumed`.
 
 ## Mutations, deletes, recovery and reads {#ops}
@@ -212,7 +213,7 @@ so `op_write_bytes` is the window's net r1 write bytes (idle rate × wall time s
 | `recovery` | B per restart | -3.595e+04 ± 643 | -3.701e+04, 1.99e+04, -1.03e+05 (priced 0 by assumption, ± 6.68e+03) |
 
 Mutations are measured: `op_write_bytes[mutations]`, with a fit and a passed hold-out. Drops and restarts are priced
-by explicit assumption rows (owner ruling), with both measurements kept as evidence:
+by explicit assumption rows (D17), because neither measurement carries, with both measurements kept as evidence:
 
 - **Drops:** 273 kB written per dropped part, the largest measured record. Net writes are steady within each case,
   but per dropped part the fit gives 236 kB (records up to 273 kB) and the hold-out 125 kB, so the per-part unit does not carry between
@@ -227,13 +228,13 @@ modelled. Replica fetches are not measured on `local`.
 `mutations` = (mutated Compact + Wide parts per month) × `mutated_part_rows` × `op_write_bytes[mutations]`, one
 replica's mean rate × `peak_factor`, IOPS at the floor.
 
-`reads` is a derivation (an assumption, by owner ruling), listed under the `lifecycle` family because its one
+`reads` is a derivation (an assumption, D17: the rig reads through a warm page cache), listed under the `lifecycle` family because its one
 coefficient, the scan rate, is measured by the `io-sizes` card: every part read is a full scan of an average part,
 `select_part_reads_per_day` × `data_bytes` / `active_parts` × `io_bytes_per_op[reads, read]` (the measured full-scan
-rate), priced as IOPS at the floor. Page-cache hits are not modelled; EBS reads are priced as IOPS only (owner
-decision). The s3 report's `bytes_per_get[shape]` was not used: it has no `narrow` key, the default shape.
+rate), priced as IOPS at the floor. Page-cache hits are not modelled; EBS reads are priced as IOPS only
+(D17). The s3 report's `bytes_per_get[shape]` was not used: it has no `narrow` key, the default shape.
 
-`storage` is an explicit assumption row (owner ruling): provisioned capacity = `data_bytes` × `ebs_capacity_headroom`
+`storage` is an explicit assumption row (D17): provisioned capacity = `data_bytes` × `ebs_capacity_headroom`
 (assumed input, default 1.3: free space and temporary merge output). The rig shows that headroom is needed, and
 cannot size it: the `merge-natural` allocated peaks on `local` exceed the final active bytes because merged-away
 parts stay until `old_parts_lifetime`, and the phase-0 `probe_local_volume` capacity peak shows the same. Its parts
@@ -241,33 +242,16 @@ are too small for the ratio to carry to production sizes.
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; log `tmp/codex_ebs_r1.log`): 6 MAJOR, 3 MINOR.
-
-| ID | Severity | Finding | Disposition |
-|---|---|---|---|
-| F1 | MAJOR | `/proc` and `/sys` reads counted as volume I/O | Fixed test-first (`71399e1090e`): only the replica's run directory and local disk count. Re-fit and fresh hold-out after the fix. |
-| F2 | MAJOR | Syscall `ceil(size / 256 KiB)` is not a device-IOPS upper bound | Fixed: IOPS are priced at the pinned provider floor (`ebs_sequential_ios_per_mib`, lower bound); the syscall counts are evidence only and the README calls them a proxy. |
-| F3 | MAJOR | Returned read bytes do not bound cold-device reads | Fixed in prose, the registry `evidence.ref` and the `io_sizes.py` docstring: read demand is the bytes the server issues, with no bound direction. |
-| F4 | MAJOR | Baseline subtraction removes server background demand | Fixed in prose and the registry `evidence.ref`: the subtracted idle rate is server background (mostly system logs, about 0.06 MiB/s) plus about 2.3 kB/s of Keeper (r1 − r2); it is stated as excluded from EBS demand. |
-| F5 | MAJOR | `ebs_fit` cannot reproduce the published coefficients from consumed FAILED records | Fixed: the report run has `ok` records of every fit case; `ebs_fit` reproduces `coefficients.json` from `measurements.jsonl` (README §Reproduce). Consumed FAILED records stay as evidence only. |
-| F6 | MAJOR | The start-timeout test and `server.sh` take a zombie for a live server | Fixed test-first (`71399e1090e`): liveness ignores state `Z`. |
-| F7 | MINOR | Source references: 128 KiB local read buffer, partition loop, `columns_substreams.txt` writer, buffer-size wording | Fixed (`cea0c37c6d3`). |
-| F8 | MINOR | Calibration hint omits the vector and no-wait calls | Fixed in the registry hint. |
-| F9 | MINOR | README presented the failed peak hold-out as confirmation | Fixed: [Peak factor](#peak) states both values and the scheduling cause; `peak_factor` is an assumed input. |
-
-
-A task review of `108c7853103` added: registry refs and the card docstring still claimed an upper bound and a
-Keeper-only baseline (fixed with F3/F4); the boundary was not in `validity` (stated in `evidence.ref` instead, see
-[Measurement boundary](#boundary)); `SYSTEM FLUSH LOGS` ran inside the insert and merge windows (fixed in
-`c2a9eed0b85` before the final report run); the test file's `__main__` guard, the lower-bound label and hint, and
-cell notes (fixed).
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## Reproduce {#reproduce}
 
 ```bash
-flock tmp/yardstick.lock sh -c 'YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
+python3 utils/cas-yardstick/yardstick.py cost run \
   --binary tmp/bin/26.8/clickhouse --manifests docs/superpowers/reports/2026-10-24-storage-cost-ebs \
   --cases io-sizes.idle,io-sizes.narrow-compact,io-sizes.narrow-wide --policies local --replicas 2 --repeats 3 \
-  --runs-dir tmp/cas-yardstick/cost-runs'
+  --runs-dir tmp/cas-yardstick/cost-runs
 cd utils/cas-yardstick && python3 -m yardstick.cost.ebs_fit ../../docs/superpowers/reports/2026-10-24-storage-cost-ebs/measurements.jsonl
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.

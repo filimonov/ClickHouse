@@ -1,5 +1,5 @@
 ---
-description: 'Validation of the storage cost calculator research (Plan 2 Task 7): fresh hold-outs for consumed edges, CAS shape and threshold cases, natural-merge and acquisition-split validation on every remote variant, recovery wiring, the hold-out ledger and the open items.'
+description: 'Validation of the storage cost calculator research: fresh hold-outs for consumed edges, CAS shape and threshold cases, natural-merge and acquisition-split validation on every remote variant, recovery wiring, the hold-out ledger and the open items.'
 sidebar_label: 'Storage cost validation'
 sidebar_position: 60
 slug: /superpowers/reports/storage-cost-validation
@@ -9,18 +9,18 @@ doc_type: 'reference'
 
 # Storage cost calculator — validation and hold-out ledger {#validation}
 
-Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3` and `s3plain`: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. On CAS the three passes FAILED (0/3 ok, edges `consumed`): the card's own snapshot reads reach the store after the cutoff; the merge history in those FAILED records is identical. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 129 records, 117 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
+Every hold-out the research reports consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3` and `s3plain`: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. On CAS the three passes FAILED (0/3 ok, edges `consumed`): the card's own snapshot reads reach the store after the cutoff; the merge history in those FAILED records is identical. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 129 records, 117 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
 
 | Item | Value |
 |---|---|
 | Binary | ClickHouse 26.8 build: download sha256 `2a61ec2a0c0c2350745cce30523df914d5f9ee9e97728b1170407502e4121f46`, executed sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668` |
-| Source commit | ClickHouse `09d0772a842c5d73cf3ef35b4c8b017d838215a0` (the binary's source; every `path:line` cite is at this commit) |
+| Source commit | `09d0772a842c5d73cf3ef35b4c8b017d838215a0`, the source of the measured binary: `antalya-26.8` merged into the CAS disk-transactions branch. Every `path:line` cite is at this commit |
 | Report runs | `cost-20261024T154049Z`, `cost-20261024T162519Z` (the CAS point hold-outs) and `cost-20261024T164439Z` (the 1 000-row fetch); `measurements.jsonl` holds their 129 records, 117 ok |
 | Rig | all runs execute the cards from a detached worktree at `9ed2efcd450`, so every record names one rig commit; manifests and predictions come from this directory and, for `faults.multipart-abort` and `faults.multipart-abort-part3c`, from the replication report |
 | Earlier runs | `cost-20261024T145603Z` (calibration) and `cost-20261024T151251Z` (first report run); §[Cases](#cases) says what each found. Neither is in `measurements.jsonl` |
 | Predictions | at `849c483095f`, before any run of their case; `types-holdout-2`, `merge-30k` and the revised `cas_cached` fit counts at `03f8c0489a2`, after the first run; the CAS point hold-outs at `168f71aea78`; the replication report's fault predictions at `2c006846dbc`, `0bc1e557850` and `bac037b336d` |
 | Store | RustFS behind the ledger proxy; every ok record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
-| Cuts | `gc-under-load.default` and `amplification-run.2h` (owner directive D14): no run; coverage `status: cut` |
+| Cuts | `gc-under-load.default` and `amplification-run.2h`, cut to meet the campaign deadline (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)): no run; coverage `status: cut` |
 
 ## Plan of runs {#plan}
 
@@ -259,18 +259,19 @@ tolerance; sender rows subtract the originator's own reads of the matching `repl
 | `s3` `recovery` | the `not_supported` state for missed parts is gone; `GetObject` and `PutObject` rows add restarts × replicas × `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3][op]` for replicas > 1 | `766a9e5b7eb` |
 | `s3` `recovery` startup rows | kept: at 3 active narrow parts they give `GetObject` 50, `PutObject` 2, `DeleteObject` 2; the replicated restart measured 48, 1, 1 (`startup_requests_after_restart[s3]`, tolerance 2) | `766a9e5b7eb` |
 | registry `catchup_requests_per_missed_part` | table index `[variant_id, replication_op]`, as the coefficient | `766a9e5b7eb` |
-| `s3` `inserts` | the follower's 9 load reads per fetched part (`acquire_requests[s3][insert][receiver][GetObject]`, validity `insert_rows` 1 000–200 000 after `replication-fetch.insert-1k`) | `5f51532da31`, withdrawn in `feca627456f`, restored in review fix round 1 |
-| `catchup_requests_per_missed_part` validity | `missed_parts_per_restart` [0, 5]: the rows are exactly 0 at 0 missed parts, and both restart cases fetched 5 | review fix 3 (§[Review](#review)) |
+| `s3` `inserts` | the follower's 9 load reads per fetched part (`acquire_requests[s3][insert][receiver][GetObject]`, validity `insert_rows` 1 000–200 000 after `replication-fetch.insert-1k`) | `5f51532da31`, withdrawn in `feca627456f`, restored after review |
+| `catchup_requests_per_missed_part` validity | `missed_parts_per_restart` [0, 5]: the rows are exactly 0 at 0 missed parts, and both restart cases fetched 5 | review finding 3 ([REVIEW-HISTORY.md](REVIEW-HISTORY.md)) |
 
 Not wired, because the page could not check its validity against the presets (`presets.js` `coverageProblems`
 checks every reached coefficient):
 
 - **`cas` `recovery`**: `startup_requests_after_restart[cas]` was measured at 3 active parts (`active_parts`, which
-  the presets do not resolve). Wired at `766a9e5b7eb`, removed again; the cell stays `unsupported_cut`.
+  the presets do not resolve). Wired at `766a9e5b7eb` and removed again. The CAS report later measured server starts on 2–5 parts
+  (`cas_startup_requests`, `cas_startup_gets_per_part`), so the cell is priced at `058646a31af`.
 
 ## Hold-out ledger {#ledger}
 
-Every coefficient whose hold-out was consumed in Plan 2, with its replacement (`coverage.json` at the report commit). A `_cached` policy measures the same variant, so `cas_cached` rows fold into `cas` (and `s3_cached`, `s3plain_cached` into theirs):
+Every coefficient whose hold-out the research reports consumed, with its replacement (`coverage.json` at the report commit). A `_cached` policy measures the same variant, so `cas_cached` rows fold into `cas` (and `s3_cached`, `s3plain_cached` into theirs):
 
 | Coefficient | Variant | Consumed | Replacement (status) |
 |---|---|---|---|
@@ -340,22 +341,11 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement (`
 | CAS uploads per part for other data | Tier 2: a mark-collapse rule from compressed block sizes, or a measured count per data profile |
 | `acquire_bytes[cas]` as bytes per part | Tier 2: refit as bytes per part (manifest size per file) |
 | snapshot reads inside `S3Card` windows on CAS | Tier 2: snapshot after the window end; today no cell prices them |
-| `cas` `recovery` | Tier 2: a CAS restart case at several active part counts (startup requests per part) |
+| `cas` `recovery` | done: the CAS report's `startup.*` cases (`058646a31af`) |
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; the review log is retained outside the repository): 3 MAJOR,
-4 MINOR, verdict REVISE. All closed:
-
-| # | Severity | Finding | Disposition |
-|---|---|---|---|
-| 1 | MAJOR | `cas_objects_per_part` priced its upper bound as an exact count (wide Wide 80 against 41.33 measured) | closed: the value is the measured count of the shape generators; the bound is stated as the data-dependent ceiling (§[CAS shapes](#cas-shapes)) |
-| 2 | MAJOR | `types-holdout-2` checks a band, not the coefficient | closed: its edges are `validation`; point hold-outs `narrow-wide-2`, `wide-wide-2`, `types-fit-wide-2` predicted at `168f71aea78`, exact in run `cost-20261024T162519Z` |
-| 3 | MAJOR | catch-up validity `inserts_while_down` is no registry input, so the page cannot flag extrapolation | closed: validity is `missed_parts_per_restart` [0, 5] (exact at 0; both restart cases fetched 5 parts). The CAS recovery cell and the s3 follower load row are withdrawn: their validity parameters cannot be checked against the presets |
-| 4 | MINOR | placement prose listed `.mrk*`/`.cmrk*` and omitted the inline spill | closed: exact suffixes (`ContentAddressedTransaction.cpp:77`) and the spill (`:998`) |
-| 5 | MINOR | "same final sizes" in all nine merge records | closed: `s3` repeat 2 ended with 27, 23, 6, 6, 1, 1 |
-| 6 | MINOR | `s3plain` byte ratio 1.0008 | closed: 1.0005 |
-| 7 | MINOR | EBS placement named evidence that does not exist | closed: placement is the EBS report (Tier 1), D17, with the method it uses |
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## Reproduce {#reproduce}
 
@@ -365,10 +355,12 @@ Run from a sparse worktree at the rig commit `9ed2efcd450`. `$BINARY` is the 26.
 ```bash
 git worktree add --detach ../rig-9ed2efcd450 9ed2efcd450
 utils/cas-yardstick/rustfs-bin.sh ensure
-cd ../rig-9ed2efcd450 && YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
+cd ../rig-9ed2efcd450 && python3 utils/cas-yardstick/yardstick.py cost run \
   --binary "$BINARY" --source-dir "$SOURCE" \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-validation \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-replication \
   --cases "$(ls docs/superpowers/reports/2026-10-24-storage-cost-validation/experiments | sed 's/\.json$//' | paste -sd,),faults.multipart-abort,faults.multipart-abort-part3c" \
   --policies s3,s3plain,cas,cas_cached --replicas 2 --repeats 3 --runs-dir "$RUNS_DIR"
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.

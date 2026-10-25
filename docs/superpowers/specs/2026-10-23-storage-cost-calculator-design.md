@@ -70,9 +70,11 @@ the CAS one.
 
 - **Pinned build:** antalya-26.8, Altinity PR 2647, commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`
   (https://altinity-build-artifacts.s3.amazonaws.com/json.html?PR=2647&sha=09d0772a842c5d73cf3ef35b4c8b017d838215a0&name_0=PR);
-  source checked out detached at `tmp/src-26.8`; binary sha256 recorded with every coefficient. 26.6 (PR 2644) is kept for
+  source checked out detached at that commit; binary sha256 recorded with every coefficient. 26.6 (PR 2644) is kept for
   Tier 2 and not measured in Tier 1.
-- **Store:** RustFS 1.0.0-rc.3 (as in the CAS CI lane) behind the ledger proxy of the measurement contract.
+- **Store:** RustFS behind the ledger proxy of the measurement contract. Correction: the rig ran RustFS 1.0.0-beta.9,
+  identified by sha256 after the runs; 1.0.0-rc.3, named here first, is the container image of `rustfs.sh`, which the
+  cost rig does not use ([measurement contract](../cost-model/measurement-contract.md#identities)).
 - **Rig:** extend `utils/cas-yardstick` (design `docs/superpowers/specs/2026-09-29-cas-yardstick-design.md`).
 - **Evidence policy.** Every result carries one of four evidence kinds, and the page shows which: **source-derived**
   (a code path at the pinned commit, cited file and symbol, exercised by at least one fixture), **measured** (a card in the
@@ -372,9 +374,28 @@ D5): the forecast was the owner's preferred headline before review.
 |---|---|---|---|
 | 2026-10-23 | Builder check | 11 questions | folded as decisions |
 | 2026-10-23 | External review (pasted) | 8 | all applied (revision 2) |
-| 2026-10-23 | Codex `gpt-6-astra` r1 (`tmp/codex_design_review_r1.log`) | 3 CRITICAL, 21 MAJOR, 1 MINOR; REVISE | applied (revision 2) |
-| 2026-10-23 | Codex r2 (`tmp/codex_design_review_r2.log`) | 16 MAJOR, 2 MINOR; REVISE | applied as revision 3 (Tier 1/2 scope freeze, registry, coverage table) |
-| 2026-10-23 | Codex r3 (`tmp/codex_design_review_r3.log`) | 12 MAJOR, 3 MINOR; REVISE | code-facing claims of revision 3 were wrong against the pinned source (part-type rule, multipart sizing, CAS acquisition vs execution, namespaces, interserver counters, gp3 coupling, versioning). Verified by the author in `tmp/src-26.8`; recorded in the ledger (A3) |
-| 2026-10-23 | Codex r4 (`tmp/codex_design_review_r4.log`) | 3 MAJOR, 3 MINOR; REVISE | all applied: cost-minimising provisioning with tie-break (§4.4), growing backlog = unavailable column (§4.3), rounding semantics (§4.4), local-volume probe and multipart part replacement in the acceptance slice (§5.3), lifecycle identity precision (§5.1), remaining implementation assertions removed (§0, §4.3, §11) |
-| 2026-10-23 | Codex r5 (`tmp/codex_design_review_r5.log`) | 0 MAJOR, 2 MINOR; **READY** | both applied: out-of-range status propagates to totals, deltas and chart (§4.5); lifecycle replay initial state and observer mutations (§5.1) |
-| 2026-10-23 | Convergence consult, Codex `gpt-6.1-sol` (`tmp/codex_consult_convergence.md`) | option C | **Revision 4 (this document):** the design keeps the product contract (supported domain, input semantics, accounting invariants, calculation and output contract, billing requirements, artifact contracts and gates) and makes no claim about the code; implementation facts move to versioned research artifacts with five closure checks and an executable acceptance slice at the phase-0 gate. r3 findings 4, 6, 7, 10, 11, 12, 14, 15 are design-level and are addressed in §4.3–§4.6, §5.2, §5.5; findings 1, 2, 3, 5, 8, 9, 13 are research-level and are now obligations of the artifacts in §5.1. Weakened per the consult: universal "derived from source and verified" → evidence policy (§3); accuracy promise scoped to validity domains (§1); Tier 2 "no formula changes" → versioned extensibility (§0); fixed review-round count → review as budget, exit by evidence (§3) |
+| 2026-10-23 | Codex `gpt-6-astra` r1 (log not retained in the repository) | 3 CRITICAL, 21 MAJOR, 1 MINOR; REVISE | applied (revision 2) |
+| 2026-10-23 | Codex r2 (log not retained in the repository) | 16 MAJOR, 2 MINOR; REVISE | applied as revision 3 (Tier 1/2 scope freeze, registry, coverage table) |
+| 2026-10-23 | Codex r3 (log not retained in the repository) | 12 MAJOR, 3 MINOR; REVISE | code-facing claims of revision 3 were wrong against the pinned source (part-type rule, multipart sizing, CAS acquisition vs execution, namespaces, interserver counters, gp3 coupling, versioning). Verified by the author against the pinned source; recorded in the ledger (A3) |
+| 2026-10-23 | Codex r4 (log not retained in the repository) | 3 MAJOR, 3 MINOR; REVISE | all applied: cost-minimising provisioning with tie-break (§4.4), growing backlog = unavailable column (§4.3), rounding semantics (§4.4), local-volume probe and multipart part replacement in the acceptance slice (§5.3), lifecycle identity precision (§5.1), remaining implementation assertions removed (§0, §4.3, §11) |
+| 2026-10-23 | Codex r5 (log not retained in the repository) | 0 MAJOR, 2 MINOR; **READY** | both applied: out-of-range status propagates to totals, deltas and chart (§4.5); lifecycle replay initial state and observer mutations (§5.1) |
+| 2026-10-23 | Convergence consult, Codex `gpt-6.1-sol` (log not retained in the repository) | option C | **Revision 4 (this document):** the design keeps the product contract (supported domain, input semantics, accounting invariants, calculation and output contract, billing requirements, artifact contracts and gates) and makes no claim about the code; implementation facts move to versioned research artifacts with five closure checks and an executable acceptance slice at the phase-0 gate. r3 findings 4, 6, 7, 10, 11, 12, 14, 15 are design-level and are addressed in §4.3–§4.6, §5.2, §5.5; findings 1, 2, 3, 5, 8, 9, 13 are research-level and are now obligations of the artifacts in §5.1. Weakened per the consult: universal "derived from source and verified" → evidence policy (§3); accuracy promise scoped to validity domains (§1); Tier 2 "no formula changes" → versioned extensibility (§0); fixed review-round count → review as budget, exit by evidence (§3) |
+
+## 13. Decisions after the spec {#decisions-after}
+
+These rulings in [LEDGER.md](../reports/2026-10-23-storage-cost-calculator/LEDGER.md#decisions) change or sharpen this design. The ledger gives each reason and consequence.
+
+| Ruling | Change |
+|---|---|
+| D14 | A 36-hour deadline cut every P2 card (§5.5); cut quantities are listed in `coverage.json` |
+| D15 | `formulas/1` gains an optional per-family `applicability`; an omitted family is `not_applicable` |
+| D16 | EBS IOPS use the provider's merged-stream rate, a lower bound; `peak_factor` is an assumed input |
+| D17 | EBS deletes, restarts, reads and capacity are assumption rows; mutations are measured |
+| D18 | The metrics preset stays outside EBS coverage and shows `extrapolated` by declaration |
+| D19 | Presets without mutation workloads are append-only; the CAS multipart cut needs blobs above 32 MiB |
+| D20 | One fix wave after the review; the raw-artifact split and several minors move to Tier 2 |
+| D21 | Inputs get page tiers (`workload`, `setting`, `advanced`, `hidden`), labels of at most 40 characters and an (i) dialog |
+| D22 | Workload knobs alone price all four variants; column states reduce to measured, `extrapolated`, `not_supported`, `prices_missing`, `cannot_reproduce`; this supersedes the fail-closed cut rule of §5.5 |
+| D23 | Low-level inputs leave the default form; at most 10 settings |
+| D24 | Formulas come from the source and measurements verify them; validity becomes "verified range"; derived formulas never extrapolate |
+| D25 | The EBS column shows volume size, IOPS and throughput against the gp3 baseline |

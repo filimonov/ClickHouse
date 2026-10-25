@@ -9,8 +9,9 @@ doc_type: 'reference'
 
 # Storage cost calculator — CAS graphs, GC and lease (R4) {#cas}
 
-Every CAS request graph below reconciles on the `cas` policy of the pinned binary (`tmp/src-26.8` at
-`09d0772a842c5d73cf3ef35b4c8b017d838215a0`). Deterministic cases match the exact integer per operation for caller
+Every CAS request graph below reconciles on the `cas` policy of the pinned binary. The binary
+is built from `09d0772a842c5d73cf3ef35b4c8b017d838215a0`: `antalya-26.8` merged into the CAS disk-transactions branch.
+Every `path:line` cite is at this commit. Deterministic cases match the exact integer per operation for caller
 `r1`; GC terms are fitted with spans and checked on distinct hold-outs; the lease rate is source-pinned and its fresh
 validation case passes with the idle-table cleanup listing it predicts. Cold reads and server starts reconcile
 exactly on `cas` and `cas_cached` against a per-stream and per-part rule, each with a hold-out. Results:
@@ -20,13 +21,20 @@ exactly on `cas` and `cas_cached` against a per-stream and per-part rule, each w
   alone on the rig under `tmp/yardstick.lock`. Failed records kept for consumed edges: the first lease passes
   (`cost-20261024T082909Z`) and the consumed hold-outs (runs `cost-20261024T074131Z`, `cost-20261024T075656Z`; count
   verdicts, unaffected by other prefixes). 122 records. Source commit `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
+- **Rig drift during the run:** `utils/cas-yardstick/server.sh` was replaced at 20:31:13Z by the version of
+  `eda204f6472` (stop by pidfile, process-name check before a kill). Pass 60 of 108
+  (`gc-lifecycle/drop-60s-12/k3`) and later started with it; pass 59 (`drop-60s-12/k2`) stopped its server with it.
+  Only the last-resort SIGKILL path differs, so no measured request path changed. The records state
+  `rig_commit` `80e7b064858` and lack `store_version`, `store_sha256` and `rig_dirty`: the run started before
+  `9cc0121c86d` added them. The store process ran
+  through the whole run on the pinned RustFS 1.0.0-beta.9 binary, sha256 `bf4aca66af21…`.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`.
 - **Cards:** `utils/cas-yardstick/yardstick/cost/cards/cas.py` (`CasBranches`, `CasDrop`, `GcLifecycle`, `GcIdle`,
   `GcScale`, `Lease`, `GcUnderLoad`) and `cards/ops.py` (`ColdSelect`, `Startup`, on `cas` and `cas_cached`);
   manifests in `experiments/`, predictions in `predictions/`.
-- **Cut by owner directive D14:** `gc-scale.mounts-2.10k`, `gc-scale.refgrowth-low.10k`,
+- **Cut to meet the campaign deadline** (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)): `gc-scale.mounts-2.10k`, `gc-scale.refgrowth-low.10k`,
   `gc-scale.refgrowth-high.10k`. The `mounts` and `ref_growth` terms of `gc_round_requests` are unsupported.
-- **Cut by owner directive D14:** `gc-under-load.default` (manifest and prediction only; coverage `status: cut`).
+- **Cut (D14):** `gc-under-load.default` (manifest and prediction only; coverage `status: cut`).
 
 ## Request origin {#origin}
 
@@ -454,56 +462,16 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 
 ## Review {#review}
 
-One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_cas_prompt.txt`, log
-`tmp/codex_cas_r1.log`) on the interim report: 24 MAJOR, 2 MINOR. 23 MAJOR and both MINOR are closed; 1 MAJOR is
-parked with its reason. Card fixes were written test-first (`tests/test_cost_cards_cas.py`) and every cited case
-re-ran after them in the report run.
-
-| # | Severity | Finding | Disposition |
-|---|---|---|---|
-| 1 | MAJOR | hash-hit graph omits `.meta` backfill and the condemned-body resurrect | closed: both branches in §[Branches](#branches); not priced (content returning during its own reclamation) |
-| 2 | MAJOR | publish counts ignore batching, empty `_ckpt` writes and retries | closed: §[Publishing](#publish) states the uncontended path and the three conditions |
-| 3 | MAJOR | idle rounds force a fold after 8 deferrals | closed: `gc` prices 8 deferred + 1 fold per 9 idle rounds |
-| 4 | MAJOR | stages need not advance every round (budgets, clamp, spared, absent) | closed: conditions in §[Reclamation](#reclaim); exhausted budgets are `backlog_grows` |
-| 5 | MAJOR | lease rule text adds the latency twice | closed in §[Lease](#lease); the committed predictions keep their text; their numeric band holds |
-| 6 | MAJOR | time-window attribution is not causal | parked: the window method is the attribution rule of this report; §[Request origin](#origin) states both directions, exact claims come from GC-off cases |
-| 7 | MAJOR | observer slice can drop concurrent requests | closed: no slice; the placement read moved to the teardown, outside the window (`test_placement_is_read_in_the_teardown_outside_the_window`) |
-| 8 | MAJOR | lease renewals inside a round counted as round requests | closed: excluded from round rows (`test_lease_renewal_inside_a_round_is_not_a_round_request`) |
-| 9 | MAJOR | `families_disjoint` was tautological | closed: checks that outside every round only `gc_hb` and the lease run, on the rows; fails on a leaked GC request |
-| 10 | MAJOR | inserts priced blob files, not distinct uploads | closed: `cas_objects_per_part` counts distinct uploads (default codecs); `staging-peak` is a branch fit only |
-| 11 | MAJOR | mutation formula contradicted the measured marks hit | closed: `cas_mutation_marks_hit_fraction` (default 0; 1 reproduces `adoption`) |
-| 12 | MAJOR | merge used the inserted part type for its result | closed: result type from fan-in × part bytes against `min_bytes_for_wide_part` |
-| 13 | MAJOR | `gc` always charged a fold | closed: fold with new parts, else the deferred mix |
-| 14 | MAJOR | round period dropped the per-part duration | closed |
-| 15 | MAJOR | retirement ignored mutations and drops | closed |
-| 16 | MAJOR | no batch deletes or drop cleanup in `gc` | closed: `DeleteObjects` per retiring round and per 1000 keys; drop's `_ckpt` DELETE and catalog PUT |
-| 17 | MAJOR | `backlog_grows` used one budget and treated 0 as a limit | closed: both budgets, 0 unbounded |
-| 18 | MAJOR | no metadata storage | closed: `.meta` and manifest byte-months |
-| 19 | MAJOR | staging used uncompressed logical bytes | closed: blob bytes of a part × (insert clients + 1 merge) |
-| 20 | MAJOR | `gc-under-load` prediction compared foreground exactly | closed: `exact = false`; the validation report compares reclaimed with retired |
-| 21 | MAJOR | `gc-under-load` counted outdated parts as references | closed: active parts only (`test_retired_blobs_are_those_no_active_part_references`) |
-| 22 | MAJOR | coverage generation failed on consumed cases | closed |
-| 23 | MAJOR | coverage named the consumed `drop-60s` | closed: `drop-60s` consumed, `drop-60s-12` the hold-out |
-| 24 | MAJOR | `objects-5k` predicted no duration | closed: `objects-3k` predicts the fold duration, committed before its run |
-| 25 | MINOR | catalog GET cited the readable-runtime admission | closed: `Pool/CasRefLedger.cpp:3429` |
-| 26 | MINOR | placeholder provenance | closed |
-
-### Review, fix round 1 {#review-fix-1}
-
-| Finding | Fix |
-|---|---|
-| M1: lease edges backed by FAILED records | the two edges are `consumed`; `lease.idle-10min` predicted afresh (`aa7970d78d6`) and run as the `validation` edge |
-| M2: idle-table cleanup listing unmodelled | priced in the `lease` cell per table (`cas_table_cleanup_period_s`), and in the fresh lease prediction |
-| M3: cells read tables through derivations | `closure_check.derived_refs` follows `input` nodes into registry derivations, cycle-safe, with a test |
-| M4: applicability missing families | `multipart_graph` (inserts, unsupported_cut), `lifecycle` (merges, gc, storage), `thresholds` (merges) |
-| M3 ruling (round 2) | support backs each family by its own coefficients; `mutations` and `deletes` note the pinned rules their cases validate (`cas_branch_requests` ← `cas-branches.adoption`, `cas_foreground_ref_removal_requests` ← `cas-drop.table-sync`). Still pending in final mode: `inserts`/`storage` × `objects_per_part_by_shape` (no objects-per-part card ran on `cas`) and `merges` × `thresholds` (no thresholds case ran on `cas`) |
-| m1–m5 | equality kept next to the Expect bound; always-true conjunct dropped; `roots` cites the write probe; fold split cited to source; cohort test adds a PUT after the retire |
+Review findings and their dispositions: [REVIEW-HISTORY.md](REVIEW-HISTORY.md).
 
 ## How to re-run {#rerun}
 
 ```bash
-flock tmp/yardstick.lock sh -c 'utils/cas-yardstick/rustfs-bin.sh ensure; YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
+utils/cas-yardstick/rustfs-bin.sh ensure
+python3 utils/cas-yardstick/yardstick.py cost run \
   --binary tmp/bin/26.8/clickhouse --manifests docs/superpowers/reports/2026-10-24-storage-cost-cas \
-  --cases <experiment ids> --policies cas,cas_cached --runs-dir tmp/cas-yardstick/cost-runs'
+  --cases <experiment ids> --policies cas,cas_cached --runs-dir tmp/cas-yardstick/cost-runs
 python3 -m unittest discover -s utils/cas-yardstick/tests -t utils/cas-yardstick -p 'test_cost_cards_cas.py'
 ```
+
+`cost run` takes `tmp/yardstick.lock` itself. Exporting a run into this directory is a manual step: [Reproduce](../../cost-model/storage-cost-model.md#reproduce), step 3.
