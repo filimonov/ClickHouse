@@ -72,7 +72,12 @@
     "0|PutObject": 7,
     "0|HeadObject": 3,
     "0|DeleteObject": 2,
-    "0|ListObjectsV2": 2
+    "0|ListObjectsV2": 2,
+    "1|GetObject": 20,
+    "1|PutObject": 8,
+    "1|HeadObject": 6,
+    "1|DeleteObject": 3,
+    "1|ListObjectsV2": 2
    }
   },
   "basis": "fitted",
@@ -84,7 +89,14 @@
   },
   "tolerance": {
    "abs": 1,
-   "rel": 0
+   "rel": 0,
+   "assumed_keys": [
+    "1|GetObject",
+    "1|PutObject",
+    "1|HeadObject",
+    "1|DeleteObject",
+    "1|ListObjectsV2"
+   ]
   },
   "evidence": {
    "kind": "measured",
@@ -104,7 +116,7 @@
   "status": "ok",
   "rule": "requests of a server start answered 2xx that do not depend on the table count, besides part loads and log replay; the tolerance is one mount lease renewal",
   "fit": {
-   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables",
+   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. 1|PutObject: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. 1|HeadObject: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. 1|DeleteObject: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. 1|ListObjectsV2: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5",
    "residuals": {
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
      "GetObject": 0,
@@ -138,7 +150,11 @@
     "0|GetObject": 1,
     "0|PutObject": 2,
     "0|HeadObject": 3,
-    "0|DeleteObject": 1
+    "0|DeleteObject": 1,
+    "1|GetObject": 1,
+    "1|PutObject": 2,
+    "1|HeadObject": 5,
+    "1|DeleteObject": 1
    }
   },
   "basis": "fitted",
@@ -150,7 +166,13 @@
   },
   "tolerance": {
    "abs": 0,
-   "rel": 0
+   "rel": 0,
+   "assumed_keys": [
+    "1|GetObject",
+    "1|PutObject",
+    "1|HeadObject",
+    "1|DeleteObject"
+   ]
   },
   "evidence": {
    "kind": "measured",
@@ -170,7 +192,7 @@
   "status": "ok",
   "rule": "requests of a server start answered 4xx that do not depend on the table count",
   "fit": {
-   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables",
+   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. 1|PutObject: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. 1|HeadObject: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. 1|DeleteObject: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0",
    "residuals": {
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
      "GetObject": 0
@@ -191,12 +213,16 @@
   "dim": "count",
   "value": {
    "index": [
+    "cache_enabled",
     "replication_op"
    ],
    "values": {
-    "GetObject": 11,
-    "PutObject": 2,
-    "ListObjectsV2": 5
+    "0|GetObject": 11,
+    "0|PutObject": 2,
+    "0|ListObjectsV2": 5,
+    "1|GetObject": 11,
+    "1|PutObject": 2,
+    "1|ListObjectsV2": 5
    }
   },
   "basis": "fitted",
@@ -208,7 +234,12 @@
   },
   "tolerance": {
    "abs": 0,
-   "rel": 0
+   "rel": 0,
+   "assumed_keys": [
+    "1|GetObject",
+    "1|PutObject",
+    "1|ListObjectsV2"
+   ]
   },
   "evidence": {
    "kind": "measured",
@@ -228,7 +259,7 @@
   "status": "ok",
   "rule": "requests of a server start answered 2xx per table on the disk, besides its parts and log records: catalog, _ckpt and table file reads, table file listings and the table ref transaction",
   "fit": {
-   "method": "per op, slope of a linear fit over 1, 4 and 16 tables",
+   "method": "per op, slope of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). 1|PutObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). 1|ListObjectsV2: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests)",
    "residuals": {
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
      "GetObject": 0,
@@ -255,10 +286,12 @@
   "dim": "count",
   "value": {
    "index": [
+    "cache_enabled",
     "replication_op"
    ],
    "values": {
-    "GetObject": 3
+    "0|GetObject": 3,
+    "1|GetObject": 3
    }
   },
   "basis": "fitted",
@@ -270,7 +303,10 @@
   },
   "tolerance": {
    "abs": 0,
-   "rel": 0
+   "rel": 0,
+   "assumed_keys": [
+    "1|GetObject"
+   ]
   },
   "evidence": {
    "kind": "measured",
@@ -290,7 +326,7 @@
   "status": "ok",
   "rule": "GetObject answered 404 per table on the disk at a server start (absent _log records and table files)",
   "fit": {
-   "method": "slope of a linear fit over 1, 4 and 16 tables",
+   "method": "slope of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests)",
    "residuals": {
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
      "GetObject": 0
