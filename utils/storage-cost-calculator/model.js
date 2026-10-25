@@ -287,9 +287,9 @@
       }
       return { id: s.id, active: r.value !== 0 && r.value !== false, reason: s.reason };
     });
+    // A note shows a value beside the cell; it prices nothing, so it never makes the cell extrapolated.
     const notes = (cell.notes || []).map((n) => {
       const r = evaluate(n, ctx);
-      extrapolated = extrapolated || r.extrapolated;
       return { value: r.value, state: r.state, trace: r.trace };
     });
     const out = { rows, allocation, extrapolated, states, notes, state: reasons.length ? 'unavailable' : 'ok' };

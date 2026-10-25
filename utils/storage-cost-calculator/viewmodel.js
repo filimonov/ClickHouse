@@ -253,18 +253,25 @@
     });
     return [...out];
   }
-  // With `split`, the transfer of a cell is shown in the Replica transfer row and is judged there.
+  // With `split`, the transfer of a cell is shown in the Replica transfer row and is judged there. The pipeline flag is
+  // per cell; when its rows say which row was extrapolated, only rows of the shown part count.
+  const rowExtrapolated = (r) => !!(r && r.trace && r.trace.extrapolated);
   function cellExtrapolated(contract, v, op, c, assumed, split) {
     if (!c) return false;
-    if (c.extrapolated) return true;
+    if (c.extrapolated) {
+      const rows = c.rows || [];
+      if (!split || !rows.some(rowExtrapolated)) return true;
+      if (rows.some((r) => !isTransferRow(r) && rowExtrapolated(r))) return true;
+    }
     return assumedUsed(contract, v, op, c, assumed, split ? 'other' : 'all').length > 0;
   }
+  const transferExtrapolated = (vr) => Object.values(vr.cells || {}).some((c) => (c.rows || []).some((r) => isTransferRow(r) && r.quantity > 0 && rowExtrapolated(r)));
   const transferAssumed = (contract, v, vr, assumed) => [...new Set(Object.entries(vr.cells || {}).flatMap(([op, c]) => assumedUsed(contract, v, op, c, assumed, 'transfer')))];
   // Table cells of a column that carry the extrapolated badge; 'transfer' is the Replica transfer row.
   function extrapolatedCells(contract, v, vr, split) {
     const assumed = assumedCoefs(contract);
     const ops = Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed, split)).map(([op]) => op);
-    return split && transferAssumed(contract, v, vr, assumed).length ? [...ops, 'transfer'] : ops;
+    return split && (transferAssumed(contract, v, vr, assumed).length || transferExtrapolated(vr)) ? [...ops, 'transfer'] : ops;
   }
 
   // Money of the transfer lines a cell was allocated (cross-AZ replication); 0 without prices.
@@ -411,7 +418,7 @@
         const vr = result.variants[v];
         if (vr.state !== 'ok') return { variant: v, operation: 'transfer', text: cellText(vr.state), state: vr.state, extrapolated: false, clickable: false, info: false, notes: [] };
         const m = Object.values(vr.cells || {}).reduce((s, c) => s + transferMoney(c, preset), 0);
-        return { variant: v, operation: 'transfer', text: fmtMoney(m, preset.currency), state: 'ok', extrapolated: transferAssumed(contract, v, vr, assumed).length > 0, clickable: false, info: true, notes: [] };
+        return { variant: v, operation: 'transfer', text: fmtMoney(m, preset.currency), state: 'ok', extrapolated: transferAssumed(contract, v, vr, assumed).length > 0 || transferExtrapolated(vr), clickable: false, info: true, notes: [] };
       });
       rows.push({ operation: 'transfer', label: OPERATION_LABELS.transfer, cells, note: null });
     }
@@ -1043,7 +1050,9 @@
         lines.push(a.line);
         source.push(a.source);
       }
-      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, false), measured_by: measuredBy, lines, source };
+      const ex = vr.state === 'ok' && transferExtrapolated(vr);
+      if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
+      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, ex), measured_by: measuredBy, lines, source };
     }
     const op = open.operation;
     const cell = vr.cells[op];
@@ -1062,14 +1071,16 @@
       lines.push(a.line);
       source.push(a.source);
     }
-    if (cell.extrapolated) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
+    // The pipeline's own flag, without assumptions (said above) and, under `split`, without the transfer rows.
+    const ex = cellExtrapolated(contract, open.variant, op, cell, new Set(), split);
+    if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
     for (const n of vr.notes || []) if (n.kind === 'text' && n.operation === op) lines.push(n.text);
     for (const s of segs.filter((g) => g.operation === op)) source.push(cite(s.text, commit));
-    for (const r of cell.rows || []) if (r.trace && r.trace.extrapolated) source.push(`${OP_KIND_LABELS[r.op_kind] || r.op_kind}: outside the measured range`);
+    for (const r of cell.rows || []) if (rowExtrapolated(r) && !(split && isTransferRow(r))) source.push(`${OP_KIND_LABELS[r.op_kind] || r.op_kind}: outside the measured range`);
     // The assumption is said above in words; its contract sentence names ids and record names.
     for (const n of cell.notes || []) if (!n.assumption) source.push(cite(sourceNote(contract, n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
-      description: lead(used, cell.extrapolated), measured_by: measuredBy, lines, source };
+      description: lead(used, ex), measured_by: measuredBy, lines, source };
   }
 
   // ---- notes, chart -------------------------------------------------------------------------------

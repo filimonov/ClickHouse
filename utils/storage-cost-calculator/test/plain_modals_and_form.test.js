@@ -165,3 +165,33 @@ test('test_phone_puts_the_form_before_the_cards', () => {
   // The table keeps order 0: after the cards.
   assert.ok(order('cards') < 0);
 });
+
+test('test_cas_is_extrapolated_only_where_the_assumption_prices_bytes', () => {
+  const cas = (sc, inputs) => page(sc, inputs).vm.cards.find((c) => c.variant === 'cas');
+  // One zone, or one replica: the relink row moves nothing, so nothing rests on the assumed relink bytes.
+  for (const [sc, inputs] of [['logs', {}], ['metrics', {}], ['custom', {}], ['single_replica_archive', {}], ['single_replica_archive', CROSS]]) {
+    const c = cas(sc, inputs);
+    assert.equal(c.extrapolated, false, `${sc} ${JSON.stringify(inputs)}: ${c.extrapolated_text}`);
+  }
+  assert.equal(page('logs').vm.cards.find((c) => c.cheapest).cheapest_text, 'cheapest of 4');
+  // Across zones the relink bytes are priced: the transfer cell carries the badge and the assumption.
+  for (const sc of ['logs', 'metrics']) {
+    const { vm } = page(sc, CROSS);
+    assert.equal(cell(vm, 'transfer', 'cas').extrapolated, true, sc);
+    const info = page(sc, CROSS, { info: { kind: 'transfer', variant: 'cas' } }).vm.info;
+    assert.equal(info.description, 'Priced from a stated assumption.', sc);
+  }
+});
+
+test('test_no_internal_tier_label_on_the_page', () => {
+  for (const inputs of [{}, CROSS]) {
+    const { vm, parts } = page('logs', inputs);
+    const html = [Object.values(parts).join('')];
+    for (const v of ['ebs', 's3', 's3plain', 'cas']) {
+      for (const info of [{ kind: 'column', variant: v }, { kind: 'variant', variant: v }, { kind: 'transfer', variant: v }]) html.push(page('logs', inputs, { info }).parts.modal);
+      for (const r of vm.table.rows) if (r.operation !== 'transfer') html.push(page('logs', inputs, { info: { kind: 'cell', variant: v, operation: r.operation } }).parts.modal);
+    }
+    for (const q of LIVE.registry) html.push(page('logs', inputs, { info: { kind: 'input', id: q.id } }).parts.modal);
+    assert.doesNotMatch(text(html.join(' ')), /Tier \d/);
+  }
+});
