@@ -9,6 +9,7 @@ import datetime
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -712,7 +713,50 @@ def billing(contract):
             problems.append(f"{path}.allocation: needs layouts, objective, tie_break")
         if not isinstance(p["multipart"].get("abort_days_after_initiation_default"), int) or not p["multipart"].get("residence_time_assumption"):
             problems.append(f"{path}.multipart: needs abort_days_after_initiation_default and residence_time_assumption")
+        problems += price_problems(p, path)
     return problems
+
+
+def _price(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0
+
+
+def price_problems(p, path):
+    """The price values billing.js `priceProblems` rejects on the page, so a bad preset fails closure too."""
+    out = []
+
+    def price(v, where):
+        if not _price(v):
+            out.append(f"{path}.{where}: expected a finite number >= 0, got {v!r}")
+
+    for i, c in enumerate(p.get("request_classes") or []):
+        price(c.get("price_per_1000"), f"request_classes[{i}] ({c.get('id')}).price_per_1000")
+    tiers = (p.get("storage") or {}).get("tiers")
+    if not isinstance(tiers, list) or not tiers:
+        out.append(f"{path}.storage.tiers: expected a non-empty list")
+    else:
+        prev = 0
+        for i, t in enumerate(tiers):
+            price(t.get("price_per_gb_month"), f"storage.tiers[{i}].price_per_gb_month")
+            up = t.get("up_to_gb")
+            if i == len(tiers) - 1:
+                if up is not None:
+                    out.append(f"{path}.storage.tiers[{i}].up_to_gb: the last tier must be open (null), got {up!r}")
+            elif not (_price(up) and up > prev):
+                out.append(f"{path}.storage.tiers[{i}].up_to_gb: expected a number above {prev}, got {up!r}")
+            if _price(up):
+                prev = up
+    for i, r in enumerate(p.get("transfer") or []):
+        if r.get("id") == "internet" and r.get("price_per_gb") is None:
+            continue  # the page never prices internet egress; the shape check requires its note
+        price(r.get("price_per_gb"), f"transfer[{i}] ({r.get('id')}).price_per_gb")
+    gp3 = (p.get("block") or {}).get("gp3")
+    if not isinstance(gp3, dict):
+        out.append(f"{path}.block.gp3: missing")
+    else:
+        for k in ("price_per_gib_month", "iops_price", "mibps_price", "iops_baseline", "mibps_baseline"):
+            price(gp3.get(k), f"block.gp3.{k}")
+    return out
 
 
 # --- 5. reproduction closure -------------------------------------------------------------------
@@ -800,6 +844,37 @@ def report_identity(report, records, mode, problems, pending):
     if out["commit"] not in (report / "README.md").read_text():
         problems.append(f"{report.name}: README.md does not name the records' source commit {out['commit']}")
     return out
+
+
+# Records written before the rig recorded the store binary and its own cleanliness (9cc0121c86d) carry neither field.
+STORE_FIELDS_SINCE = "9cc0121c86d"
+
+
+def store_identity(records):
+    """The object store binary behind the ok records, and the records a dirty rig produced.
+
+    Returns {store_sha256, with_fields, records, problems}: `store_sha256` is the one digest the records carrying it
+    agree on (None when none carries it); a record with `rig_dirty: true` or a second digest is a problem.
+    """
+    ok = [m for m in records if m.get("status") == "ok"]
+    problems = [f"record {m.get('measurement_id')}: rig_dirty is true (run from uncommitted rig code)"
+                for m in ok if m.get("rig_dirty") is True]
+    digests = sorted({m["store_sha256"] for m in ok if m.get("store_sha256")})
+    if len(digests) > 1:
+        problems.append(f"records name several store_sha256 values: {', '.join(digests)}")
+    with_fields = sum(1 for m in ok if m.get("store_sha256"))
+    return {"store_sha256": digests[0] if len(digests) == 1 else None, "with_fields": with_fields, "records": len(ok),
+            "problems": problems}
+
+
+def store_statement(ident):
+    """One sentence for the evidence statement: which store binary the records name."""
+    without = ident["records"] - ident["with_fields"]
+    if not ident["with_fields"]:
+        return (f"The records predate per-record store fields ({STORE_FIELDS_SINCE}): store identified post hoc "
+                "by its pinned release.")
+    head = f"Store binary sha256 {ident['store_sha256'][:12]} on {ident['with_fields']} record(s)"
+    return head + (f"; {without} record(s) predate the field: store identified post hoc." if without else ".")
 
 
 def raw_digest(report, mode, problems, pending):
@@ -1060,6 +1135,11 @@ def main(argv=None, fresh=None):
             problems += evidence(cov, coefficients, ids)
         if args.mode == "final":
             problems += provenance(cov, {m.get("measurement_id"): m for m in measurements})
+    store = store_identity(measurements)["problems"]
+    if args.mode == "final":
+        problems += [f"store: {p}" for p in store]
+    for p in store if args.mode == "dev" else ():
+        print(f"closure_check: pending: store: {p}", file=sys.stderr)
     if bil is not None:
         problems += billing(bil)
     stale = []

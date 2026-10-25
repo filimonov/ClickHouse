@@ -442,6 +442,8 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(contract["evidence_by_variant"], {"ebs": {"fit_and_holdout": 0, "fit_only": 0, "assumption": 0},
                                                            "s3": {"fit_and_holdout": 1, "fit_only": 0, "assumption": 0}})
         self.assertTrue(contract["evidence_statement"].startswith("Measured on ClickHouse commit 78133cca87d (release 26.8) against a RustFS S3 store."))
+        # The seed records predate the store fields, so the statement says how the store is known.
+        self.assertIn("store identified post hoc", contract["evidence_statement"])
 
 
 class VerifiedRangeTest(unittest.TestCase):

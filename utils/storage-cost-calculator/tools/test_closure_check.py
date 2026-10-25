@@ -414,6 +414,76 @@ class BillingTest(unittest.TestCase):
         self.assertTrue(any('units_evidence' in p for p in cc.billing(bare)))
 
 
+    def test_billing_checks_price_values_like_the_page(self):
+        def problems(mutate):
+            b = self.seed()
+            mutate(b['presets'][0])
+            return cc.billing(b)
+        neg = problems(lambda p: p['request_classes'][0].__setitem__('price_per_1000', -1))
+        self.assertTrue(any('request_classes[0]' in x and 'finite number >= 0' in x for x in neg), neg)
+        nan = problems(lambda p: p['storage']['tiers'][0].__setitem__('price_per_gb_month', float('nan')))
+        self.assertTrue(any('storage.tiers[0].price_per_gb_month' in x for x in nan), nan)
+        text = problems(lambda p: p['block']['gp3'].__setitem__('iops_price', '0.005'))
+        self.assertTrue(any('block.gp3.iops_price' in x for x in text), text)
+        order = problems(lambda p: p['storage']['tiers'][1].__setitem__('up_to_gb', 100))
+        self.assertTrue(any('storage.tiers[1].up_to_gb' in x and 'above' in x for x in order), order)
+        closed = problems(lambda p: p['storage']['tiers'][-1].__setitem__('up_to_gb', 10 ** 9))
+        self.assertTrue(any('last tier must be open' in x for x in closed), closed)
+        empty = problems(lambda p: p['storage'].__setitem__('tiers', []))
+        self.assertTrue(any('storage.tiers' in x and 'non-empty' in x for x in empty), empty)
+        xfer = problems(lambda p: next(t for t in p['transfer'] if t['id'] != 'internet').__setitem__('price_per_gb', None))
+        self.assertTrue(any('transfer[' in x and 'price_per_gb' in x for x in xfer), xfer)
+        # Internet egress may stay null with a note: the page never prices it.
+        self.assertEqual(problems(lambda p: None), [])
+
+
+class StoreIdentityTest(unittest.TestCase):
+    def rec(self, i, **kw):
+        r = {'measurement_id': f'cost-20261025T000000Z/s3/c/x/k{i}', 'status': 'ok'}
+        r.update(kw)
+        return r
+
+    def test_records_before_the_fields_are_identified_post_hoc(self):
+        ident = cc.store_identity([self.rec(1), self.rec(2)])
+        self.assertEqual(ident['problems'], [])
+        self.assertEqual((ident['store_sha256'], ident['with_fields'], ident['records']), (None, 0, 2))
+        self.assertIn('store identified post hoc', cc.store_statement(ident))
+
+    def test_one_store_digest_and_clean_rig_pass(self):
+        ident = cc.store_identity([self.rec(1, store_sha256='a' * 64, rig_dirty=False), self.rec(2)])
+        self.assertEqual(ident['problems'], [])
+        self.assertEqual(ident['store_sha256'], 'a' * 64)
+        text = cc.store_statement(ident)
+        self.assertIn('a' * 12, text)
+        self.assertIn('1 record(s) predate the field: store identified post hoc', text)
+
+    def test_dirty_rig_and_two_stores_fail(self):
+        dirty = cc.store_identity([self.rec(1, store_sha256='a' * 64, rig_dirty=True)])
+        self.assertTrue(any('rig_dirty' in p and 'k1' in p for p in dirty['problems']), dirty)
+        two = cc.store_identity([self.rec(1, store_sha256='a' * 64), self.rec(2, store_sha256='b' * 64)])
+        self.assertTrue(any('several store_sha256' in p for p in two['problems']), two)
+        # Records that did not finish say nothing about the store the reports rest on.
+        failed = cc.store_identity([self.rec(1, store_sha256='a' * 64), self.rec(2, status='FAILED', store_sha256='b' * 64, rig_dirty=True)])
+        self.assertEqual(failed['problems'], [])
+
+    def test_final_mode_fails_on_a_dirty_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            cm, report = os.path.join(d, 'cm'), os.path.join(d, 'rep-1')
+            os.makedirs(cm)
+            os.makedirs(report)
+            open(os.path.join(report, 'README.md'), 'w').close()
+            with open(os.path.join(report, 'measurements.jsonl'), 'w') as f:
+                f.write(json.dumps(self.rec(1, store_sha256='a' * 64, rig_dirty=True)) + '\n')
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                cc.main(['--mode', 'final', '--skip-node', '--cost-model', cm, '--reports', os.path.join(d, 'rep-*')])
+            self.assertIn('rig_dirty', err.getvalue())
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                cc.main(['--mode', 'dev', '--skip-node', '--cost-model', cm, '--reports', os.path.join(d, 'rep-*')])
+            self.assertIn('pending: store:', err.getvalue())
+
+
 class ReproductionTest(unittest.TestCase):
     def test_reproduction_stale_copy(self):
         with tempfile.TemporaryDirectory() as d:

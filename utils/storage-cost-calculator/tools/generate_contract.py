@@ -205,7 +205,7 @@ def build(opts, mode="dev"):
 
     coefficients, coef_owner = [], {}
     files, files_by_variant, cells, cell_owner, card_cells = [], {}, {}, {}, {}
-    formulas_list, measurement_ids, evidence = [], set(), []
+    formulas_list, measurement_ids, evidence, all_records = [], set(), [], []
     tables = artifacts.table_arities_from_registry(reg)
     for r in reports:
         for name in ("formulas.json", "coefficients.json"):
@@ -227,6 +227,7 @@ def build(opts, mode="dev"):
         tables.update(artifacts.table_arities_from_coefficients([c for c in loaded if isinstance(c, dict)]))
         records = closure_check.report_records(r, problems)
         measurement_ids |= {m.get("measurement_id") for m in records}
+        all_records += records
         evidence.append({"report": r.name, **closure_check.report_identity(r, records, mode, problems, pending),
                          "raw_sha256sums": closure_check.raw_digest(r, mode, problems, pending)})
     for r in reports:
@@ -295,7 +296,7 @@ def build(opts, mode="dev"):
     contract = {
         "schema": "contract/1", "version": "", "manifest": manifest,
         "evidence_statement": evidence_statement(reports, coefficients, cov, reg, bil, len(support_pending), measured_build(evidence),
-                                                 assumptions),
+                                                 assumptions, closure_check.store_identity(all_records)),
         "registry": with_verified_range(with_measured_by(reg["quantities"], coefficients, coef_owner, evidence)),
         "sets": reg["sets"], "precedence": reg["precedence"],
         "coefficients": with_verified_range(coefficients), "billing": bil,
@@ -454,7 +455,7 @@ def evidence_by_variant(formulas, coefficients, cov):
     return out
 
 
-def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, build=None, assumptions=()):
+def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, build=None, assumptions=(), store=None):
     kinds = [(c.get("evidence") or {}).get("kind") for c in coefficients if isinstance(c, dict)]
     p1 = {f"{c['name']}.{k['case_id']}" for c in cov["cards"] for k in c["cases"] if k["priority"] == "P1"}
     closed = sorted({e["coefficient"] for e in cov["evidence"] if e["experiment_id"] in p1 and e["role"] == "holdout" and e["status"] == "done"}
@@ -467,6 +468,7 @@ def evidence_statement(reports, coefficients, cov, reg, bil, pending_cells, buil
             f"{len(closed)} P1 coefficient(s) have a done fit and a done hold-out. "
             f"Registry {reg['version']}, coverage {cov['version']}, billing {bil['version']}. "
             f"{pending_cells} variant x operation x family cell(s) have no evidence yet."
+            + (f" {closure_check.store_statement(store)}" if store and store["records"] else "")
             + assumption_text(assumptions))
 
 
