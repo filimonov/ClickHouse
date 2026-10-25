@@ -1,0 +1,51 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "move-replicated.ttl",
+  "card": "move-replicated",
+  "case_id": "ttl",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 2,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "move"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261025,
+    "report_dir": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move",
+    "ttl_seconds": 5,
+    "cold_volume": "cold",
+    "tables": [
+      {
+        "name": "t",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64, event_time DateTime",
+        "order_by": "k",
+        "ttl": "event_time + INTERVAL 5 SECOND TO VOLUME 'cold'",
+        "row_bytes": 44
+      }
+    ],
+    "inserts": [
+      {
+        "table": "t",
+        "rows": 100000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3, now() - {i} AS event_time FROM numbers({rows})"
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 2,
+  "timeout_s": 900,
+  "description": "Two 100 000-row Compact parts inserted on r1 and fetched by r2 onto its hot volume; the window starts moves on both replicas."
+}

@@ -1,0 +1,198 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "move-replicated.ttl",
+  "policy": "s3",
+  "inputs": {
+    "replicas": 2,
+    "compact_parts": 2,
+    "wide_parts": 0,
+    "objects_per_compact_part": 12,
+    "objects_per_wide_part": 22,
+    "load_gets_per_part": 10,
+    "shape": "narrow",
+    "columns": 6,
+    "ttl": true
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": {
+          "min": 24,
+          "max": 24,
+          "basis": "source",
+          "reason": "each replica moves its own copy: insert write per part"
+        },
+        "GetObject": {
+          "min": 20,
+          "max": 20,
+          "basis": "source",
+          "reason": "and loads its clone"
+        }
+      },
+      "r2": {
+        "PutObject": {
+          "min": 24,
+          "max": 24,
+          "basis": "source",
+          "reason": "each replica moves its own copy: insert write per part"
+        },
+        "GetObject": {
+          "min": 20,
+          "max": 20,
+          "basis": "source",
+          "reason": "and loads its clone"
+        }
+      }
+    },
+    "observations": {
+      "moved_parts": 2
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "each server schedules its own background moves from the TTL of its own parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12126
+    },
+    {
+      "claim": "the zero-copy move branch needs allow_remote_fs_zero_copy_replication",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12286
+    },
+    {
+      "claim": "allow_remote_fs_zero_copy_replication is false by default",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    },
+    {
+      "claim": "otherwise the ordinary move: clonePart then swapClonedPart",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12348
+    },
+    {
+      "claim": "clonePart copies the part with makeCloneOnDisk into moving/",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 281
+    },
+    {
+      "claim": "the clone goes to <table>/moving/<part>/ on the cold disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2929
+    },
+    {
+      "claim": "the clone is loaded back from the cold disk (loadColumnsChecksumsIndexes)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 299
+    },
+    {
+      "claim": "swapClonedPart renames moving/<part> to <part>",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 313
+    },
+    {
+      "claim": "CREATE TABLE creates the table directory on every disk of the policy",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 576
+    },
+    {
+      "claim": "load reads columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2535
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2566
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2572
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2627
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2237
+    },
+    {
+      "claim": "one marks file for the index granularity",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1750
+    },
+    {
+      "claim": "primary.cidx (primary_key_lazy_load = 0)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1828
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2304
+    },
+    {
+      "claim": "ttl.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2493
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2003
+    },
+    {
+      "claim": "a non-CAS cold disk gets the part through copyDirectoryContent",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 919
+    },
+    {
+      "claim": "one copyFile per file of the part",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 158
+    },
+    {
+      "claim": "copyFile writes the file through the cold disk writeFile, as an insert does",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 76
+    },
+    {
+      "claim": "each file is its own object",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file within the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 192
+    },
+    {
+      "claim": "no HeadObject after an upload",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "every replica starts its own background moves",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6184
+    },
+    {
+      "claim": "the replication log has no move entry: a follower never fetches a moved part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/ReplicatedMergeTreeLogEntry.h",
+      "line": 27
+    },
+    {
+      "claim": "without zero-copy the swap takes no shared lock",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 11336
+    }
+  ],
+  "note": "The follower moves its own copy: two replicas pay the move twice, with no fetch and no interserver bytes."
+}
