@@ -17,7 +17,8 @@
     "types|wide": 75
    }
   },
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "insert_rows": [
     100,
     4000000
@@ -126,7 +127,8 @@
     "reinsert_identical|inline": 10
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "insert_rows": [
     100,
     4000000
@@ -195,7 +197,8 @@
     "per_blob_object": 0
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "cas_pool_objects": [
     1017,
     9949
@@ -252,7 +255,8 @@
     "deferred_round": 45.3
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "cas_pool_objects": [
     1017,
     9949
@@ -309,7 +313,8 @@
     "blob_delete": 2.7543
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "cas_gc_interval_s": [
     10,
     60
@@ -404,7 +409,8 @@
   "kind": "scalar",
   "dim": "count",
   "value": 2,
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "read_streams_per_part": [
     2,
     3
@@ -464,7 +470,8 @@
   "kind": "scalar",
   "dim": "count",
   "value": 1,
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "read_streams_per_part": [
     2,
     3
@@ -512,7 +519,8 @@
   "kind": "scalar",
   "dim": "count",
   "value": 2,
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "read_streams_per_part": [
     2,
     3
@@ -659,7 +667,8 @@
     "1|ListObjectsV2": 7
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "cas_tables": [
     1,
     1
@@ -942,7 +951,8 @@
     "1|DeleteObject": 1
    }
   },
-  "validity": {
+  "basis": "fitted",
+  "verified_range": {
    "cas_tables": [
     1,
     1
@@ -1004,7 +1014,8 @@
     "wide": 2
    }
   },
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "insert_rows": [
     100,
     100000
@@ -1092,7 +1103,8 @@
   "kind": "scalar",
   "dim": "count",
   "value": 1,
-  "validity": {
+  "basis": "derived",
+  "verified_range": {
    "cas_tables": [
     1,
     1

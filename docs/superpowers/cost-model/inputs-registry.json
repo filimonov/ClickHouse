@@ -10837,7 +10837,7 @@
       "status": "ok",
       "ui": {
         "tier": "hidden",
-        "short": "GetObject per stream of a CAS part read that misses the file",
+        "short": "GETs per missed cached read",
         "name": null
       }
     },
@@ -11113,7 +11113,7 @@
       "status": "ok",
       "ui": {
         "tier": "hidden",
-        "short": "GetObject per part a CAS server loads",
+        "short": "GETs per loaded part",
         "name": null
       }
     },
@@ -11145,7 +11145,7 @@
       "status": "ok",
       "ui": {
         "tier": "hidden",
-        "short": "GetObject per ref log record a CAS server replays per table ",
+        "short": "GETs per replayed log record",
         "name": null
       }
     },
