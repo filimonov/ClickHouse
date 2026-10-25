@@ -480,8 +480,11 @@ class RegistryUiTest(unittest.TestCase):
         reg = json.loads((gc.DEFAULTS["cost_model"] / "inputs-registry.json").read_text())
         self.assertEqual(gc.registry_ui_problems(reg), [])
         tiers = {q["id"]: q["ui"]["tier"] for q in reg["quantities"] if q["kind"] == "input"}
-        for workload in ("data_bytes", "ingest_rate", "retention_days", "replicas", "shards", "topology"):
+        for workload in ("data_bytes", "ingest_rate", "retention_days", "replicas", "topology"):
             self.assertEqual(tiers[workload], "workload", workload)
+        # The page models one shard: `shards` is pinned at 1 and off the form.
+        shards = next(q for q in reg["quantities"] if q["id"] == "shards")
+        self.assertEqual((shards["kind"], shards["default"], shards["ui"]["tier"]), ("pinned", 1, "hidden"))
         for table_key in ("io_op", "io_direction", "io_size_bucket", "cas_write", "cas_branch", "gc_stage", "gc_round_term"):
             self.assertEqual(tiers[table_key], "hidden", table_key)
 

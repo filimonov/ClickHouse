@@ -8219,6 +8219,33 @@
       "status": "ok"
     },
     {
+      "id": "cas_cleanup_gets_per_table",
+      "block": "cas",
+      "label": "GETs one cleanup run reads for a table with parts, besides its LIST; every table on the disk is assumed to hold parts (an empty table reads 1)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 5,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables/README.md: 10 foreground GETs per table in 12 minutes beyond the insert graph at 1, 4, 8 and 16 tables, 2 cleanup runs per table; measured, not fitted, not traced to source",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Cleanup GETs per table"
+      },
+      "status": "ok"
+    },
+    {
       "id": "cas_tables",
       "block": "cas",
       "label": "MergeTree tables on the CAS disk",
@@ -12073,6 +12100,7 @@
       "enum": null,
       "table": {
         "index": [
+          "cache_enabled",
           "replication_op"
         ],
         "dim": "count"
@@ -12105,6 +12133,7 @@
       "enum": null,
       "table": {
         "index": [
+          "cache_enabled",
           "replication_op"
         ],
         "dim": "count"

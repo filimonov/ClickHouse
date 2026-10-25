@@ -34,9 +34,6 @@
         cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
-      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
-      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
-      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
     // 50 agents send 1,000-row inserts, 50 per second in total: 20 GiB/day over 4,320,000 inserts is ~4.9 KiB
@@ -58,10 +55,10 @@
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
       // replica fetch transfer was measured at (acquire_bytes, cas_relink_bytes_per_part); the page shows the
-      // dependent numbers as extrapolated. The cached CAS start was measured with one table on the disk.
+      // dependent numbers as extrapolated.
       expected_extrapolated: {
         ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'],
-        cas: ['cas_relink_bytes_per_part', 'cas_startup_requests', 'cas_startup_error_requests'],
+        cas: ['cas_relink_bytes_per_part'],
       },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
@@ -84,9 +81,6 @@
         cas_tables: 5, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
-      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
-      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
-      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Cold archive without replication: 50 TiB kept two years (~70 GiB/day derived) on one replica.
     // One 100,000-row insert every 10 s: 51,200 GiB / 730 d = 70 GiB/day over 8,640 inserts a day is ~8.3 MiB
@@ -107,9 +101,6 @@
         cas_tables: 3, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
-      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
-      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
-      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // The standard deployment: what the workload knobs alone describe. Wide table, async inserts on (the async buffer
     // flushes ~1 MiB, the registry default), default merges, a modest number of cold part reads, one restart a month,
@@ -123,9 +114,6 @@
         cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: [],
-      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
-      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
-      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
   };
 

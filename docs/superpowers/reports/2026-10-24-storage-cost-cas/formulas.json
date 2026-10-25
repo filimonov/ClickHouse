@@ -2071,27 +2071,35 @@
           }
          },
          "b": {
-          "kind": "branch",
-          "dim": "count",
-          "cond": {
-           "op": "==",
+          "kind": "add",
+          "a": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "cas_startup_requests_base",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "cache_enabled",
+             "dim": "enum:cache_enabled"
+            },
+            {
+             "kind": "const",
+             "value": "GetObject",
+             "dim": "enum:replication_op"
+            }
+           ]
+          },
+          "b": {
+           "kind": "mul",
            "a": {
             "kind": "input",
-            "id": "cache_enabled",
-            "dim": "enum:cache_enabled"
+            "id": "cas_tables",
+            "dim": "count"
            },
            "b": {
-            "kind": "const",
-            "value": "1",
-            "dim": "enum:cache_enabled"
-           }
-          },
-          "then": {
-           "kind": "add",
-           "a": {
             "kind": "lookup",
             "dim": "count",
-            "table_id": "cas_startup_requests",
+            "table_id": "cas_startup_requests_per_table",
             "keys": [
              {
               "kind": "input",
@@ -2105,102 +2113,9 @@
              }
             ]
            },
-           "b": {
-            "kind": "mul",
-            "a": {
-             "kind": "branch",
-             "dim": "count",
-             "cond": {
-              "op": ">",
-              "a": {
-               "kind": "input",
-               "id": "cas_tables",
-               "dim": "count"
-              },
-              "b": {
-               "kind": "const",
-               "value": 1,
-               "dim": "count"
-              }
-             },
-             "then": {
-              "kind": "sub",
-              "a": {
-               "kind": "input",
-               "id": "cas_tables",
-               "dim": "count"
-              },
-              "b": {
-               "kind": "const",
-               "value": 1,
-               "dim": "count"
-              },
-              "dim": "count"
-             },
-             "else": {
-              "kind": "const",
-              "value": 0,
-              "dim": "count"
-             }
-            },
-            "b": {
-             "kind": "lookup",
-             "dim": "count",
-             "table_id": "cas_startup_requests_per_table",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "GetObject",
-               "dim": "enum:replication_op"
-              }
-             ]
-            },
-            "dim": "count"
-           },
            "dim": "count"
           },
-          "else": {
-           "kind": "add",
-           "a": {
-            "kind": "lookup",
-            "dim": "count",
-            "table_id": "cas_startup_requests_base",
-            "keys": [
-             {
-              "kind": "input",
-              "id": "cache_enabled",
-              "dim": "enum:cache_enabled"
-             },
-             {
-              "kind": "const",
-              "value": "GetObject",
-              "dim": "enum:replication_op"
-             }
-            ]
-           },
-           "b": {
-            "kind": "mul",
-            "a": {
-             "kind": "input",
-             "id": "cas_tables",
-             "dim": "count"
-            },
-            "b": {
-             "kind": "lookup",
-             "dim": "count",
-             "table_id": "cas_startup_requests_per_table",
-             "keys": [
-              {
-               "kind": "const",
-               "value": "GetObject",
-               "dim": "enum:replication_op"
-              }
-             ]
-            },
-            "dim": "count"
-           },
-           "dim": "count"
-          }
+          "dim": "count"
          }
         },
         "b": {
@@ -2431,27 +2346,35 @@
         }
        },
        "b": {
-        "kind": "branch",
-        "dim": "count",
-        "cond": {
-         "op": "==",
+        "kind": "add",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "cas_startup_requests_base",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "PutObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
          "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "cas_tables",
+          "dim": "count"
          },
          "b": {
-          "kind": "const",
-          "value": "1",
-          "dim": "enum:cache_enabled"
-         }
-        },
-        "then": {
-         "kind": "add",
-         "a": {
           "kind": "lookup",
           "dim": "count",
-          "table_id": "cas_startup_requests",
+          "table_id": "cas_startup_requests_per_table",
           "keys": [
            {
             "kind": "input",
@@ -2465,102 +2388,9 @@
            }
           ]
          },
-         "b": {
-          "kind": "mul",
-          "a": {
-           "kind": "branch",
-           "dim": "count",
-           "cond": {
-            "op": ">",
-            "a": {
-             "kind": "input",
-             "id": "cas_tables",
-             "dim": "count"
-            },
-            "b": {
-             "kind": "const",
-             "value": 1,
-             "dim": "count"
-            }
-           },
-           "then": {
-            "kind": "sub",
-            "a": {
-             "kind": "input",
-             "id": "cas_tables",
-             "dim": "count"
-            },
-            "b": {
-             "kind": "const",
-             "value": 1,
-             "dim": "count"
-            },
-            "dim": "count"
-           },
-           "else": {
-            "kind": "const",
-            "value": 0,
-            "dim": "count"
-           }
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "cas_startup_requests_per_table",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "PutObject",
-             "dim": "enum:replication_op"
-            }
-           ]
-          },
-          "dim": "count"
-         },
          "dim": "count"
         },
-        "else": {
-         "kind": "add",
-         "a": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "cas_startup_requests_base",
-          "keys": [
-           {
-            "kind": "input",
-            "id": "cache_enabled",
-            "dim": "enum:cache_enabled"
-           },
-           {
-            "kind": "const",
-            "value": "PutObject",
-            "dim": "enum:replication_op"
-           }
-          ]
-         },
-         "b": {
-          "kind": "mul",
-          "a": {
-           "kind": "input",
-           "id": "cas_tables",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "cas_startup_requests_per_table",
-           "keys": [
-            {
-             "kind": "const",
-             "value": "PutObject",
-             "dim": "enum:replication_op"
-            }
-           ]
-          },
-          "dim": "count"
-         },
-         "dim": "count"
-        }
+        "dim": "count"
        }
       },
       "b": {
@@ -2666,55 +2496,21 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "lookup",
        "dim": "count",
-       "cond": {
-        "op": "==",
-        "a": {
+       "table_id": "cas_startup_requests_base",
+       "keys": [
+        {
          "kind": "input",
          "id": "cache_enabled",
          "dim": "enum:cache_enabled"
         },
-        "b": {
+        {
          "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
+         "value": "HeadObject",
+         "dim": "enum:replication_op"
         }
-       },
-       "then": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_requests",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "HeadObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       },
-       "else": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_requests_base",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "HeadObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+       ]
       }
      }
     },
@@ -2744,55 +2540,21 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "lookup",
        "dim": "count",
-       "cond": {
-        "op": "==",
-        "a": {
+       "table_id": "cas_startup_requests_base",
+       "keys": [
+        {
          "kind": "input",
          "id": "cache_enabled",
          "dim": "enum:cache_enabled"
         },
-        "b": {
+        {
          "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
+         "value": "DeleteObject",
+         "dim": "enum:replication_op"
         }
-       },
-       "then": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_requests",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "DeleteObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       },
-       "else": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_requests_base",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "DeleteObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+       ]
       }
      }
     },
@@ -2822,27 +2584,35 @@
        }
       },
       "b": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": "==",
+       "kind": "add",
+       "a": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "cas_startup_requests_base",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         {
+          "kind": "const",
+          "value": "ListObjectsV2",
+          "dim": "enum:replication_op"
+         }
+        ]
+       },
+       "b": {
+        "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cache_enabled",
-         "dim": "enum:cache_enabled"
+         "id": "cas_tables",
+         "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
-        }
-       },
-       "then": {
-        "kind": "add",
-        "a": {
          "kind": "lookup",
          "dim": "count",
-         "table_id": "cas_startup_requests",
+         "table_id": "cas_startup_requests_per_table",
          "keys": [
           {
            "kind": "input",
@@ -2856,102 +2626,9 @@
           }
          ]
         },
-        "b": {
-         "kind": "mul",
-         "a": {
-          "kind": "branch",
-          "dim": "count",
-          "cond": {
-           "op": ">",
-           "a": {
-            "kind": "input",
-            "id": "cas_tables",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 1,
-            "dim": "count"
-           }
-          },
-          "then": {
-           "kind": "sub",
-           "a": {
-            "kind": "input",
-            "id": "cas_tables",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 1,
-            "dim": "count"
-           },
-           "dim": "count"
-          },
-          "else": {
-           "kind": "const",
-           "value": 0,
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "cas_startup_requests_per_table",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "ListObjectsV2",
-            "dim": "enum:replication_op"
-           }
-          ]
-         },
-         "dim": "count"
-        },
         "dim": "count"
        },
-       "else": {
-        "kind": "add",
-        "a": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "cas_startup_requests_base",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
-          },
-          {
-           "kind": "const",
-           "value": "ListObjectsV2",
-           "dim": "enum:replication_op"
-          }
-         ]
-        },
-        "b": {
-         "kind": "mul",
-         "a": {
-          "kind": "input",
-          "id": "cas_tables",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "cas_startup_requests_per_table",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "ListObjectsV2",
-            "dim": "enum:replication_op"
-           }
-          ]
-         },
-         "dim": "count"
-        },
-        "dim": "count"
-       }
+       "dim": "count"
       }
      }
     },
@@ -2981,27 +2658,35 @@
        }
       },
       "b": {
-       "kind": "branch",
-       "dim": "count",
-       "cond": {
-        "op": "==",
+       "kind": "add",
+       "a": {
+        "kind": "lookup",
+        "dim": "count",
+        "table_id": "cas_startup_error_requests_base",
+        "keys": [
+         {
+          "kind": "input",
+          "id": "cache_enabled",
+          "dim": "enum:cache_enabled"
+         },
+         {
+          "kind": "const",
+          "value": "GetObject",
+          "dim": "enum:replication_op"
+         }
+        ]
+       },
+       "b": {
+        "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cache_enabled",
-         "dim": "enum:cache_enabled"
+         "id": "cas_tables",
+         "dim": "count"
         },
         "b": {
-         "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
-        }
-       },
-       "then": {
-        "kind": "add",
-        "a": {
          "kind": "lookup",
          "dim": "count",
-         "table_id": "cas_startup_error_requests",
+         "table_id": "cas_startup_error_requests_per_table",
          "keys": [
           {
            "kind": "input",
@@ -3015,102 +2700,9 @@
           }
          ]
         },
-        "b": {
-         "kind": "mul",
-         "a": {
-          "kind": "branch",
-          "dim": "count",
-          "cond": {
-           "op": ">",
-           "a": {
-            "kind": "input",
-            "id": "cas_tables",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 1,
-            "dim": "count"
-           }
-          },
-          "then": {
-           "kind": "sub",
-           "a": {
-            "kind": "input",
-            "id": "cas_tables",
-            "dim": "count"
-           },
-           "b": {
-            "kind": "const",
-            "value": 1,
-            "dim": "count"
-           },
-           "dim": "count"
-          },
-          "else": {
-           "kind": "const",
-           "value": 0,
-           "dim": "count"
-          }
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "cas_startup_error_requests_per_table",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "GetObject",
-            "dim": "enum:replication_op"
-           }
-          ]
-         },
-         "dim": "count"
-        },
         "dim": "count"
        },
-       "else": {
-        "kind": "add",
-        "a": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "cas_startup_error_requests_base",
-         "keys": [
-          {
-           "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
-          },
-          {
-           "kind": "const",
-           "value": "GetObject",
-           "dim": "enum:replication_op"
-          }
-         ]
-        },
-        "b": {
-         "kind": "mul",
-         "a": {
-          "kind": "input",
-          "id": "cas_tables",
-          "dim": "count"
-         },
-         "b": {
-          "kind": "lookup",
-          "dim": "count",
-          "table_id": "cas_startup_error_requests_per_table",
-          "keys": [
-           {
-            "kind": "const",
-            "value": "GetObject",
-            "dim": "enum:replication_op"
-           }
-          ]
-         },
-         "dim": "count"
-        },
-        "dim": "count"
-       }
+       "dim": "count"
       }
      },
      "status": 404
@@ -3141,55 +2733,21 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "lookup",
        "dim": "count",
-       "cond": {
-        "op": "==",
-        "a": {
+       "table_id": "cas_startup_error_requests_base",
+       "keys": [
+        {
          "kind": "input",
          "id": "cache_enabled",
          "dim": "enum:cache_enabled"
         },
-        "b": {
+        {
          "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
+         "value": "HeadObject",
+         "dim": "enum:replication_op"
         }
-       },
-       "then": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "HeadObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       },
-       "else": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests_base",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "HeadObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+       ]
       }
      },
      "status": 404
@@ -3220,55 +2778,21 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "lookup",
        "dim": "count",
-       "cond": {
-        "op": "==",
-        "a": {
+       "table_id": "cas_startup_error_requests_base",
+       "keys": [
+        {
          "kind": "input",
          "id": "cache_enabled",
          "dim": "enum:cache_enabled"
         },
-        "b": {
+        {
          "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
+         "value": "PutObject",
+         "dim": "enum:replication_op"
         }
-       },
-       "then": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "PutObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       },
-       "else": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests_base",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "PutObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+       ]
       }
      },
      "status": 412
@@ -3299,55 +2823,21 @@
        }
       },
       "b": {
-       "kind": "branch",
+       "kind": "lookup",
        "dim": "count",
-       "cond": {
-        "op": "==",
-        "a": {
+       "table_id": "cas_startup_error_requests_base",
+       "keys": [
+        {
          "kind": "input",
          "id": "cache_enabled",
          "dim": "enum:cache_enabled"
         },
-        "b": {
+        {
          "kind": "const",
-         "value": "1",
-         "dim": "enum:cache_enabled"
+         "value": "DeleteObject",
+         "dim": "enum:replication_op"
         }
-       },
-       "then": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "DeleteObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       },
-       "else": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests_base",
-        "keys": [
-         {
-          "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
-         },
-         {
-          "kind": "const",
-          "value": "DeleteObject",
-          "dim": "enum:replication_op"
-         }
-        ]
-       }
+       ]
       }
      },
      "status": 412
@@ -3355,7 +2845,13 @@
    ],
    "allocation": null,
    "states": [],
-   "notes": []
+   "notes": [
+    {
+     "kind": "const",
+     "value": "Start with the filesystem cache: ASSUMPTION, the per-table terms repeat the cache-off fit; the cached start was measured at one table only",
+     "dim": "enum:note"
+    }
+   ]
   },
   "gc": {
    "ledger_rows": [
@@ -3590,9 +3086,49 @@
            "a": {
             "kind": "mul",
             "a": {
-             "kind": "input",
-             "id": "cas_tables",
-             "dim": "count"
+             "kind": "branch",
+             "dim": "count",
+             "cond": {
+              "op": ">",
+              "a": {
+               "kind": "input",
+               "id": "cas_tables",
+               "dim": "count"
+              },
+              "b": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_gc_interval_s",
+                "dim": "s"
+               },
+               "dim": "count"
+              }
+             },
+             "then": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_gc_interval_s",
+               "dim": "s"
+              },
+              "dim": "count"
+             },
+             "else": {
+              "kind": "input",
+              "id": "cas_tables",
+              "dim": "count"
+             }
             },
             "b": {
              "kind": "input",
@@ -7136,6 +6672,21 @@
       "dim": "s"
      },
      "dim": "count"
+    },
+    {
+     "kind": "const",
+     "value": "GC fold: tables with new data per round = min(tables, inserts per GC interval), assuming each insert of a round lands in a different table until every table has one",
+     "dim": "enum:note"
+    },
+    {
+     "kind": "const",
+     "value": "GC fold: the orphan-manifest sweep reads cas_ref_log_tail_records per swept table, min(tables, gc_round_sweep_namespace_budget) tables per round",
+     "dim": "enum:note"
+    },
+    {
+     "kind": "const",
+     "value": "GC: the paged cas/ns/stream/ listing of Deferred rounds is not modeled (up to 51 pages at 150-500 tables)",
+     "dim": "enum:note"
     }
    ]
   },
@@ -7188,13 +6739,22 @@
        "a": {
         "kind": "mul",
         "a": {
-         "kind": "input",
-         "id": "cas_tables",
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_tables",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "replicas",
+          "dim": "count"
+         },
          "dim": "count"
         },
         "b": {
          "kind": "input",
-         "id": "replicas",
+         "id": "cas_cleanup_gets_per_table",
          "dim": "count"
         },
         "dim": "count"
@@ -7260,7 +6820,13 @@
    ],
    "allocation": null,
    "states": [],
-   "notes": []
+   "notes": [
+    {
+     "kind": "const",
+     "value": "Cleanup: each run reads 5 GETs for a table with parts (measured on the gc-tables passes, not fitted); every table on the disk is assumed to hold parts",
+     "dim": "enum:note"
+    }
+   ]
   },
   "storage": {
    "ledger_rows": [

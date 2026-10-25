@@ -87,14 +87,17 @@ third is derived. Every other input defaults to a standard deployment profile, s
 columns (D22).
 
 **Tables.** Tables on the CAS disk, tables created per month and tables dropped per month share one workload line
-with one (i). On every replica, each table adds a catalog GET and a LIST per `cas_table_cleanup_period_s` (the
-cleanup thread's listing, `lease` cell). Each server start reads per table GET 14 (3 of them 404), PUT 2 and LIST 5,
-and replays its ref log tail (`recovery`). A GC fold reads 4 objects per table with new data. Its orphan-manifest
-sweep re-reads the whole tail plus 5 objects of at most 20 tables per round (`gc`). These per-table terms are fitted
-at 1–500 tables (`docs/superpowers/reports/2026-10-25-storage-cost-cas-tables`). A CREATE TABLE sends 21 requests
+with one (i). On every replica, each table adds 5 GETs and a LIST per `cas_table_cleanup_period_s` (the cleanup
+thread's run, `lease` cell). The 5 GETs are the rig's measured value for a table with parts, not fitted; every table
+is assumed to hold parts. Each server start reads per table GET 14 (3 of them 404), PUT 2 and LIST 5,
+and replays its ref log tail (`recovery`). A GC fold reads 4 objects per table with new data. Tables with new data
+per round are at most the inserts per GC interval. The orphan-manifest sweep re-reads the whole tail plus 5 objects
+of at most 20 tables per round (`gc`). The paged `cas/ns/stream/` listing of Deferred rounds is not modeled. The GC
+terms are fitted at 1–500 tables and held out at 40. The start terms are fitted at 1–16 and held out at 8, 150 and
+500 (`docs/superpowers/reports/2026-10-25-storage-cost-cas-tables`). A CREATE TABLE sends 21 requests
 per replica (`cas_table_create_requests`). A DROP TABLE SYNC sends 9 plus 4 per part per replica (`deletes` cell).
-Both are formulas from source, verified at 1 table. With the filesystem cache the start was measured with one table
-only, so more tables mark the CAS Recovery cell extrapolated.
+Both are formulas from source, verified at 1 table. With the filesystem cache the start was measured at one table
+only. Its per-table terms repeat the cache-off fit as a stated assumption, shown on the CAS Recovery cell.
 
 ### The (i) dialog {#info-dialog}
 
