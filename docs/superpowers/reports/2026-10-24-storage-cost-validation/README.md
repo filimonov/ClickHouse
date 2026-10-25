@@ -160,10 +160,12 @@ spills to a blob (`:998`); no file of these cases did.
 - **Collapse.** A blob whose bytes equal an earlier blob of the pool is not uploaded again. Mark files of streams
   whose compressed blocks have equal sizes are byte-equal: random `UInt64` columns compress to equal block sizes,
   so 40 of them share a few mark files. The count therefore depends on the data, not only on the shape.
-- **Value.** `cas_objects_per_part` is the measured count of the shape generators (the cases behind the `shape`
-  input): narrow Compact 1, narrow Wide 8, wide Compact 1, wide Wide 41.3333, types Compact 2, types Wide 75. Data
-  whose mark files never coincide reaches the candidate count (narrow Wide 10 in `cas-branches.fresh` and
-  `.adoption`; wide 80, types 135), so the value prices the generators' data, not every table of that shape.
+- **Value.** `cas_objects_per_part` is a formula over `columns`, `streams_per_column`, `projections` and
+  `cas_marks_blob_fraction` (CAS report, [Coefficients](../2026-10-24-storage-cost-cas/README.md#coefficients)).
+  These cases verify it: with the generators' mark fractions it gives narrow Compact 1, narrow Wide 8, wide
+  Compact 1, wide Wide 41.3333, types Compact 2, types Wide 75, every measured count. Data whose mark files never
+  coincide reaches the candidate count (narrow Wide 10 in `cas-branches.fresh` and `.adoption`; wide 80, types
+  135): that is `cas_marks_blob_fraction` = 1, the default.
 - **Hold-outs.** `narrow-wide-2`, `wide-wide-2` and `types-fit-wide-2` run the fit generators at other row counts,
   predicted with the fit counts at `168f71aea78` before their first run (`cost-20261024T162519Z`): all nine passes
   are exact. `types-holdout-2` (a different schema, predicted at `03f8c0489a2`) checks only that uploads lie in
@@ -311,8 +313,8 @@ Every coefficient whose hold-out the research reports consumed, with its replace
 
 | Coefficient | Gap |
 |---|---|
-| `cas_objects_per_part` | data-dependent: the Wide values are the generators' counts; other data uploads up to the candidate count (narrow Wide 10, wide 80, types 135: 1.25x, 1.94x, 1.8x the generators'); the page shows this band as a note on the CAS `inserts`, `storage` and `merges` cells; no rule predicts which mark files coincide |
-| `acquire_bytes[cas]` | the ratio model does not hold: relay bytes are about 19–20 KB per part whatever the part's bytes; the `cas` keys are removed from the table (no CAS cell reads it) |
+| `cas_objects_per_part` | data-dependent through `cas_marks_blob_fraction`: no rule predicts which mark files coincide. The default 1 prices the candidate count (narrow Wide 10, wide 80, types 135: 1.25x, 1.94x, 1.8x the generators'), an upper bound; a user sets the share from `system.remote_data_paths` |
+| `acquire_bytes[cas]` | the ratio model does not hold: relay bytes are about 19–20 KB per part whatever the part's bytes; the `cas` keys are removed from the table. CAS prices interserver bytes per part with `cas_relink_bytes_per_part` (replication report) |
 | `merge_effective_fan_in`, `merge_fan_in_distribution`, `merge_result_size_distribution` | validated on `s3` and `s3plain`; on `cas` the records fail on the card's own snapshot reads, with identical merge history |
 | `failed_upload_residue` | 0 on every variant within `upload_parts` 2–4; a part answered after the abort started stays in the replay's upper bound (replication report) |
 | `local_exec_requests` | per merge of 4 Compact sources; `GetObject` scales with sources (8 per source on `s3`, `s3plain`), so the per-merge value holds at 4 sources only |

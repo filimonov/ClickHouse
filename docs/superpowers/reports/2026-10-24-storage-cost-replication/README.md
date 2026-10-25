@@ -157,8 +157,8 @@ Per acquired part, Compact parts of 5 `UInt64` columns (`acquire_requests`, `loc
   promote, s3plain heads its new directory). Inserts use the merge case as that baseline.
 - **Interserver bytes.** `acquire_bytes` is what the serving replica sent per byte on disk of the fetched part:
   1.0004–1.0008 for streamed parts (file framing), the manifest only for CAS. The `inserts` cells bill these
-  bytes on `ec2_ec2_cross_az` when `topology = cross_az` (ingest bytes × (replicas − 1) × `acquire_bytes`); the
-  CAS row is unavailable there because CAS has no per-byte key.
+  bytes on `ec2_ec2_cross_az` when `topology = cross_az` (ingest bytes × (replicas − 1) × `acquire_bytes`). CAS
+  has no per-byte key: its row prices fetched parts × `cas_relink_bytes_per_part` instead.
 
 ### Restart and catch-up, measured {#graphs-restart}
 
@@ -335,6 +335,11 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 | `startup_requests_after_restart` | variant_id, replication_op | abs 2, rel 0 | {"active_parts": [3, 3]} | the follower's requests from its start to its first catch-up fetch, maintenance excluded; K=1; an absent key is 0 |
 | `retry_outcome_mix` | variant_id, fault_class, replication_op, attempt_kind | abs 0, rel 0 | {"nth": [3, 7]} | per failed attempt: attempts (attempt_kind attempts) and attempts the store saw (store_reached: upstream outcome other than not_sent) of the fault case minus the fault-free insert (faults.none); an absent key is 0 |
 | `failed_upload_residue` | variant_id | abs 0, rel 0 | {"upload_parts": [2, 3]} | incomplete multipart bytes in the replay after the window, before any rig abort |
+
+`cas_relink_bytes_per_part` (assumed basis) is 19 428.8 B per fetched part: the relink sends the manifest, so the
+bytes follow the file count, not the part bytes. It is the mean of the `insert`, `insert-wide`, `merge` and
+`mutation` fetch cases at 100 000–300 000 rows per insert, an upper bound for smaller parts. The 1 000-row
+hold-out sent 13 030 B (−33 %). A size-dependent manifest model is Tier 2.
 
 Values are in `coefficients.json`. The cut cases measure no replacement or fetch-retry coefficient, so the registry has no rows for them.
 

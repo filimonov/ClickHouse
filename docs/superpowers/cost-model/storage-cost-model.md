@@ -52,7 +52,9 @@ In the committed reports the bases split as follows:
 - **Fitted:** EBS I/O demand, lifecycle merge shape, replication acquisition and catch-up, `s3` object sizes, bytes
   per `GET`, local metadata and cache I/O, merge and mutation source reads, CAS branch population, GC round requests
   and duration, reclaim delays, and CAS startup requests.
-- **Assumed:** EBS deletes, restarts, reads and capacity headroom (D17), `peak_factor` (D16), and every preset default.
+- **Assumed:** EBS deletes, restarts, reads and capacity headroom (D17), `peak_factor` (D16), CAS interserver bytes
+  per fetched part (`cas_relink_bytes_per_part`), the default `cas_marks_blob_fraction` = 1, and every preset
+  default.
 
 Further rules:
 
@@ -149,7 +151,8 @@ points, not lookup keys:
 | `types` | 21 (typed) | 3.19 | 1 | 1 | 12 | `objects-per-part.types-fit`, `.types-fit-compact`, `.types-fit-wide` |
 | hold-outs | 20 (`mid-wide`); 21 at 3.29 streams (`types-holdout`) | | | | | `objects-per-part.mid-wide`, `.types-holdout` |
 
-The `s3` and `s3plain` object-count formulas reproduce every point above exactly. The `columns` input offers narrow
+The `s3`, `s3plain` and CAS object-count formulas reproduce every point above exactly. CAS needs the generators'
+share of distinct mark files (`cas_marks_blob_fraction`), which the `shape` presets carry. The `columns` input offers narrow
 and wide as quick picks. Outside 5–40 columns or 1–3.29 streams the formulas still apply and carry the informational
 mark.
 
@@ -163,8 +166,9 @@ States below match the presets and the [Break-even](#break-even) block.
   mutations, and a plain rewritable disk refuses every mutation, so the column is `not_supported`.
 - **Metrics preset.** The EBS column is `extrapolated`. Its 1,000-row inserts lie outside the 30k–400k-row range of
   `op_write_bytes`, so the mutations, deletes and recovery cells extrapolate (D18).
-- **Cross-AZ CAS.** With `topology = cross_az` the CAS column is `extrapolated`. `acquire_bytes` has no CAS key,
-  because CAS interserver bytes do not scale with part bytes. The transfer row uses the `s3plain` value instead.
+- **Cross-AZ CAS.** CAS interserver bytes do not scale with part bytes, so `acquire_bytes` has no CAS key. With
+  `topology = cross_az` the transfer row prices `cas_relink_bytes_per_part`: 19 428.8 B per fetched part, measured
+  at 100 000–300 000 rows per insert. It is an upper bound for smaller parts; 1 000-row parts sent 33 % less.
 - **EBS assumptions.** Deletes use the largest measured write per dropped part. Restarts cost 0 because they write
   less than an idle server. Reads are a full-scan derivation without page-cache hits, priced as IOPS only (D17).
 - **EBS IOPS.** The merged-stream rate is a lower bound. Syscall-level counts on the rig were 1.3–6.5× higher, so

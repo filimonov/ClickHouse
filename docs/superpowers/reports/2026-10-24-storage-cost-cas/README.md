@@ -334,11 +334,23 @@ yet.
 
 ## Coefficients {#coefficients}
 
+`cas_objects_per_part` is a formula over the table, not a measured table. The registry derives it from the
+placement rule (`ContentAddressedTransaction.cpp:67`):
+
+- **Compact part:** 1 + `projections`.
+- **Wide part:** `columns` × `streams_per_column` × (1 + `cas_marks_blob_fraction`) + `projections`.
+
+`cas_marks_blob_fraction` is the share of mark files that are distinct blobs: equal mark files are one upload. Its
+default is 1, the upper bound. The `shape` presets carry the generators' values (narrow 0.6, wide 1/30, types 7/67),
+and `shape` itself is a hidden preset of `columns`. With them the formula reproduces every measured row: narrow
+Compact 1, Wide 8; wide Compact 1, Wide 41.33; types Compact 2, Wide 75. These measurements are its verification
+points: `fresh`, `adoption`, `staging-peak`, `inline`, `mix-holdout-2` here and `objects-per-part.*` in the
+validation report, at 100–4 000 000 rows per insert.
+
 Measured (owner `cas`, `coefficients.json`); each has a fit and a distinct hold-out in `coverage.json`:
 
 | Coefficient | Value | Fit | Hold-out | Validity |
 |---|---|---|---|---|
-| `cas_objects_per_part[shape][part_type]` | distinct uploads of the shape generators: narrow Compact 1, narrow Wide 8; wide Compact 1, wide Wide 41.33; types Compact 2, types Wide 75 (data-dependent, see the validation report) | `fresh`, `adoption`, `staging-peak`; `objects-per-part.*` (validation report) | `inline`, `mix-holdout-2`; `objects-per-part.*-2` (validation report) | 100–4 000 000 rows per insert |
 | `cas_branch_population[write][branch]` | per part write, e.g. one-column mutation: fresh 1, hash hit 1, adoption 8, inline 9 | `fresh`, `hash-hit`, `adoption`, `staging-peak` | `mix-holdout-2` | as above |
 | `gc_round_requests[term]` | fold GET 17 + 1 per new manifest + 1 per tail log record, PUT 5, LIST 4; Deferred GET 12, PUT 1, LIST 3; per blob object 0 | `objects-1k`, `objects-10k` (residual 0) | `objects-5k`, `objects-3k` | 1 017–9 949 objects |
 | `gc_round_duration[term]` | fold 276.2 ms + 6.962 ms per new part (±141.7 ms, the largest fit or hold-out residual); Deferred 45.3 ms | `objects-1k`, `objects-10k` | `objects-3k` | as above |
