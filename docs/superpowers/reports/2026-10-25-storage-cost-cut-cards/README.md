@@ -55,3 +55,14 @@ Hold-outs, `relay0.from_target` for 3 fetched parts, one pass each:
 | `replication-fetch.relink-3k` | 55 372–61 201 | 49 013 |
 | `replication-fetch.relink-10k` | 55 372–61 201 | 55 429 |
 | `replication-fetch.relink-30k-wide` (Wide, 19 files) | 55 372–61 201 | 58 382 |
+
+## Async inserts {#async}
+
+Registry `inserts_per_async_flush` (evidence `assumed`) estimates inserts per flush as max(1, min(1 + rate ×
+`async_insert_busy_timeout_max_ms`, ceil(buffer / entry bytes), waiting clients, 450)). Its form was adjusted after
+the cut `async-inserts.steady` observation, so it has no hold-out. Two cases, each on `s3` and `cas`, K = 2:
+
+| Case | Rate, clients | Binding term | Inserts per flush | Parts for 1 000 inserts (± 20 %) |
+|---|---|---|---|---|
+| `async-inserts.steady-50hz-c4` | 50/s, 4 | waiting clients | 4 | 208–313 |
+| `async-inserts.steady-10hz-c16` | 10/s, 16 | 1 + rate × 0.2 s | 3 | 277–417 |

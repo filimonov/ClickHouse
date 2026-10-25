@@ -1,0 +1,76 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "async-inserts.steady-10hz-c16",
+  "policy": "cas",
+  "inputs": {
+    "rows_per_insert": 100,
+    "rule": "inserts_per_async_flush (registry)",
+    "terms": {
+      "1 + rate x timeout_max": 3.0,
+      "ceil(buffer / entry bytes)": 2232,
+      "clients (wait_for_async_insert = 1)": 16,
+      "async_insert_max_query_number (dedup on)": 450
+    },
+    "inserts_per_async_flush": 3.0,
+    "tolerance": "inserts per part within \u00b1 20 % of the rule (fixed before the run)"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "inserted_parts": {
+        "basis": "derived",
+        "min": 277,
+        "max": 417,
+        "reason": "1000 inserts / (3 inserts per flush \u00b1 20 %)"
+      },
+      "async_insert_queries": 1000
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "async_insert = 1 in the query settings; on by default in this build",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7225
+    },
+    {
+      "claim": "wait_for_async_insert = 1: each insert waits for its flush",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7228
+    },
+    {
+      "claim": "a buffer's deadline is its first insert plus the busy timeout",
+      "path": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp",
+      "line": 623
+    },
+    {
+      "claim": "the timeout adapts between async_insert_busy_timeout_min_ms (50)",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7249
+    },
+    {
+      "claim": "and async_insert_busy_timeout_max_ms (200)",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 7252
+    },
+    {
+      "claim": "a buffer also flushes at async_insert_max_data_size (10 MiB), far above these inserts",
+      "path": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp",
+      "line": 663
+    },
+    {
+      "claim": "the flush decision",
+      "path": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp",
+      "line": 680
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    }
+  ],
+  "prediction_commit": "pending"
+}
