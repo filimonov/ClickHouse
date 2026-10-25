@@ -651,6 +651,62 @@
           "duration_s": 120,
           "priority": "P2",
           "status": "cut"
+        },
+        {
+          "case_id": "steady-50hz-c4",
+          "policies": [
+            "s3",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "steady-10hz-c16",
+          "policies": [
+            "s3",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "steady-15hz-c16",
+          "policies": [
+            "s3",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "steady-40hz-c16",
+          "policies": [
+            "s3",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 120,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -2523,6 +2579,84 @@
           "timeout_s": 900,
           "duration_s": 60,
           "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-1k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-3k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-10k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-30k-wide",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-50k",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "relink-10k-wide",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 900,
+          "duration_s": 30,
+          "priority": "P2",
           "status": "run"
         }
       ]
@@ -21097,6 +21231,266 @@
       ],
       "status": "consumed",
       "note": "paced inserts: amplification 8.75-8.81 against the rule 4.59-4.60 (+-0.25); fan-in matched"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-1k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "1f765a52ba7",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1"
+      ],
+      "status": "consumed",
+      "note": "constant -32.9 %; form (fitted at 100k-300k) -0.11 %"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-3k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          3000,
+          3000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "1f765a52ba7",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1"
+      ],
+      "status": "consumed",
+      "note": "constant -16.0 %; form -0.07 %"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-10k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "1f765a52ba7",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1"
+      ],
+      "status": "consumed",
+      "note": "constant -5.0 % (outside 5 %); form -0.13 %"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-30k-wide",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          30000,
+          30000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "1f765a52ba7",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1"
+      ],
+      "status": "consumed",
+      "note": "constant +2.9 %; form +2.8 % (outside 1 %): the Wide per-file term was wrong"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-50hz-c4",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          50,
+          50
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "a35738528a2",
+      "measurement_ids": [
+        "cost-20261025T133848Z/s3/async-inserts/steady-50hz-c4/k1",
+        "cost-20261025T133848Z/s3/async-inserts/steady-50hz-c4/k2"
+      ],
+      "status": "consumed",
+      "note": "2.8-3.6 inserts per flush against 4 (waiting clients); 1 of 2 repeats outside 20 %"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-50hz-c4",
+      "policy": "cas",
+      "span": {
+        "insert_rate": [
+          50,
+          50
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "a35738528a2",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/async-inserts/steady-50hz-c4/k1",
+        "cost-20261025T133848Z/cas/async-inserts/steady-50hz-c4/k2"
+      ],
+      "status": "consumed",
+      "note": "as s3"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-10hz-c16",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          10,
+          10
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "a35738528a2",
+      "measurement_ids": [
+        "cost-20261025T133848Z/s3/async-inserts/steady-10hz-c16/k1",
+        "cost-20261025T133848Z/s3/async-inserts/steady-10hz-c16/k2"
+      ],
+      "status": "consumed",
+      "note": "1 insert per flush against 3: 100 ms gaps never raise the 50 ms minimum timeout"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-10hz-c16",
+      "policy": "cas",
+      "span": {
+        "insert_rate": [
+          10,
+          10
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "a35738528a2",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/async-inserts/steady-10hz-c16/k1",
+        "cost-20261025T133848Z/cas/async-inserts/steady-10hz-c16/k2"
+      ],
+      "status": "consumed",
+      "note": "as s3"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-50k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          50000,
+          50000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1"
+      ],
+      "status": "done",
+      "note": "revised form +0.15 % (Compact, 7 granules)"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.relink-10k-wide",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          10000,
+          10000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "status": "done",
+      "note": "revised form -0.05 % (Wide constant 3340.5 + inline bytes)"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-15hz-c16",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          15,
+          15
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/s3/async-inserts/steady-15hz-c16/k1",
+        "cost-20261025T135134Z/s3/async-inserts/steady-15hz-c16/k2"
+      ],
+      "status": "done",
+      "note": "1.00 inserts per flush, predicted 1 (67 ms gaps)"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-15hz-c16",
+      "policy": "cas",
+      "span": {
+        "insert_rate": [
+          15,
+          15
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/async-inserts/steady-15hz-c16/k1",
+        "cost-20261025T135134Z/cas/async-inserts/steady-15hz-c16/k2"
+      ],
+      "status": "done",
+      "note": "1.00, predicted 1"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-40hz-c16",
+      "policy": "s3",
+      "span": {
+        "insert_rate": [
+          40,
+          40
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/s3/async-inserts/steady-40hz-c16/k1",
+        "cost-20261025T135134Z/s3/async-inserts/steady-40hz-c16/k2"
+      ],
+      "status": "done",
+      "note": "8.77 inserts per flush, predicted 9 +- 20 %"
+    },
+    {
+      "coefficient": "inserts_per_async_flush",
+      "experiment_id": "async-inserts.steady-40hz-c16",
+      "policy": "cas",
+      "span": {
+        "insert_rate": [
+          40,
+          40
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "07a862e8e08",
+      "measurement_ids": [
+        "cost-20261025T135134Z/cas/async-inserts/steady-40hz-c16/k1",
+        "cost-20261025T135134Z/cas/async-inserts/steady-40hz-c16/k2"
+      ],
+      "status": "done",
+      "note": "8.77, predicted 9 +- 20 %"
     }
   ],
   "domain": {

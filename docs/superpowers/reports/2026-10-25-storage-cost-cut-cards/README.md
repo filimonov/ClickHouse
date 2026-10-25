@@ -89,6 +89,44 @@ Hold-outs, `relay0.from_target` for 3 fetched parts, one pass each:
 | `replication-fetch.relink-10k` | 55 372–61 201 | 55 429 |
 | `replication-fetch.relink-30k-wide` (Wide, 19 files) | 55 372–61 201 | 58 382 |
 
+### Result {#relink-result}
+
+Run `cost-20261025T133848Z`, all four records `ok`:
+
+| Case | Measured B | Per part | Constant | Form |
+|---|---|---|---|---|
+| `relink-1k` | 39 091 | 13 030 | −32.9 %: fail | −0.11 %: pass |
+| `relink-3k` | 48 977 | 16 326 | −16.0 %: fail | −0.07 %: pass |
+| `relink-10k` | 55 357 | 18 452 | −5.03 %: fail | −0.13 %: pass |
+| `relink-30k-wide` | 59 991 | 19 997 | +2.9 %: pass | +2.76 %: fail |
+
+- **The constant fails below 30 000 rows.** `cas_relink_bytes_per_part` stays `assumed`; its edges are `consumed`.
+- **Compact parts follow the form.** Bytes above the inline files are 2 549–2 556 at 1–2 granules and grow about
+  17 B per granule.
+- **Wide parts do not.** Bytes above the inline files are 3 334 at 30 000 rows (4 granules) and 3 347 at 300 000
+  rows (37 granules): no granule term. The single Wide fit record had put it into `23 × (files − 11)`.
+
+### Revised form and its hold-out {#relink-revised}
+
+Refit on all 10 relink cases (residuals within 0.06 %), predicted in `07a862e8e08` before run
+`cost-20261025T135134Z`:
+
+```
+Compact: relink bytes per part = 2530.9 + 17.49 x granules + inline bytes
+Wide:    relink bytes per part = 3340.5 + inline bytes
+```
+
+| Case | Predicted B | Measured B | Deviation (± 1 %) |
+|---|---|---|---|
+| `relink-50k` (Compact, 7 granules) | 56 918 | 57 004 | +0.15 %: pass |
+| `relink-10k-wide` (Wide, 2 granules) | 58 756 | 58 725 | −0.05 %: pass |
+
+- **The revised form has a passed hold-out** from 1 000 to 300 000 rows, Compact and Wide, 5 columns. Wide parts of
+  other column counts are not measured; the Wide constant may carry a per-file term.
+- **Inline bytes are mostly `statistics.packed`:** 9.2 kB at 1 000 rows, 15.1 kB at 100 000 rows, for 5
+  `UInt64` columns. The calculator has no input for them, so `cas_relink_bytes_per_part` stays the assumed scalar,
+  an upper bound for 5-column parts above 30 000 rows and too high by up to a third below.
+
 ## Async inserts {#async}
 
 Registry `inserts_per_async_flush` (evidence `assumed`) estimates inserts per flush as max(1, min(1 + rate ×
@@ -99,3 +137,33 @@ the cut `async-inserts.steady` observation, so it has no hold-out. Two cases, ea
 |---|---|---|---|---|
 | `async-inserts.steady-50hz-c4` | 50/s, 4 | waiting clients | 4 | 208–313 |
 | `async-inserts.steady-10hz-c16` | 10/s, 16 | 1 + rate × 0.2 s | 3 | 277–417 |
+
+### Result {#async-result}
+
+Run `cost-20261025T133848Z`. Six of eight records are `FAILED` on the part count:
+
+| Case | `s3` parts, k1 / k2 | `cas` parts, k1 / k2 | Inserts per flush | Rule |
+|---|---|---|---|---|
+| `steady-50hz-c4` | 321 / 286 | 355 / 279 | 2.8–3.6 | 4 |
+| `steady-10hz-c16` | 1 000 / 1 000 | 1 000 / 1 000 | 1.0 | 3 |
+
+- **Below one insert per 50 ms nothing is shared.** The adaptive timeout grows only when an insert arrives within
+  `async_insert_busy_timeout_min_ms` (50 ms) of the previous one; otherwise it stays at the minimum
+  (`getBusyWaitTimeoutMs`, `AsynchronousInsertQueue.cpp:759`–`:775` @ `09d0772a842`). At 10/s every insert is its
+  own part. The rule's `1 + rate × timeout_max` holds only above 20/s (the cut `steady` case: 4.8–5.0 at 20/s).
+- **The client cap is an upper bound.** Four waiting clients shared 2.8–3.6 inserts per flush, not 4: a client
+  resubmits after its flush returns, and some miss the next buffer.
+- **`s3` and `cas` behave alike;** the disk does not change the batching.
+
+### Revised rule and its hold-out {#async-revised}
+
+Revised rule, predicted in `07a862e8e08` before run `cost-20261025T135134Z`: inserts per flush are 1 when the gap
+1 / rate is at least `async_insert_busy_timeout_min_ms`, else min(1 + rate × `async_insert_busy_timeout_max_ms`,
+waiting clients, …) as before.
+
+| Case | Gap | Predicted parts | `s3` k1 / k2 | `cas` k1 / k2 | Inserts per flush |
+|---|---|---|---|---|---|
+| `steady-15hz-c16` | 67 ms | 900–1 000 (1 per flush) | 1 000 / 1 000 | 1 000 / 1 000 | 1.00: pass |
+| `steady-40hz-c16` | 25 ms | 92–139 (9 per flush) | 114 / 114 | 114 / 114 | 8.77: pass |
+
+All eight records are `ok`. The client cap stays an upper bound (`steady-50hz-c4`: 70–90 % of it).
