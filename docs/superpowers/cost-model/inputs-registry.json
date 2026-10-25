@@ -7602,25 +7602,40 @@
     {
       "id": "cas_mutations_per_s",
       "block": "cas",
-      "label": "Mutations (ALTER UPDATE/DELETE) per second",
-      "kind": "input",
+      "label": "Mutations per second: ALTER UPDATE/DELETE per month / 2 628 000 s",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "1/s",
       "value_type": "number",
       "enum": null,
       "table": null,
-      "default": 0,
-      "rule": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "a": {
+          "kind": "input",
+          "id": "mutations_per_month",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "const",
+          "value": 2628000,
+          "dim": "s"
+        },
+        "dim": "1/s",
+        "on_zero": "unavailable"
+      },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
-        "ref": "preset default",
+        "ref": "a month is 730 h (2 628 000 s), the month of every per-month input",
         "version": "0.3.0"
       },
       "hint": null,
       "ui": {
-        "tier": "advanced",
+        "tier": "hidden",
         "name": null,
         "short": "CAS mutations per second"
       },
@@ -7629,25 +7644,71 @@
     {
       "id": "cas_parts_per_mutation",
       "block": "cas",
-      "label": "Parts one mutation rewrites",
-      "kind": "input",
+      "label": "Parts one mutation rewrites: parts mutated per month / mutations per month (0 without mutations)",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
       "value_type": "number",
       "enum": null,
       "table": null,
-      "default": 1,
-      "rule": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "mutations_per_month",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": 0,
+          "dim": "count"
+        },
+        "else": {
+          "kind": "div",
+          "a": {
+            "kind": "add",
+            "a": {
+              "kind": "input",
+              "id": "mutated_compact_parts_per_month",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "input",
+              "id": "mutated_wide_parts_per_month",
+              "dim": "count"
+            },
+            "dim": "count"
+          },
+          "b": {
+            "kind": "input",
+            "id": "mutations_per_month",
+            "dim": "count"
+          },
+          "dim": "count",
+          "on_zero": "unavailable"
+        }
+      },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
-        "ref": "preset default",
+        "ref": "parts mutated per month spread evenly over the month's mutations",
         "version": "0.3.0"
       },
       "hint": null,
       "ui": {
-        "tier": "advanced",
+        "tier": "hidden",
         "name": null,
         "short": "Parts per mutation"
       },
@@ -7656,25 +7717,52 @@
     {
       "id": "cas_mutated_columns",
       "block": "cas",
-      "label": "Columns one mutation rewrites",
-      "kind": "input",
+      "label": "Columns one mutation rewrites: every column for ALTER DELETE, one for UPDATE of one column and lightweight DELETE",
+      "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
       "value_type": "number",
       "enum": null,
       "table": null,
-      "default": 1,
-      "rule": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "mutation_kind",
+            "dim": "enum:mutation_kind"
+          },
+          "b": {
+            "kind": "const",
+            "value": "delete",
+            "dim": "enum:mutation_kind"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "columns",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        }
+      },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
-        "kind": "assumed",
-        "ref": "preset default",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
+        "version": "26.8@09d0772a842"
       },
       "hint": null,
       "ui": {
-        "tier": "advanced",
+        "tier": "hidden",
         "name": null,
         "short": "Columns per mutation"
       },

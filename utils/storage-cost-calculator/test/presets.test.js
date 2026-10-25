@@ -128,7 +128,7 @@ test('test_custom_preset_is_the_standard_deployment', () => {
   assert.deepEqual({ replicas: v.replicas, topology: v.topology, shape: v.shape, async_insert: v.async_insert, cache_enabled: v.cache_enabled },
     { replicas: 3, topology: 'same_az', shape: 'wide', async_insert: '1', cache_enabled: '1' });
   assert.ok(v.select_part_reads_per_day > 0, 'modest cold reads');
-  for (const id of ['mutations_per_month', 'mutated_compact_parts_per_month', 'mutated_wide_parts_per_month', 'cas_mutations_per_s']) assert.equal(v[id], 0, id);
+  for (const id of ['mutations_per_month', 'mutated_compact_parts_per_month', 'mutated_wide_parts_per_month']) assert.equal(v[id], 0, id);
   // Every value names a registry input of the live contract.
   for (const id of Object.keys(v)) assert.equal(LIVE.registry.find((q) => q.id === id).kind, 'input', id);
 });

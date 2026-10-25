@@ -27,7 +27,7 @@
         // Ratio 256 merges ~5.9 MiB inserts into ~1.5 GiB parts.
         async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 256,
         // Append-only: logs are never updated or deleted in place, so no mutation of any kind runs.
-        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0,
         // Searches over recent logs: 2,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 2000, restarts_per_month: 1,
         // A few log streams (app, access, audit, ...) in fixed tables; partitions expire, tables stay.
@@ -49,7 +49,7 @@
         insert_rows: 1000, insert_rate: 50, insert_bytes_uncompressed: 102400, insert_clients: 50,
         async_insert: '1', shape: 'narrow', columns: 5, merge_size_ratio: 256,
         // Append-only: samples are never rewritten; expiry is by TTL or partition drop, not by mutation.
-        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0,
         // Dashboards re-read history often: 5,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 5000, restarts_per_month: 1,
         // One table per metric family, and rotating tables: 4 created and 4 dropped a month.
@@ -76,9 +76,8 @@
         // Ratio 400 merges ~6.6 MiB inserts into ~2.6 GiB parts.
         async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 400,
         // Periodic corrections and backfills: 30 ALTER UPDATE statements a month, each rewriting ~10 wide parts of the
-        // affected partitions (300 parts a month). The CAS rate is the same 30 a month per second (30 / 2,628,000 s).
+        // affected partitions (300 parts a month). CAS derives its rate and parts per mutation from these.
         mutations_per_month: 30, mutation_kind: 'update_column', mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 300,
-        cas_mutations_per_s: 30 / 2628000, cas_parts_per_mutation: 10,
         // Reports scan wide date ranges: 20,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 20000, restarts_per_month: 1,
         // A handful of fact and dimension tables, loaded in place.
@@ -101,7 +100,7 @@
         // Ratio 450 merges ~8.3 MiB inserts into ~3.7 GiB parts, the largest a measured ratio allows.
         async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 450,
         // Append-only: an archive is written once and expires by partition drop.
-        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0,
         // Rare lookups: 200 parts read a day. One restart a month.
         select_part_reads_per_day: 200, restarts_per_month: 1,
         // Three archived datasets.
@@ -120,7 +119,7 @@
       description: 'A typical deployment: 10 wide tables, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, one restart a month, no ALTER UPDATE/DELETE; edit any input',
       values: {
         replicas: 3, topology: 'same_az', shape: 'wide', columns: 40, async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000, restarts_per_month: 1,
-        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0,
         cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: [],

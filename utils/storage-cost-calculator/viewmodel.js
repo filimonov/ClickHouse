@@ -387,7 +387,7 @@
 
   // Inputs that drive an operation: a $0 cell whose drivers are all zero is "no <work> in this workload", not free.
   const OP_DRIVERS = {
-    mutations: [['mutations_per_month', 'cas_mutations_per_s', 'mutated_compact_parts_per_month', 'mutated_wide_parts_per_month'], 'ALTER UPDATE/DELETE'],
+    mutations: [['mutations_per_month', 'mutated_compact_parts_per_month', 'mutated_wide_parts_per_month'], 'ALTER UPDATE/DELETE'],
     reads: [['select_part_reads_per_day'], 'cold reads'], recovery: [['restarts_per_month'], 'restarts'], replacement: [['replacement_rate'], 'replica replacements'],
   };
   function zeroHint(op, fields) {
