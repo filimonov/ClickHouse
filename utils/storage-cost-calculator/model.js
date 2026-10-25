@@ -77,7 +77,9 @@
       case 'mul': v = x * y; break;
       case 'div':
         if (y === 0) {
-          if (node.on_zero === 'zero') return ok(node, 0, kids, ex);
+          // No work over no work is no work: a zero workload (no ingest, no inserts) prices $0 rows. x / 0 with
+          // x > 0 keeps the node's rule.
+          if (node.on_zero === 'zero' || x === 0) return ok(node, 0, kids, ex);
           if (node.on_zero === 'unavailable') return unavailable(node, kids, ex);
           throw new Error(`div: bad on_zero ${JSON.stringify(node.on_zero)}`);
         }

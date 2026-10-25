@@ -27,9 +27,13 @@
   }
 
   // Whole counts of at least one: servers, and the columns of a table.
-  const COUNT_INPUTS = ['replicas', 'shards', 'columns'];
-  // Averages of at least one: every column writes at least one stream (an average over columns need not be whole).
-  const AT_LEAST_ONE_INPUTS = ['streams_per_column'];
+  // An INSERT carries at least one row and touches at least one partition; a block holds at least one row.
+  const COUNT_INPUTS = ['replicas', 'shards', 'columns', 'insert_rows', 'partitions_per_insert', 'insert_data_block_rows'];
+  // Averages of at least one: every column writes at least one stream (an average over columns need not be whole), a
+  // query reads at least one stream of a part, and a row ends up in a part at least as large as its inserted part.
+  const AT_LEAST_ONE_INPUTS = ['streams_per_column', 'read_streams_per_part', 'merge_size_ratio'];
+  // Sizes and periods of a setting: 0 has no meaning (a GC round every 0 s, a blob of 0 bytes), so it is not priced.
+  const POSITIVE_INPUTS = ['insert_bytes_uncompressed', 'cas_gc_interval_s', 'cas_blob_bytes', 'cas_table_cleanup_period_s'];
   // A `<name>_fraction` of unit 1 is a share of a whole: a value above 1 would price negative requests.
   const isFraction = (q) => q.unit === '1' && /_fraction$/.test(q.id);
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
@@ -52,6 +56,7 @@
       // Counts are whole and at least one; no workload quantity is negative.
       if (COUNT_INPUTS.includes(q.id) && !(Number.isInteger(v) && v >= 1)) return { problem: `${q.id}: expected a whole number of 1 or more, got ${v}` };
       if (AT_LEAST_ONE_INPUTS.includes(q.id) && !(v >= 1)) return { problem: `${q.id}: expected a number of 1 or more, got ${v}` };
+      if (POSITIVE_INPUTS.includes(q.id) && !(v > 0)) return { problem: `${q.id}: expected a number above 0, got ${v}` };
       if (v < 0) return { problem: `${q.id}: expected a number of 0 or more, got ${v}` };
       if (isFraction(q) && v > 1) return { problem: `${q.id}: expected a fraction from 0 to 1, got ${v}` };
       return { value: v };
@@ -193,6 +198,12 @@
         else values.set(id, r.value);
       }
     });
+
+    // Zero ingest is a valid workload; data that arrives without INSERTs is not. The rate is left without a value.
+    if (values.get('insert_rate') === 0 && values.get('ingest_rate') > 0) {
+      problems.push(`insert_rate: 0 INSERTs per second cannot carry an ingest rate of ${values.get('ingest_rate')} GiB/day; set the ingest rate to 0 too`);
+      values.delete('insert_rate');
+    }
 
     const fields = {};
     const resolved = new Map();

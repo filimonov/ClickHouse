@@ -12,13 +12,14 @@ const presets = require('../presets.js');
 const LIVE = contract.load(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'model-contract.json'), 'utf8')));
 const INTERNAL = ['unavailable', 'unsupported_cut'];
 
-// Values to try per input: every enum value; for a numeric range, the bounds, bounds ± 1 and 10x outside.
+// Values to try per input: every enum value; for a number, 0 (a valid workload, or an input problem for a setting that
+// cannot be 0) and, with a range, the bounds, bounds ± 1 and 10x outside.
 function trials(q) {
   if (q.value_type === 'enum') return q.enum.slice();
   const r = q.validity && q.validity[q.id];
-  if (!r) return [];
+  if (!r) return q.value_type === 'number' ? [0] : [];
   const [lo, hi] = r;
-  return [...new Set([lo, hi, lo - 1, hi + 1, lo / 10, hi * 10].filter((x) => Number.isFinite(x)))];
+  return [...new Set([lo, hi, lo - 1, hi + 1, lo / 10, hi * 10, 0].filter((x) => Number.isFinite(x)))];
 }
 
 // A trial the pipeline rejects with a problem naming the input is the form saying "not a valid value", not an unpriced
@@ -54,7 +55,7 @@ const EXCEPTIONS = {};
 test('test_trials_cover_enums_and_out_of_range_numbers', () => {
   assert.deepEqual(trials({ id: 'a', value_type: 'enum', enum: ['x', 'y'] }), ['x', 'y']);
   assert.deepEqual(trials({ id: 'n', value_type: 'number', validity: { n: [1, 6] } }), [1, 6, 0, 7, 0.1, 60]);
-  assert.deepEqual(trials({ id: 'n', value_type: 'number', validity: null }), []);
+  assert.deepEqual(trials({ id: 'n', value_type: 'number', validity: null }), [0]);
 });
 
 test('test_no_input_or_preset_leaves_a_column_unpriced', (t) => {
@@ -63,4 +64,7 @@ test('test_no_input_or_preset_leaves_a_column_unpriced', (t) => {
   assert.deepEqual(out, Object.keys(EXCEPTIONS));
   // Out-of-range fractions are rejected, not priced into negative request counts.
   assert.ok(rejected.includes('custom cas_hash_hit_fraction=10'), rejected.join('\n'));
+  // A zero workload prices; a setting that cannot be 0 is an input problem.
+  for (const id of ['ingest_rate', 'retention_days', 'select_part_reads_per_day', 'mutations_per_month']) assert.ok(!rejected.includes(`custom ${id}=0`), id);
+  for (const id of ['insert_rate', 'insert_rows', 'cas_gc_interval_s', 'read_streams_per_part']) assert.ok(rejected.includes(`custom ${id}=0`), id);
 });
