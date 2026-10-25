@@ -8393,9 +8393,45 @@
       "status": "ok"
     },
     {
+      "id": "tier_role",
+      "block": "tiering",
+      "label": "Role of the disk in a TTL ... TO VOLUME policy: single (one tier), hot (the first tier; parts leave by TTL move at the end of the retention) or cold (the second tier; final-size parts arrive by TTL move after hot_tier_days)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "single",
+        "hot",
+        "cold"
+      ],
+      "table": null,
+      "default": "single",
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
+        "mapping": {
+          "tier_role": "single without a TTL ... TO VOLUME clause; hot for the volume parts are written to; cold for the volume the clause moves them to"
+        }
+      },
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Tier role"
+      },
+      "status": "ok"
+    },
+    {
       "id": "hot_tier_days",
       "block": "tiering",
-      "label": "Days a part stays on the local disk before a TTL move to object storage; 0 keeps one tier",
+      "label": "Days a part stays in the hot tier before a TTL move to the cold tier; tier_role cold reads it",
       "kind": "input",
       "scope": "cluster",
       "unit": "day",
@@ -8414,7 +8450,7 @@
       "hint": {
         "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
         "mapping": {
-          "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days; 0 without one"
+          "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days"
         }
       },
       "ui": {

@@ -55,7 +55,7 @@ test('test_table_inputs_are_workload_and_settings_stay_at_most_ten', () => {
 
 test('test_presets_carry_table_counts', () => {
   const want = {
-    logs: [10, 0, 0], logs_tiered: [10, 0, 0], metrics: [20, 4, 4], analytics_batch: [5, 0, 0], single_replica_archive: [3, 0, 0], custom: [10, 0, 0],
+    logs: [10, 0, 0], hot_tier: [10, 0, 0], cold_tier: [10, 0, 0], metrics: [20, 4, 4], analytics_batch: [5, 0, 0], single_replica_archive: [3, 0, 0], custom: [10, 0, 0],
   };
   assert.deepEqual(Object.keys(want), Object.keys(presets.SCENARIOS));
   for (const [id, [n, c, d]] of Object.entries(want)) {
@@ -157,15 +157,15 @@ test('test_tables_modal_explains_how_tables_enter_the_cas_cost', () => {
 test('test_cached_start_per_table_terms_are_stated_assumptions', () => {
   // With the cache the start was measured at one table; its per-table terms repeat the cache-off fit as stated
   // assumptions (the coefficient's assumed keys), so more tables extrapolate nothing and the Recovery cell says so.
-  // Only the Metrics preset extrapolates (1,000-row inserts lie below the merge fan-in range): the same cells at
-  // one table and at the preset's table count.
+  // Only the Metrics preset (1,000-row inserts lie below the merge fan-in range) and the cold tier (moved parts of
+  // 25.6 M rows, hourly GC) extrapolate: the same cells at one table and at the preset's table count.
   const flaggedCells = (sc, inputs) => page(sc, inputs).vm.table.rows
     .filter((r) => (r.cells.find((c) => c.variant === 'cas') || {}).extrapolated).map((r) => r.operation);
   for (const sc of Object.keys(presets.SCENARIOS)) {
     for (const cache of ['0', '1']) {
       const flagged = flaggedCells(sc, { cache_enabled: cache });
       assert.deepEqual(flagged, flaggedCells(sc, { cache_enabled: cache, cas_tables: 1 }), `${sc} cache ${cache}`);
-      if (sc !== 'metrics') assert.deepEqual(flagged, [], `${sc} cache ${cache}`);
+      if (sc !== 'metrics' && sc !== 'cold_tier') assert.deepEqual(flagged, [], `${sc} cache ${cache}`);
     }
     const cell = run(sc, { cache_enabled: '1' }).variants.cas.cells.recovery;
     assert.ok(cell.notes.some((n) => /^Start with the filesystem cache: ASSUMPTION/.test(n.text)), sc);

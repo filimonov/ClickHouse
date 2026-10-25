@@ -35,13 +35,28 @@
       },
       locks: ['ingest_rate', 'retention_days'],
     },
-    // Logs with the first 7 days on local disk and the other 23 moved by TTL to object storage. Cold parts are
-    // final-sized and rarely touched, so the cold CAS disk runs GC hourly.
-    logs_tiered: {
-      label: 'Logs, tiered (7 days hot)',
-      description: 'Logs kept 7 days on local disk, then moved by TTL to object storage for the other 23 days; hourly GC on the cold CAS disk',
+    // The first tier of a Logs table with `TTL ... TO VOLUME` after 7 days: the Logs stream kept 7 days.
+    hot_tier: {
+      label: 'Hot tier (7 days, then TTL to cold)',
+      description: 'Logs on the first tier of a TTL policy: 500 GiB/day on 2 replicas, kept 7 days, then moved by TTL to the cold tier',
       values: null,
       locks: ['ingest_rate', 'retention_days'],
+    },
+    // The second tier of the same table: Logs' final-size parts arrive by TTL move after 7 days and stay the other 23.
+    // Cold parts are rarely touched, so the cold CAS disk runs GC hourly.
+    cold_tier: {
+      label: 'Cold tier (fed by TTL moves)',
+      description: 'Logs on the second tier of a TTL policy: final-size parts arrive by TTL move after 7 days and stay 23 days on 2 replicas; no merges, hourly CAS GC',
+      values: null,
+      locks: ['ingest_rate', 'retention_days'],
+      // A moved part has 25.6 M rows, above every measured insert size; one move every ~4 minutes is below the measured
+      // async flush rates; a merge size ratio of 1 and a 3,600 s GC interval lie outside their measured ranges.
+      expected_extrapolated: {
+        ebs: ['insert_write_overhead_rows', 'inserts_per_async_flush', 'io_bytes_per_op', 'merge_effective_fan_in', 'op_write_bytes'],
+        s3: ['inserts_per_async_flush', 'merge_effective_fan_in', 'merge_results_per_month', 'metadata_bytes_per_object', 'mutation_gets_per_part'],
+        s3plain: ['inserts_per_async_flush', 'merge_effective_fan_in', 'merge_results_per_month'],
+        cas: ['cas_gc_interval_s', 'inserts_per_async_flush', 'merge_effective_fan_in', 'merge_results_per_month', 'reclaim_delay_periods'],
+      },
     },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
     // 50 agents send 1,000-row inserts, 50 per second in total: 20 GiB/day over 4,320,000 inserts is ~4.9 KiB
@@ -126,7 +141,8 @@
     },
   };
 
-  SCENARIOS.logs_tiered.values = Object.assign({}, SCENARIOS.logs.values, { hot_tier_days: 7, cold_gc_interval_s: 3600 });
+  SCENARIOS.hot_tier.values = Object.assign({}, SCENARIOS.logs.values, { tier_role: 'hot', retention_days: 7 });
+  SCENARIOS.cold_tier.values = Object.assign({}, SCENARIOS.logs.values, { tier_role: 'cold', hot_tier_days: 7, cold_gc_interval_s: 3600 });
 
   // Inputs the chart and tools/sweeps.mjs sweep. Both call ladderFor, so page and document report the same intervals.
   const SWEEP_INPUTS = { data_bytes: { integer: false }, ingest_rate: { integer: false }, replicas: { integer: true } };
@@ -280,7 +296,8 @@
 
   // Ids of the coefficients and tables the page can read for this contract: every `coef`/`lookup` node in a cell of
   // any variant (or of `variant` alone), followed through the registry derivations of the inputs those cells read.
-  function reachedCoefficients(contract, variant) {
+  // `withInputs` adds the ids of those inputs and derivations.
+  function reachedCoefficients(contract, variant, withInputs) {
     const ids = new Set();
     const seenInputs = new Set();
     const rules = new Map(contract.registry.filter((q) => q.kind === 'derivation' && q.rule).map((q) => [q.id, q.rule]));
@@ -291,6 +308,7 @@
       else if (node.kind === 'lookup') ids.add(node.table_id);
       else if (node.kind === 'input' && !seenInputs.has(node.id)) {
         seenInputs.add(node.id);
+        if (withInputs) ids.add(node.id);
         if (rules.has(node.id)) visit(rules.get(node.id));
       }
       for (const v of Object.values(node)) visit(v);
@@ -313,9 +331,12 @@
     const declared = [];
     const info = [];
     const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
+    // A cold tier is priced on its own inputs and TTL move cells: check those.
+    const cold = res.inputs.get('tier_role') === 'cold' ? pipeline().coldView(contract, res.inputs) : null;
+    if (cold) contract = cold.contract;
     // Validity may sit on a derived quantity (part_rows): check against what the pipeline evaluates, not raw inputs.
-    const evaluated = pipeline().evaluationInputs(contract, res.inputs);
-    problems.push(...res.problems);
+    const evaluated = cold ? cold.values : pipeline().evaluationInputs(contract, res.inputs);
+    problems.push(...res.problems, ...(cold ? cold.problems : []));
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
     for (const id of scenario.locks) if (!byId.has(id)) problems.push(`lock ${id} is not a registry id`);
     for (const id of Object.keys(scenario.values)) {
@@ -323,7 +344,8 @@
       else if (res.fields[id] && res.fields[id].derived) problems.push(`value ${id} is set but derived from its locked partners`);
     }
     const reached = reachedCoefficients(contract);
-    const reachedBy = new Map(contract.variants.map((v) => [v, reachedCoefficients(contract, v)]));
+    const reachedBy = new Map(contract.variants.map((v) => [v, reachedCoefficients(contract, v, true)]));
+    const registryIds = new Set(contract.registry.map((q) => q.id));
     const coefIds = new Set(contract.coefficients.map((c) => c.id));
     const skipped = new Set(contract.coefficients.filter((c) => c.reported_only || !reached.has(c.id)).map((c) => c.id));
     const expected = scenario.expected_extrapolated || {};
@@ -332,13 +354,17 @@
       const id = d.id;
       // A registry row that mirrors a coefficient follows that coefficient's reach.
       if (coefIds.has(id) && skipped.has(id)) continue;
+      // A registry derivation no cell reads prices nothing (a cold tier drops the fetch rows that read relink bytes).
+      if (!coefIds.has(id) && registryIds.has(id) && (contract.registry.find((q) => q.id === id) || {}).kind === 'derivation'
+        && !contract.variants.some((x) => reachedBy.get(x).has(id))) continue;
       if (!evaluated.has(d.param)) { problems.push(`${d.owner}: validity parameter ${d.param} has no value to check`); continue; }
       const v = evaluated.get(d.param);
       if (typeof v === 'number' && v >= d.range[0] && v <= d.range[1]) continue;
       const text = `${d.owner}: ${d.param} = ${JSON.stringify(v)} is outside [${d.range[0]}, ${d.range[1]}]`;
       // A formula derived from the source is exact outside the range it was verified at: information, not a gap.
       if (d.basis === 'derived') { info.push(`${text} (derived formula, verified range only)`); continue; }
-      const variants = coefIds.has(id) ? contract.variants.filter((x) => reachedBy.get(x).has(id)) : [];
+      // A registry row is reached by the variants whose cells read it, directly or through derivations.
+      const variants = contract.variants.filter((x) => reachedBy.get(x).has(id));
       if (variants.length && variants.every((x) => (expected[x] || []).includes(id))) {
         for (const x of variants) seenOut.add(`${x}:${id}`);
         declared.push(`${text} (declared)`);

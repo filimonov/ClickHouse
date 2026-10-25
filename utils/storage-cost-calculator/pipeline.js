@@ -220,14 +220,20 @@
       values.delete(id);
     }
 
-    // A hot tier as long as the retention leaves nothing to move; the page keeps one tier and says why.
+    // A hot tier as long as the retention leaves nothing for the cold tier; the cold columns say why.
     const hotDays = values.get('hot_tier_days');
     const retention = values.get('retention_days');
-    if (typeof hotDays === 'number' && hotDays > 0 && typeof retention === 'number' && hotDays >= retention) {
+    if (values.get('tier_role') === 'cold' && typeof hotDays === 'number' && hotDays > 0 && typeof retention === 'number' && hotDays >= retention) {
       const n = (x) => Number(x.toPrecision(6)).toLocaleString('en-US');
       problems.push(`hot_tier_days: ${n(hotDays)} days is not below the retention of ${n(retention)} days; nothing would move to the cold tier`);
       refused.set('hot_tier_days', { value: hotDays, text: `hot tier must be shorter than the retention (${n(retention)} days)` });
       values.delete('hot_tier_days');
+    }
+    // The cold tier is fed by parts that spent the hot days elsewhere; without them it has no intake to price. The role
+    // is kept: its cards stay unavailable rather than turning into a single tier.
+    if (values.get('tier_role') === 'cold' && hotDays === 0) {
+      problems.push('tier_role: cold needs hot_tier_days above 0; the cold tier takes parts after the hot days');
+      refused.set('hot_tier_days', { value: 0, text: 'the cold tier needs hot tier days above 0' });
     }
 
     // Zero ingest is a valid workload; data that arrives without INSERTs is not. The rate is left without a value.
@@ -734,7 +740,15 @@
     return { value: a.total - ref.total, extrapolated: a.extrapolated || ref.extrapolated };
   }
 
+  // Prices `inputs` on every variant. A `tier_role` of hot or cold prices the disk as one tier of a TTL move policy.
   function run(contract, inputs, pricePreset, options) {
+    const base = inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {}));
+    const role = base.get('tier_role');
+    if (role === 'hot' || role === 'cold') return runTier(contract, base, role, pricePreset, options || {});
+    return runOne(contract, base, pricePreset, options);
+  }
+
+  function runOne(contract, inputs, pricePreset, options) {
     const opts = options || {};
     const base = { evidence_statement: contract.evidence_statement, manifest: contract.manifest, problems: [] };
     const found = lookupPreset(contract, pricePreset);
@@ -783,17 +797,9 @@
       for (const c of Object.values(out.cells)) delete c.ev;
       variants[v] = out;
     }
-    let cheapest = null;
-    if (!pricesMissing) {
-      for (const v of contract.variants) {
-        const x = variants[v];
-        if (x.state === 'ok' && x.total !== null && (cheapest === null || x.total < variants[cheapest].total)) cheapest = v;
-      }
-    }
-    const deltas = {};
-    for (const v of contract.variants) deltas[v] = { vs_ebs: delta(variants[v], variants.ebs), vs_s3: delta(variants[v], variants.s3) };
     const result = Object.assign(base, { page_state: pricesMissing ? 'prices_missing' : 'ok', page_reason: !pricesMissing ? null
-      : preset.structure_only ? `price preset ${preset.id} has no prices (structure only)` : `price preset ${preset.id} has invalid prices: ${badPrices.join('; ')}`, variants, cheapest, deltas, sweep: null });
+      : preset.structure_only ? `price preset ${preset.id} has no prices (structure only)` : `price preset ${preset.id} has invalid prices: ${badPrices.join('; ')}`, variants, cheapest: null, deltas: {}, sweep: null });
+    rankVariants(contract, result);
     if (opts.sweep) result.sweep = sweep(contract, inputs, pricePreset, opts.sweep.inputId, opts.sweep.values, { outcome_mix: opts.outcome_mix, lockOrder: opts.lockOrder });
     return result;
   }
@@ -843,11 +849,10 @@
   // The evaluation context of `inputs`: pinned constants and registry derivations included (presets.coverageReport).
   const evaluationInputs = (contract, inputs) => buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), unsupportedRefs(contract)).inputs;
 
-  // ---- tiered storage: hot local disk, cold object storage after a TTL move --------------------------------------
-  // Each tier is priced by `run` on its own input set; only the `tiering` registry derivations differ. The maps name
-  // the input of `run` and the registry row that feeds it.
-  const HOT_VARIANT = 'ebs';
-  const HOT_INPUTS = { retention_days: 'hot_tier_days', data_bytes: 'hot_data_bytes' };
+  // ---- tier roles: a disk in the first (hot) or second (cold) tier of a TTL ... TO VOLUME policy ----------------------
+  // `cold` prices every variant on the cold run inputs: the map names the input of `run` and the `tiering` registry row
+  // that feeds it.
+  const TIER_ROLES = ['single', 'hot', 'cold'];
   const COLD_INPUTS = {
     retention_days: 'cold_retention_days', data_bytes: 'cold_data_bytes',
     insert_rate: 'cold_insert_rate', insert_rows: 'cold_insert_rows', insert_bytes_uncompressed: 'cold_insert_bytes_uncompressed',
@@ -856,18 +861,23 @@
     mutated_wide_parts_per_month: 'cold_mutated_wide_parts_per_month', mutated_compact_parts_per_month: 'cold_mutated_compact_parts_per_month',
     select_part_reads_per_day: 'cold_select_part_reads_per_day',
   };
+  const HOT_MOVE_NOTE = (days) => `parts leave by TTL move after ${typeof days === 'number' ? Number(days.toPrecision(6)).toLocaleString('en-US') : 'the retention'} days`;
+  const HOT_MOVE_LOCAL = 'free on local disk';
+  const HOT_MOVE_OBJECT = 'on object storage the move reads the part\'s files (not measured, not priced)';
   // A move writes the part directly, never through the async insert queue.
   const COLD_FIXED = { async_insert: '0' };
   const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part plus one part load (measured: move.ttl, each replica moves its own copy)';
   // Variants whose publish is per part, not per replica: the first replica publishes, each follower takes the hash-hit
   // branch with the registry row named here in place of `cas_hash_hit_fraction`.
   const FOLLOWER_HIT = { cas: 'cas_move_follower_hash_hit_fraction' };
-  // GETs that load a moved part back from the cold disk, per variant (registry derivations).
-  const MOVE_LOAD_GETS = { s3: 'move_load_gets_per_part', s3plain: 'move_load_gets_per_part', cas: 'cas_move_load_gets_per_part' };
+  // GETs that load a moved part back from the cold disk, per variant (registry derivations). On local disk the load
+  // reads files, which no request price covers.
+  const MOVE_LOAD_GETS = { ebs: null, s3: 'move_load_gets_per_part', s3plain: 'move_load_gets_per_part', cas: 'cas_move_load_gets_per_part' };
   // What the move rule adds to the cold inserts cell beyond the note above (docs/superpowers/cost-model/storage-cost-model.md, TTL move rule).
   function moveRuleNotes(v, loadGets) {
     const gets = typeof loadGets === 'number' ? loadGets : null;
     const out = [];
+    if (v === 'ebs') out.push('part load after a move reads the part files from the local disk: no request price');
     if (gets !== null) out.push(`part load after a move: ${gets} GET per part (${v === 'cas' ? 'manifest and first marks blob' : 'part files and ttl.txt'})`);
     if (v === 's3plain') out.push('once per table, not priced: the moving/ container costs 1 PUT and 1 HEAD');
     if (v === 'cas') {
@@ -920,12 +930,14 @@
   function moveCell(contract, v) {
     const cell = (contract.formulas[v] || {}).inserts;
     if (!cell) return { problem: `${v} has no inserts cell` };
-    if (!MOVE_LOAD_GETS[v]) return { problem: `${v} has no TTL move load rule` };
+    if (!Object.prototype.hasOwnProperty.call(MOVE_LOAD_GETS, v)) return { problem: `${v} has no TTL move load rule` };
     if (cell.allocation) return { problem: `${v}.inserts allocates by shares; the TTL move rule cannot rewrite it` };
     const dropped = [];
     const rows = [];
     for (const r of cell.ledger_rows) {
       if (isFetchRow(r)) { dropped.push(`${r.row_type} ${r.op_kind}`); continue; }
+      // Block rows are per volume; billing multiplies them by the replica count.
+      if (r.row_type === 'block_io' || r.row_type === 'block_capacity') { rows.push(r); continue; }
       if (inputsOf(r.expr).has('replicas')) { rows.push(r); continue; }
       // Each replica moves its own copy. A row priced once per part is the first replica's publish; each follower
       // pays the same row on the hash-hit branch, or the full publish where no follower rule exists.
@@ -933,90 +945,107 @@
       const followers = op2('sub', input('replicas', 'count'), { kind: 'const', value: 1, dim: 'count' }, 'count');
       rows.push(Object.assign({}, r, { expr: op2('add', r.expr, op2('mul', follower, followers, r.expr.dim), r.expr.dim) }));
     }
-    const load = op2('mul', op2('mul', input('parts_inserted_per_month', 'count'), input('replicas', 'count'), 'count'), input(MOVE_LOAD_GETS[v], 'count'), 'count');
-    rows.push({ row_type: 'request', op_kind: 'GetObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', basis: 'predicted', expr: load });
-    return { cell: Object.assign({}, cell, { ledger_rows: rows }), dropped };
+    if (MOVE_LOAD_GETS[v]) {
+      const load = op2('mul', op2('mul', input('parts_inserted_per_month', 'count'), input('replicas', 'count'), 'count'), input(MOVE_LOAD_GETS[v], 'count'), 'count');
+      rows.push({ row_type: 'request', op_kind: 'GetObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', basis: 'predicted', expr: load });
+    }
+    // A note about a dropped row (the relink bytes of a fetch) describes nothing the cell prices.
+    const read = new Set(rows.flatMap((r) => [...inputsOf(r.expr)]));
+    const notes = (cell.notes || []).filter((n) => { const ids = [...inputsOf(n)]; return !ids.length || ids.some((id) => read.has(id)); });
+    return { cell: Object.assign({}, cell, { ledger_rows: rows, notes }), dropped };
   }
 
-  // Totals of hot `ebs` plus each cold object-storage variant, beside the single-tier totals in `single` (a `run`
-  // result for the same inputs). Null when `hot_tier_days` is 0 or has no value.
-  function tiered(contract, inputs, pricePreset, options) {
-    const opts = options || {};
+  // The cold-tier view of `inputs` (tier_role = cold): the run inputs of the tier that TTL moves feed, and a contract whose
+  // inserts cells follow the TTL move rule. Returns {contract, inputs, values, problems, dropped}; `values` are the
+  // evaluated cold inputs (registry derivations included).
+  function coldView(contract, inputs) {
     const base = inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {}));
-    const hotDays = base.get('hot_tier_days');
-    if (!(typeof hotDays === 'number' && hotDays > 0)) return null;
     const all = evaluationInputs(contract, base);
     const problems = [];
-    const derive = (map) => {
-      const out = new Map(base);
-      for (const [to, from] of Object.entries(map)) {
-        if (all.has(from)) out.set(to, all.get(from));
-        else { problems.push(`${to}: ${from} has no value`); out.delete(to); }
-      }
-      return out;
-    };
-    const hotInputs = derive(HOT_INPUTS);
-    const coldInputs = derive(COLD_INPUTS);
+    const hotDays = base.get('hot_tier_days');
+    if (!(typeof hotDays === 'number' && hotDays > 0)) problems.push('tier_role cold needs hot_tier_days above 0: parts arrive in the cold tier after the hot days');
+    const coldInputs = new Map(base);
+    for (const [to, from] of Object.entries(COLD_INPUTS)) {
+      if (all.has(from)) coldInputs.set(to, all.get(from));
+      else { problems.push(`${to}: ${from} has no value`); coldInputs.delete(to); }
+    }
     for (const [id, v] of Object.entries(COLD_FIXED)) coldInputs.set(id, v);
-    const cold_variants = contract.variants.filter((v) => v !== HOT_VARIANT);
-    const runOpts = { outcome_mix: opts.outcome_mix };
-    const hot = run(contract, hotInputs, pricePreset, runOpts);
     const formulas = Object.assign({}, contract.formulas);
-    const move = {};
-    for (const v of cold_variants) {
+    const dropped = {};
+    for (const v of contract.variants) {
       const m = moveCell(contract, v);
       if (m.problem) { problems.push(m.problem); continue; }
       formulas[v] = Object.assign({}, formulas[v], { inserts: m.cell });
-      move[v] = m.dropped;
+      dropped[v] = m.dropped;
     }
-    const cold = run(Object.assign({}, contract, { formulas }), coldInputs, pricePreset, runOpts);
-    // A cold column whose intake the move rule could not price has no comparable total.
-    for (const v of cold_variants) {
-      if (move[v] || !cold.variants[v] || cold.variants[v].state !== 'ok') continue;
-      Object.assign(cold.variants[v], { state: 'unavailable', reason: `${v}: the TTL move rule cannot price the cold intake`, total: null });
+    const cold = Object.assign({}, contract, { formulas });
+    return { contract: cold, inputs: coldInputs, values: evaluationInputs(cold, coldInputs), problems, dropped, load_gets: all };
+  }
+
+  // Ranks the priced variants and computes the deltas of a result in place (display arithmetic only, spec §4.5).
+  function rankVariants(contract, result) {
+    let cheapest = null;
+    if (result.page_state === 'ok') {
+      for (const v of contract.variants) {
+        const x = result.variants[v];
+        if (x.state === 'ok' && x.total !== null && (cheapest === null || x.total < result.variants[cheapest].total)) cheapest = v;
+      }
     }
-    for (const v of cold_variants) {
-      const cells = (cold.variants[v] || {}).cells || {};
+    result.cheapest = cheapest;
+    result.deltas = {};
+    for (const v of contract.variants) result.deltas[v] = { vs_ebs: delta(result.variants[v], result.variants.ebs), vs_s3: delta(result.variants[v], result.variants.s3) };
+  }
+
+  const tierNote = (cell, out, op, text, shown) => {
+    cell.notes.push({ text, value: null, state: 'ok', tier: true });
+    if (shown) out.notes.push({ kind: 'cell', operation: op, text, value: null });
+  };
+
+  // `run` for a workload with a tier role. `cold`: every variant is the second tier, fed by TTL moves of final-size
+  // parts. `hot`: the ordinary workload, whose parts leave by TTL move at the end of the retention.
+  function runTier(contract, base, role, pricePreset, opts) {
+    if (role === 'hot') {
+      const r = runOne(contract, base, pricePreset, opts);
+      const days = base.get('retention_days');
+      for (const v of contract.variants) {
+        const vr = r.variants[v];
+        const cell = vr && vr.cells && vr.cells.inserts;
+        if (!cell) continue;
+        tierNote(cell, vr, 'inserts', `${HOT_MOVE_NOTE(days)}: ${v === 'ebs' ? HOT_MOVE_LOCAL : HOT_MOVE_OBJECT}`, true);
+      }
+      r.tier = { role, contract: null, inputs: base, values: null, problems: [] };
+      return r;
+    }
+    const cv = coldView(contract, base);
+    const r = runOne(cv.contract, cv.inputs, pricePreset, Object.assign({}, opts, { sweep: null }));
+    if (r.page_state === 'cannot_reproduce') return r;
+    for (const v of contract.variants) {
+      const vr = r.variants[v];
+      if (cv.problems.length || !cv.dropped[v]) {
+        // A column the cold view could not set up has no cold number; a single-tier number would mislead.
+        Object.assign(vr, { state: 'unavailable', reason: `${v}: ${cv.problems.length ? cv.problems.join('; ') : 'the TTL move rule cannot price the cold intake'}`, total: null });
+        continue;
+      }
+      const cells = vr.cells || {};
       if (cells.inserts) {
-        for (const text of [TTL_MOVE_NOTE, ...moveRuleNotes(v, all.get(MOVE_LOAD_GETS[v]))]) cells.inserts.notes.push({ text, value: null, state: 'ok', assumption: true });
+        tierNote(cells.inserts, vr, 'inserts', TTL_MOVE_NOTE, true);
+        for (const text of moveRuleNotes(v, MOVE_LOAD_GETS[v] ? cv.values.get(MOVE_LOAD_GETS[v]) : null)) tierNote(cells.inserts, vr, 'inserts', text, false);
       }
       if (cells.merges) {
         const ratio = reaches(contract, ((contract.formulas[v] || {}).merges || {}).ledger_rows, 'merge_size_ratio');
-        cells.merges.notes.push({ text: ratio ? COLD_MERGE_NOTE : COLD_MERGE_IGNORED_NOTE, value: null, state: 'ok', assumption: true });
+        tierNote(cells.merges, vr, 'merges', ratio ? COLD_MERGE_NOTE : COLD_MERGE_IGNORED_NOTE, !ratio);
       }
     }
-    const single = opts.single || null;
-    const h = hot.variants[HOT_VARIANT];
-    const rows = cold_variants.map((v) => {
-      const c = cold.variants[v];
-      const s = single && single.variants ? single.variants[v] : null;
-      const off = [h, c].find((x) => !x || x.state !== 'ok');
-      const priced = !off && hot.page_state === 'ok' && cold.page_state === 'ok' && h.total !== null && c.total !== null;
-      return {
-        variant: v,
-        state: off ? (off.state || 'unavailable') : 'ok',
-        reason: off ? (off === h ? `hot ${HOT_VARIANT}: ${h.reason}` : `cold ${v}: ${c.reason}`) : null,
-        // Display arithmetic only (spec §4.5): the sum of two contract totals already computed.
-        hot_total: priced ? h.total : null,
-        cold_total: priced ? c.total : null,
-        total: priced ? h.total + c.total : null,
-        extrapolated: !!(h && h.extrapolated) || !!(c && c.extrapolated),
-        single_total: s && s.state === 'ok' ? s.total : null,
-        single_state: s ? s.state : null,
-        single_extrapolated: !!(s && s.extrapolated),
-      };
-    });
-    let cheapest = null;
-    for (const r of rows) if (r.total !== null && (cheapest === null || r.total < rows.find((x) => x.variant === cheapest).total)) cheapest = r.variant;
-    return {
-      hot_days: hotDays, cold_days: all.has('cold_retention_days') ? all.get('cold_retention_days') : null,
-      hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems, move_dropped_rows: move,
-      hot_inputs: hotInputs, cold_inputs: coldInputs,
-    };
+    rankVariants(contract, r);
+    r.problems.push(...cv.problems);
+    r.tier = { role, contract: cv.contract, inputs: cv.inputs, values: cv.values, problems: cv.problems, dropped: cv.dropped,
+      hot_days: base.get('hot_tier_days'), cold_days: cv.inputs.has('retention_days') ? cv.inputs.get('retention_days') : null };
+    if (opts.sweep) r.sweep = sweep(contract, base, pricePreset, opts.sweep.inputId, opts.sweep.values, { outcome_mix: opts.outcome_mix, lockOrder: opts.lockOrder });
+    return r;
   }
 
   SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
     unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS,
-    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE, MOVE_LOAD_GETS, FOLLOWER_HIT, moveCell });
+    coldView, TIER_ROLES, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, HOT_MOVE_LOCAL, HOT_MOVE_OBJECT, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE, MOVE_LOAD_GETS, FOLLOWER_HIT, moveCell });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

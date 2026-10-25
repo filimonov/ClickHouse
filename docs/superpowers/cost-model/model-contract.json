@@ -1,20 +1,20 @@
 {
  "schema": "contract/1",
- "version": "cec0d93fed922f4b",
+ "version": "1a6bda08513f5069",
  "manifest": {
-  "code_sha256": "dabd19e58789a0a31f006b606e4a7a8c87c78c30fd1233769755ae1fc43f494d",
+  "code_sha256": "b2fefe122821839083c01fc90ee4dc1f58061f6338063b11a8479bc81d8f2466",
   "code_files": {
    "billing.js": "6992c901b510841e76af2ba6690bdf194ac207d4179c17948681dd8cb0272063",
    "contract.js": "ba4653168b64f0921f86550ee5c4b15fd7d39b276314971f3049054602951b1c",
    "model.js": "27d0184486ebfe9a9cc71bab56352771ddadbfb261f34461053a15b660e35efd",
-   "pipeline.js": "9b59821800fc0772fd1255b7f0ff980a5ab82e79ec62d9b3dbf34c9f74f1c162",
-   "presets.js": "819d3da14ef0cb17d8c299c19e275e9e6fbb5f13982bf679c7625c71875ad0f7",
+   "pipeline.js": "af6b61651fbfe534746e0badb3d09e282e0ec24a1ee85db0147183c685a8bfd8",
+   "presets.js": "3e967352c871c7825bacb0f5181836c95feca895a018069ac061f56cf92c11ed",
    "urlstate.js": "e0722c2c47ba25c94b728eefc390c5d3fe96d07c1c7abaff4b4f3bd68a5b7b86"
   },
   "code_missing": [],
-  "contract_version": "cec0d93fed922f4b",
+  "contract_version": "1a6bda08513f5069",
   "registry_version": "0.3.0",
-  "registry_sha256": "f1fc48c703b9ad7fb8921845451d9de5886f98724467354fbe72e565b8494915",
+  "registry_sha256": "5608e2ea5833b42771045ac4895dcdd1822a8b4b399ffc1d8937623becfb357f",
   "coverage_version": "0.2.0",
   "coverage_sha256": "2e26975831e101ecd27eb16a6b64c049f4a4bfe3b534c77c8b71ff0cc0db9670",
   "billing_version": "0.2.0",
@@ -98,7 +98,7 @@
     "raw_sha256sums": "1d2e68d8118f216061a61bc7210f1fad0441016e8fb901ff91cca0b3657d051a"
    }
   ],
-  "breakeven_sha256": "d527f88856816597dffff1fe94db5e4d09a0213a243288262bc36e6ffcf23126"
+  "breakeven_sha256": null
  },
  "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 11 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables, 2026-10-25-storage-cost-cut-cards, 2026-10-25-storage-cost-ttl-move. 79 coefficient(s): 54 measured, 25 pinned to source. 71 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 33 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
  "registry": [
@@ -8832,9 +8832,47 @@
    "validity": null
   },
   {
+   "id": "tier_role",
+   "block": "tiering",
+   "label": "Role of the disk in a TTL ... TO VOLUME policy: single (one tier), hot (the first tier; parts leave by TTL move at the end of the retention) or cold (the second tier; final-size parts arrive by TTL move after hot_tier_days)",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "",
+   "value_type": "enum",
+   "enum": [
+    "single",
+    "hot",
+    "cold"
+   ],
+   "table": null,
+   "default": "single",
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
+    "mapping": {
+     "tier_role": "single without a TTL ... TO VOLUME clause; hot for the volume parts are written to; cold for the volume the clause moves them to"
+    }
+   },
+   "ui": {
+    "tier": "workload",
+    "name": null,
+    "short": "Tier role",
+    "measured_by": "Assumed: preset default."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
    "id": "hot_tier_days",
    "block": "tiering",
-   "label": "Days a part stays on the local disk before a TTL move to object storage; 0 keeps one tier",
+   "label": "Days a part stays in the hot tier before a TTL move to the cold tier; tier_role cold reads it",
    "kind": "input",
    "scope": "cluster",
    "unit": "day",
@@ -8853,7 +8891,7 @@
    "hint": {
     "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
     "mapping": {
-     "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days; 0 without one"
+     "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days"
     }
    },
    "ui": {

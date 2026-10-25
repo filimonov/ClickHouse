@@ -407,52 +407,6 @@
     });
   }
 
-  // Hot local disk plus each cold object-storage variant (pipeline.tiered), beside the single-tier total of the same
-  // variant. Sums and differences of contract totals only (spec §4.5).
-  function buildTiered(result, preset, pageState, inputs) {
-    const t = result.tiered;
-    if (!t) return null;
-    const P = pipeline();
-    const field = (id) => (inputs ? inputs.blocks.flatMap((b) => b.fields).find((f) => f.id === id) || null : null);
-    const priced = pageState === 'ok';
-    const cur = priced ? preset.currency : null;
-    const hot = `local disk (${variantLabel(t.hot_variant)})`;
-    const totals = t.rows.filter((r) => r.total !== null).length;
-    const rows = t.rows.map((r) => {
-      const label = variantLabel(r.variant);
-      const row = { variant: r.variant, label, state: r.state, extrapolated: r.extrapolated, cheapest: false, cheapest_text: null, sum_text: null, single_text: null, reason: null };
-      if (r.state !== 'ok') {
-        row.sum_text = `Hot: ${hot} + Cold: ${label}: ${stateText(r.state)}`;
-        row.reason = plainReason(r.reason);
-        return row;
-      }
-      if (!priced || r.total === null) {
-        row.sum_text = `Hot: ${hot} + Cold: ${label}: quantities only, no prices`;
-        return row;
-      }
-      row.sum_text = `Hot: ${hot} ${fmtMoney(r.hot_total, cur)} + Cold: ${label} ${fmtMoney(r.cold_total, cur)} = ${fmtMoney(r.total, cur)}`;
-      row.single_text = r.single_total === null ? `single tier ${label}: ${r.single_state && r.single_state !== 'ok' ? cellText(r.single_state) : 'no total'}`
-        : `single tier ${label} ${fmtMoney(r.single_total, cur)}, tiered ${fmtMoney(r.total - r.single_total, cur, { sign: true })}`;
-      if (t.cheapest === r.variant && totals > 1) {
-        row.cheapest = true;
-        row.cheapest_text = `cheapest of ${totals}${r.extrapolated ? ', extrapolated' : ''}`;
-      }
-      return row;
-    });
-    const n = (x) => fmtQuantity(x);
-    return {
-      title: `Tiered: ${n(t.hot_days)} days on local disk, then ${t.cold_days === null ? 'the rest' : `${n(t.cold_days)} days`} on object storage`,
-      hot_days: t.hot_days, cold_days: t.cold_days, rows,
-      single_hot_text: priced && result.variants[t.hot_variant] && result.variants[t.hot_variant].state === 'ok'
-        ? `Single tier ${variantLabel(t.hot_variant)}: ${fmtMoney(result.variants[t.hot_variant].total, cur)}` : null,
-      gc_field: field('cold_gc_interval_s'),
-      notes: [P.TTL_MOVE_NOTE, P.COLD_MERGE_NOTE,
-        ...t.cold_variants.filter((v) => ((((t.cold.variants[v] || {}).cells || {}).merges || {}).notes || []).some((x) => x.text === P.COLD_MERGE_IGNORED_NOTE))
-          .map((v) => `${variantLabel(v)} merges: ${P.COLD_MERGE_IGNORED_NOTE}`),
-        ...t.problems.map(plainReason)],
-    };
-  }
-
   function rowUnits(contract, v, op) {
     const cell = (contract.formulas[v] || {})[op];
     return cell ? cell.ledger_rows.map((r) => r.expr.dim) : [];
@@ -1136,70 +1090,6 @@
     return `${what}: ${total} a month, ${joinWords(paid.map((l) => `${fmtMoney(l.money, preset.currency)} for ${label(l)}`))}.`;
   }
 
-  // Inputs of the cold run that lie outside the measured range of a fitted or assumed coefficient (or input) the
-  // variant's cold cells read, as texts. The cold inserts cell is the TTL move cell, not the single-tier one.
-  function coldOutsideRange(contract, t, v) {
-    const P = pipeline();
-    const all = P.evaluationInputs(contract, t.cold_inputs);
-    const move = P.moveCell(contract, v);
-    const cells = Object.assign({}, contract.formulas[v] || {}, move.cell ? { inserts: move.cell } : {});
-    const derivedOnly = P.derivedOnlyInputs(contract);
-    const seen = new Map();
-    const check = (ranges) => {
-      for (const [param, r] of Object.entries(ranges || {})) {
-        const x = all.get(param);
-        if (typeof x !== 'number' || (x >= r[0] && x <= r[1])) continue;
-        const q = contract.registry.find((e) => e.id === param);
-        seen.set(`${param}|${r[0]}|${r[1]}`, `${nameOf(contract, param)} is ${fmtQuantity(x, q && q.unit)} in the cold tier; measured at ${fmtQuantity(r[0])} to ${fmtQuantity(r[1], q && q.unit)}`);
-      }
-    };
-    const derived = new Set();
-    const visit = (n) => {
-      if (!n || typeof n !== 'object') return;
-      if (n.kind === 'input' && !derived.has(n.id)) {
-        // A registry derivation reads coefficients itself; the cell is extrapolated through it.
-        const d = contract.registry.find((e) => e.id === n.id && e.kind === 'derivation' && e.rule);
-        if (d) { derived.add(n.id); visit(d.rule); }
-      }
-      if (n.kind === 'coef') {
-        const c = contract.coefficients.find((e) => e.id === n.id);
-        if (c && model().basisOf(c) !== 'derived') check(model().rangeOf(c));
-      } else if (n.kind === 'input' && !derivedOnly.has(n.id)) {
-        const q = contract.registry.find((e) => e.id === n.id);
-        if (q && q.kind === 'input') check(model().rangeOf(q));
-      }
-      for (const c of Object.values(n)) visit(c);
-    };
-    visit(cells);
-    return [...seen.values()];
-  }
-
-  // The (i) of a tiered row: the cold-tier cells of the variant with their notes (the TTL move rule is the cold
-  // inserts note), and which cold-tier inputs lie outside their measured range.
-  function tieredInfo(result, contract, v, problems, preset, x, commit) {
-    const t = result.tiered;
-    const row = t && t.rows.find((r) => r.variant === v);
-    const cold = t && t.cold.variants[v];
-    if (!row || !cold) { problems.push(`info: no tiered row ${v}`); return null; }
-    const label = variantLabel(v);
-    const lines = [];
-    const source = [];
-    if (cold.state !== 'ok') lines.push(`Cold ${label}: ${cold.reason ? plainReason(cold.reason) : stateText(cold.state)}`);
-    for (const op of Object.keys(cold.cells || {})) {
-      const c = cold.cells[op];
-      lines.push(withExtrapolated(cellSentence(v, op, c, preset, result.page_state, false, x.fields), cellExtrapolated(contract, v, op, c, new Set(), false, preset)));
-      // Assumption notes are sentences; the rest name ids and formulas and go under Source, as in a cell dialog.
-      for (const n of c.notes || []) (n.assumption ? lines : source).push(`${OPERATION_LABELS[op] || op}: ${cite(sourceNote(contract, n), commit)}`);
-    }
-    const out = coldOutsideRange(contract, t, v);
-    const why = !row.extrapolated ? ['Not extrapolated: every cold-tier input lies inside its measured range.']
-      : out.length ? ['Extrapolated: these cold-tier inputs lie outside the measured range.', ...out]
-        : ['Some inputs lie outside the range the model was measured at, so this number is extrapolated.'];
-    return { kind: 'tiered', id: v, title: `Tiered ${label}: cold tier`, name: null,
-      description: `After the TTL move the data sits on ${label}. These are the cells of that cold tier.`,
-      measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: [...lines, ...why], source };
-  }
-
   // What the (i) dialog shows. `open` is {kind: 'input', id} (any registry row or coefficient id), {kind: 'cell',
   // variant, operation}, {kind: 'transfer', variant} or {kind: 'variant', variant}. `ctx`: {split, scenario, fields}.
   function buildInfo(result, contract, inputs, open, problems, preset, ctx) {
@@ -1243,7 +1133,6 @@
       if (!s) { problems.push(`info: no scenario ${open.id}`); return null; }
       return { kind: 'scenario', id: open.id, title: s.label, name: null, description: s.description, measured_by: null, lines: [] };
     }
-    if (open.kind === 'tiered') return tieredInfo(result, contract, open.variant, problems, preset, x, commit);
     const vr = result.variants[open.variant];
     if (!vr) { problems.push(`info: no variant ${open.variant}`); return null; }
     const segs = reasonSegments(vr.reason);
@@ -1314,17 +1203,20 @@
     const ex = cellExtrapolated(contract, open.variant, op, cell, new Set(), split, preset);
     if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
     for (const n of vr.notes || []) if (n.kind === 'text' && n.operation === op) lines.push(n.text);
+    // The tier role's rule for this cell (the TTL move rule on a cold tier) is a plain sentence.
+    for (const n of cell.notes || []) if (n.tier) lines.push(n.text);
     for (const s of segs.filter((g) => g.operation === op)) source.push(cite(s.text, commit));
     for (const r of cell.rows || []) if (rowExtrapolated(r) && !(split && isTransferRow(r))) source.push(`${OP_KIND_LABELS[r.op_kind] || r.op_kind}: outside the measured range`);
     // The assumption is said above in words; its contract sentence names ids and record names.
-    for (const n of cell.notes || []) if (!n.assumption) source.push(cite(sourceNote(contract, n), commit));
+    for (const n of cell.notes || []) if (!n.assumption && !n.tier) source.push(cite(sourceNote(contract, n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
       description: lead(used, ex, source, assumedInputsUsed(contract, open.variant, op, cell, split ? 'other' : 'all')), measured_by: measuredBy, lines, source };
   }
 
   // ---- notes, chart -------------------------------------------------------------------------------
 
-  function buildNotes(result, contract, fields, pageState) {
+  // `suffix` follows a value that is not the form's own (" in the cold tier").
+  function buildNotes(result, contract, fields, pageState, suffix) {
     const notes = [];
     // prices_missing is said by the page banner and a column state by its card; neither repeats here.
     if (result.page_reason && pageState === 'cannot_reproduce') notes.push({ kind: pageState, text: result.page_reason });
@@ -1361,7 +1253,7 @@
         ? `${fmtRange(hit[0].range)} of ${hit.map((d) => d.owner).join(', ')}`
         : hit.map((d) => `${d.owner} ${fmtRange(d.range)}`).join(', ');
       notes.push({ kind: 'out_of_range', param, range: same ? hit[0].range : null, ranges: hit.map((d) => ({ owner: d.owner, range: d.range })), owners: hit.map((d) => d.owner),
-        text: `${param} = ${fmtQuantity(x)} is outside the measured range ${same ? '' : 'of '}${where}; dependent numbers are ${EXTRAPOLATED}` });
+        text: `${param} = ${fmtQuantity(x)}${suffix || ''} is outside the measured range ${same ? '' : 'of '}${where}; dependent numbers are ${EXTRAPOLATED}` });
     }
     return notes;
   }
@@ -1410,6 +1302,30 @@
 
   // ---- build ----------------------------------------------------------------------------------
 
+  // Resolved fields with the values a tier run priced (`values`: Map of evaluated run inputs).
+  function runValues(fields, values) {
+    const out = {};
+    for (const [id, f] of Object.entries(fields || {})) out[id] = values.has(id) ? Object.assign({}, f, { value: values.get(id) }) : f;
+    return out;
+  }
+
+  // What the tier role means for the cards, in one sentence; null for a single tier.
+  function tierText(result) {
+    const t = result.tier;
+    if (!t) return null;
+    if (t.role === 'hot') {
+      const d = t.inputs.get('retention_days');
+      return `Hot tier: parts leave by TTL move after ${typeof d === 'number' ? fmtQuantity(d) : 'the retention'} days`;
+    }
+    const v = t.values;
+    const perDay = v && typeof v.get('parts_inserted_per_month') === 'number' ? v.get('parts_inserted_per_month') / pipeline().DAYS_PER_MONTH : null;
+    const rows = v ? v.get('part_rows') : null;
+    const days = v ? v.get('retention_days') : null;
+    if (perDay === null || typeof rows !== 'number') return 'Cold tier: parts arrive by TTL move; their rate is not available';
+    return `Cold tier: ${fmtQuantity(Math.round(perDay * 10) / 10)} final-size parts/day/replica, ${fmtQuantity(Math.round(rows / 1e5) / 10)} M rows each, TTL-moved;`
+      + ` no merges${typeof days === 'number' ? `; kept ${fmtQuantity(days)} days` : ''}`;
+  }
+
   // `ui.pricePreset` is the preset object the Result was priced with (SCC.presets.resolvePrice): the Result does
   // not carry the currency or the rule metadata that formatting needs.
   function build(result, contract, fields, lockOrder, ui) {
@@ -1422,23 +1338,29 @@
     const vm = {
       page_state: pageState, page_reason: pageState === 'cannot_reproduce' ? result.page_reason || null : plainReason(result.page_reason) || null, evidence_statement: result.evidence_statement,
       currency: preset && !preset.structure_only ? preset.currency : null, theme: u.theme || null,
-      cards: [], tiered: null, table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, evidence: null, problems,
+      cards: [], tier_role: null, tier_text: null, table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, evidence: null, problems,
     };
     vm.inputs = buildInputs(contract, fields, lockOrder || [], preset, u, pageState, problems);
-    vm.notes = buildNotes(result, contract, fields, pageState);
+    // A cold tier is priced on its own inputs and TTL move cells: cells, notes and dialogs read those; the form keeps
+    // the values the user entered.
+    const tier = result.tier || null;
+    const priced = tier && tier.contract ? tier.contract : contract;
+    const runFields = tier && tier.values ? runValues(fields, tier.values) : fields;
+    vm.notes = buildNotes(result, priced, runFields, pageState, tier && tier.role === 'cold' ? ' in the cold tier' : '');
     if (pageState === 'cannot_reproduce') return vm;
-    const split = transferSplit(result, contract, preset, pageState);
-    vm.cards = buildCards(result, contract, preset, pageState, vm.inputs, split);
-    vm.tiered = buildTiered(result, preset, pageState, vm.inputs);
-    vm.table = buildTable(result, contract, preset, pageState, problems, fields, split);
+    vm.tier_role = tier ? tier.role : null;
+    vm.tier_text = tierText(result);
+    const split = transferSplit(result, priced, preset, pageState);
+    vm.cards = buildCards(result, priced, preset, pageState, vm.inputs, split);
+    vm.table = buildTable(result, priced, preset, pageState, problems, runFields, split);
     vm.evidence = buildEvidence(contract);
-    if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
-    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems, preset, { split, scenario: u.scenario || null, fields });
+    if (u.openCell) vm.drill = buildDrill(result, priced, preset, pageState, u.openCell, problems);
+    if (u.info) vm.info = buildInfo(result, priced, vm.inputs, u.info, problems, preset, { split, scenario: u.scenario || null, fields: runFields });
     // A chart of money has nothing to draw without prices.
     if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems, fields);
     return vm;
   }
 
-  SCC.viewmodel = { build, buildTiered, assumptionSentence, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, tierText, assumptionSentence, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

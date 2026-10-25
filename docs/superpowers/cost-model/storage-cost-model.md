@@ -189,67 +189,80 @@ mark.
 
 ## Tiered storage {#tiered-storage}
 
-With `hot_tier_days` above 0, the page prices two tiers. New parts stay on local disk (`ebs`) for
-`hot_tier_days`. A `TTL ... TO VOLUME` move then takes them to object storage (`s3`, `s3plain` or `cas`) for the
-rest of the retention. A "Tiered" block under the four columns shows the hot `ebs` total plus each cold total,
-beside the single-tier total of that variant. The preset "Logs, tiered (7 days hot)" sets 7 days.
+A table with `TTL ... TO VOLUME` keeps new parts on a hot disk and moves them to a cold disk after `hot_tier_days`.
+The input `tier_role` prices one of the two disks on all four variants, so each tier is compared in the ordinary
+four-card grid:
 
-Each tier is a pipeline run on its own inputs (`pipeline.tiered`). Every cell, state and badge is the single-tier
-one, except the cold inserts cell, which follows the TTL move rule below.
+| `tier_role` | Preset | What the four cards price |
+|---|---|---|
+| `single` (default) | every other preset | One disk holds the data for the whole retention. |
+| `hot` | "Hot tier (7 days, then TTL to cold)" | The ordinary workload kept `retention_days` (7). Parts then leave by TTL move. |
+| `cold` | "Cold tier (fed by TTL moves)" | The second tier: final-size parts arrive by TTL move after `hot_tier_days` and stay the rest of the retention. |
+
+A line above the cards says which tier they price. Both presets use the Logs stream. Combine one card of each
+preset to price a hot and a cold disk together.
+
+`pipeline.run` reads `tier_role`. `hot` runs the workload unchanged and adds a note to every Inserts cell:
+"parts leave by TTL move after 7 days: free on local disk" on `ebs`, and "on object storage the move reads the
+part's files (not measured, not priced)" on the others. `cold` runs the workload on the cold inputs below
+(`pipeline.coldView`), with every Inserts cell replaced by the TTL move rule.
 
 ### Inputs {#tiered-inputs}
 
 | Input | Default | Form | Meaning |
 |---|---|---|---|
-| `hot_tier_days` | 0 | Tiering row | Days on local disk; 0 keeps one tier. A value not below the retention is refused with the reason. |
-| `cold_gc_interval_s` | 3600 | Low-level, and in the Tiered block | `cas_gc_interval_sec` of the cold CAS disk. |
+| `tier_role` | `single` | Tiering row | `single`, `hot` or `cold`. |
+| `hot_tier_days` | 0 | Tiering row | Days in the hot tier; `cold` reads it. `cold` needs a value above 0 and below the retention; otherwise every cold card is unavailable and the field says why. |
+| `cold_gc_interval_s` | 3600 | Low-level | `cas_gc_interval_sec` of the cold CAS disk. |
 | `cold_mutations_per_month` | 0 | Low-level | ALTER UPDATE/DELETE that rewrite a cold part. |
 | `cold_select_part_reads_per_day` | 0 | Low-level | Cold parts read by SELECT per day. |
 
-### Derivations {#tiered-derivations}
+### Cold-tier derivations {#tiered-derivations}
 
-| Run input | Hot tier | Cold tier |
-|---|---|---|
-| `retention_days` | `hot_tier_days` | `cold_retention_days` = `retention_days − hot_tier_days` |
-| `data_bytes` | `hot_data_bytes` = `ingest_rate × hot_tier_days` | `cold_data_bytes` = `data_bytes − hot_data_bytes` |
-| `insert_rate` | unchanged | `cold_insert_rate` = `insert_rate × parts_per_insert / merge_size_ratio` |
-| `insert_rows` | unchanged | `cold_insert_rows` = `part_rows × merge_size_ratio` |
-| `insert_bytes_uncompressed` | unchanged | `cold_insert_bytes_uncompressed` = `part_bytes_uncompressed × merge_size_ratio` |
-| `parts_per_insert` | derived as usual | `cold_parts_per_insert` = 1: the mover clones a whole part (`MergeTreePartsMover::clonePart`) |
-| `merge_size_ratio` | unchanged | `cold_merge_size_ratio` = 1 |
-| `async_insert` | unchanged | 0: a move never goes through the async insert queue |
-| `cas_gc_interval_s` | unchanged | `cold_gc_interval_s` |
-| `mutations_per_month` | unchanged | `cold_mutations_per_month`, one moved part each, wide or compact by `min_bytes_for_wide_part` |
-| `select_part_reads_per_day` | unchanged | `cold_select_part_reads_per_day` |
+| Run input | Cold tier |
+|---|---|
+| `retention_days` | `cold_retention_days` = `retention_days − hot_tier_days` |
+| `data_bytes` | `cold_data_bytes` = `data_bytes − hot_data_bytes`, with `hot_data_bytes` = `ingest_rate × hot_tier_days` |
+| `insert_rate` | `cold_insert_rate` = `insert_rate × parts_per_insert / merge_size_ratio` |
+| `insert_rows` | `cold_insert_rows` = `part_rows × merge_size_ratio` |
+| `insert_bytes_uncompressed` | `cold_insert_bytes_uncompressed` = `part_bytes_uncompressed × merge_size_ratio` |
+| `parts_per_insert` | `cold_parts_per_insert` = 1: the mover clones a whole part (`MergeTreePartsMover::clonePart`) |
+| `merge_size_ratio` | `cold_merge_size_ratio` = 1 |
+| `async_insert` | 0: a move never goes through the async insert queue |
+| `cas_gc_interval_s` | `cold_gc_interval_s` |
+| `mutations_per_month` | `cold_mutations_per_month`, one moved part each, wide or compact by `min_bytes_for_wide_part` |
+| `select_part_reads_per_day` | `cold_select_part_reads_per_day` |
 
-Everything else (`ingest_rate`, `replicas`, `cas_tables`, restarts, schema) is the same in both runs. By
-construction the cold tier takes in, per month, the parts the hot tier expires (`expired_parts_per_month`), and the
-two data sizes add up to the single-tier `data_bytes`.
+Everything else (`ingest_rate`, `replicas`, `cas_tables`, restarts, schema) is the workload's own. By construction
+the cold tier takes in, per month, the parts the hot workload expires (`expired_parts_per_month`).
 
 ### TTL move rule {#tiered-ttl-move}
 
-A move costs the insert write of the part on the cold disk plus one load of the moved part. The source part on local
-disk costs no object request. Without zero-copy replication every replica moves its own copy and fetches nothing.
+A move costs the insert write of the part on the cold disk plus one load of the moved part. The source part on the
+hot disk costs no object request. Without zero-copy replication every replica moves its own copy and fetches nothing.
 Source: `docs/superpowers/reports/2026-10-25-storage-cost-ttl-move/README.md`. The counted run (`4baf61f997b`)
 matched the rule exactly on `s3` and `s3plain`, and the CAS per-part publish matched. With two replicas on `s3`,
-each replica moved its own copy: no `DownloadPart`, 0 interserver bytes. The cold inserts cell is the variant's
-inserts cell, changed in three ways:
+each replica moved its own copy: no `DownloadPart`, 0 interserver bytes. The cold Inserts cell is the variant's
+inserts cell, changed in four ways:
 
 - **No fetch.** Rows a follower's fetch prices are dropped: the `replicas − 1` GETs on `s3` and `s3plain`, and the
-  interserver transfer on all three.
+  interserver transfer on all four. A cell note about a dropped row (the CAS relink bytes) goes with it.
 - **Per replica.** Rows priced once per part (the `cas` publish) are the first replica's publish. Each of the
   `replicas − 1` followers pays the same rows on the hash-hit branch: `cas_hash_hit_fraction` is replaced by
   `cas_move_follower_hash_hit_fraction` = 1. That is a HEAD and a `.meta` GET per blob and no blob PUT, plus the
   manifest and the 3 ref transactions of its own namespace. Measured exactly on both replicas
   (`move-replicated.ttl-cas`, `bd731b623d1`).
+- **Block rows unchanged.** The `ebs` IOPS and throughput rows are per volume; billing multiplies them by the
+  replica count.
 - **Part load.** One `GetObject` row of `parts_inserted_per_month × replicas` times
   `move_load_gets_per_part` = `part_load_files + 1` (`ttl.txt`, 10) on `s3` and `s3plain`, or
-  `cas_move_load_gets_per_part` = 1 manifest + 1 marks blob for a Wide part on `cas`.
+  `cas_move_load_gets_per_part` = 1 manifest + 1 marks blob for a Wide part on `cas`. On `ebs` the load reads local
+  files, which no request price covers.
 
 On `s3plain` the insert cell already prices the directory create (PUT, HEAD) and the rename PUT per part. The
 `moving/` container costs one PUT and one HEAD per table, once. On CAS the first move into a table costs PUT 3 and
-GET 13 once (`ttl_move_table_once_requests`). Neither is a monthly cost, so neither is priced.
-The cold inserts cell carries the note "TTL move priced as the write of the moved part plus one part load
+GET 13 once (`ttl_move_table_once_requests`). Neither is a monthly cost, so neither is priced. The (i) of each cold
+Inserts cell lists these notes, starting with "TTL move priced as the write of the moved part plus one part load
 (measured: move.ttl, each replica moves its own copy)".
 
 ### Assumptions {#tiered-assumptions}
@@ -258,45 +271,44 @@ The cold inserts cell carries the note "TTL move priced as the write of the move
   `expired_parts_per_month` and `mutated_part_rows` already use. `merge_result_rows` and `merge_result_bytes` are
   one merge's result (`× merge_effective_fan_in`), not the final size, so they are not used here.
 - **No merges in the cold tier.** Moved parts are final-sized, so the merge selector gains nothing.
-  `cold_merge_size_ratio` = 1 makes `merge_results_per_month` 0, so the `s3` and `s3plain` merges cells price 0.
-  The `cas` merges cell does not read `merge_size_ratio`: it prices
-  `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. In the cold tier
-  that is $1.27 a month on Logs, more than the tier runs; its cell note says so.
+  `cold_merge_size_ratio` = 1 makes `merge_results_per_month` 0, so the `ebs`, `s3` and `s3plain` merges cells
+  price 0. The `cas` merges cell does not read `merge_size_ratio`: it prices
+  `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. On the cold
+  preset that is $1.27 a month, more than the tier runs; its cell note says so.
 - **Moves of one part do not overlap.** The two-replica `cas` run moved one replica after the other. Moves of the
   same part that overlap on two replicas can both miss the hash and both upload the blobs; that race was not
-  measured. The cold inserts cell says so.
+  measured. The cold Inserts cell says so.
 - **One moved part per cold mutation.** A mutation over N cold parts is N mutations here.
+- **Moving out of the hot tier is not priced.** On local disk it costs nothing. On object storage the move reads
+  the part's files; that read was not measured.
 
-The cold columns are `extrapolated`; the hot `ebs` run is not. On Logs a moved part has 25.6 million rows, above
-every measured insert size. `cold_merge_size_ratio` = 1 lies below the measured 18.21–472.95, and a 3,600 s GC
-interval above the measured 10–60 s.
+The cold `s3`, `s3plain` and `cas` cards are extrapolated; the cold `ebs` card prices only capacity and is not. A
+moved part has 25.6 million rows, above every measured insert size. `cold_merge_size_ratio` = 1 lies below the
+measured 18.21–472.95, and a 3,600 s GC interval above the measured 10–60 s. The preset declares these in
+`expected_extrapolated`, and the page notes say "in the cold tier" after each value.
 
 ### What the numbers show {#tiered-numbers}
 
-Logs, tiered: 500 GiB/day kept 30 days on 2 replicas, 7 days hot and 23 cold. Prices are `aws-us-east-1`, per
-month; their "GB" is a binary GiB.
+Logs: 500 GiB/day on 2 replicas, 7 days hot and 23 cold. Prices are `aws-us-east-1`, per month; their "GB" is a
+binary GiB.
 
-| Cold variant | Hot `ebs` | Cold | Tiered | Single tier, same variant |
-|---|---|---|---|---|
-| `s3` | $728.00 | $540.06 | $1,268.06 | $3,689.81 |
-| `s3plain` | $728.00 | $552.39 | $1,280.39 | $6,803.81 |
-| `cas` | $728.00 | $280.30 | $1,008.30 | $2,847.13 |
+| Variant | Hot tier (7 days) | Cold tier (23 days) | Cold storage | Cold intake | Cold GC |
+|---|---|---|---|---|---|
+| `ebs` | $728.00 | $2,392.00 | $2,392.00 | $0.00 | n/a |
+| `s3` | $3,160.74 | $540.06 | $529.00 | $9.22 | n/a |
+| `s3plain` | $6,274.67 | $552.39 | $529.00 | $9.43 | n/a |
+| `cas` | $2,582.52 | $280.30 | $264.64 | $5.54 | $4.04 |
 
-Single-tier `ebs` is $3,120.00.
-
-- **Data split.** `data_bytes` = 500 × 30 = 15,000 GiB. `hot_data_bytes` = 500 × 7 = 3,500 GiB.
-  `cold_data_bytes` = 15,000 − 3,500 = 11,500 GiB.
-- **Hot tier.** 3,500 GiB × 1.3 headroom = 4,550 GiB of gp3 per replica, 9,100 GiB-months at $0.08: $728.00. The
-  7 days take all inserts and merges, at a peak of 341 IOPS and 85 MiB/s, inside the gp3 baseline. On object
-  storage the same 7 days cost $3,160.74 on `s3` (inserts $2,441.94, merges $555.49). On `cas` they cost $2,582.52
-  (inserts $1,229.03, GC at 60 s $943.09, merges $324.74).
-- **Cold intake.** 337.5 parts a day per replica, each 25.6 million rows, 15 GiB uncompressed, about 1.48 GiB on
-  disk, Wide. The intake costs $9.22 on `s3` and $5.54 on `cas`.
-- **Cold storage.** `s3` keeps a copy per replica: 23,000 GiB-months, $529.00. `cas` keeps one copy for both
-  replicas: 11,500 active + 1.87 garbage + 4.39 metadata = 11,506.26 GiB-months, $264.64. Hourly GC costs $4.04
-  and the mount lease $3.83.
-- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,008.30. That is the
-  lowest of the seven options on the page.
+- **Hot tier.** The Logs workload at 7 days. On `ebs`: 3,500 GiB × 1.3 headroom = 4,550 GiB of gp3 per replica,
+  9,100 GiB-months at $0.08, at a peak of 341 IOPS and 85 MiB/s inside the gp3 baseline. On object storage the 7
+  days pay all inserts and merges: `s3` inserts $2,441.94 and merges $555.49; `cas` inserts $1,229.03, GC at 60 s
+  $943.09 and merges $324.74.
+- **Cold intake.** 337.5 final-size parts a day per replica, each 25.6 million rows, 15 GiB uncompressed, about
+  1.48 GiB on disk, Wide.
+- **Cold storage.** 11,500 GiB. `ebs` provisions 14,950 GiB of gp3 per replica: $2,392.00. `s3` keeps a copy per
+  replica: 23,000 GiB-months, $529.00. `cas` keeps one copy for both replicas: $264.64. Hourly GC costs $4.04 and
+  the mount lease $3.83.
+- **Result.** With these inputs `ebs` is the cheapest hot tier and `cas` the cheapest cold tier.
 
 ## Known inaccuracies {#known-inaccuracies}
 
@@ -454,7 +466,7 @@ of `raw/SHA256SUMS`.
 ## Formulas {#formulas}
 
 <!-- formulas:begin -->
-Generated by `tools/generate_contract.py` from `model-contract.json` version `cec0d93fed922f4b`. Do not edit.
+Generated by `tools/generate_contract.py` from `model-contract.json` version `1a6bda08513f5069`. Do not edit.
 
 | Variant | Operation | Cell owner | Applicability |
 |---|---|---|---|
@@ -1315,7 +1327,8 @@ Registry version `0.3.0`. Generated; do not edit.
 | `cas_tables` | `cas` | MergeTree tables on the CAS disk | `input` | `cluster` | `count` | `1` |  |  | assumed: preset default (0.3.0) | `ok` |
 | `cas_table_creates_per_month` | `cas` | CREATE TABLE statements per month for MergeTree tables on the CAS disk | `input` | `cluster` | `count` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
 | `cas_table_drops_per_month` | `cas` | DROP TABLE statements per month for MergeTree tables on the CAS disk | `input` | `cluster` | `count` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
-| `hot_tier_days` | `tiering` | Days a part stays on the local disk before a TTL move to object storage; 0 keeps one tier | `input` | `cluster` | `day` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
+| `tier_role` | `tiering` | Role of the disk in a TTL ... TO VOLUME policy: single (one tier), hot (the first tier; parts leave by TTL move at the end of the retention) or cold (the second tier; final-size parts arrive by TTL move after hot_tier_days) | `input` | `cluster` |  | `"single"` |  |  | assumed: preset default (0.3.0) | `ok` |
+| `hot_tier_days` | `tiering` | Days a part stays in the hot tier before a TTL move to the cold tier; tier_role cold reads it | `input` | `cluster` | `day` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
 | `cold_gc_interval_s` | `tiering` | GC round interval of the CAS disk in the cold tier (cas_gc_interval_sec) | `input` | `cluster` | `s` | `3600` |  |  | assumed: cold data changes rarely, so GC can run hourly; the disk default is 60 s (0.3.0) | `ok` |
 | `cold_mutations_per_month` | `tiering` | ALTER UPDATE/DELETE per month that rewrite a part in the cold tier | `input` | `cluster` | `count` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
 | `cold_select_part_reads_per_day` | `tiering` | Parts in the cold tier read by SELECT queries per day | `input` | `cluster` | `count/day` | `0` |  |  | assumed: preset default (0.3.0) | `ok` |
@@ -1498,6 +1511,7 @@ Form placement. `workload` and `setting` inputs make up the default form (at mos
 | `workload` | `retention_days` |  | Retention | `simple` |
 | `workload` | `topology` |  | Replica placement | `simple` |
 | `workload` | `hot_tier_days` |  | Hot tier days | `tiering` |
+| `workload` | `tier_role` |  | Tier role | `tiering` |
 | `setting` | `cas_gc_interval_s` | `cas_gc_interval_sec` | CAS GC interval | `cas` |
 | `setting` | `async_insert` | `async_insert` | Async inserts | `inserts` |
 | `setting` | `insert_rate` |  | INSERTs per second | `inserts` |
@@ -1577,69 +1591,5 @@ Form placement. `workload` and `setting` inputs make up the default form (at mos
 ## Break-even {#break-even}
 
 <!-- breakeven:begin -->
-Generated from `breakeven.json` (`tools/sweeps.mjs`), swept on contract version `cec0d93fed922f4b` with price preset `aws-us-east-1`. Do not edit.
-
-A crossing is a sign change of the difference of two totals between consecutive ladder values, so the break-even lies inside the interval, not at a point. A variant that is not `ok` at a value has no total there and no crossing is drawn through it.
-
-Ladders: ×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point.
-
-### Scenario `logs` {#breakeven-logs}
-
-Logs.
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 3,750, 7,500, 15,000, 30,000, 60,000, 120,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 15,000 and 30,000; `ebs` / `s3plain` between 30,000 and 60,000; `ebs` / `cas` between 7,500 and 15,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 500 and 1,000; `ebs` / `s3plain` between 1,000 and 2,000; `ebs` / `cas` between 250 and 500 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 1 and 2; `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-
-### Scenario `logs_tiered` {#breakeven-logs-tiered}
-
-Logs, tiered (7 days hot).
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 3,750, 7,500, 15,000, 30,000, 60,000, 120,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 15,000 and 30,000; `ebs` / `s3plain` between 30,000 and 60,000; `ebs` / `cas` between 7,500 and 15,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 500 and 1,000; `ebs` / `s3plain` between 1,000 and 2,000; `ebs` / `cas` between 250 and 500 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 1 and 2; `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-
-### Scenario `metrics` {#breakeven-metrics}
-
-Metrics.
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 450, 900, 1,800, 3,600, 7,200, 14,400 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 7,200 and 14,400 (extrapolated); `ebs` / `cas` between 3,600 and 7,200 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `ingest_rate` | 5, 10, 20, 40, 80, 160 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 80 and 160 (extrapolated); `ebs` / `cas` between 40 and 80 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 4 and 6 (extrapolated); `s3` / `cas` between 1 and 2 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-
-### Scenario `analytics_batch` {#breakeven-analytics-batch}
-
-Analytics batch.
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 2,560, 5,120, 10,240, 20,480, 40,960, 81,920 | `ebs`, `s3`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
-| `ingest_rate` | 7.0137, 14.0274, 28.0548, 56.1096, 112.219, 224.438 | `ebs`, `s3`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
-| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `cas` | `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
-
-### Scenario `single_replica_archive` {#breakeven-single-replica-archive}
-
-Single replica archive.
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 12,800, 25,600, 51,200, 102,400, 204,800, 409,600 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok / unavailable; `s3`: ok / unavailable; `s3plain`: ok / unavailable; `cas`: ok / unavailable |
-| `ingest_rate` | 17.5342, 35.0685, 70.137, 140.274, 280.548, 561.096 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok / unavailable; `s3`: ok / unavailable; `s3plain`: ok / unavailable; `cas`: ok / unavailable |
-| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-
-### Scenario `custom` {#breakeven-custom}
-
-Custom.
-
-| Input | Values | Variants compared | Crossing | States |
-|---|---|---|---|---|
-| `data_bytes` | 5,000, 10,000, 20,000, 40,000, 80,000, 160,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 10,000 and 20,000; `ebs` / `s3plain` between 20,000 and 40,000; `ebs` / `cas` between 5,000 and 10,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 250 and 500; `ebs` / `s3plain` between 500 and 1,000; `ebs` / `cas` between 125 and 250 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
-| `replicas` | 1, 2, 3, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 1 and 2; `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+Stale: swept on contract version `cec0d93fed922f4b`, not `1a6bda08513f5069`. Run `tools/sweeps.mjs`.
 <!-- breakeven:end -->

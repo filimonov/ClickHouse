@@ -219,8 +219,8 @@
       + ` aria-pressed="${p.pressed}">${esc(p.label)}</button>`).join('')}</span>` : '');
 
   // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
-  // The single-tier GC interval and the tiered block's cold one look alike; each label says which cards it drives.
-  const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code>${f.id === 'cas_gc_interval_s' ? ' <span class="mute">(single-tier CAS)</span>' : ''}</span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
+  // The CAS GC interval and the cold tier's one look alike; the label says which cards it drives.
+  const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code>${f.id === 'cas_gc_interval_s' ? ' <span class="mute">(not the cold tier)</span>' : ''}</span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
 
   // `simple`: workload knob with a slider. `compact`: a setting in the grid. Both keep helper lines behind (i).
   function renderField(f, page, simple, compact) {
@@ -243,7 +243,7 @@
   // Workload inputs that share one line on the form, each with a short label; one (i) explains the set.
   const FIELD_SETS = [
     { id: 'tables', members: [['cas_tables', 'Tables'], ['cas_table_creates_per_month', 'created/month'], ['cas_table_drops_per_month', 'dropped/month']] },
-    { id: 'tiering', members: [['hot_tier_days', 'Hot tier, days']] },
+    { id: 'tiering', members: [['tier_role', 'Tier role'], ['hot_tier_days', 'hot tier, days']] },
   ];
 
   function renderFieldSet(set, fs, page) {
@@ -335,27 +335,12 @@
       + `${items.length ? '<h4>What differs</h4>' : ''}${list(items, 'mismatches')}</section>`;
   }
 
-  // Hot local disk plus each cold variant, one line each, under the four single-tier columns.
-  function renderTiered(t, page) {
-    if (!t) return '';
-    const rows = t.rows.map((r) => {
-      const mark = r.cheapest ? badge(r.cheapest_text, 'ok') : r.extrapolated && r.state === 'ok' ? badge('extrapolated', 'warn') : '';
-      return `<li class="tier-row${r.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(r.variant)}" data-state="${esc(r.state)}">`
-        + `<span class="tier-sum" data-kind="money">${esc(r.sum_text)}</span>${mark}${infoButton({ 'info-kind': 'tiered', variant: r.variant }, `${r.label} cold tier`)}`
-        + `${r.single_text ? `<span class="tier-single mute">${esc(r.single_text)}</span>` : ''}${r.reason ? `<span class="tier-single mute">${esc(r.reason)}</span>` : ''}</li>`;
-    }).join('');
-    const g = t.gc_field;
-    const gc = g ? `<div class="tier-gc" data-field="${esc(g.id)}"><span class="field-label">${esc(g.short || g.label)} <span class="mute">(tiered rows)</span></span>${control(g, page, false)}`
-      + `${infoButton({ 'info-kind': 'input', id: g.id }, g.short || g.label)}${fieldTags(g)}</div>` : '';
-    return `<section class="panel-block tiered" data-block="tiered" aria-label="Tiered storage"><h2>${esc(t.title)}</h2>`
-      + `${t.single_hot_text ? `<p class="mute">${esc(t.single_hot_text)}</p>` : ''}<ul class="tier-rows">${rows}</ul>${gc}`
-      + `${list(t.notes.map((x) => `<li>${esc(x)}</li>`), 'tier-notes field-note')}</section>`;
-  }
-
   function renderCards(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return renderCannotReproduce(vm);
     const banner = vm.page_state === 'prices_missing' ? `<p class="banner">${esc(vm.page_reason)}.</p>` : '';
-    return `${banner}<div class="cards">${vm.cards.map((c) => renderCard(c, vm)).join('')}</div>${renderTiered(vm.tiered, page)}`;
+    // A tier role changes what all four cards price; one line above them says what.
+    const tier = vm.tier_text ? `<p class="tier-line" data-tier="${esc(vm.tier_role)}">${esc(vm.tier_text)}</p>` : '';
+    return `${banner}${tier}<div class="cards">${vm.cards.map((c) => renderCard(c, vm)).join('')}</div>`;
   }
 
   function renderTable(vm, page) {
@@ -503,7 +488,7 @@
     return `<div class="modal-body" data-info="${esc(i.kind)}:${esc(i.id)}"><header class="modal-head"><h2 id="modal-title">${esc(i.title)}</h2>`
       + '<button type="button" class="btn btn-small" data-action="close-info" aria-label="Close">Close</button></header>'
       + `${i.description ? `<p>${esc(i.description)}</p>` : ''}${facts ? `<div class="tbl"><table class="facts"><tbody>${facts}</tbody></table></div>` : ''}`
-      + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' || i.kind === 'tiered' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
+      + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
       // Rig, proxy and formula detail: kept for the reader who checks the number, after the plain sentences.
       + `${i.source && i.source.length ? `<h4>Source</h4>${list(i.source.map((l) => `<li>${esc(l)}</li>`), 'why source')}` : ''}`
       + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
@@ -639,7 +624,6 @@
     const res = pipeline().run(contract, r0.inputs, preset, opts);
     // Input problems are page notes; none is dropped.
     res.problems = [...(res.problems || []), ...r0.problems];
-    res.tiered = pipeline().tiered(contract, r0.inputs, preset, { single: res });
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
       pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units, info: u.info || null, scenario: state.scenario,
     });
@@ -724,7 +708,7 @@
       case 'close-drill': s.openCell = null; break;
       case 'show-calc': u.showCalc = !u.showCalc; break;
       case 'info': {
-        const kind = known(['input', 'cell', 'variant', 'column', 'transfer', 'evidence', 'scenario', 'tiered'], d.infoKind, 'info kind');
+        const kind = known(['input', 'cell', 'variant', 'column', 'transfer', 'evidence', 'scenario'], d.infoKind, 'info kind');
         u.info = kind === 'input' || kind === 'evidence' || kind === 'scenario' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
         break;
       }

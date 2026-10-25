@@ -13,7 +13,7 @@ const MINIMAL = contract.load(JSON.parse(fs.readFileSync(path.join(__dirname, 'f
 const copy = (x) => JSON.parse(JSON.stringify(x));
 
 test('test_every_scenario_within_coverage', () => {
-  assert.deepEqual(Object.keys(presets.SCENARIOS), ['logs', 'logs_tiered', 'metrics', 'analytics_batch', 'single_replica_archive', 'custom']);
+  assert.deepEqual(Object.keys(presets.SCENARIOS), ['logs', 'hot_tier', 'cold_tier', 'metrics', 'analytics_batch', 'single_replica_archive', 'custom']);
   // The check is not vacuous: the live contract carries validity domains for the scenarios to fall into.
   const domains = presets.validityDomains(LIVE);
   assert.ok(domains.some((d) => d.owner.startsWith('coefficient ')), 'live contract has coefficient validity');
