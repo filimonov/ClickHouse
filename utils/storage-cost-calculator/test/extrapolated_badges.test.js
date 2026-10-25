@@ -135,9 +135,8 @@ test('test_one_badge_per_card', () => {
   assert.ok(cheapestExtrapolated > 0, 'some preset has an extrapolated cheapest column (cross-AZ Logs)');
 });
 
-test('test_notes_row_font_matches_the_body', () => {
-  assert.doesNotMatch(CSS, /\.col-note[^{]*\{[^}]*font-size/);
-  assert.doesNotMatch(CSS, /\.notes-row[^{]*\{[^}]*font-size/);
-  // At the body font a one-line note is wider than its column at 1440 px: it wraps instead of scrolling the table.
-  assert.doesNotMatch(CSS, /\.col-note[^{]*\{[^}]*nowrap/);
+test('test_notes_row_is_one_line_at_13px', () => {
+  // 13 px is the largest size at which four one-line notes fit the table at 1440 px without a sideways scroll.
+  assert.match(CSS, /\n\.col-note \{[^}]*font-size: 13px/);
+  assert.match(CSS, /@media \(min-width: 1400px\) \{[^@]*\.col-note \{[^}]*white-space: nowrap/);
 });
