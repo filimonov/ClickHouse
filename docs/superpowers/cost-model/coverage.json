@@ -774,6 +774,19 @@
           "duration_s": 660,
           "priority": "P2",
           "status": "run"
+        },
+        {
+          "case_id": "1hz-10m",
+          "policies": [
+            "local"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 660,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -21822,6 +21835,28 @@
       ],
       "status": "done",
       "note": "a 40 MB file is copied aside by 1 CreateMultipartUpload, 3 UploadPartCopy, 1 CompleteMultipartUpload; every count exact"
+    },
+    {
+      "coefficient": "write_amplification_rule",
+      "experiment_id": "amplification-run.1hz-10m",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          600
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "aedc61d87ad",
+      "measurement_ids": [
+        "cost-20261025T144517Z/local/amplification-run/1hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "chain-regime law (ladder at fan-in 2.3348) predicted 7.754 +- 0.4465, measured 8.258; the rule gives 4.08"
     }
   ],
   "domain": {

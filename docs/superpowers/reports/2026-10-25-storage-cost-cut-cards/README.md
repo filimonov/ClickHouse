@@ -14,7 +14,8 @@ each predicted and committed before its run. Results:
 
 | Item | Verdict | Model change |
 |---|---|---|
-| Paced natural merges (§[Amplification](#amplification-result)) | rule fails: amplification 8.8 against 4.6 | none; `write_amplification_rule` understates steady small inserts about 1.9× |
+| Paced natural merges (§[Amplification](#amplification-result)) | rule fails: amplification 8.8 against 4.6 | `merge_effective_fan_in` valid for 50 000–100 000-row inserts only |
+| Chain-regime amplification law (§[Hold-out](#amplification-holdout)) | fails its hold-out: 8.258 against 7.754 ± 0.4465 | none; the law is evidence only |
 | EBS `peak_factor` (§[Amplification](#amplification-result)) | constant fails: 28.2 and 15.5; the peak is the largest merge | none; stays assumed, default 1 |
 | `cas_relink_bytes_per_part` (§[Relink](#relink-revised)) | constant fails below 30 000 rows; revised form passes | none in the registry: the form needs inline bytes per part, which the calculator lacks |
 | `inserts_per_async_flush` (§[Async](#async-revised)) | rule fails below 20/s; revised rule passes | registry rule returns 1 when 1 / rate ≥ `async_insert_busy_timeout_min_ms` |
@@ -80,6 +81,44 @@ Peak factor (r1 `write_bytes`, window start to the last merge, net of the idle 6
   (provision for the mean rate, and let a merge run longer within the provisioned throughput).
 - **What a reader can use:** a volume provisioned for peaks needs the bytes of the largest merge per second, about
   the largest part size of the table; the calculator has no input for it.
+
+### Chain-regime law and its hold-out {#amplification-holdout}
+
+A refit of the ladder to the chain records fails its hold-out by 0.06 beyond its slack. `write_amplification_rule`
+keeps its form; `merge_effective_fan_in` is now valid for inserts of 50 000–100 000 rows only, so presets with
+smaller inserts show amplification as extrapolated.
+
+**Regime.** On local disk the selector folds 32 KB parts (1 000 rows) into one growing part 5–6 at a time; 2 MB
+parts (100 000 rows) merge as a tree of about 6. The same 1 000-row burst on `s3` also built a tree (amplification
+3.98–4.09, which the rule fits). The chain therefore needs small parts and merges that finish before the next few
+inserts arrive.
+
+**Fit.** The ladder `1 + rewrite_levels(r, f)` at the row-weighted final part size r, least squares over three chain
+records:
+
+| Record | r, inserts | Measured | Law, f = 2.3348 | Residual | Rule, f = 6.1437 |
+|---|---|---|---|---|---|
+| `small-inserts.default`, `local` ([EBS](/superpowers/reports/storage-cost-ebs)), 16/s burst | 353.4 | 8.332 | 7.885 | +0.4465 | 4.102 |
+| `amplification-run.2hz-10m`, `local` | 937.4 | 8.751 | 9.046 | −0.2950 | 4.592 |
+| `amplification-run.4hz-10m`, `local` | 943.5 | 8.807 | 9.051 | −0.2439 | 4.597 |
+
+**Hold-out** (`amplification-run.1hz-10m`, `local`, 600 inserts of 1 000 rows, one per second; prediction
+`aedc61d87ad`, slack = the largest fit residual, 0.4465):
+
+| Run | r, inserts | Merges | Measured | Law | Verdict | Rule |
+|---|---|---|---|---|---|---|
+| `cost-20261025T144517Z` | 325.0 | 116 | 8.258 | 7.754 | fail by 0.058 | 4.078 |
+
+Every other card assertion passed: fan-in mean 6.15, the fan-in and result-size distributions within the pooled chain
+tables.
+
+- **Chain amplification hardly depends on r.** Measured 8.26, 8.33, 8.75 and 8.81 at r = 325, 353, 937 and 944.
+  The ladder adds a level for every factor f of r, so a single f cannot match both ends. The flat part is the chain
+  itself: it stops near 120 inserts (a 3–4 MB part), where the selector's fixed cost per merge stops favouring the
+  growing part, and its rewrite count (about C / (2 × 5)) is set by part bytes, not by r.
+- **What a reader can use:** for steady inserts of about 1 000 rows, expect write amplification 8.3–8.8 on local
+  disk and at RustFS speed, about twice `write_amplification_rule`. A law for other part sizes needs runs at
+  other part sizes; none were run.
 
 ## CAS relink bytes per part {#relink}
 

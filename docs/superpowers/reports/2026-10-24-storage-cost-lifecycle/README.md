@@ -238,6 +238,10 @@ final part sizes of 18–473 inserted parts; the hold-out extends it to 20 colum
 18.21–20.82 (`merge-natural.default`) and 375.17–472.95 (`small-inserts.default`) only; the single point between
 them is the hold-out at 32, so the validity range spans an unmeasured gap.
 
+`merge_effective_fan_in` is valid for inserts of 50 000–100 000 rows only: paced or local 1000-row inserts measured
+amplification 8.26–8.81 against the rule's 4.08–4.60, because the selector folds small parts into one growing part
+(see [cut cards](/superpowers/reports/storage-cost-cut-cards#amplification-holdout)).
+
 | Coefficient | Value | Fit | Hold-out | Tolerance |
 |---|---|---|---|---|
 | `merge_effective_fan_in` | 6.1437 | `small-inserts.default`, `merge-natural.default` (6 records) against `write_amplification_rule`; residuals −0.195…−0.109 and +0.150…+0.170 | `merge-natural.wide`: residual +0.091 against this value; the committed prediction (f = 6.1912, levels averaged per final part) +0.106 | abs 0.2502 (rule below), rel 0; the hold-out's committed bound was 0.3474 |
