@@ -424,6 +424,16 @@ class BillingTest(unittest.TestCase):
         del bare['presets'][0]['units_evidence']
         self.assertTrue(any('units_evidence' in p for p in cc.billing(bare)))
 
+    def test_billing_structure_only_preset_takes_a_note_and_nothing_else(self):
+        b = self.seed()
+        azure = next(p for p in b['presets'] if p['id'] == 'azure')
+        self.assertEqual(azure, {'id': 'azure', 'structure_only': True, 'note': azure['note']})
+        self.assertEqual(cc.billing(b), [])
+        azure['note'] = ''
+        self.assertTrue(any('note' in p for p in cc.billing(b)))
+        azure['note'] = 'x'
+        azure['units'] = 'decimal'
+        self.assertTrue(any('carries no values' in p for p in cc.billing(b)))
 
     def test_billing_checks_price_values_like_the_page(self):
         def problems(mutate):

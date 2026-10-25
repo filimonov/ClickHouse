@@ -77,7 +77,7 @@ each input's tier.
 
 | Tier | Where on the page | Rule |
 |---|---|---|
-| `workload` | Always visible: data size, ingest rate, retention, replicas, shards, replica placement | Describes the workload |
+| `workload` | Always visible: data size, ingest rate, retention, replicas, shards, replica placement, tables | Describes the workload |
 | `setting` | Default form, at most 10, named by the ClickHouse setting in code font where one exists | A product manager sets it after one sentence, and it moves money for a typical workload |
 | `advanced` | The collapsed "Low-level assumptions" section at the bottom of the page | Settable, but rarely matters |
 | `hidden` | Never an input; value and evidence appear in the (i) dialog | Needs more than one sentence, or is a table key |
@@ -85,6 +85,14 @@ each input's tier.
 Data size, ingest rate and retention are linked: data = ingest × retention. Two of the three can be locked, and the
 third is derived. Every other input defaults to a standard deployment profile, so the default page prices all four
 columns (D22).
+
+**Tables.** Tables on the CAS disk, tables created per month and tables dropped per month share one workload line
+with one (i). On every replica, each table adds a catalog GET and a LIST per `cas_table_cleanup_period_s` (the
+cleanup thread's listing, `lease` cell), and its ref log tail to every server start (`recovery`) and to every folding
+GC round (`gc`). A CREATE TABLE sends 21 requests per replica (`cas_table_create_requests`); a DROP TABLE SYNC sends
+9 plus 4 per part per replica (`deletes` cell). The rig ran one table, so the per-table terms are formulas from source
+verified at 1 table. The fixed start requests (`cas_startup_requests`) were measured with one table, so more than one
+table marks the CAS Recovery cell extrapolated.
 
 ### The (i) dialog {#info-dialog}
 
@@ -141,25 +149,21 @@ keeps nothing locally pays the minimum gp3 volume per replica.
 
 ### Price presets {#price-presets}
 
-Three presets carry list prices, each with a source URL, a check date and the quoted page wording per rule
-(`docs/superpowers/cost-model/billing-contract.json`). `custom` is an editable copy of `aws-us-east-1`.
+Two presets carry list prices, each with a source URL, a check date and the quoted page wording per rule
+(`docs/superpowers/cost-model/billing-contract.json`). `custom` is an editable copy of `aws-us-east-1`. `azure` has
+no prices and is not offered: ClickHouse on Azure Blob Storage is not supported yet.
 
 | Preset | Object store | Block volume | VM classes |
 |---|---|---|---|
 | `aws-us-east-1` | S3 Standard; PUT/COPY/POST/LIST, GET, DELETE free | gp3 | m6i, m7i |
 | `gcs` | Cloud Storage Standard, us-central1, XML API; Class A, Class B, free | Hyperdisk Balanced | n4, c3 |
-| `azure` | Blob Storage Hot LRS, East US, flat namespace; write, list, read, other, delete free | Premium SSD v2 | Dsv5, Esv5 |
 
-- **Same rule ids.** Every preset uses the AWS ids for routes and the block volume (`ec2_ec2_cross_az`, `block.gp3`);
+- **Same rule ids.** Both presets use the AWS ids for routes and the block volume (`ec2_ec2_cross_az`, `block.gp3`);
   the page shows each provider's own words.
-- **Request mapping.** Each S3 call ClickHouse makes is priced as the provider's counterpart. On GCS, `DeleteObjects`
-  is a `POST` and so Class A, and `ListMultipartUploads` and `ListParts` are Class B. On Azure, `DeleteObjects` is a
-  Blob Batch billed as one other operation; `CreateMultipartUpload` and `AbortMultipartUpload` send no request.
-- **Errors.** GCS does not bill 307, 4xx or 5xx. Azure bills every authenticated request except server errors and
-  throttling, so 4xx and client timeouts are billed there.
-- **Cross-zone transfer.** GCS charges the sending VM, $0.01 per GiB. Azure's price list has $0.01 per GB in and out;
-  its bandwidth page lists no cross-zone row.
-- **Units.** Azure disk MB/s is 10^6 bytes/s; its throughput baseline, limits and price are stored in MiB/s.
+- **Request mapping.** Each S3 call ClickHouse makes is priced as its GCS XML API counterpart. `DeleteObjects` is a
+  `POST` and so Class A; `ListMultipartUploads` and `ListParts` are Class B.
+- **Errors.** GCS does not bill 307, 4xx or 5xx responses.
+- **Cross-zone transfer.** GCS charges the sending VM, $0.01 per GiB; AWS charges each direction.
 
 ### Formulas from source, measurements verify {#formulas-from-source}
 

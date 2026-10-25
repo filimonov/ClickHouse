@@ -709,7 +709,9 @@ def billing(contract):
     for p in presets:
         path = f"billing.presets[{p.get('id')}]"
         if p.get("structure_only"):
-            problems += [f"{path}: a structure-only preset carries no values"] if set(p) != {"id", "structure_only"} else []
+            # A structure-only preset may say why it has no values, and nothing else.
+            problems += [f"{path}: a structure-only preset carries no values"] if set(p) - {"note"} != {"id", "structure_only"} else []
+            problems += [f"{path}.note: expected a non-empty string"] if "note" in p and not (isinstance(p["note"], str) and p["note"]) else []
             continue
         missing = [f"{path}: missing {k}" for k in PRESET_KEYS if k not in p]
         if missing:

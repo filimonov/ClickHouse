@@ -72,11 +72,13 @@ test('test_declared_extrapolation_must_be_declared_and_true', () => {
 });
 
 test('test_structure_only_prices_set_prices_missing', () => {
-  // Preset ids are the billing contract's; `custom` is the page's editable copy.
-  assert.deepEqual(Object.keys(presets.PRICES), [...LIVE.billing.presets.map((p) => p.id), 'custom']);
-  // Every shipped preset carries prices and names the date they were checked.
+  // Preset ids are the billing contract's priced ones; `custom` is the page's editable copy. Azure is structure-only
+  // (not supported yet) and is not offered.
+  assert.deepEqual(LIVE.billing.presets.filter((p) => p.structure_only).map((p) => p.id), ['azure']);
+  assert.deepEqual(Object.keys(presets.PRICES), [...LIVE.billing.presets.filter((p) => !p.structure_only).map((p) => p.id), 'custom']);
+  assert.throws(() => presets.resolvePrice(LIVE, 'azure'), /unknown price preset "azure"/);
   assert.deepEqual(Object.entries(presets.PRICES).filter(([, d]) => d.structure_only).map(([id]) => id), []);
-  for (const p of LIVE.billing.presets) {
+  for (const p of LIVE.billing.presets.filter((x) => !x.structure_only)) {
     assert.equal(!!presets.resolvePrice(LIVE, p.id).structure_only, false, p.id);
     assert.match(presets.priceLabel(LIVE, p.id), / \(\d{4}-\d{2}-\d{2}\)$/, p.id);
   }

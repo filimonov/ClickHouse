@@ -154,13 +154,12 @@
     throw new Error(`billing rule ${ruleId} is not a rule of price preset ${preset.id}`);
   }
 
-  // Price preset ids are the billing contract's. `contract` presets are taken from the contract as they are;
-  // `custom` is an editable copy of `base`.
+  // Price preset ids are the billing contract's priced presets; a structure-only contract preset (`azure`: ClickHouse
+  // on Azure Blob Storage is not supported yet) is not offered. `contract` presets are taken from the contract as they
+  // are; `custom` is an editable copy of `base`.
   const PRICES = {
     'aws-us-east-1': { label: 'AWS us-east-1', source: 'contract', structure_only: false },
     gcs: { label: 'GCS us-central1', source: 'contract', structure_only: false },
-    // ClickHouse on Azure Blob Storage is not supported by this model yet; the preset stays without prices.
-    azure: { label: 'Azure', source: 'contract', structure_only: true, note: 'not supported' },
     custom: { label: 'Custom', source: 'custom', base: 'aws-us-east-1', structure_only: false },
   };
 
