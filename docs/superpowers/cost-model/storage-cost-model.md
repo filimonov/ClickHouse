@@ -190,12 +190,12 @@ mark.
 ## Tiered storage {#tiered-storage}
 
 With `hot_tier_days` above 0, the page prices two tiers. New parts stay on local disk (`ebs`) for
-`hot_tier_days`, then a `TTL ... TO VOLUME` move takes them to object storage (`s3`, `s3plain` or `cas`) for the rest
-of the retention. A "Tiered" block under the four columns shows, per cold variant, the hot `ebs` total plus the cold
-total, beside the single-tier total of that variant. The preset "Logs, tiered (7 days hot)" sets 7 days.
+`hot_tier_days`. A `TTL ... TO VOLUME` move then takes them to object storage (`s3`, `s3plain` or `cas`) for the
+rest of the retention. A "Tiered" block under the four columns shows the hot `ebs` total plus each cold total,
+beside the single-tier total of that variant. The preset "Logs, tiered (7 days hot)" sets 7 days.
 
-Each tier is an ordinary pipeline run on its own inputs (`pipeline.tiered`). Every cell, state and badge is the
-single-tier one; only the `tiering` registry rows below differ.
+Each tier is a pipeline run on its own inputs (`pipeline.tiered`). Every cell, state and badge is the single-tier
+one, except the cold inserts cell, which follows the TTL move rule below.
 
 ### Inputs {#tiered-inputs}
 
@@ -226,6 +226,26 @@ Everything else (`ingest_rate`, `replicas`, `cas_tables`, restarts, schema) is t
 construction the cold tier takes in, per month, the parts the hot tier expires (`expired_parts_per_month`), and the
 two data sizes add up to the single-tier `data_bytes`.
 
+### TTL move rule {#tiered-ttl-move}
+
+A move costs the insert write of the part on the cold disk plus one load of the moved part. The source part on local
+disk costs no object request. Without zero-copy replication every replica moves its own copy and fetches nothing.
+Source: `docs/superpowers/reports/2026-10-25-storage-cost-ttl-move/README.md`, a source rule at `6cc255b6593`. The
+`s3` smoke run matched it exactly; the counted run is pending. The cold inserts cell is the variant's inserts
+cell, changed in three ways:
+
+- **No fetch.** Rows a follower's fetch prices are dropped: the `replicas − 1` GETs on `s3` and `s3plain`, and the
+  interserver transfer on all three.
+- **Per replica.** Rows priced once per part (the `cas` publish) are multiplied by `replicas`.
+- **Part load.** One `GetObject` row of `parts_inserted_per_month × replicas` times
+  `move_load_gets_per_part` = `part_load_files + 1` (`ttl.txt`, 10) on `s3` and `s3plain`, or
+  `cas_move_load_gets_per_part` = 1 manifest + 1 marks blob for a Wide part on `cas`.
+
+On `s3plain` the insert cell already prices the directory create (PUT, HEAD) and the rename PUT per part. The
+`moving/` container costs one PUT and one HEAD per table, once, so no monthly cost is priced for it.
+The cold inserts cell carries the note "TTL move priced as the write of the moved part plus one part load (source
+rule; s3 measured exact, counted run pending)".
+
 ### Assumptions {#tiered-assumptions}
 
 - **A part moves once, at its final size.** The final size is `part_rows × merge_size_ratio`, the size
@@ -236,8 +256,8 @@ two data sizes add up to the single-tier `data_bytes`.
   The `cas` merges cell does not read `merge_size_ratio`: it prices
   `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. In the cold tier
   that is $1.27 a month on Logs, more than the tier runs; its cell note says so.
-- **A TTL move is priced as the write of the moved part.** The cold intake goes through the existing insert cells.
-  Each cold inserts cell carries the note "TTL move priced as the write of the moved part (assumption)".
+- **Every blob uploads on every replica.** The `cas` publish is multiplied by `replicas` with
+  `cas_hash_hit_fraction` 0. If the second replica's identical blobs hit by hash, the cold intake is lower.
 - **One moved part per cold mutation.** A mutation over N cold parts is N mutations here.
 
 The cold columns are `extrapolated`; the hot `ebs` run is not. On Logs a moved part has 25.6 million rows, above
@@ -246,22 +266,29 @@ interval above the measured 10–60 s.
 
 ### What the numbers show {#tiered-numbers}
 
-Logs, tiered (7 days hot, 23 cold), `aws-us-east-1`, per month:
+Logs, tiered: 500 GiB/day kept 30 days on 2 replicas, 7 days hot and 23 cold. Prices are `aws-us-east-1`, per
+month; their "GB" is a binary GiB.
 
 | Cold variant | Hot `ebs` | Cold | Tiered | Single tier, same variant |
 |---|---|---|---|---|
-| `s3` | $728.00 | $540.38 | $1,268.38 | $3,689.81 |
-| `s3plain` | $728.00 | $552.72 | $1,280.72 | $6,803.81 |
-| `cas` | $728.00 | $279.56 | $1,007.56 | $2,847.13 |
+| `s3` | $728.00 | $540.06 | $1,268.06 | $3,689.81 |
+| `s3plain` | $728.00 | $552.39 | $1,280.39 | $6,803.81 |
+| `cas` | $728.00 | $284.38 | $1,012.38 | $2,847.13 |
 
 Single-tier `ebs` is $3,120.00.
 
-- **Hot tier.** The 7 hot days take all inserts and merges. On `ebs` their I/O fits the gp3 baseline, so the hot
-  total is capacity only. On object storage the same 7 days cost $3,160.74 on `s3`: inserts $2,441.94, merges
-  $555.49. On `cas` they cost $2,582.52: inserts $1,229.03, GC at 60 s $943.09, merges $324.74.
-- **Cold tier.** The cold tier takes 337.5 final-sized parts a day. Its total is mostly stored bytes: $529.00 on `s3`
-  and `s3plain`, $264.64 on `cas`, which stores one copy for both replicas. Hourly GC costs $4.04.
-- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,007.56. That is the
+- **Data split.** `data_bytes` = 500 × 30 = 15,000 GiB. `hot_data_bytes` = 500 × 7 = 3,500 GiB.
+  `cold_data_bytes` = 15,000 − 3,500 = 11,500 GiB.
+- **Hot tier.** 3,500 GiB × 1.3 headroom = 4,550 GiB of gp3 per replica, 9,100 GiB-months at $0.08: $728.00. The
+  7 days take all inserts and merges, at a peak of 341 IOPS and 85 MiB/s, inside the gp3 baseline. On object
+  storage the same 7 days cost $3,160.74 on `s3` (inserts $2,441.94, merges $555.49). On `cas` they cost $2,582.52
+  (inserts $1,229.03, GC at 60 s $943.09, merges $324.74).
+- **Cold intake.** 337.5 parts a day per replica, each 25.6 million rows, 15 GiB uncompressed, about 1.48 GiB on
+  disk, Wide. The intake costs $9.22 on `s3` and $9.62 on `cas`.
+- **Cold storage.** `s3` keeps a copy per replica: 23,000 GiB-months, $529.00. `cas` keeps one copy for both
+  replicas: 11,500 active + 1.87 garbage + 4.39 metadata = 11,506.26 GiB-months, $264.64. Hourly GC costs $4.04
+  and the mount lease $3.83.
+- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,012.38. That is the
   lowest of the seven options on the page.
 
 ## Known inaccuracies {#known-inaccuracies}

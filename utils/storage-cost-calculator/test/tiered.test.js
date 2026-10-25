@@ -188,3 +188,35 @@ test('test_refused_hot_tier_shows_its_reason_on_the_tiering_row', () => {
   // The single-tier columns still price the workload.
   assert.ok(out.vm.cards.every((c) => c.state === 'ok'));
 });
+
+test('test_cold_intake_follows_the_ttl_move_rule', () => {
+  const { t } = tieredLogs();
+  // No fetch: the follower GETs and the interserver row of the insert cells are gone.
+  assert.deepEqual(t.move_dropped_rows, {
+    s3: ['request GetObject', 'request GetObject', 'transfer interserver'],
+    s3plain: ['request GetObject', 'request GetObject', 'transfer interserver'],
+    cas: ['transfer interserver'],
+  });
+  const cold = pipeline.evaluationInputs(LIVE, t.cold_inputs);
+  const moved = cold.get('parts_inserted_per_month');
+  const replicas = cold.get('replicas');
+  assert.equal(replicas, 2);
+  const q = (v) => t.cold.variants[v].cells.inserts.quantities;
+  // One part load per moved part on every replica: 9 part files + ttl.txt on s3 and s3plain, a manifest and the
+  // first marks blob of a Wide part on CAS.
+  assert.equal(cold.get('move_load_gets_per_part'), 10);
+  assert.equal(cold.get('cas_move_load_gets_per_part'), 2);
+  for (const v of ['s3', 's3plain', 'cas']) {
+    const gets = q(v).filter((r) => r.op_kind === 'GetObject');
+    close(gets[gets.length - 1].quantity, moved * replicas * (v === 'cas' ? 2 : 10), `${v} load GETs`);
+    assert.equal(q(v).some((r) => r.row_type === 'transfer'), false, v);
+  }
+  // Every replica moves its own copy: the CAS publish, priced once per part for an insert, counts per replica.
+  const insert = pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.cas.cells.inserts.quantities;
+  const put = (rows) => rows.find((r) => r.op_kind === 'PutObject').quantity;
+  close(put(q('cas')), put(insert) * replicas, 'cas PUT per replica');
+  // s3 insert PUTs are already per replica.
+  close(q('s3').find((r) => r.op_kind === 'PutObject').quantity, pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.s3.cells.inserts.quantities.find((r) => r.op_kind === 'PutObject').quantity, 's3 PUT');
+  // The single-tier columns keep the insert cells.
+  assert.equal(pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.cas.cells.inserts.quantities.some((r) => r.row_type === 'transfer'), true);
+});

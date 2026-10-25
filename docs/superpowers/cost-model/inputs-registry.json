@@ -8838,6 +8838,100 @@
       "status": "ok"
     },
     {
+      "id": "move_load_gets_per_part",
+      "block": "tiering",
+      "label": "GETs to load a part moved to an s3 or s3plain cold disk: part_load_files + 1 (ttl.txt)",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "coef",
+          "id": "part_load_files",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (source rule 6cc255b6593; s3 smoke exact, counted run pending): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; ttl.txt: tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:2493",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_move_load_gets_per_part",
+      "block": "tiering",
+      "label": "GETs to load a part moved to a CAS cold disk: one manifest, plus the first marks blob of a Wide part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "b": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "part_type",
+              "dim": "enum:part_type"
+            },
+            "b": {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+            }
+          },
+          "then": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+          },
+          "else": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (source rule 6cc255b6593; s3 smoke exact, counted run pending): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; manifest GET: tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.cpp:56",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
       "id": "cas_ref_log_tail_records",
       "block": "cas",
       "label": "Ref log records of one table since its last snapshot that a folding GC round reads",

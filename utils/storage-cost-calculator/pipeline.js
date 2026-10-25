@@ -820,7 +820,9 @@
   };
   // A move writes the part directly, never through the async insert queue.
   const COLD_FIXED = { async_insert: '0' };
-  const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part (assumption)';
+  const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part plus one part load (source rule; s3 measured exact, counted run pending)';
+  // GETs that load a moved part back from the cold disk, per variant (registry derivations).
+  const MOVE_LOAD_GETS = { s3: 'move_load_gets_per_part', s3plain: 'move_load_gets_per_part', cas: 'cas_move_load_gets_per_part' };
   const COLD_MERGE_NOTE = 'no merges in the cold tier: moved parts are final-sized, so the merge selector gains nothing (assumption)';
   const COLD_MERGE_IGNORED_NOTE = 'this cell does not read merge_size_ratio: it prices merges as if parts kept merging, more than the cold tier runs';
 
@@ -837,6 +839,35 @@
       todo.push(...inputsOf(rules.get(x)));
     }
     return false;
+  }
+
+  const op2 = (kind, a, b, dim) => ({ kind, a, b, dim });
+  const input = (id, dim) => ({ kind: 'input', id, dim });
+  // A row the replica fetch prices: a follower reads the part (`replicas − 1`) or receives its bytes (interserver).
+  function isFetchRow(row) {
+    if (row.row_type === 'transfer') return true;
+    let found = false;
+    walk(row.expr, (n) => { if (n.kind === 'sub' && n.a && n.a.kind === 'input' && n.a.id === 'replicas') found = true; });
+    return found;
+  }
+
+  // The inserts cell of a cold variant under the TTL move rule: the insert write on every replica, no fetch, plus the
+  // GETs that load the moved part. Returns {cell, dropped: [op_kind]} or {problem}.
+  function moveCell(contract, v) {
+    const cell = (contract.formulas[v] || {}).inserts;
+    if (!cell) return { problem: `${v} has no inserts cell` };
+    if (!MOVE_LOAD_GETS[v]) return { problem: `${v} has no TTL move load rule` };
+    if (cell.allocation) return { problem: `${v}.inserts allocates by shares; the TTL move rule cannot rewrite it` };
+    const dropped = [];
+    const rows = [];
+    for (const r of cell.ledger_rows) {
+      if (isFetchRow(r)) { dropped.push(`${r.row_type} ${r.op_kind}`); continue; }
+      // Each replica moves its own copy: a row priced once per part is priced once per replica.
+      rows.push(inputsOf(r.expr).has('replicas') ? r : Object.assign({}, r, { expr: op2('mul', r.expr, input('replicas', 'count'), r.expr.dim) }));
+    }
+    const load = op2('mul', op2('mul', input('parts_inserted_per_month', 'count'), input('replicas', 'count'), 'count'), input(MOVE_LOAD_GETS[v], 'count'), 'count');
+    rows.push({ row_type: 'request', op_kind: 'GetObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', basis: 'predicted', expr: load });
+    return { cell: Object.assign({}, cell, { ledger_rows: rows }), dropped };
   }
 
   // Totals of hot `ebs` plus each cold object-storage variant, beside the single-tier totals in `single` (a `run`
@@ -862,7 +893,20 @@
     const cold_variants = contract.variants.filter((v) => v !== HOT_VARIANT);
     const runOpts = { outcome_mix: opts.outcome_mix };
     const hot = run(contract, hotInputs, pricePreset, runOpts);
-    const cold = run(contract, coldInputs, pricePreset, runOpts);
+    const formulas = Object.assign({}, contract.formulas);
+    const move = {};
+    for (const v of cold_variants) {
+      const m = moveCell(contract, v);
+      if (m.problem) { problems.push(m.problem); continue; }
+      formulas[v] = Object.assign({}, formulas[v], { inserts: m.cell });
+      move[v] = m.dropped;
+    }
+    const cold = run(Object.assign({}, contract, { formulas }), coldInputs, pricePreset, runOpts);
+    // A cold column whose intake the move rule could not price has no comparable total.
+    for (const v of cold_variants) {
+      if (move[v] || !cold.variants[v] || cold.variants[v].state !== 'ok') continue;
+      Object.assign(cold.variants[v], { state: 'unavailable', reason: `${v}: the TTL move rule cannot price the cold intake`, total: null });
+    }
     for (const v of cold_variants) {
       const cells = (cold.variants[v] || {}).cells || {};
       if (cells.inserts) cells.inserts.notes.push({ text: TTL_MOVE_NOTE, value: null, state: 'ok', assumption: true });
@@ -896,13 +940,13 @@
     for (const r of rows) if (r.total !== null && (cheapest === null || r.total < rows.find((x) => x.variant === cheapest).total)) cheapest = r.variant;
     return {
       hot_days: hotDays, cold_days: all.has('cold_retention_days') ? all.get('cold_retention_days') : null,
-      hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems,
+      hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems, move_dropped_rows: move,
       hot_inputs: hotInputs, cold_inputs: coldInputs,
     };
   }
 
   SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
     unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS,
-    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE });
+    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE, MOVE_LOAD_GETS, moveCell });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);
