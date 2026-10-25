@@ -10,7 +10,21 @@ doc_type: 'reference'
 # Storage cost calculator — cards cut from the first pass {#cut-cards}
 
 Cards that the first pass cut for time (D14 in [LEDGER.md](../2026-10-23-storage-cost-calculator/LEDGER.md#decisions)),
-each predicted and committed before its run.
+each predicted and committed before its run. Results:
+
+| Item | Verdict | Model change |
+|---|---|---|
+| Paced natural merges (§[Amplification](#amplification-result)) | rule fails: amplification 8.8 against 4.6 | none; `write_amplification_rule` understates steady small inserts about 1.9× |
+| EBS `peak_factor` (§[Amplification](#amplification-result)) | constant fails: 28.2 and 15.5; the peak is the largest merge | none; stays assumed, default 1 |
+| `cas_relink_bytes_per_part` (§[Relink](#relink-revised)) | constant fails below 30 000 rows; revised form passes | none in the registry: the form needs inline bytes per part, which the calculator lacks |
+| `inserts_per_async_flush` (§[Async](#async-revised)) | rule fails below 20/s; revised rule passes | registry rule returns 1 when 1 / rate ≥ `async_insert_busy_timeout_min_ms` |
+| `gc-under-load` (§[GC](#gc-under-load)) | nothing reclaimed within `old_parts_lifetime`, as predicted | none |
+| s3plain big-file removal (§[Big file](#big-file)) | exact | none; the `plain_unlink_requests` edge is done |
+
+- **Rig:** commit `df8d6526e3e` (a detached checkout; `rig_dirty` false), RustFS 1.0.0-beta.9, binary
+  `tmp/bin/26.8/clickhouse`.
+- **Not run:** `gc-scale.mounts-2`, `gc-scale.refgrowth-*`, `detach-attach`, `replacement`, `faults.fetch` and
+  `cache-eviction` have no card or need card changes, which would change the rig commit of this report.
 
 ## Paced natural merges {#amplification}
 
@@ -210,3 +224,14 @@ pieces (16 MiB, `IO/S3/copyS3File.cpp:347`, `:673`). `drop.big-file` drops one W
 
 A file past 32 MiB costs ceil(size / 16 MiB) `UploadPartCopy` plus the create and the complete (5 requests here) in
 place of one `CopyObject`. The edge of `plain_unlink_requests` is `done`.
+
+## How to re-run {#rerun}
+
+```bash
+flock tmp/yardstick.lock python3 utils/cas-yardstick/yardstick.py cost run --binary tmp/bin/26.8/clickhouse \
+    --manifests docs/superpowers/reports/2026-10-25-storage-cost-cut-cards --cases <experiment ids> \
+    --policies local,s3,s3plain,cas --replicas 2 --runs-dir tmp/cas-yardstick/cost-runs
+```
+
+Inline bytes of the relink cases come from `clickhouse local` with the same inserts and table settings; the sizes are
+in each `predictions/replication-fetch.relink-*.cas.json` (`inputs.form.parts`).
