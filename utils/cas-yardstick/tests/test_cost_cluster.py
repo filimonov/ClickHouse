@@ -263,9 +263,9 @@ if __name__ == '__main__':
 
 
 class ServerShStopIdentityTest(unittest.TestCase):
-    """`server.sh stop` signals only the process it started: the comm recorded at start must still match."""
+    """`server.sh stop` signals only the process it started: the start time recorded at the fork must still match."""
 
-    def stop_foreign(self, comm):
+    def stop_foreign(self, start):
         import signal
         import subprocess
         server_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server.sh')
@@ -276,9 +276,9 @@ class ServerShStopIdentityTest(unittest.TestCase):
                     f.write(str(foreign.pid))
                 with open(os.path.join(tmp, 'server.port'), 'w') as f:
                     f.write('1')  # nothing answers SYSTEM SHUTDOWN there
-                if comm is not None:
-                    with open(os.path.join(tmp, 'server.comm'), 'w') as f:
-                        f.write(comm + '\n')
+                if start is not None:
+                    with open(os.path.join(tmp, 'server.start'), 'w') as f:
+                        f.write(start + '\n')
                 done = subprocess.run(['bash', server_sh, 'stop', tmp], capture_output=True, text=True, timeout=60,
                                       env={**os.environ, 'SERVER_STOP_TIMEOUT': '1'})
             self.assertIsNone(foreign.poll(), 'server.sh signalled a process it did not start')
@@ -288,14 +288,68 @@ class ServerShStopIdentityTest(unittest.TestCase):
             foreign.wait()
 
     def test_reused_pid_is_not_signalled(self):
-        done = self.stop_foreign('clickhouse')
+        done = self.stop_foreign('1')
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("is now 'sleep'", done.stdout)
+        self.assertIn('not with the server (1)', done.stdout)
 
-    def test_no_sigkill_without_a_recorded_comm(self):
+    def test_no_sigkill_without_a_recorded_start(self):
         done = self.stop_foreign(None)
         self.assertEqual(done.returncode, 1)
         self.assertIn('not sending SIGKILL', done.stderr)
+
+    # Ignores TERM and never answers SELECT 1, like a server still loading its tables.
+    SLOW_SERVER = 'import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwhile True:\n    time.sleep(1)\n'
+
+    def test_interrupted_start_can_be_stopped(self):
+        import signal
+        import socket
+        import subprocess
+        server_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'server.sh')
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'etc'))
+            open(os.path.join(tmp, 'etc', 'config.xml'), 'w').close()
+            binary = os.path.join(tmp, 'fake-clickhouse')
+            with open(binary, 'w') as f:
+                f.write('#!/usr/bin/env python3\n' + self.SLOW_SERVER)
+            os.chmod(binary, 0o755)
+            s = socket.socket()
+            s.bind(('127.0.0.1', 0))
+            http_port = s.getsockname()[1]
+            s.close()
+            env = {**os.environ, 'SERVER_STOP_TIMEOUT': '1'}
+            starter = subprocess.Popen(['bash', server_sh, 'start', binary, tmp, str(http_port - 1)], env=env,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            pid_file = os.path.join(tmp, 'server.pid')
+            pid = None
+            try:
+                for _ in range(100):
+                    if os.path.exists(os.path.join(tmp, 'server.port')):
+                        break
+                    time.sleep(0.05)
+                with open(pid_file) as f:
+                    pid = int(f.read())
+                starter.send_signal(signal.SIGTERM)  # the run is interrupted before the server answers
+                starter.wait(timeout=30)
+                self.assertTrue(os.path.getsize(os.path.join(tmp, 'server.start')) > 0)
+                done = subprocess.run(['bash', server_sh, 'stop', tmp], env=env, capture_output=True, text=True,
+                                      timeout=60)
+                self.assertIn('sending SIGKILL', done.stderr)
+                for _ in range(50):
+                    try:
+                        with open(f'/proc/{pid}/stat') as f:
+                            if f.read().rsplit(')', 1)[1].split()[0] == 'Z':
+                                break
+                    except FileNotFoundError:
+                        break
+                    time.sleep(0.1)
+                else:
+                    self.fail(f'server {pid} of the interrupted start survived stop')
+            finally:
+                if pid is not None:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
 
 class ServerShTracedKillTest(unittest.TestCase):

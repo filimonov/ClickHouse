@@ -22,7 +22,11 @@ CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-pe
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'drop-60s', 'drop-60s-12', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-3k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
-         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}}
+         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'},
+         'cold-select': {'cas-holdout-narrow-3', 'cas-holdout-on-narrow-3', 'cas-off-narrow', 'cas-off-wide',
+                         'cas-on-narrow', 'cas-on-narrow-2', 'cas-on-wide', 'cas-on-wide-2', 'cas-warm-off-narrow',
+                         'cas-warm-off-wide'},
+         'startup': {'cas-compact-5', 'cas-holdout-wide-4', 'cas-intact', 'cas-wide-parts', 'cas-wide-parts-3'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
 P = 'cost-20261024T000000Z/cas/gc-idle/populated/k1/shared'
 BLOB = f'{P}/blobs/ch128/7e/7e04f7775690055a4f834c628c1cd41d'

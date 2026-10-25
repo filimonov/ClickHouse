@@ -16,13 +16,16 @@ group_of() {
     ps -o pgid= -p "$1" 2>/dev/null | tr -d ' ' || true
 }
 
-# `server.comm` holds the comm of `server.pid` once the server answered; a different comm means the pid was reused.
-recorded_comm() {
-    cat "$1/server.comm" 2>/dev/null || true
+# `server.start` holds the start time (clock ticks since boot) of `server.pid`, written right after the fork, so a
+# start interrupted before the server answers can still be stopped. A different start time means the pid was reused.
+# The comm would not do: it changes from bash to setsid, nohup and the binary as each one execs the next.
+recorded_start() {
+    cat "$1/server.start" 2>/dev/null || true
 }
 
-live_comm() {
-    cat "/proc/$1/comm" 2>/dev/null || true
+# Field 22 of /proc/<pid>/stat; the fields are counted after the parenthesised comm, which may hold spaces.
+live_start() {
+    sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{ print $20 }' || true
 }
 
 # A group other than the caller's own; empty when the pid is gone or shares the caller's group.
@@ -80,6 +83,7 @@ case "$cmd" in
             --filesystem_caches_path="$dir/caches/" --custom_cached_disks_base_directory="$dir/caches/" \
             > "$dir/stdout.log" 2>&1 &
         echo $! > "$dir/server.pid"
+        live_start $! > "$dir/server.start"
         echo "$port" > "$dir/server.port"
         for i in $(seq 1 "$START_TIMEOUT"); do
             if ! kill -0 "$(cat "$dir/server.pid")" 2>/dev/null; then
@@ -87,7 +91,6 @@ case "$cmd" in
                 exit 1
             fi
             if [ "$(curl -s --max-time 5 "http://127.0.0.1:$((port + 1))/?query=SELECT+1" || true)" = 1 ]; then
-                live_comm "$(cat "$dir/server.pid")" > "$dir/server.comm"
                 echo "up after $i s"
                 exit 0
             fi
@@ -120,9 +123,9 @@ case "$cmd" in
         [ -f "$dir/server.port" ] || { echo "no $dir/server.port" >&2; exit 1; }
         port=$(cat "$dir/server.port")
         pid=$(cat "$dir/server.pid")
-        comm=$(recorded_comm "$dir")
-        if kill -0 "$pid" 2>/dev/null && [ -n "$comm" ] && [ "$(live_comm "$pid")" != "$comm" ]; then
-            echo "pid $pid is now '$(live_comm "$pid")', not the server ('$comm'); the server is gone, not signalling it"
+        start=$(recorded_start "$dir")
+        if kill -0 "$pid" 2>/dev/null && [ -n "$start" ] && [ "$(live_start "$pid")" != "$start" ]; then
+            echo "pid $pid started at $(live_start "$pid"), not with the server ($start); the server is gone, not signalling it"
             exit 0
         fi
         if kill -0 "$pid" 2>/dev/null; then
@@ -131,9 +134,9 @@ case "$cmd" in
                 kill -0 "$pid" 2>/dev/null || { echo "stopped"; exit 0; }
                 sleep 1
             done
-            if [ -z "$comm" ] || [ "$(live_comm "$pid")" != "$comm" ]; then
-                echo "server $pid still alive after $STOP_TIMEOUT s, but its comm '$(live_comm "$pid")' does not match" \
-                     "the recorded '${comm:-<no server.comm>}'; not sending SIGKILL" >&2
+            if [ -z "$start" ] || [ "$(live_start "$pid")" != "$start" ]; then
+                echo "server $pid still alive after $STOP_TIMEOUT s, but its start time '$(live_start "$pid")' does not match" \
+                     "the recorded '${start:-<no server.start>}'; not sending SIGKILL" >&2
                 exit 1
             fi
             echo "server $pid still alive after $STOP_TIMEOUT s; sending SIGKILL to its process group" >&2
