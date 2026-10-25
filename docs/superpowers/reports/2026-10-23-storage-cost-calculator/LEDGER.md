@@ -352,20 +352,22 @@ The whole-branch review of Plan 1 (8 Important, 4 deferred items to fix before P
 
 ## Hand-off {#handoff}
 
-Final HEAD `a3fdd384e7b` on `docs/storage-cost-calculator` (base `cas-gc-rebuild` at `78133cca87d`, 432 commits), nothing
-pushed, no pull request. Verification on a clean `git archive` export of `3e653ddd553` (`tmp/umbrella/fix/regen8/`):
+Final HEAD: the commit of this ledger on `docs/storage-cost-calculator` (base `cas-gc-rebuild` at `78133cca87d`, 436 commits),
+nothing pushed, no pull request. Outputs commit `bb23d95775d` (round 9). Verification on a clean `git archive` export of
+`50a741b9941` (`tmp/umbrella/fix/regen9/`):
 `generate_contract.py generate`, `sweeps.mjs`, `generate_contract.py check --mode final` and `closure_check.py --mode final`
-exit 0; `node --test` 293/293 without `SCC_DEV`; tools suite 152/152; rig suite 568/568 on a full export of the same commit
-(`tmp/umbrella/fix/rig8/rig-suite.log`). The committed outputs of `a3fdd384e7b` are byte-identical to that export. Page:
-`utils/storage-cost-calculator/index.html` (private draft at https://claude.ai/artifact/XAuWcfLFtPGHvkwciMAkgv, v8). Model
+exit 0; `node --test` 291/291 without `SCC_DEV`; tools suite 152/152; rig suite 568/568 on a full export of the same commit
+(`tmp/umbrella/fix/rig9/rig-suite.log`). The committed outputs of `bb23d95775d` are byte-identical to that export. Page:
+`utils/storage-cost-calculator/index.html` (private draft at https://claude.ai/artifact/XAuWcfLFtPGHvkwciMAkgv, v9).
+Tier roles (D38): presets `hot_tier` and `cold_tier` via the registry enum `tier_role`; the summed Tiered block is gone. Model
 doc: `docs/superpowers/cost-model/storage-cost-model.md`. Rig reports added on 2026-10-25:
 `docs/superpowers/reports/2026-10-25-storage-cost-ttl-move/` (TTL move rule, exact on s3/s3plain/cas, CAS follower hash-hit)
 and `docs/superpowers/reports/2026-10-25-storage-cost-cut-cards/` (amplification hold-outs, relink derivation, async flush rule,
 gc-under-load, s3plain multipart copy).
 
 Open for the owner: U-8 (raw artifacts, split and squash), D5 (forecast toggle), preset table counts (D27), the cleanup period
-under load (305 s idle vs 60 s loaded, ≤ +2.5 USD/month on Logs), CAS cross-AZ replica transfer (assumption), the tiered
-scenario's assumptions (D34: 7 hot days, no cold merges, cold GC 3 600 s), the amplification regime for small paced inserts
+under load (305 s idle vs 60 s loaded, ≤ +2.5 USD/month on Logs), CAS cross-AZ replica transfer (assumption), the tier-role
+presets' assumptions (D34/D38: 7 hot days, no cold merges, cold GC 3 600 s, whether a hot + cold sum is wanted), the amplification regime for small paced inserts
 (D36: rule understates 1.8–2.0×, two hold-outs failed, `merge_effective_fan_in` verified only at 50 000–100 000 rows per
 insert), the GC budget inputs and backlog wording (D37), Tier 2 minors 10/11/15–18/22/23/25/29. Not measured (no card):
 detach-attach, replacement, fault fetch, cache eviction, gc-scale mounts/ref-log growth, gc-under-load with a 10 s part lifetime.
@@ -404,3 +406,11 @@ detach-attach, replacement, fault fetch, cache eviction, gc-scale mounts/ref-log
 | 2026-10-25 17:47 CET | rig-cut 3e653ddd553: peak bound note limited to the measured merge sizes (largest merge = `ebs_largest_merge_bytes` = part bytes uncompressed × merge_size_ratio capped by the pool setting; 0.57 MiB/s per uncompressed byte, measured 0.551–0.570; verified range 15.9–42.1 MB, outside it disclosed as extrapolated and throughput-bound). d06ad75fcd2: the 8/s hold-out of the constant chain law FAILED (9.228 vs 8.258–8.816; amplification climbs ~0.45 per threefold growth of the largest part) → rule kept, label notes the measured 1.8–2.0× for paced 1 000-row inserts. All lanes closed; rig lock free; no more runs. regen8 started on 3e653ddd553. | regen8 → v8 → LEDGER → report |
 | 2026-10-25 17:57 CET | Watchdog: no codex/rig/server; all lanes closed; regen8 on 3e653ddd553 at "generate1=0 sweeps=0 generate2=0 check_final=0 closure_final=0 "; rig suite 568 OK on a full export of the same HEAD (tmp/umbrella/fix/rig8/rig-suite.log). | regen8 → commit outputs → v8 → LEDGER → report |
 | 2026-10-25 18:16 CET | regen8 on 3e653ddd553 all green (generate/sweeps/check-final/closure-final 0; Node 293/293; tools 152/152; rig 568/568) → outputs committed a3fdd384e7b (round 8); artifact v8 published from the same export. Totals unchanged from round 6 (Logs same_az: EBS 3 120.00, s3 3 689.81, s3plain 6 803.81, CAS 2 847.13; Logs tiered: s3 1 268.06, s3plain 1 280.39, CAS 1 008.30). Hand-off rewritten for the final HEAD. Final owner report next. | report → owner |
+| 2026-10-25 18:27 CET | Watchdog: DELIVERED at 18:20 (final report sent, HEAD eaf303b10b3, artifact v8); no codex/rig/server processes; all lanes closed; tmp/rigcut-wt worktree removed, tmp/src-26.8 kept; awaiting the owner. | owner |
+| 2026-10-25 18:57 CET | Watchdog: idle after delivery (18:20); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 19:27 CET | Watchdog: idle after delivery (18:20); no processes, no agents; awaiting the owner. | owner |
+| D38 | 2026-10-25 19:40 | OWNER 19:35: the Tiered block (hot EBS + cold X summed, only s3/s3plain/cas compared as cold) is not what D34 meant. Intent: two workload presets in the ordinary four-card grid — "Cold tier (fed by TTL moves)": rare large inserts = final-size parts arriving by TTL move, no merges, rare mutations/reads, slow GC, all four variants incl. EBS; "Hot tier (7 days, then TTL to cold)": frequent small inserts and merges, retention 7 d, move-out free on EBS / unmeasured reads on object storage (note). Ruling: remove the summed block, keep the cold-input derivation as a preset mode (`tier_role`), reuse every measured TTL-move rule; lane calc10 (opus); regen9 + v9 + report addendum after. Cost if wrong: one more round if the owner wants the sum back. | calc10 → regen9 → v9 |
+| 2026-10-25 19:57 CET | Watchdog: calc10 (opus, D38) running — editing the calculator (files newer than the brief); no codex/rig/server; HEAD eaf303b10b3. | calc10 → regen9 → v9 → report addendum |
+| 2026-10-25 20:15 CET | calc10 (D38) done: 50a741b9941 — registry enum `tier_role` {single, hot, cold}; `cold` prices every variant (EBS included) with the TTL move rule as its Inserts cell on the cold inputs (no merges, cold mutations/reads/GC), `hot` = the workload at `hot_tier_days` with a move-out note (free on local disk; reads of the part on object storage, not measured); the summed Tiered block, `logs_tiered` and tiered.test.js removed; new tier_roles.test.js (12). Logs cold tier (23 d, GC 3 600 s): EBS 2 392.00, s3 540.06, s3plain 552.39, CAS 280.30; hot tier (7 d): EBS 728.00, s3 3 160.74, s3plain 6 274.67, CAS 2 582.52. Node 290/291, tools 152, check dev ok. regen9 + rig suite started on 50a741b9941. | regen9 → v9 → report addendum |
+| 2026-10-25 20:27 CET | Watchdog: calc10 closed (50a741b9941); regen9 on it at "generate1=0 sweeps=0 generate2=0 check_final=0 "; rig suite 568 OK on a full export (tmp/umbrella/fix/rig9); no codex/rig/server; no agents. | regen9 → commit → v9 → report addendum |
+| 2026-10-25 20:40 CET | regen9 on 50a741b9941 all green (generate/sweeps/check-final/closure-final 0; Node 291/291; tools 152/152; rig 568/568) → outputs committed bb23d95775d (round 9); artifact v9 published. Hand-off updated. Report addendum (D38 tier roles, D36/D37 rows) next. | report → owner |
