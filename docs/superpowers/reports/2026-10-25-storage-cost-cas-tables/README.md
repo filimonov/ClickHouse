@@ -13,7 +13,7 @@ A GC fold round and a server start each cost a fixed amount per table on the CAS
 cells of `docs/superpowers/reports/2026-10-24-storage-cost-cas/formulas.json` price neither. Per table, a fold reads
 **12 GETs** beyond the table's tail records. A start costs **GET 14 (3 of them 404), PUT 2 and LIST 5**. Deferred
 rounds and the cleanup listing do not depend on the table count. Fitted at 1, 4 and 16 tables with residual 0;
-hold-out at 8 tables: §[Hold-out](#holdout).
+the fit held exactly at 8 tables (§[Hold-out](#holdout)).
 
 - **Run:** `cost-20261025T060213Z`, rig commit `a2004c7dd62`, `rig_dirty` false, RustFS 1.0.0-beta.9 (sha256
   `bf4aca66af21…`), one pass per case, `cas` only.
@@ -74,7 +74,23 @@ Residual 0 for every fold after the first of a process and for every start:
 
 ## Hold-out {#holdout}
 
-`gc-tables.n8` and `startup.cas-tables-8`, predicted from the fit and committed before their run. Pending.
+Run `cost-20261025T070618Z` (start 07:06:18Z), predictions committed in `bd19b0524f1` before it. The run used a
+detached worktree at rig commit `a2004c7dd62` (the rig code is unchanged since), so all eight records share one rig
+commit, binary, source and store. **Every fitted term held exactly at 8 tables.**
+
+| Case | Predicted from the fit | Measured | Deviation |
+|---|---|---|---|
+| `gc-tables.n8`, 12 fold rounds, GET / PUT / LIST / DELETE | 3 290 / 72 / 57 / 18 | 3 290 / 72 / 57 / 18 | 0 |
+| `gc-tables.n8`, 60 Deferred rounds, GET / PUT / LIST | 780 / 120 / 180 | 780 / 120 / 180 | 0 |
+| `gc-tables.n8`, largest per-round residual | 70 (the first fold) | 70 | 0 |
+| `startup.cas-tables-8`, GET / PUT / HEAD / DELETE / LIST | 194 / 25–26 / 6 / 3 / 42 | 194 / 25 / 6 / 3 / 42 | 0 (ok) |
+| `gc-tables.n8`, foreground GET | 680–704 | 760 | +56 |
+
+The `gc-tables.n8` record is `FAILED` on its foreground GET bound only, an insert-side term outside the fit. Every
+`gc-tables` pass has 10 foreground GETs per table in 12 minutes beyond the insert graph (`ref_catalog`, `_ckpt` and
+manifest reads): 10, 40, 80 and 160 at 1, 4, 8 and 16 tables, 2 cleanup runs per table. That is about 5 GETs per
+cleanup run of a table with parts, against 1 on the empty table of `lease.idle-10min`. The `lease` cell prices 1. This
+term is measured, not attributed to source, and not fitted.
 
 ## How to re-run {#rerun}
 

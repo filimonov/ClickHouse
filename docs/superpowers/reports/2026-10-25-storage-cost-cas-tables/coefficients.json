@@ -67,7 +67,7 @@
      "DeleteObject": 0
     }
    },
-   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+   "holdout": "gc-tables.n8 (cost-20261025T070618Z/cas/gc-tables/n8/k1, predicted in bd19b0524f1): every fold and Deferred term exact (fold GET 3290, PUT 72, LIST 57, DELETE 18; Deferred 780/120/180); the record is FAILED on its foreground GET bound only (760 against 680-704), an insert-side term outside this coefficient"
   }
  },
  {
@@ -131,7 +131,7 @@
      "ListObjectsV2": 0
     }
    },
-   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
   }
  },
  {
@@ -188,7 +188,7 @@
      "GetObject": 0
     }
    },
-   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
   }
  },
  {
@@ -249,7 +249,7 @@
      "ListObjectsV2": 0
     }
    },
-   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
   }
  },
  {
@@ -302,7 +302,7 @@
      "GetObject": 0
     }
    },
-   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
   }
  }
 ]
