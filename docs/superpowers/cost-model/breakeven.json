@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "96d9659c4e9e3ae1",
+ "contract_version": "0aba74da6565e52c",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
