@@ -28,6 +28,8 @@ def quantity(qid, kind='input', scope='cluster', **kw):
     q = {'id': qid, 'block': 'simple', 'label': qid, 'kind': kind, 'scope': scope, 'unit': '', 'value_type': 'number',
          'enum': None, 'table': None, 'default': 1, 'rule': None, 'coef': None, 'validity': None,
          'evidence': {'kind': 'assumed', 'ref': 'test', 'version': '1'}, 'hint': None, 'status': 'ok'}
+    if kind == 'derivation':
+        q['basis'] = 'derived'
     q.update(kw)
     return q
 

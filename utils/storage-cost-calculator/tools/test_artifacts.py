@@ -313,6 +313,17 @@ class RegistryTests(ArtifactTestCase):
         self.assert_rejects(artifacts.validate_registry,
                             with_value(r, ("quantities", deriv, "rule"), None), "rule")
 
+    def test_registry_derivation_states_its_basis(self):
+        r = load("registry.json")
+        deriv = next(i for i, q in enumerate(r["quantities"]) if q["kind"] == "derivation")
+        missing = copy.deepcopy(r)
+        del missing["quantities"][deriv]["basis"]
+        self.assert_rejects(artifacts.validate_registry, missing, "basis: required for a derivation")
+        self.assert_rejects(artifacts.validate_registry, with_value(r, ("quantities", deriv, "basis"), "guess"), "basis")
+        other = next(i for i, q in enumerate(r["quantities"]) if q["kind"] != "derivation")
+        self.assert_rejects(artifacts.validate_registry, with_value(r, ("quantities", other, "basis"), "derived"),
+                            "only a derivation has a basis")
+
     def test_registry_presets_name_enum_members_and_registered_quantities(self):
         r = load("registry.json")
         i = next(i for i, q in enumerate(r["quantities"]) if q["id"] == "shape")

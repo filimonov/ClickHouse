@@ -237,9 +237,14 @@
       },
       "hint": null,
       "ui": {
-        "tier": "advanced",
+        "tier": "hidden",
         "name": null,
-        "short": "Table width"
+        "short": "Table width",
+        "nearest": [
+          "narrow",
+          "wide",
+          "types"
+        ]
       },
       "status": "ok",
       "presets": {
@@ -248,21 +253,24 @@
           "streams_per_column": 1,
           "skip_index_files_per_part": 0,
           "projections": 0,
-          "empty_files_per_wide_part": 0
+          "empty_files_per_wide_part": 0,
+          "cas_marks_blob_fraction": 0.6
         },
         "wide": {
           "columns": 40,
           "streams_per_column": 1,
           "skip_index_files_per_part": 0,
           "projections": 0,
-          "empty_files_per_wide_part": 0
+          "empty_files_per_wide_part": 0,
+          "cas_marks_blob_fraction": 0.033333
         },
         "types": {
           "columns": 21,
           "streams_per_column": 3.1904761904761907,
           "skip_index_files_per_part": 1,
           "projections": 1,
-          "empty_files_per_wide_part": 12
+          "empty_files_per_wide_part": 12,
+          "cas_marks_blob_fraction": 0.104478
         }
       }
     },
@@ -477,6 +485,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -553,6 +562,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -638,6 +648,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -744,6 +755,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -803,6 +815,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -843,6 +856,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -1749,6 +1763,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -1790,6 +1805,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -2004,6 +2020,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -2395,6 +2412,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "object_bytes": [
           0,
@@ -2486,6 +2504,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -2741,6 +2760,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -3252,6 +3272,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -3565,6 +3586,7 @@
         ]
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -4687,6 +4709,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -6823,6 +6846,7 @@
         }
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -6875,7 +6899,18 @@
       "ui": {
         "tier": "hidden",
         "name": null,
-        "short": "Merge fan-in bucket"
+        "short": "Merge fan-in bucket",
+        "nearest": [
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7-8",
+          "9-12",
+          "13-20",
+          "21+"
+        ]
       },
       "status": "ok"
     },
@@ -6958,7 +6993,18 @@
       "ui": {
         "tier": "hidden",
         "name": null,
-        "short": "Merge result size bucket"
+        "short": "Merge result size bucket",
+        "nearest": [
+          "2-4",
+          "5-8",
+          "9-16",
+          "17-32",
+          "33-64",
+          "65-128",
+          "129-256",
+          "257-512",
+          "513+"
+        ]
       },
       "status": "ok"
     },
@@ -7299,6 +7345,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -7806,6 +7853,43 @@
       "status": "ok"
     },
     {
+      "id": "cas_marks_blob_fraction",
+      "block": "cas",
+      "label": "Share of a Wide part's mark files that are distinct blobs; equal mark files (streams with equal compressed block sizes) are one upload",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "verified_range": {
+        "cas_marks_blob_fraction": [
+          0.033333,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "assumed",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-validation: generator tables 0.6, 0.033, 0.104; distinct marks reach 1",
+        "version": "0.4.0"
+      },
+      "hint": {
+        "sql": "SELECT uniqExact(remote_path) FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND local_path LIKE '%/<part>/%mrk%'",
+        "mapping": {
+          "cas_marks_blob_fraction": "distinct mark blobs / Wide part streams"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Distinct CAS mark files"
+      },
+      "status": "ok"
+    },
+    {
       "id": "gc_round_term",
       "block": "cas",
       "label": "Term of the GC round request and duration tables",
@@ -8054,40 +8138,192 @@
       "status": "ok"
     },
     {
-      "id": "cas_objects_per_part",
+      "id": "cas_objects_per_compact_part",
       "block": "cas",
-      "label": "Blob files per part (the rest of the part is inline in its manifest)",
-      "kind": "measured",
-      "scope": "pool",
+      "label": "Blob files of a Compact part on CAS: data.bin and one per projection (marks, primary.cidx and the small files are inline)",
+      "kind": "derivation",
+      "scope": "cluster",
       "unit": "count",
-      "value_type": "table",
+      "value_type": "number",
       "enum": null,
-      "table": {
-        "index": [
-          "shape",
-          "part_type"
-        ],
-        "dim": "count"
-      },
+      "table": null,
       "default": null,
-      "rule": null,
-      "coef": "cas_objects_per_part",
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "projections",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "derived",
       "verified_range": {
-        "insert_rows": [
-          100,
-          4000000
+        "projections": [
+          0,
+          1
         ]
       },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:67",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS blobs per Compact part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_objects_per_wide_part",
+      "block": "cas",
+      "label": "Blob files of a Wide part on CAS: a .bin per stream, the distinct mark files, one per projection",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+            "kind": "input",
+            "id": "wide_part_streams",
+            "dim": "count"
+          },
+          "b": {
+            "kind": "add",
+            "dim": "1",
+            "a": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+            },
+            "b": {
+              "kind": "input",
+              "id": "cas_marks_blob_fraction",
+              "dim": "1"
+            }
+          }
+        },
+        "b": {
+          "kind": "input",
+          "id": "projections",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ],
+        "cas_marks_blob_fraction": [
+          0.033333,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:67",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS blobs per Wide part"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cas_objects_per_part",
+      "block": "cas",
+      "label": "Blob files of an inserted part on CAS, by its part type (the rest of the part is inline in its manifest)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "part_type",
+            "dim": "enum:part_type"
+          },
+          "b": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "cas_objects_per_compact_part",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "cas_objects_per_wide_part",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ],
+        "cas_marks_blob_fraction": [
+          0.033333,
+          1
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:67",
+        "version": "26.8@09d0772a842"
       },
       "hint": {
         "sql": "SELECT countIf(remote_path != '') FROM system.remote_data_paths WHERE disk_name = '<cas disk>' AND local_path LIKE '%/<part>/%'",
         "mapping": {
           "cas_objects_per_part": "blob files of one part"
         }
+      },
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "CAS blobs per part"
       },
       "status": "ok"
     },
@@ -8230,6 +8466,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -8284,7 +8521,7 @@
     {
       "id": "cas_blob_uploads_per_part",
       "block": "cas",
-      "label": "Distinct blob uploads of an inserted part (cas_objects_per_part at the shape and part type)",
+      "label": "Distinct blob uploads of an inserted part (cas_objects_per_part)",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
@@ -8293,28 +8530,30 @@
       "table": null,
       "default": null,
       "rule": {
-        "kind": "lookup",
-        "table_id": "cas_objects_per_part",
-        "keys": [
-          {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
-          },
-          {
-            "kind": "input",
-            "id": "part_type",
-            "dim": "enum:part_type"
-          }
-        ],
+        "kind": "input",
+        "id": "cas_objects_per_part",
         "dim": "count"
       },
       "coef": null,
-      "verified_range": null,
+      "basis": "derived",
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ],
+        "cas_marks_blob_fraction": [
+          0.033333,
+          1
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:67",
+        "version": "26.8@09d0772a842"
       },
       "hint": null,
       "status": "ok"
@@ -8331,59 +8570,61 @@
       "table": null,
       "default": null,
       "rule": {
-        "kind": "lookup",
-        "table_id": "cas_objects_per_part",
-        "keys": [
-          {
-            "kind": "input",
-            "id": "shape",
-            "dim": "enum:shape"
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "<",
+          "a": {
+            "kind": "mul",
+            "a": {
+              "kind": "coef",
+              "id": "merge_effective_fan_in",
+              "dim": "1"
+            },
+            "b": {
+              "kind": "input",
+              "id": "part_bytes_uncompressed",
+              "dim": "B"
+            },
+            "dim": "B"
           },
-          {
-            "kind": "branch",
-            "dim": "enum:part_type",
-            "cond": {
-              "op": "<",
-              "a": {
-                "kind": "mul",
-                "a": {
-                  "kind": "coef",
-                  "id": "merge_effective_fan_in",
-                  "dim": "1"
-                },
-                "b": {
-                  "kind": "input",
-                  "id": "part_bytes_uncompressed",
-                  "dim": "B"
-                },
-                "dim": "B"
-              },
-              "b": {
-                "kind": "input",
-                "id": "min_bytes_for_wide_part",
-                "dim": "B"
-              }
-            },
-            "then": {
-              "kind": "const",
-              "value": "compact",
-              "dim": "enum:part_type"
-            },
-            "else": {
-              "kind": "const",
-              "value": "wide",
-              "dim": "enum:part_type"
-            }
+          "b": {
+            "kind": "input",
+            "id": "min_bytes_for_wide_part",
+            "dim": "B"
           }
-        ],
-        "dim": "count"
+        },
+        "then": {
+          "kind": "input",
+          "id": "cas_objects_per_compact_part",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "cas_objects_per_wide_part",
+          "dim": "count"
+        }
       },
       "coef": null,
-      "verified_range": null,
+      "basis": "derived",
+      "verified_range": {
+        "columns": [
+          5,
+          40
+        ],
+        "streams_per_column": [
+          1,
+          3.29
+        ],
+        "cas_marks_blob_fraction": [
+          0.033333,
+          1
+        ]
+      },
       "evidence": {
-        "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient cas_objects_per_part",
-        "version": "0.3.0"
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:67",
+        "version": "26.8@09d0772a842"
       },
       "hint": null,
       "status": "ok"
@@ -8412,6 +8653,7 @@
         "dim": "1"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8445,6 +8687,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8478,6 +8721,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8511,6 +8755,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8544,6 +8789,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8577,6 +8823,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8610,6 +8857,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8643,6 +8891,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8676,6 +8925,7 @@
         "dim": "ms"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -8709,6 +8959,7 @@
         "dim": "ms"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -9734,6 +9985,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -9765,6 +10017,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -9805,6 +10058,7 @@
         }
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -9846,6 +10100,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -9896,6 +10151,7 @@
         }
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -9945,6 +10201,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -10018,6 +10275,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": {
         "merge_size_ratio": [
           18.21,
@@ -10063,6 +10321,7 @@
         }
       },
       "coef": null,
+      "basis": "fitted",
       "verified_range": null,
       "evidence": {
         "kind": "measured",
@@ -10094,6 +10353,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10135,6 +10395,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10212,6 +10473,7 @@
         "on_zero": "unavailable"
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10284,6 +10546,7 @@
         }
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10324,6 +10587,7 @@
         }
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10364,6 +10628,7 @@
         }
       },
       "coef": null,
+      "basis": "assumed",
       "verified_range": null,
       "evidence": {
         "kind": "assumed",
@@ -10439,6 +10704,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -10722,6 +10988,7 @@
         "dim": "count"
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -10776,6 +11043,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -11047,6 +11315,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -11324,6 +11593,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -11391,6 +11661,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -11529,6 +11800,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -11749,6 +12021,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": null,
       "evidence": {
         "kind": "source",
@@ -11844,6 +12117,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -12066,6 +12340,7 @@
         }
       },
       "coef": null,
+      "basis": "derived",
       "verified_range": {
         "columns": [
           5,
@@ -12505,7 +12780,19 @@
       "ui": {
         "tier": "hidden",
         "name": null,
-        "short": "EBS request size bucket"
+        "short": "EBS request size bucket",
+        "nearest": [
+          "<=4KiB",
+          "8KiB",
+          "16KiB",
+          "32KiB",
+          "64KiB",
+          "128KiB",
+          "256KiB",
+          "512KiB",
+          "1MiB",
+          ">1MiB"
+        ]
       },
       "status": "ok"
     },

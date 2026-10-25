@@ -681,7 +681,10 @@ def validate_registry(d):
         "status": enum("ok", "unsupported"),
         "ui": ui,
         "presets": dict_of(dict_of(either(number, string))),
-    }, {"ui", "presets", "verified_range", "validity"})
+        # A derivation's basis: `derived` (a formula read from source; exact outside its verified range), `fitted`
+        # or `assumed`.
+        "basis": enum("derived", "fitted", "assumed"),
+    }, {"ui", "presets", "verified_range", "validity", "basis"})
     spec = {
         "schema": literal("registry/1"), "version": nonempty_string,
         "quantities": list_of(quantity),
@@ -705,12 +708,17 @@ def validate_registry(d):
         if q["value_type"] == "table" and q["table"] is None:
             problems.append(f"{qp}.table: required when value_type is table")
         if q["kind"] == "derivation":
+            if "basis" not in q:
+                problems.append(f"{qp}.basis: required for a derivation (derived, fitted or assumed)")
             if q["rule"] is None:
                 problems.append(f"{qp}.rule: required for a derivation")
             else:
                 problems += validate_node(q["rule"], f"{qp}.rule", False, table_arities_from_registry(d))
-        elif q["rule"] is not None:
-            problems.append(f"{qp}.rule: only a derivation has a rule")
+        else:
+            if q["rule"] is not None:
+                problems.append(f"{qp}.rule: only a derivation has a rule")
+            if "basis" in q:
+                problems.append(f"{qp}.basis: only a derivation has a basis (a coefficient states its own)")
     # A preset names other quantities' values for one member of an enum (shape = narrow: columns = 5, ...).
     for i, q in enumerate(d["quantities"]):
         for member, values in (q.get("presets") or {}).items():
