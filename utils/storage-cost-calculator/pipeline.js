@@ -357,13 +357,7 @@
     const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set(), nearest };
     // An input outside its own measured range makes every number that reads it extrapolated, unless only formulas
     // from source read it (derivedOutside notes those).
-    const derivedOnly = derivedOnlyInputs(contract);
-    for (const q of contract.registry) {
-      if (derivedOnly.has(q.id)) continue;
-      const r = q.kind === 'input' ? (model().rangeOf(q) || {})[q.id] : null;
-      const x = values.get(q.id);
-      if (r && typeof x === 'number' && (x < r[0] || x > r[1])) ctx.extrapolatedInputs.add(q.id);
-    }
+    for (const o of inputsOutsideRange(contract, values)) ctx.extrapolatedInputs.add(o.id);
     // Registry derivations may read each other; evaluate until no new value appears (they are acyclic, §4.2).
     const pending = contract.registry.filter((x) => x.kind === 'derivation' && x.rule && !values.has(x.id));
     for (let changed = true; changed;) {
@@ -379,6 +373,20 @@
       }
     }
     return ctx;
+  }
+
+  // Registry inputs whose value in `values` lies outside their own measured range, as {id, value, range}. Inputs
+  // that only formulas from source read are exact outside it and stay out.
+  function inputsOutsideRange(contract, values) {
+    const derivedOnly = derivedOnlyInputs(contract);
+    const out = [];
+    for (const q of contract.registry) {
+      if (derivedOnly.has(q.id) || q.kind !== 'input') continue;
+      const r = (model().rangeOf(q) || {})[q.id];
+      const x = values.get(q.id);
+      if (r && typeof x === 'number' && (x < r[0] || x > r[1])) out.push({ id: q.id, value: x, range: r });
+    }
+    return out;
   }
 
   // Derived coefficients and tables a cell reads whose verified range does not hold the current values: exact by
@@ -820,9 +828,21 @@
   };
   // A move writes the part directly, never through the async insert queue.
   const COLD_FIXED = { async_insert: '0' };
-  const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part plus one part load (source rule; s3 measured exact, counted run pending)';
+  const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part plus one part load (measured: move.ttl, each replica moves its own copy)';
   // GETs that load a moved part back from the cold disk, per variant (registry derivations).
   const MOVE_LOAD_GETS = { s3: 'move_load_gets_per_part', s3plain: 'move_load_gets_per_part', cas: 'cas_move_load_gets_per_part' };
+  // What the move rule adds to the cold inserts cell beyond the note above (docs/superpowers/cost-model/storage-cost-model.md, TTL move rule).
+  function moveRuleNotes(v, loadGets) {
+    const gets = typeof loadGets === 'number' ? loadGets : null;
+    const out = [];
+    if (gets !== null) out.push(`part load after a move: ${gets} GET per part (${v === 'cas' ? 'manifest and first marks blob' : 'part files and ttl.txt'})`);
+    if (v === 's3plain') out.push('once per table, not priced: the moving/ container costs 1 PUT and 1 HEAD');
+    if (v === 'cas') {
+      out.push('once per table, not priced: the first move into a table costs 3 PUT and 13 GET');
+      out.push('the CAS publish runs on every replica (cas_hash_hit_fraction 0): an upper bound, identical blobs may hit by hash');
+    }
+    return out;
+  }
   const COLD_MERGE_NOTE = 'no merges in the cold tier: moved parts are final-sized, so the merge selector gains nothing (assumption)';
   const COLD_MERGE_IGNORED_NOTE = 'this cell does not read merge_size_ratio: it prices merges as if parts kept merging, more than the cold tier runs';
 
@@ -909,7 +929,9 @@
     }
     for (const v of cold_variants) {
       const cells = (cold.variants[v] || {}).cells || {};
-      if (cells.inserts) cells.inserts.notes.push({ text: TTL_MOVE_NOTE, value: null, state: 'ok', assumption: true });
+      if (cells.inserts) {
+        for (const text of [TTL_MOVE_NOTE, ...moveRuleNotes(v, all.get(MOVE_LOAD_GETS[v]))]) cells.inserts.notes.push({ text, value: null, state: 'ok', assumption: true });
+      }
       if (cells.merges) {
         const ratio = reaches(contract, ((contract.formulas[v] || {}).merges || {}).ledger_rows, 'merge_size_ratio');
         cells.merges.notes.push({ text: ratio ? COLD_MERGE_NOTE : COLD_MERGE_IGNORED_NOTE, value: null, state: 'ok', assumption: true });
@@ -941,7 +963,7 @@
     return {
       hot_days: hotDays, cold_days: all.has('cold_retention_days') ? all.get('cold_retention_days') : null,
       hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems, move_dropped_rows: move,
-      hot_inputs: hotInputs, cold_inputs: coldInputs,
+      hot_inputs: hotInputs, cold_inputs: coldInputs, cold_outside_range: inputsOutsideRange(contract, coldInputs),
     };
   }
 

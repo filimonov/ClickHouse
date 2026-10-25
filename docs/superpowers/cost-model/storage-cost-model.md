@@ -230,9 +230,10 @@ two data sizes add up to the single-tier `data_bytes`.
 
 A move costs the insert write of the part on the cold disk plus one load of the moved part. The source part on local
 disk costs no object request. Without zero-copy replication every replica moves its own copy and fetches nothing.
-Source: `docs/superpowers/reports/2026-10-25-storage-cost-ttl-move/README.md`, a source rule at `6cc255b6593`. The
-`s3` smoke run matched it exactly; the counted run is pending. The cold inserts cell is the variant's inserts
-cell, changed in three ways:
+Source: `docs/superpowers/reports/2026-10-25-storage-cost-ttl-move/README.md`. The counted run (`4baf61f997b`)
+matched the rule exactly on `s3` and `s3plain`, and the CAS per-part publish matched. With two replicas on `s3`,
+each replica moved its own copy: no `DownloadPart`, 0 interserver bytes. The cold inserts cell is the variant's
+inserts cell, changed in three ways:
 
 - **No fetch.** Rows a follower's fetch prices are dropped: the `replicas − 1` GETs on `s3` and `s3plain`, and the
   interserver transfer on all three.
@@ -242,9 +243,10 @@ cell, changed in three ways:
   `cas_move_load_gets_per_part` = 1 manifest + 1 marks blob for a Wide part on `cas`.
 
 On `s3plain` the insert cell already prices the directory create (PUT, HEAD) and the rename PUT per part. The
-`moving/` container costs one PUT and one HEAD per table, once, so no monthly cost is priced for it.
-The cold inserts cell carries the note "TTL move priced as the write of the moved part plus one part load (source
-rule; s3 measured exact, counted run pending)".
+`moving/` container costs one PUT and one HEAD per table, once. On CAS the first move into a table costs PUT 3 and
+GET 13 once (`ttl_move_table_once_requests`). Neither is a monthly cost, so neither is priced.
+The cold inserts cell carries the note "TTL move priced as the write of the moved part plus one part load
+(measured: move.ttl, each replica moves its own copy)".
 
 ### Assumptions {#tiered-assumptions}
 
@@ -257,7 +259,8 @@ rule; s3 measured exact, counted run pending)".
   `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. In the cold tier
   that is $1.27 a month on Logs, more than the tier runs; its cell note says so.
 - **Every blob uploads on every replica.** The `cas` publish is multiplied by `replicas` with
-  `cas_hash_hit_fraction` 0. If the second replica's identical blobs hit by hash, the cold intake is lower.
+  `cas_hash_hit_fraction` 0, an upper bound: the two-replica run was on `s3` only. If the second replica's
+  identical blobs hit by hash, the cold intake is lower.
 - **One moved part per cold mutation.** A mutation over N cold parts is N mutations here.
 
 The cold columns are `extrapolated`; the hot `ebs` run is not. On Logs a moved part has 25.6 million rows, above

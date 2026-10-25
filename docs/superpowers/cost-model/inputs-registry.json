@@ -3427,7 +3427,7 @@
     {
       "id": "inserts_per_async_flush",
       "block": "inserts",
-      "label": "Async inserts sharing one flush, an estimate for evenly spaced arrivals: the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / entry bytes) entries (decoded bytes for native, raw for inline), at most one per waiting client, at most async_insert_max_query_number with deduplication on (the default). Bursts share more, a shorter adaptive timeout less.",
+      "label": "Async inserts sharing one flush, an estimate for evenly spaced arrivals: 1 when arrivals are further apart than async_insert_busy_timeout_min_ms (the adaptive timeout then stays at its minimum); otherwise the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / entry bytes) entries (decoded bytes for native, raw for inline), at most one per waiting client (an upper bound: 4 waiting clients shared 2.8-3.6), at most async_insert_max_query_number with deduplication on (the default). Bursts share more.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -3449,17 +3449,10 @@
             "dim": "1",
             "args": [
               {
-                "kind": "add",
+                "kind": "branch",
                 "dim": "1",
-                "a": {
-                  "kind": "const",
-                  "value": 1,
-                  "dim": "1"
-                },
-                "b": {
-                  "kind": "div",
-                  "dim": "1",
-                  "on_zero": "unavailable",
+                "cond": {
+                  "op": "<",
                   "a": {
                     "kind": "mul",
                     "dim": "ms/s",
@@ -3470,7 +3463,7 @@
                     },
                     "b": {
                       "kind": "input",
-                      "id": "async_insert_busy_timeout_max_ms",
+                      "id": "async_insert_busy_timeout_min_ms",
                       "dim": "ms"
                     }
                   },
@@ -3478,6 +3471,44 @@
                     "kind": "const",
                     "value": 1000,
                     "dim": "ms/s"
+                  }
+                },
+                "then": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                },
+                "else": {
+                  "kind": "add",
+                  "dim": "1",
+                  "a": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "div",
+                    "dim": "1",
+                    "on_zero": "unavailable",
+                    "a": {
+                      "kind": "mul",
+                      "dim": "ms/s",
+                      "a": {
+                        "kind": "input",
+                        "id": "insert_rate",
+                        "dim": "1/s"
+                      },
+                      "b": {
+                        "kind": "input",
+                        "id": "async_insert_busy_timeout_max_ms",
+                        "dim": "ms"
+                      }
+                    },
+                    "b": {
+                      "kind": "const",
+                      "value": 1000,
+                      "dim": "ms/s"
+                    }
                   }
                 }
               },
@@ -3587,10 +3618,15 @@
       },
       "coef": null,
       "basis": "assumed",
-      "verified_range": null,
+      "verified_range": {
+        "insert_rate": [
+          0.01,
+          50
+        ]
+      },
       "evidence": {
-        "kind": "assumed",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle#parts-per-insert",
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#async-revised",
         "version": "0.2.0"
       },
       "hint": {
@@ -8866,8 +8902,8 @@
       "basis": "derived",
       "verified_range": null,
       "evidence": {
-        "kind": "source",
-        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (source rule 6cc255b6593; s3 smoke exact, counted run pending): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; ttl.txt: tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:2493",
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (verdict 4baf61f997b: move.ttl matched the rule): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; ttl.txt: tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp:2493",
         "version": "0.3.0"
       },
       "hint": null,
@@ -8924,8 +8960,8 @@
       "basis": "derived",
       "verified_range": null,
       "evidence": {
-        "kind": "source",
-        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (source rule 6cc255b6593; s3 smoke exact, counted run pending): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; manifest GET: tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.cpp:56",
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move (verdict 4baf61f997b: move.ttl matched the rule): tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:299; manifest GET: tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.cpp:56",
         "version": "0.3.0"
       },
       "hint": null,
