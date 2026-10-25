@@ -1591,5 +1591,79 @@ Form placement. `workload` and `setting` inputs make up the default form (at mos
 ## Break-even {#break-even}
 
 <!-- breakeven:begin -->
-Stale: swept on contract version `cec0d93fed922f4b`, not `1a6bda08513f5069`. Run `tools/sweeps.mjs`.
+Generated from `breakeven.json` (`tools/sweeps.mjs`), swept on contract version `1a6bda08513f5069` with price preset `aws-us-east-1`. Do not edit.
+
+A crossing is a sign change of the difference of two totals between consecutive ladder values, so the break-even lies inside the interval, not at a point. A variant that is not `ok` at a value has no total there and no crossing is drawn through it.
+
+Ladders: ×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point.
+
+### Scenario `logs` {#breakeven-logs}
+
+Logs.
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 3,750, 7,500, 15,000, 30,000, 60,000, 120,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 15,000 and 30,000; `ebs` / `s3plain` between 30,000 and 60,000; `ebs` / `cas` between 7,500 and 15,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 500 and 1,000; `ebs` / `s3plain` between 1,000 and 2,000; `ebs` / `cas` between 250 and 500 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 1 and 2; `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+
+### Scenario `hot_tier` {#breakeven-hot-tier}
+
+Hot tier (7 days, then TTL to cold).
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 875, 1,750, 3,500, 7,000, 14,000, 28,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 14,000 and 28,000; `ebs` / `cas` between 7,000 and 14,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 2,000 and 4,000; `ebs` / `cas` between 1,000 and 2,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+
+### Scenario `cold_tier` {#breakeven-cold-tier}
+
+Cold tier (fed by TTL moves).
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 3,750, 7,500, 15,000, 30,000, 60,000, 120,000 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `s3` / `cas` between 1 and 2 (extrapolated); `s3plain` / `cas` between 1 and 2 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+
+### Scenario `metrics` {#breakeven-metrics}
+
+Metrics.
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 450, 900, 1,800, 3,600, 7,200, 14,400 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 7,200 and 14,400 (extrapolated); `ebs` / `cas` between 3,600 and 7,200 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `ingest_rate` | 5, 10, 20, 40, 80, 160 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 80 and 160 (extrapolated); `ebs` / `cas` between 40 and 80 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 4 and 6 (extrapolated); `s3` / `cas` between 1 and 2 (extrapolated) | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+
+### Scenario `analytics_batch` {#breakeven-analytics-batch}
+
+Analytics batch.
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 2,560, 5,120, 10,240, 20,480, 40,960, 81,920 | `ebs`, `s3`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
+| `ingest_rate` | 7.0137, 14.0274, 28.0548, 56.1096, 112.219, 224.438 | `ebs`, `s3`, `cas` | none | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `cas` | `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: not_supported; `cas`: ok |
+
+### Scenario `single_replica_archive` {#breakeven-single-replica-archive}
+
+Single replica archive.
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 12,800, 25,600, 51,200, 102,400, 204,800, 409,600 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok / unavailable; `s3`: ok / unavailable; `s3plain`: ok / unavailable; `cas`: ok / unavailable |
+| `ingest_rate` | 17.5342, 35.0685, 70.137, 140.274, 280.548, 561.096 | `ebs`, `s3`, `s3plain`, `cas` | none | `ebs`: ok / unavailable; `s3`: ok / unavailable; `s3plain`: ok / unavailable; `cas`: ok / unavailable |
+| `replicas` | 1, 2, 4, 6 | `ebs`, `s3`, `s3plain`, `cas` | `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+
+### Scenario `custom` {#breakeven-custom}
+
+Custom.
+
+| Input | Values | Variants compared | Crossing | States |
+|---|---|---|---|---|
+| `data_bytes` | 5,000, 10,000, 20,000, 40,000, 80,000, 160,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 10,000 and 20,000; `ebs` / `s3plain` between 20,000 and 40,000; `ebs` / `cas` between 5,000 and 10,000 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `ingest_rate` | 125, 250, 500, 1,000, 2,000, 4,000 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `s3` between 250 and 500; `ebs` / `s3plain` between 500 and 1,000; `ebs` / `cas` between 125 and 250 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
+| `replicas` | 1, 2, 3, 6 | `ebs`, `s3`, `s3plain`, `cas` | `ebs` / `cas` between 1 and 2; `s3` / `cas` between 1 and 2 | `ebs`: ok; `s3`: ok; `s3plain`: ok; `cas`: ok |
 <!-- breakeven:end -->
