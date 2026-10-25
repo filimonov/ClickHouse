@@ -358,9 +358,9 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
   .panel-inputs .quick { flex-wrap: nowrap; }
   .panel-inputs .quick .pill-small { white-space: nowrap; padding: 0 6px; font-size: 11px; line-height: 18px; }
 }
-/* Wide screens: each Notes cell is one line; narrower tables let it wrap rather than scroll sideways. The tighter
+/* From 1440 px each Notes cell is one line; narrower tables let it wrap rather than scroll sideways. The tighter
    padding and the 140 px row-label column keep four one-line notes inside the table at 1440 px. */
-@media (min-width: 1400px) {
+@media (min-width: 1440px) {
   .col-note { white-space: nowrap; }
   .notes-row td { padding-left: 2px; padding-right: 2px; }
   .notes-row .info-btn { margin-left: 3px; }

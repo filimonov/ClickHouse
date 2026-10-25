@@ -138,5 +138,7 @@ test('test_one_badge_per_card', () => {
 test('test_notes_row_is_one_line_at_13px', () => {
   // 13 px is the largest size at which four one-line notes fit the table at 1440 px without a sideways scroll.
   assert.match(CSS, /\n\.col-note \{[^}]*font-size: 13px/);
-  assert.match(CSS, /@media \(min-width: 1400px\) \{[^@]*\.col-note \{[^}]*white-space: nowrap/);
+  // One line from 1440 px, the reference width; below it a note may wrap, so the table never scrolls sideways.
+  assert.match(CSS, /@media \(min-width: 1440px\) \{[^@]*\.col-note \{[^}]*white-space: nowrap/);
+  assert.doesNotMatch(CSS, /@media \(min-width: 1400px\) \{[^@]*\.col-note \{[^}]*white-space: nowrap/);
 });
