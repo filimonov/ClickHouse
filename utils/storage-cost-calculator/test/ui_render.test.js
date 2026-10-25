@@ -230,7 +230,7 @@ test('test_inputs_show_labels_fixed_values_and_view_model_ranges', () => {
   assert.ok(parts.inputs.includes('<span class="field-label">Inserts per month</span>'));
   // The measured range of a form field is in its (i) dialog.
   assert.equal(parts.inputs.includes('measured for 0 to 50,000'), false);
-  assert.match(page(base(), { info: { kind: 'input', id: 'inserts_per_month' } }, c).parts.modal, /<th scope="row">Measured range<\/th><td>measured for 0 to 50,000<\/td>/);
+  assert.match(page(base(), { info: { kind: 'input', id: 'inserts_per_month' } }, c).parts.modal, /<th scope="row">Verified range<\/th><td>verified at 0 to 50,000<\/td>/);
   // A one-value range is a fixed value, shown as text without a slider or a box.
   const fixed = parts.inputs.slice(parts.inputs.indexOf('data-field="replacement_rate"'));
   const fixedField = fixed.slice(0, fixed.indexOf('data-field=', 1));

@@ -140,6 +140,6 @@ test('test_extrapolated_cheapest_badge_counts_the_priced_columns', () => {
   const { vm } = page('metrics');
   const best = vm.cards.find((c) => c.cheapest);
   assert.ok(best && best.extrapolated, 'metrics: the cheapest column is extrapolated');
-  assert.equal(best.cheapest_text, 'cheapest of 4 priced, extrapolated');
+  assert.equal(best.cheapest_text, 'cheapest of 4, extrapolated');
   assert.equal(vm.table.columns.find((c) => c.cheapest).cheapest_text, best.cheapest_text);
 });

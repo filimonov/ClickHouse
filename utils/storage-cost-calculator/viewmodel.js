@@ -13,7 +13,7 @@
   const OPERATION_LABELS = {
     storage: 'Storage', inserts: 'Inserts', merges: 'Merges', mutations: 'Mutations', deletes: 'Deletes',
     reads: 'Reads', recovery: 'Recovery', replacement: 'Replica replacement', local_disk: 'Local disk',
-    gc: 'Garbage collection', lease: 'Mount lease',
+    gc: 'Garbage collection', lease: 'Mount lease', transfer: 'Replica transfer',
   };
   // Advanced block order follows spec §4.2; `simple` is always visible.
   const BLOCKS = [
@@ -229,7 +229,8 @@
   const isCellNote = (n) => n.kind === 'cell' || n.kind === 'text';
 
   // A cell is extrapolated when the pipeline says so (a fitted or assumed coefficient outside its range, a substituted
-  // lookup key) or when it prices money with a coefficient whose basis is `assumed`.
+  // lookup key) or when one of its rows reads a coefficient whose basis is `assumed` and moves a non-zero quantity:
+  // the rule pipeline.js uses for the assumption note, so the badge and the note agree.
   function assumedCoefs(contract) {
     return new Set(contract.coefficients.filter((c) => model().basisOf(c) === 'assumed').map((c) => c.id));
   }
@@ -238,25 +239,52 @@
     if ((node.kind === 'coef' && ids.has(node.id)) || (node.kind === 'lookup' && ids.has(node.table_id))) return true;
     return Object.values(node).some((v) => (Array.isArray(v) ? v.some((x) => readsAny(x, ids)) : v && typeof v === 'object' && readsAny(v, ids)));
   }
-  function cellExtrapolated(contract, v, op, c, assumed) {
+  const isTransferRow = (r) => r.row_type === 'transfer';
+  // Assumed coefficients that rows of a cell price with. `part`: 'transfer' rows, 'other' rows or 'all'.
+  function assumedUsed(contract, v, op, c, assumed, part) {
+    const f = (contract.formulas[v] || {})[op];
+    if (!f || !c || !c.rows || !assumed.size) return [];
+    const out = new Set();
+    f.ledger_rows.forEach((fr, i) => {
+      const r = c.rows[i];
+      if (!r || r.state !== 'ok' || !(r.quantity > 0)) return;
+      if ((part === 'transfer' && !isTransferRow(r)) || (part === 'other' && isTransferRow(r))) return;
+      for (const id of assumed) if (readsAny(fr.expr, new Set([id]))) out.add(id);
+    });
+    return [...out];
+  }
+  // With `split`, the transfer of a cell is shown in the Replica transfer row and is judged there.
+  function cellExtrapolated(contract, v, op, c, assumed, split) {
     if (!c) return false;
     if (c.extrapolated) return true;
-    if (!assumed.size || !(typeof c.money === 'number' && c.money > 0)) return false;
-    const f = (contract.formulas[v] || {})[op];
-    return !!f && f.ledger_rows.some((r) => readsAny(r.expr, assumed));
+    return assumedUsed(contract, v, op, c, assumed, split ? 'other' : 'all').length > 0;
   }
-  function extrapolatedCells(contract, v, vr) {
+  const transferAssumed = (contract, v, vr, assumed) => [...new Set(Object.entries(vr.cells || {}).flatMap(([op, c]) => assumedUsed(contract, v, op, c, assumed, 'transfer')))];
+  // Table cells of a column that carry the extrapolated badge; 'transfer' is the Replica transfer row.
+  function extrapolatedCells(contract, v, vr, split) {
     const assumed = assumedCoefs(contract);
-    return Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed)).map(([op]) => op);
+    const ops = Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed, split)).map(([op]) => op);
+    return split && transferAssumed(contract, v, vr, assumed).length ? [...ops, 'transfer'] : ops;
+  }
+
+  // Money of the transfer lines a cell was allocated (cross-AZ replication); 0 without prices.
+  function transferMoney(c, preset) {
+    return (c && c.lines ? c.lines : []).filter((l) => unitClassOf(l.rule_id, preset) === 'transfer').reduce((s, l) => s + l.money, 0);
+  }
+  // The table shows transfer in its own row when any column pays for it; the cards list it as Transfer already.
+  function transferSplit(result, contract, preset, pageState) {
+    if (pageState !== 'ok' || !preset) return false;
+    return contract.variants.some((v) => result.variants[v] && result.variants[v].state === 'ok'
+      && Object.values(result.variants[v].cells || {}).some((c) => transferMoney(c, preset) > 0));
   }
 
   // The cheapest badge needs two priced columns to compare; an extrapolated winner says so.
-  function cheapestOf(result, contract) {
+  function cheapestOf(result, contract, split) {
     const priced = Object.keys(result.variants).filter((v) => result.variants[v].state === 'ok' && typeof result.variants[v].total === 'number');
     const v = result.cheapest;
     if (!v || priced.length < 2) return { variant: null, text: null, priced: priced.length };
-    const ex = result.variants[v].extrapolated || (contract && extrapolatedCells(contract, v, result.variants[v]).length > 0);
-    return { variant: v, text: `cheapest of ${priced.length} priced${ex ? ', extrapolated' : ''}`, priced: priced.length };
+    const ex = result.variants[v].extrapolated || (contract && extrapolatedCells(contract, v, result.variants[v], split).length > 0);
+    return { variant: v, text: `cheapest of ${priced.length}${ex ? ', extrapolated' : ''}`, priced: priced.length };
   }
 
   function barSegments(vr, preset) {
@@ -282,14 +310,14 @@
     return out;
   }
 
-  function buildCards(result, contract, preset, pageState, inputs) {
-    const best = cheapestOf(result, contract);
+  function buildCards(result, contract, preset, pageState, inputs, split) {
+    const best = cheapestOf(result, contract, split);
     return contract.variants.map((v) => {
       const vr = result.variants[v];
       if (!vr) throw new Error(`result has no variant ${v}`);
       if (result.cheapest === v && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
       const cheapest = best.variant === v && pageState === 'ok';
-      const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr) : [];
+      const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr, split) : [];
       const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated || exCells.length > 0,
         extrapolated_cells: exCells.length, extrapolated_text: exCells.length ? `extrapolated: ${exCells.length} ${exCells.length === 1 ? 'cell' : 'cells'}` : vr.extrapolated ? 'extrapolated' : null, cheapest,
         cheapest_text: cheapest ? best.text : null, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
@@ -348,7 +376,7 @@
   // AWS prices storage per GB; no AWS page says whether that GB is 10^9 or 2^30 bytes.
   const GIB_NOTE = 'GB = binary GiB (assumption, no AWS statement found)';
 
-  function buildTable(result, contract, preset, pageState, problems, fields) {
+  function buildTable(result, contract, preset, pageState, problems, fields, split) {
     const rows = [];
     const assumed = assumedCoefs(contract);
     for (const op of contract.operations) {
@@ -364,8 +392,10 @@
             : { variant: v, operation: op, text: 'not applicable', state: 'not_applicable', extrapolated: false, clickable: false };
         }
         if (vr.state !== 'ok') return { variant: v, operation: op, text: cellText(vr.state), state: vr.state, extrapolated: !!c.extrapolated, clickable: false };
-        const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(c.money, preset.currency);
-        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed), clickable: true, money: c.money };
+        // Under `split` the cell shows its money without the transfer, which the Replica transfer row carries.
+        const own = split ? c.lines.filter((l) => unitClassOf(l.rule_id, preset) !== 'transfer').reduce((s, l) => s + l.money, 0) : c.money;
+        const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(own, preset.currency);
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed, split), clickable: true, money: own };
       });
       // "no cold reads in this workload" applies to the whole row: said once, beside the row label.
       const zero = pageState === 'ok' && cells.some((c) => c.state === 'ok' && c.money === 0);
@@ -376,7 +406,16 @@
       }
       rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: zero ? zeroHint(op, fields) : null });
     }
-    const best = cheapestOf(result, contract);
+    if (split) {
+      const cells = contract.variants.map((v) => {
+        const vr = result.variants[v];
+        if (vr.state !== 'ok') return { variant: v, operation: 'transfer', text: cellText(vr.state), state: vr.state, extrapolated: false, clickable: false, info: false, notes: [] };
+        const m = Object.values(vr.cells || {}).reduce((s, c) => s + transferMoney(c, preset), 0);
+        return { variant: v, operation: 'transfer', text: fmtMoney(m, preset.currency), state: 'ok', extrapolated: transferAssumed(contract, v, vr, assumed).length > 0, clickable: false, info: true, notes: [] };
+      });
+      rows.push({ operation: 'transfer', label: OPERATION_LABELS.transfer, cells, note: null });
+    }
+    const best = cheapestOf(result, contract, split);
     return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows,
       column_notes: pageState === 'cannot_reproduce' ? {} : columnNotes(result, contract, preset, fields, pageState),
       column_lines: pageState === 'cannot_reproduce' ? {} : columnLines(result, contract, preset, fields, pageState) };
@@ -811,33 +850,152 @@
     return typeof q.default === 'number' ? fmtQuantity(q.default, q.unit) : String(q.default);
   }
 
+  // One plain sentence for inputs whose registry label is only their short name: the dialog never repeats its title.
+  const FIELD_SENTENCES = {
+    data_bytes: 'Compressed size of the table on disk, counted once: replicas are not added.',
+    ingest_rate: 'Compressed bytes the table receives per day.',
+    retention_days: 'How long data is kept before it is dropped.',
+    replicas: 'Servers per shard that hold and serve the same data.',
+    shards: 'Number of shards the data is split across.',
+    insert_rows: 'Rows in one INSERT query.',
+    cache_enabled: 'Whether each replica keeps a filesystem cache on its local disk.',
+  };
+  function describe(q, title) {
+    if (FIELD_SENTENCES[q.id]) return FIELD_SENTENCES[q.id];
+    return q.label && q.label.toLowerCase() !== String(title).toLowerCase() ? q.label : null;
+  }
+
+  // Plain sentences for coefficients whose basis is `assumed`; the contract states the assumption in engineering terms.
+  // A sentence that no longer matches its numbers returns null, and the dialog reports the gap.
+  const shareWords = (x) => (Math.abs(x - 1 / 3) < 0.02 ? 'a third' : Math.abs(x - 0.5) < 0.02 ? 'half' : `${Math.round(x * 100)}%`);
+  const ASSUMPTIONS = {
+    cas_relink_bytes_per_part: (c) => {
+      const h = c.fit && c.fit.holdout ? c.fit.holdout['replication-fetch.insert-1k'] : undefined;
+      if (typeof c.value !== 'number' || typeof h !== 'number' || !(h < 0)) return null;
+      return `Each fetched part sends about ${fmtQuantity(Math.round(c.value / 1000))} KB of manifest data regardless of its size. `
+        + `Parts of 1,000 rows sent ${shareWords(-h)} less, so this is an upper bound.`;
+    },
+  };
+  function assumptionSentence(c) {
+    const f = ASSUMPTIONS[c.id];
+    return f ? f(c) : null;
+  }
+
+  // Registry words for a parameter or coefficient id: its short name, else its label without a trailing id.
+  function nameOf(contract, id) {
+    const q = contract.registry.find((x) => x.id === id) || contract.registry.find((x) => x.coef === id);
+    if (!q) return id;
+    if (q.ui && q.ui.short) return q.ui.short;
+    return q.label ? q.label.split(': ')[0].replace(/\s*\([^()]*_[^()]*\)\s*$/, '') : id;
+  }
+
+  // "rows per insert 100,000 to 300,000" for each parameter of a range map.
+  function rangesText(contract, ranges) {
+    return Object.entries(ranges).map(([p, r]) => {
+      const q = contract.registry.find((x) => x.id === p);
+      const span = r[0] === r[1] ? `${fmtQuantity(r[0], q && q.unit)} only` : `${fmtQuantity(r[0])} to ${fmtQuantity(r[1], q && q.unit)}`;
+      return `${nameOf(contract, p).toLowerCase()} ${span}`;
+    }).join('; ');
+  }
+
+  // Where the measurements checked a value. A formula from source holds outside it; a fitted value is extrapolated there.
+  function verifiedText(contract, q, c, f) {
+    let span = null;
+    if (c && model().rangeOf(c)) span = rangesText(contract, model().rangeOf(c));
+    else if (f && f.display_range) {
+      const [lo, hi] = f.display_range;
+      span = lo === hi ? `${fmtQuantity(lo, f.display_unit)} only` : `${fmtQuantity(lo)} to ${fmtQuantity(hi, f.display_unit)}`;
+    } else if (f && f.validity) span = rangesText(contract, f.validity);
+    if (!span) return 'no verified range';
+    const basis = c ? model().basisOf(c) : q && q.kind === 'derivation' ? 'derived' : null;
+    if (basis === 'derived') return `formula from source; verified at ${span}`;
+    if (basis === 'assumed') return `assumed; checked at ${span}`;
+    if (basis === 'fitted') return `fitted at ${span}; extrapolated outside`;
+    return `verified at ${span}`;
+  }
+
+  // The active preset's value of an input (a derived member resolved as the preset resolves it); null without one.
+  function presetValue(contract, scenario, q) {
+    const s = scenario ? presets().SCENARIOS[scenario] : null;
+    if (!s || q.kind !== 'input') return null;
+    const f = pipeline().resolveInputs(contract, s.values, s.locks, {}).fields[q.id];
+    return f && f.value !== null && f.value !== undefined ? { value: f.value, label: s.label } : null;
+  }
+
+  function defaultLine(contract, q, ev, commit, scenario) {
+    const where = ev.kind === 'source' ? `ClickHouse default, ${cite(ev.ref, commit)}` : ev.kind === 'assumed' ? 'assumed' : cite(ev.ref, commit);
+    const p = presetValue(contract, scenario, q);
+    // A measured or derived quantity has no default to show; the Current value row says what it is.
+    if (!p && q.kind !== 'input' && (q.default === null || q.default === undefined)) return null;
+    if (!p) return `${defaultText(q)} (${where})`;
+    const shown = typeof p.value === 'number' ? fmtQuantity(p.value, q.unit) : String(p.value);
+    if (String(p.value) === String(q.default)) return `${shown} (${p.label} preset${ev.kind === 'source' ? `; the ClickHouse default, ${cite(ev.ref, commit)}` : ''})`;
+    return `${shown} (${p.label} preset); ${defaultText(q)} without a preset (${where})`;
+  }
+
+  // An engineering note in words: a bare id becomes its registry name.
+  function sourceNote(contract, n) {
+    if (/^[a-z0-9_]+$/.test(n.text)) return typeof n.value === 'number' ? `${nameOf(contract, n.text)} = ${fmtQuantity(n.value)}` : nameOf(contract, n.text);
+    return noteText(n);
+  }
+
+  // The assumption of one coefficient: a plain line and its source.
+  function assumptionLines(contract, id, problems) {
+    const c = contract.coefficients.find((x) => x.id === id);
+    const s = c ? assumptionSentence(c) : null;
+    if (!s) problems.push(`assumed coefficient ${id} has no plain sentence in viewmodel.js`);
+    const res = c && c.fit && c.fit.residuals ? Object.values(c.fit.residuals).filter((x) => typeof x === 'number') : [];
+    const fit = res.length ? `, within ${fmtQuantity(Math.round(Math.max(...res.map(Math.abs)) * 1000) / 10)}%` : '';
+    const report = c && c.evidence && c.evidence.ref ? String(c.evidence.ref).split('/').pop() : null;
+    const range = c && model().rangeOf(c) ? ` at ${rangesText(contract, model().rangeOf(c))}` : '';
+    return { line: s || `${nameOf(contract, id)} is an assumption, not a measurement.`, source: `Assumed from measurements${range}${fit}${report ? `; report ${report}` : ''}.` };
+  }
+
+  // What a cell pays for, in one sentence with its money.
+  function cellSentence(v, op, c, preset, pageState, split, fields) {
+    const what = `${OPERATION_LABELS[op] || op} on ${variantLabel(v)}`;
+    if (pageState !== 'ok' || !c.lines) return `${what}: quantities only; this price list has no prices.`;
+    const paid = c.lines.filter((l) => l.money > 0 && !(split && unitClassOf(l.rule_id, preset) === 'transfer')).sort((a, b) => b.money - a.money);
+    if (!paid.length) {
+      const z = zeroHint(op, fields);
+      return `${what}: nothing to pay${z ? `, ${z}` : ' for this workload'}.`;
+    }
+    const total = fmtMoney(paid.reduce((s, l) => s + l.money, 0), preset.currency);
+    const label = (l) => presets().ruleLabel(l.rule_id, preset).replace(/^Transfer/, 'transfer');
+    if (paid.length === 1) return `${what}: ${total} a month for ${label(paid[0])}.`;
+    return `${what}: ${total} a month, ${joinWords(paid.map((l) => `${fmtMoney(l.money, preset.currency)} for ${label(l)}`))}.`;
+  }
+
   // What the (i) dialog shows. `open` is {kind: 'input', id} (any registry row or coefficient id), {kind: 'cell',
-  // variant, operation} or {kind: 'variant', variant}.
-  function buildInfo(result, contract, inputs, open, problems, preset) {
+  // variant, operation}, {kind: 'transfer', variant} or {kind: 'variant', variant}. `ctx`: {split, scenario, fields}.
+  function buildInfo(result, contract, inputs, open, problems, preset, ctx) {
+    const x = ctx || {};
     const commit = measuredBuild(contract);
     if (open.kind === 'input') {
-      const q = contract.registry.find((x) => x.id === open.id);
-      const c = contract.coefficients.find((x) => x.id === open.id || (q && q.coef === x.id));
+      const q = contract.registry.find((r) => r.id === open.id);
+      const c = contract.coefficients.find((r) => r.id === open.id || (q && q.coef === r.id));
       if (!q && !c) { problems.push(`info: ${open.id} is neither a registry row nor a coefficient`); return null; }
-      const f = q ? inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === q.id) : null;
+      const f = q ? inputs.blocks.flatMap((b) => b.fields).find((r) => r.id === q.id) : null;
       const ui = (q && q.ui) || {};
       const ev = (q && q.evidence) || (c && c.evidence) || {};
       const ids = (c && c.evidence && c.evidence.measurement_ids) || [];
       const evidence = ui.measured_by ? cite(ui.measured_by, commit)
         : [ev.kind ? `${ev.kind}: ${cite(ev.ref, commit)}` : null, ids.length ? `${ids.length} measurement(s)` : null].filter(Boolean).join('; ');
-      const validity = c && model().rangeOf(c) ? Object.entries(model().rangeOf(c)).map(([k, r]) => `${k} from ${fmtQuantity(r[0])} to ${fmtQuantity(r[1])}`).join('; ') : null;
       // A value the user types is an input by definition, and "preset default" or "Default from <file>" repeats
       // the Default row; a dialog for an input shows evidence only when it says more than that.
       const userInput = !!q && q.kind === 'input';
       const generic = userInput && (/^Assumed: (preset default|standard deployment profile|table key)\.$/.test(evidence) || /^Default from /.test(evidence));
+      const title = ui.short || (q && q.label) || open.id;
+      const group = q ? inputs.groups.find((g) => g.members.includes(q.id)) : null;
       return {
-        kind: 'input', id: open.id, title: ui.short || (q && q.label) || open.id, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: userInput ? null : kindText(q, c),
-        description: q ? q.label : `Coefficient of the model (${c.dim})`, measured_by: (!generic && evidence) || null,
-        range_text: (f && f.range_text) || (validity ? `measured for ${validity}` : 'no measured range: the value is used as entered'),
+        kind: 'input', id: open.id, title, name: ui.name || null, tier: f ? f.tier : 'hidden', kind_text: userInput ? null : kindText(q, c),
+        description: q ? describe(q, title) : `Coefficient of the model (${c.dim})`, measured_by: (!generic && evidence) || null,
+        range_text: verifiedText(contract, q, c, f),
         value_text: f ? f.value_text : c && typeof c.value === 'number' ? fmtQuantity(c.value, c.dim) : null,
         derived_text: f && f.derived && f.derived_text ? f.derived_text : null,
-        default_text: q ? `${defaultText(q)} (${ev.kind === 'source' ? `ClickHouse default, ${cite(ev.ref, commit)}` : cite(ev.ref, commit)})` : null,
-        sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null, lines: [],
+        default_text: q ? defaultLine(contract, q, ev, commit, x.scenario) : null,
+        sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null,
+        lines: group ? [`${group.label.charAt(0).toUpperCase()}${group.label.slice(1)}. Lock two; the third is derived.`] : [], source: [],
       };
     }
     if (open.kind === 'evidence') {
@@ -866,14 +1024,52 @@
       return { kind: 'variant', id: open.variant, title: variantLabel(open.variant), name: null, description: cardSentence(open.variant, vr, contract, inputs),
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`) };
     }
+    const assumed = assumedCoefs(contract);
+    const lead = (used, extrapolated) => (vr.state !== 'ok' ? stateText(vr.state) : used.length ? 'Priced from a stated assumption.'
+      : extrapolated ? 'Priced, extrapolated outside the measured range.' : 'Priced from measured coefficients.');
+    const measuredBy = commit ? `Measured on ClickHouse ${commit}.` : null;
+    if (open.kind === 'transfer') {
+      const per = Object.entries(vr.cells || {}).map(([op, c]) => [op, transferMoney(c, preset)]).filter(([, m]) => m > 0);
+      const total = per.reduce((s, [, m]) => s + m, 0);
+      const used = vr.state === 'ok' ? transferAssumed(contract, open.variant, vr, assumed) : [];
+      const lines = ['Replicas in different availability zones send parts to each other; each GB that crosses a zone is billed.'];
+      if (vr.state === 'ok' && preset && !preset.structure_only) {
+        lines.push(per.length ? `${variantLabel(open.variant)} pays ${fmtMoney(total, preset.currency)} a month: ${joinWords(per.map(([op, m]) => `${fmtMoney(m, preset.currency)} from ${opWord(op)}`))}.`
+          : `${variantLabel(open.variant)} sends nothing across zones for this workload.`);
+      }
+      const source = [];
+      for (const id of used) {
+        const a = assumptionLines(contract, id, problems);
+        lines.push(a.line);
+        source.push(a.source);
+      }
+      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, false), measured_by: measuredBy, lines, source };
+    }
     const op = open.operation;
     const cell = vr.cells[op];
-    const lines = segs.filter((s) => s.operation === op).map((s) => cite(s.text, commit));
-    if (cell && cell.rows) for (const r of cell.rows) if (r.trace && r.trace.extrapolated) lines.push(`${rowLabel(r)}: extrapolated outside the measured range`);
-    for (const n of vr.notes || []) if (isCellNote(n) && n.operation === op) lines.push(cite(noteText(n), commit));
+    if (vr.state !== 'ok' || !cell) {
+      return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
+        description: vr.state === 'ok' ? null : stateText(vr.state), measured_by: measuredBy, lines: segs.filter((s) => s.operation === op).map((s) => cite(s.text, commit)), source: [] };
+    }
+    const split = !!x.split;
+    const used = assumedUsed(contract, open.variant, op, cell, assumed, split ? 'other' : 'all');
+    const lines = [cellSentence(open.variant, op, cell, preset, result.page_state, split, x.fields)];
+    const moved = split ? transferMoney(cell, preset) : 0;
+    if (moved > 0) lines.push(`Its replica transfer, ${fmtMoney(moved, preset.currency)}, is in the Replica transfer row.`);
+    const source = [];
+    for (const id of used) {
+      const a = assumptionLines(contract, id, problems);
+      lines.push(a.line);
+      source.push(a.source);
+    }
+    if (cell.extrapolated) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
+    for (const n of vr.notes || []) if (n.kind === 'text' && n.operation === op) lines.push(n.text);
+    for (const s of segs.filter((g) => g.operation === op)) source.push(cite(s.text, commit));
+    for (const r of cell.rows || []) if (r.trace && r.trace.extrapolated) source.push(`${OP_KIND_LABELS[r.op_kind] || r.op_kind}: outside the measured range`);
+    // The assumption is said above in words; its contract sentence names ids and record names.
+    for (const n of cell.notes || []) if (!n.assumption) source.push(cite(sourceNote(contract, n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
-      description: vr.state === 'ok' ? (cell && cell.extrapolated ? 'Priced, extrapolated.' : 'Priced from measured coefficients.') : stateText(vr.state),
-      measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
+      description: lead(used, cell.extrapolated), measured_by: measuredBy, lines, source };
   }
 
   // ---- notes, chart -------------------------------------------------------------------------------
@@ -981,16 +1177,17 @@
     vm.inputs = buildInputs(contract, fields, lockOrder || [], preset, u, pageState, problems);
     vm.notes = buildNotes(result, contract, fields, pageState);
     if (pageState === 'cannot_reproduce') return vm;
-    vm.cards = buildCards(result, contract, preset, pageState, vm.inputs);
-    vm.table = buildTable(result, contract, preset, pageState, problems, fields);
+    const split = transferSplit(result, contract, preset, pageState);
+    vm.cards = buildCards(result, contract, preset, pageState, vm.inputs, split);
+    vm.table = buildTable(result, contract, preset, pageState, problems, fields, split);
     vm.evidence = buildEvidence(contract);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
-    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems, preset);
+    if (u.info) vm.info = buildInfo(result, contract, vm.inputs, u.info, problems, preset, { split, scenario: u.scenario || null, fields });
     // A chart of money has nothing to draw without prices.
     if (pageState === 'ok') vm.chart = buildChart(result, contract, preset, u, problems, fields);
     return vm;
   }
 
-  SCC.viewmodel = { build, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, assumptionSentence, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

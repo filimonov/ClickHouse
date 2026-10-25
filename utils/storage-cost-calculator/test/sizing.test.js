@@ -39,7 +39,8 @@ test('test_cell_notes_are_info_markers_on_their_cell', () => {
   const [op, c] = withNotes[0];
   assert.ok(parts.table.includes(`data-info-kind="cell" data-variant="${c.variant}" data-operation="${op}"`));
   const info = logs({ info: { kind: 'cell', variant: c.variant, operation: op } }).vm.info;
-  for (const n of c.notes) assert.ok(info.lines.includes(n), n);
+  // Plain sentences lead; the contract's own note text is kept under Source.
+  for (const n of c.notes) assert.ok([...info.lines, ...info.source].includes(n), n);
 });
 
 function cardHtml(html, v) {

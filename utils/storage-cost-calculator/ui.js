@@ -300,6 +300,8 @@
       const key = `${c.variant}.${c.operation}`;
       // data-label names the column when narrow screens stack the cells under their row.
       const lab = ` data-label="${esc(colLabel.get(c.variant))}"`;
+      // The Replica transfer row sums the transfer of every cell: no drill, its (i) says where it comes from.
+      if (c.info) return `<td${lab}>${esc(c.text)}${extrapolatedBadge(c.extrapolated)}${infoButton({ 'info-kind': 'transfer', variant: c.variant }, `${colLabel.get(c.variant)} ${r.label}`)}</td>`;
       if (!c.clickable) return `<td class="cell-off"${lab} data-state="${esc(c.state)}">${esc(c.text)}${extrapolatedBadge(c.extrapolated)}</td>`;
       return `<td${lab}><button type="button" class="cell-btn" data-action="cell" data-variant="${esc(c.variant)}" data-operation="${esc(c.operation)}"`
         + ` aria-pressed="${page.open_cell === key}" title="Show how this is calculated">${esc(c.text)}</button>${extrapolatedBadge(c.extrapolated)}`
@@ -422,7 +424,7 @@
     const facts = [
       row('ClickHouse name', i.name ? `<code>${esc(i.name)}</code>` : ''), row('Kind', i.kind_text ? esc(i.kind_text) : ''),
       row('Current value', i.value_text ? esc(i.value_text) : ''), row('Derived', i.derived_text ? esc(i.derived_text) : ''),
-      row('Measured range', i.range_text ? esc(i.range_text) : ''), row('Default', i.default_text ? esc(i.default_text) : ''),
+      row('Verified range', i.range_text ? esc(i.range_text) : ''), row('Default', i.default_text ? esc(i.default_text) : ''),
       row('Evidence', i.measured_by ? esc(i.measured_by) : ''),
     ].join('');
     const map = Object.entries(i.mapping || {}).map(([col, f]) => `<tr><td><code>${esc(col)}</code></td><td>${esc(f)}</td></tr>`).join('');
@@ -431,6 +433,8 @@
       + '<button type="button" class="btn btn-small" data-action="close-info" aria-label="Close">Close</button></header>'
       + `${i.description ? `<p>${esc(i.description)}</p>` : ''}${facts ? `<div class="tbl"><table class="facts"><tbody>${facts}</tbody></table></div>` : ''}`
       + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
+      // Rig, proxy and formula detail: kept for the reader who checks the number, after the plain sentences.
+      + `${i.source && i.source.length ? `<h4>Source</h4>${list(i.source.map((l) => `<li>${esc(l)}</li>`), 'why source')}` : ''}`
       + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
   }
 
@@ -555,7 +559,7 @@
     // Input problems are page notes; none is dropped.
     res.problems = [...(res.problems || []), ...r0.problems];
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
-      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units, info: u.info || null,
+      pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units, info: u.info || null, scenario: state.scenario,
     });
     return { vm, page: Object.assign(chrome(contract, state, u, sweepId), { sweep_note: sweepNote }), fields: r0.fields };
   }
@@ -637,7 +641,7 @@
       case 'close-drill': s.openCell = null; break;
       case 'show-calc': u.showCalc = !u.showCalc; break;
       case 'info': {
-        const kind = known(['input', 'cell', 'variant', 'column', 'evidence', 'scenario'], d.infoKind, 'info kind');
+        const kind = known(['input', 'cell', 'variant', 'column', 'transfer', 'evidence', 'scenario'], d.infoKind, 'info kind');
         u.info = kind === 'input' || kind === 'evidence' || kind === 'scenario' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
         break;
       }

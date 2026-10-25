@@ -34,8 +34,8 @@ const cell = (vm, op, v) => vm.table.rows.find((r) => r.operation === op).cells.
 
 test('test_card_text_for_each_state', () => {
   const ok = view().vm;
-  assert.equal(card(ok, 'cas').state_text, 'cheapest of 4 priced');
-  assert.equal(card(ok, 'cas').cheapest_text, 'cheapest of 4 priced');
+  assert.equal(card(ok, 'cas').state_text, 'cheapest of 4');
+  assert.equal(card(ok, 'cas').cheapest_text, 'cheapest of 4');
   assert.equal(card(ok, 'cas').total_text, '$23.01');
   assert.equal(card(ok, 'ebs').state_text, null);
   assert.deepEqual(card(ok, 'cas').delta_texts, ['vs EBS: −$56.99', 'vs S3: −$24.58']);
@@ -97,7 +97,7 @@ test('test_card_text_for_each_state', () => {
   assert.equal(card(alone, 'cas').cheapest, false);
   assert.equal(alone.table.columns.some((c) => c.cheapest), false);
   const exWin = rebuilt((x) => { x.variants[x.cheapest].extrapolated = true; });
-  assert.equal(card(exWin, res.cheapest).cheapest_text, `cheapest of ${Object.values(res.variants).filter((x) => x.state === 'ok').length} priced, extrapolated`);
+  assert.equal(card(exWin, res.cheapest).cheapest_text, `cheapest of ${Object.values(res.variants).filter((x) => x.state === 'ok').length}, extrapolated`);
   // A state the view model does not know is an error, not a default text.
   const r0 = pipeline.resolveInputs(C, {}, [], {});
   const broken = JSON.parse(JSON.stringify(res));
