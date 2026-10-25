@@ -55,7 +55,7 @@ test('test_table_inputs_are_workload_and_settings_stay_at_most_ten', () => {
 
 test('test_presets_carry_table_counts', () => {
   const want = {
-    logs: [10, 0, 0], metrics: [20, 4, 4], analytics_batch: [5, 0, 0], single_replica_archive: [3, 0, 0], custom: [10, 0, 0],
+    logs: [10, 0, 0], logs_tiered: [10, 0, 0], metrics: [20, 4, 4], analytics_batch: [5, 0, 0], single_replica_archive: [3, 0, 0], custom: [10, 0, 0],
   };
   assert.deepEqual(Object.keys(want), Object.keys(presets.SCENARIOS));
   for (const [id, [n, c, d]] of Object.entries(want)) {

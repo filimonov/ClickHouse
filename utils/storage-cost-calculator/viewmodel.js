@@ -19,7 +19,7 @@
   const BLOCKS = [
     ['simple', 'Inputs'], ['schema', 'Schema'], ['inserts', 'Inserts'], ['merges', 'Merges'], ['replication', 'Replication'],
     ['mutations_deletes', 'Mutations and deletes'], ['reads_cache', 'Reads and cache'], ['topology_recovery', 'Topology and recovery'],
-    ['ebs', 'EBS'], ['local_disk', 'Local disk'], ['cas', 'CAS'], ['reliability', 'Reliability'], ['prices', 'Prices'],
+    ['ebs', 'EBS'], ['local_disk', 'Local disk'], ['cas', 'CAS'], ['reliability', 'Reliability'], ['tiering', 'Tiering'], ['prices', 'Prices'],
   ];
   // Card and cell wording per variant state. `unavailable` is rendered like `not_supported`: no total, no delta.
   const STATE_TEXT = {
@@ -389,6 +389,52 @@
       card.sizing = buildSizing(v, vr, preset, inputs ? Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f])) : null, pageState);
       return card;
     });
+  }
+
+  // Hot local disk plus each cold object-storage variant (pipeline.tiered), beside the single-tier total of the same
+  // variant. Sums and differences of contract totals only (spec §4.5).
+  function buildTiered(result, preset, pageState, inputs) {
+    const t = result.tiered;
+    if (!t) return null;
+    const P = pipeline();
+    const field = (id) => (inputs ? inputs.blocks.flatMap((b) => b.fields).find((f) => f.id === id) || null : null);
+    const priced = pageState === 'ok';
+    const cur = priced ? preset.currency : null;
+    const hot = `local disk (${variantLabel(t.hot_variant)})`;
+    const totals = t.rows.filter((r) => r.total !== null).length;
+    const rows = t.rows.map((r) => {
+      const label = variantLabel(r.variant);
+      const row = { variant: r.variant, label, state: r.state, extrapolated: r.extrapolated, cheapest: false, cheapest_text: null, sum_text: null, single_text: null, reason: null };
+      if (r.state !== 'ok') {
+        row.sum_text = `Hot: ${hot} + Cold: ${label}: ${stateText(r.state)}`;
+        row.reason = plainReason(r.reason);
+        return row;
+      }
+      if (!priced || r.total === null) {
+        row.sum_text = `Hot: ${hot} + Cold: ${label}: quantities only, no prices`;
+        return row;
+      }
+      row.sum_text = `Hot: ${hot} ${fmtMoney(r.hot_total, cur)} + Cold: ${label} ${fmtMoney(r.cold_total, cur)} = ${fmtMoney(r.total, cur)}`;
+      row.single_text = r.single_total === null ? `single tier ${label}: ${r.single_state && r.single_state !== 'ok' ? cellText(r.single_state) : 'no total'}`
+        : `single tier ${label} ${fmtMoney(r.single_total, cur)}, tiered ${fmtMoney(r.total - r.single_total, cur, { sign: true })}`;
+      if (t.cheapest === r.variant && totals > 1) {
+        row.cheapest = true;
+        row.cheapest_text = `cheapest of ${totals}${r.extrapolated ? ', extrapolated' : ''}`;
+      }
+      return row;
+    });
+    const n = (x) => fmtQuantity(x);
+    return {
+      title: `Tiered: ${n(t.hot_days)} days on local disk, then ${t.cold_days === null ? 'the rest' : `${n(t.cold_days)} days`} on object storage`,
+      hot_days: t.hot_days, cold_days: t.cold_days, rows,
+      single_hot_text: priced && result.variants[t.hot_variant] && result.variants[t.hot_variant].state === 'ok'
+        ? `Single tier ${variantLabel(t.hot_variant)}: ${fmtMoney(result.variants[t.hot_variant].total, cur)}` : null,
+      gc_field: field('cold_gc_interval_s'),
+      notes: [P.TTL_MOVE_NOTE, P.COLD_MERGE_NOTE,
+        ...t.cold_variants.filter((v) => ((((t.cold.variants[v] || {}).cells || {}).merges || {}).notes || []).some((x) => x.text === P.COLD_MERGE_IGNORED_NOTE))
+          .map((v) => `${variantLabel(v)} merges: ${P.COLD_MERGE_IGNORED_NOTE}`),
+        ...t.problems.map(plainReason)],
+    };
   }
 
   function rowUnits(contract, v, op) {
@@ -1302,13 +1348,14 @@
     const vm = {
       page_state: pageState, page_reason: pageState === 'cannot_reproduce' ? result.page_reason || null : plainReason(result.page_reason) || null, evidence_statement: result.evidence_statement,
       currency: preset && !preset.structure_only ? preset.currency : null, theme: u.theme || null,
-      cards: [], table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, evidence: null, problems,
+      cards: [], tiered: null, table: { columns: [], rows: [] }, drill: null, chart: null, notes: [], inputs: null, info: null, evidence: null, problems,
     };
     vm.inputs = buildInputs(contract, fields, lockOrder || [], preset, u, pageState, problems);
     vm.notes = buildNotes(result, contract, fields, pageState);
     if (pageState === 'cannot_reproduce') return vm;
     const split = transferSplit(result, contract, preset, pageState);
     vm.cards = buildCards(result, contract, preset, pageState, vm.inputs, split);
+    vm.tiered = buildTiered(result, preset, pageState, vm.inputs);
     vm.table = buildTable(result, contract, preset, pageState, problems, fields, split);
     vm.evidence = buildEvidence(contract);
     if (u.openCell) vm.drill = buildDrill(result, contract, preset, pageState, u.openCell, problems);
@@ -1318,6 +1365,6 @@
     return vm;
   }
 
-  SCC.viewmodel = { build, assumptionSentence, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
+  SCC.viewmodel = { build, buildTiered, assumptionSentence, plainUnit, fmtSig, fmtSize, plainReason, cite, cardSentence, reasonSegments, buildSizing, TIERS, GIB_NOTE, UNIT_CLASS_LABELS, OP_KIND_LABELS, fmtMoney, fmtPrice, fmtQuantity, cellText, unitClassOf, stateText, VARIANT_LABELS, OPERATION_LABELS, BLOCKS, STATE_TEXT };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.viewmodel;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -8342,6 +8342,502 @@
       "status": "ok"
     },
     {
+      "id": "hot_tier_days",
+      "block": "tiering",
+      "label": "Days a part stays on the local disk before a TTL move to object storage; 0 keeps one tier",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT create_table_query FROM system.tables WHERE database = '<db>' AND name = '<table>' -- TTL ... TO VOLUME/DISK '<cold>'",
+        "mapping": {
+          "hot_tier_days": "the interval of the TTL ... TO VOLUME clause, in days; 0 without one"
+        }
+      },
+      "ui": {
+        "tier": "workload",
+        "name": null,
+        "short": "Hot tier days"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cold_gc_interval_s",
+      "block": "tiering",
+      "label": "GC round interval of the CAS disk in the cold tier (cas_gc_interval_sec)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3600,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "cold data changes rarely, so GC can run hourly; the disk default is 60 s",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT extractAllGroups(..) -- read <cas_gc_interval_sec> from the cold CAS disk config",
+        "mapping": {
+          "cold_gc_interval_s": "cas_gc_interval_sec of the cold disk"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Cold tier GC interval"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cold_mutations_per_month",
+      "block": "tiering",
+      "label": "ALTER UPDATE/DELETE per month that rewrite a part in the cold tier",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() * 730 / 24 / 30 FROM system.part_log WHERE event_type = 'MutatePart' AND disk_name = '<cold disk>' AND event_date >= today() - 30",
+        "mapping": {
+          "cold_mutations_per_month": "MutatePart rows on the cold disk per month"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Cold tier mutations per month"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "cold_select_part_reads_per_day",
+      "block": "tiering",
+      "label": "Parts in the cold tier read by SELECT queries per day",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count/day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(ProfileEvents['SelectedParts']) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Select' AND event_date = yesterday() -- queries over cold partitions",
+        "mapping": {
+          "cold_select_part_reads_per_day": "sum of SelectedParts of queries that reach cold partitions"
+        }
+      },
+      "ui": {
+        "tier": "advanced",
+        "name": null,
+        "short": "Cold tier part reads per day"
+      },
+      "status": "ok"
+    },
+    {
+      "id": "hot_data_bytes",
+      "block": "tiering",
+      "label": "Data in the hot tier: ingest_rate x hot_tier_days",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "GiB",
+        "a": {
+          "kind": "input",
+          "id": "ingest_rate",
+          "dim": "GiB/day"
+        },
+        "b": {
+          "kind": "input",
+          "id": "hot_tier_days",
+          "dim": "day"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_retention_days",
+      "block": "tiering",
+      "label": "Days a part stays in the cold tier: retention_days - hot_tier_days",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "day",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "sub",
+        "dim": "day",
+        "a": {
+          "kind": "input",
+          "id": "retention_days",
+          "dim": "day"
+        },
+        "b": {
+          "kind": "input",
+          "id": "hot_tier_days",
+          "dim": "day"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_data_bytes",
+      "block": "tiering",
+      "label": "Data in the cold tier: data_bytes - hot_data_bytes",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "GiB",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "sub",
+        "dim": "GiB",
+        "a": {
+          "kind": "input",
+          "id": "data_bytes",
+          "dim": "GiB"
+        },
+        "b": {
+          "kind": "input",
+          "id": "hot_data_bytes",
+          "dim": "GiB"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "steady state: the hot tier holds hot_tier_days of ingest, the cold tier the rest of the retention",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_insert_rate",
+      "block": "tiering",
+      "label": "Parts moved to the cold tier per second, each at its final size: insert_rate x parts_per_insert / merge_size_ratio",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "1/s",
+        "a": {
+          "kind": "mul",
+          "dim": "1/s",
+          "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+          },
+          "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+          }
+        },
+        "b": {
+          "kind": "input",
+          "id": "merge_size_ratio",
+          "dim": "1"
+        },
+        "on_zero": "unavailable"
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_insert_rows",
+      "block": "tiering",
+      "label": "Rows of a moved part: part_rows x merge_size_ratio",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "count",
+        "a": {
+          "kind": "input",
+          "id": "part_rows",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "merge_size_ratio",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_insert_bytes_uncompressed",
+      "block": "tiering",
+      "label": "Uncompressed bytes of a moved part: part_bytes_uncompressed x merge_size_ratio",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "B",
+        "a": {
+          "kind": "input",
+          "id": "part_bytes_uncompressed",
+          "dim": "B"
+        },
+        "b": {
+          "kind": "input",
+          "id": "merge_size_ratio",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "a part moves once, at the final size of the lifecycle model (part_rows x merge_size_ratio), the size expired_parts_per_month and mutated_part_rows use",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_mutated_wide_parts_per_month",
+      "block": "tiering",
+      "label": "Wide parts cold mutations rewrite per month: one moved part per mutation, wide when it is at least min_bytes_for_wide_part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "<",
+          "a": {
+            "kind": "input",
+            "id": "cold_insert_bytes_uncompressed",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "min_bytes_for_wide_part",
+            "dim": "B"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": 0,
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "cold_mutations_per_month",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "a cold mutation rewrites one moved part; a mutation over N parts is N mutations here",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_mutated_compact_parts_per_month",
+      "block": "tiering",
+      "label": "Compact parts cold mutations rewrite per month: one moved part per mutation, compact below min_bytes_for_wide_part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "<",
+          "a": {
+            "kind": "input",
+            "id": "cold_insert_bytes_uncompressed",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "min_bytes_for_wide_part",
+            "dim": "B"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "cold_mutations_per_month",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "const",
+          "value": 0,
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "basis": "assumed",
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "a cold mutation rewrites one moved part; a mutation over N parts is N mutations here",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_merge_size_ratio",
+      "block": "tiering",
+      "label": "Merge size ratio in the cold tier: 1, a moved part is already final-sized and the merge selector gains nothing from merging it",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "TTL moves final-sized parts; merges of cold parts are not modelled",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cold_parts_per_insert",
+      "block": "tiering",
+      "label": "Parts a TTL move writes per moved part: 1, the mover clones the whole part to the new disk",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp:223",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
       "id": "cas_ref_log_tail_records",
       "block": "cas",
       "label": "Ref log records of one table since its last snapshot that a folding GC round reads",

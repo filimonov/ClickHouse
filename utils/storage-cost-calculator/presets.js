@@ -35,6 +35,14 @@
       },
       locks: ['ingest_rate', 'retention_days'],
     },
+    // Logs with the first 7 days on local disk and the other 23 moved by TTL to object storage. Cold parts are
+    // final-sized and rarely touched, so the cold CAS disk runs GC hourly.
+    logs_tiered: {
+      label: 'Logs, tiered (7 days hot)',
+      description: 'Logs kept 7 days on local disk, then moved by TTL to object storage for the other 23 days; hourly GC on the cold CAS disk',
+      values: null,
+      locks: ['ingest_rate', 'retention_days'],
+    },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
     // 50 agents send 1,000-row inserts, 50 per second in total: 20 GiB/day over 4,320,000 inserts is ~4.9 KiB
     // compressed per insert, ~5 B per row (Delta/Gorilla codecs); 100 KiB uncompressed is ~20x compression. Small inserts go through the async queue. Few columns: narrow shape.
@@ -116,6 +124,8 @@
       locks: [],
     },
   };
+
+  SCENARIOS.logs_tiered.values = Object.assign({}, SCENARIOS.logs.values, { hot_tier_days: 7, cold_gc_interval_s: 3600 });
 
   // Inputs the chart and tools/sweeps.mjs sweep. Both call ladderFor, so page and document report the same intervals.
   const SWEEP_INPUTS = { data_bytes: { integer: false }, ingest_rate: { integer: false }, replicas: { integer: true } };

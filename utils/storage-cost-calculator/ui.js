@@ -242,6 +242,7 @@
   // Workload inputs that share one line on the form, each with a short label; one (i) explains the set.
   const FIELD_SETS = [
     { id: 'tables', members: [['cas_tables', 'Tables'], ['cas_table_creates_per_month', 'created/month'], ['cas_table_drops_per_month', 'dropped/month']] },
+    { id: 'tiering', members: [['hot_tier_days', 'Hot tier, days']] },
   ];
 
   function renderFieldSet(set, fs, page) {
@@ -251,8 +252,9 @@
       return `<label class="set-item"><span class="${i ? 'set-label' : 'field-label'}">${esc(label)}</span>${control(f, page, false)}${fieldTags(f)}${reset}</label>`;
     }).join('');
     const first = fs.find((x) => x.id === set.members[0][0]);
+    const refused = fs.filter((f) => f.refused).map((f) => `<p class="field-note field-error" role="alert">${esc(f.refused)}</p>`).join('');
     return `<div class="field field-set" data-row="${esc(set.id)}"><div class="field-control set-controls">${items}`
-      + `${infoButton({ 'info-kind': 'input', id: first.id }, first.short || first.label || first.id)}</div></div>`;
+      + `${infoButton({ 'info-kind': 'input', id: first.id }, first.short || first.label || first.id)}</div>${refused}</div>`;
   }
 
   // Workload fields in registry order; the members of a field set render once, as one line, where the first one stands.
@@ -332,10 +334,27 @@
       + `${items.length ? '<h4>What differs</h4>' : ''}${list(items, 'mismatches')}</section>`;
   }
 
-  function renderCards(vm) {
+  // Hot local disk plus each cold variant, one line each, under the four single-tier columns.
+  function renderTiered(t, page) {
+    if (!t) return '';
+    const rows = t.rows.map((r) => {
+      const mark = r.cheapest ? badge(r.cheapest_text, 'ok') : r.extrapolated && r.state === 'ok' ? badge('extrapolated', 'warn') : '';
+      return `<li class="tier-row${r.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(r.variant)}" data-state="${esc(r.state)}">`
+        + `<span class="tier-sum" data-kind="money">${esc(r.sum_text)}</span>${mark}`
+        + `${r.single_text ? `<span class="tier-single mute">${esc(r.single_text)}</span>` : ''}${r.reason ? `<span class="tier-single mute">${esc(r.reason)}</span>` : ''}</li>`;
+    }).join('');
+    const g = t.gc_field;
+    const gc = g ? `<div class="tier-gc" data-field="${esc(g.id)}"><span class="field-label">${esc(g.short || g.label)}</span>${control(g, page, false)}`
+      + `${infoButton({ 'info-kind': 'input', id: g.id }, g.short || g.label)}${fieldTags(g)}</div>` : '';
+    return `<section class="panel-block tiered" data-block="tiered" aria-label="Tiered storage"><h2>${esc(t.title)}</h2>`
+      + `${t.single_hot_text ? `<p class="mute">${esc(t.single_hot_text)}</p>` : ''}<ul class="tier-rows">${rows}</ul>${gc}`
+      + `${list(t.notes.map((x) => `<li>${esc(x)}</li>`), 'tier-notes field-note')}</section>`;
+  }
+
+  function renderCards(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return renderCannotReproduce(vm);
     const banner = vm.page_state === 'prices_missing' ? `<p class="banner">${esc(vm.page_reason)}.</p>` : '';
-    return `${banner}<div class="cards">${vm.cards.map((c) => renderCard(c, vm)).join('')}</div>`;
+    return `${banner}<div class="cards">${vm.cards.map((c) => renderCard(c, vm)).join('')}</div>${renderTiered(vm.tiered, page)}`;
   }
 
   function renderTable(vm, page) {
@@ -496,7 +515,7 @@
     if (!page || typeof page !== 'object') throw new Error('ui.render: page chrome is required');
     const p = Object.assign({}, page, { cannot_reproduce: vm.page_state === 'cannot_reproduce' });
     return {
-      presets: renderPresets(vm, p), inputs: renderInputs(vm, p), cards: renderCards(vm), table: renderTable(vm, p),
+      presets: renderPresets(vm, p), inputs: renderInputs(vm, p), cards: renderCards(vm, p), table: renderTable(vm, p),
       drill: renderDrillPart(vm, p), notes: renderNotes(vm, p), evidence: renderEvidence(vm), chart: renderChart(vm, p), modal: renderModal(vm),
     };
   }
@@ -609,6 +628,7 @@
     const res = pipeline().run(contract, r0.inputs, preset, opts);
     // Input problems are page notes; none is dropped.
     res.problems = [...(res.problems || []), ...r0.problems];
+    res.tiered = pipeline().tiered(contract, r0.inputs, preset, { single: res });
     const vm = viewmodel().build(res, contract, r0.fields, r0.lockOrder, {
       pricePreset: preset, openCell: parseCell(state.openCell), sweepInput: sweepId, priceEditing: true, theme: u.theme || null, units: state.units, info: u.info || null, scenario: state.scenario,
     });

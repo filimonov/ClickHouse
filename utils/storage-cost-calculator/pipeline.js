@@ -33,7 +33,7 @@
   // query reads at least one stream of a part, and a row ends up in a part at least as large as its inserted part.
   const AT_LEAST_ONE_INPUTS = ['streams_per_column', 'read_streams_per_part', 'merge_size_ratio'];
   // Sizes and periods of a setting: 0 has no meaning (a GC round every 0 s, a blob of 0 bytes), so it is not priced.
-  const POSITIVE_INPUTS = ['insert_bytes_uncompressed', 'cas_gc_interval_s', 'cas_blob_bytes', 'cas_table_cleanup_period_s'];
+  const POSITIVE_INPUTS = ['insert_bytes_uncompressed', 'cas_gc_interval_s', 'cold_gc_interval_s', 'cas_blob_bytes', 'cas_table_cleanup_period_s'];
   // The page models one shard: it holds at most 200 TiB, one day cannot add more than that, and data is kept at most
   // 100 years. Above a bound the input is refused, whether typed or derived from its group partners.
   const INPUT_LIMITS = {
@@ -218,6 +218,16 @@
       problems.push(`${id}: ${n(v)} ${plainUnit(q.unit)}${rule} is above ${n(lim.max)} ${plainUnit(q.unit)}: ${lim.why}`);
       refused.set(id, { value: v, text: `${lim.name} above ${n(lim.max)} ${plainUnit(q.unit)} is not supported` });
       values.delete(id);
+    }
+
+    // A hot tier as long as the retention leaves nothing to move; the page keeps one tier and says why.
+    const hotDays = values.get('hot_tier_days');
+    const retention = values.get('retention_days');
+    if (typeof hotDays === 'number' && hotDays > 0 && typeof retention === 'number' && hotDays >= retention) {
+      const n = (x) => Number(x.toPrecision(6)).toLocaleString('en-US');
+      problems.push(`hot_tier_days: ${n(hotDays)} days is not below the retention of ${n(retention)} days; nothing would move to the cold tier`);
+      refused.set('hot_tier_days', { value: hotDays, text: `hot tier must be shorter than the retention (${n(retention)} days)` });
+      values.delete('hot_tier_days');
     }
 
     // Zero ingest is a valid workload; data that arrives without INSERTs is not. The rate is left without a value.
@@ -795,7 +805,104 @@
   // The evaluation context of `inputs`: pinned constants and registry derivations included (presets.coverageReport).
   const evaluationInputs = (contract, inputs) => buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), unsupportedRefs(contract)).inputs;
 
+  // ---- tiered storage: hot local disk, cold object storage after a TTL move --------------------------------------
+  // Each tier is priced by `run` on its own input set; only the `tiering` registry derivations differ. The maps name
+  // the input of `run` and the registry row that feeds it.
+  const HOT_VARIANT = 'ebs';
+  const HOT_INPUTS = { retention_days: 'hot_tier_days', data_bytes: 'hot_data_bytes' };
+  const COLD_INPUTS = {
+    retention_days: 'cold_retention_days', data_bytes: 'cold_data_bytes',
+    insert_rate: 'cold_insert_rate', insert_rows: 'cold_insert_rows', insert_bytes_uncompressed: 'cold_insert_bytes_uncompressed',
+    parts_per_insert: 'cold_parts_per_insert', merge_size_ratio: 'cold_merge_size_ratio',
+    cas_gc_interval_s: 'cold_gc_interval_s', mutations_per_month: 'cold_mutations_per_month',
+    mutated_wide_parts_per_month: 'cold_mutated_wide_parts_per_month', mutated_compact_parts_per_month: 'cold_mutated_compact_parts_per_month',
+    select_part_reads_per_day: 'cold_select_part_reads_per_day',
+  };
+  // A move writes the part directly, never through the async insert queue.
+  const COLD_FIXED = { async_insert: '0' };
+  const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part (assumption)';
+  const COLD_MERGE_NOTE = 'no merges in the cold tier: moved parts are final-sized, so the merge selector gains nothing (assumption)';
+  const COLD_MERGE_IGNORED_NOTE = 'this cell does not read merge_size_ratio: it prices merges as if parts kept merging, more than the cold tier runs';
+
+  // Whether `node` reads input `id`, directly or through registry derivations.
+  function reaches(contract, node, id) {
+    const rules = new Map(contract.registry.filter((q) => q.kind === 'derivation' && q.rule).map((q) => [q.id, q.rule]));
+    const seen = new Set();
+    const todo = [...inputsOf(node)];
+    while (todo.length) {
+      const x = todo.pop();
+      if (x === id) return true;
+      if (seen.has(x) || !rules.has(x)) continue;
+      seen.add(x);
+      todo.push(...inputsOf(rules.get(x)));
+    }
+    return false;
+  }
+
+  // Totals of hot `ebs` plus each cold object-storage variant, beside the single-tier totals in `single` (a `run`
+  // result for the same inputs). Null when `hot_tier_days` is 0 or has no value.
+  function tiered(contract, inputs, pricePreset, options) {
+    const opts = options || {};
+    const base = inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {}));
+    const hotDays = base.get('hot_tier_days');
+    if (!(typeof hotDays === 'number' && hotDays > 0)) return null;
+    const all = evaluationInputs(contract, base);
+    const problems = [];
+    const derive = (map) => {
+      const out = new Map(base);
+      for (const [to, from] of Object.entries(map)) {
+        if (all.has(from)) out.set(to, all.get(from));
+        else { problems.push(`${to}: ${from} has no value`); out.delete(to); }
+      }
+      return out;
+    };
+    const hotInputs = derive(HOT_INPUTS);
+    const coldInputs = derive(COLD_INPUTS);
+    for (const [id, v] of Object.entries(COLD_FIXED)) coldInputs.set(id, v);
+    const cold_variants = contract.variants.filter((v) => v !== HOT_VARIANT);
+    const runOpts = { outcome_mix: opts.outcome_mix };
+    const hot = run(contract, hotInputs, pricePreset, runOpts);
+    const cold = run(contract, coldInputs, pricePreset, runOpts);
+    for (const v of cold_variants) {
+      const cells = (cold.variants[v] || {}).cells || {};
+      if (cells.inserts) cells.inserts.notes.push({ text: TTL_MOVE_NOTE, value: null, state: 'ok', assumption: true });
+      if (cells.merges) {
+        const ratio = reaches(contract, ((contract.formulas[v] || {}).merges || {}).ledger_rows, 'merge_size_ratio');
+        cells.merges.notes.push({ text: ratio ? COLD_MERGE_NOTE : COLD_MERGE_IGNORED_NOTE, value: null, state: 'ok', assumption: true });
+      }
+    }
+    const single = opts.single || null;
+    const h = hot.variants[HOT_VARIANT];
+    const rows = cold_variants.map((v) => {
+      const c = cold.variants[v];
+      const s = single && single.variants ? single.variants[v] : null;
+      const off = [h, c].find((x) => !x || x.state !== 'ok');
+      const priced = !off && hot.page_state === 'ok' && cold.page_state === 'ok' && h.total !== null && c.total !== null;
+      return {
+        variant: v,
+        state: off ? (off.state || 'unavailable') : 'ok',
+        reason: off ? (off === h ? `hot ${HOT_VARIANT}: ${h.reason}` : `cold ${v}: ${c.reason}`) : null,
+        // Display arithmetic only (spec §4.5): the sum of two contract totals already computed.
+        hot_total: priced ? h.total : null,
+        cold_total: priced ? c.total : null,
+        total: priced ? h.total + c.total : null,
+        extrapolated: !!(h && h.extrapolated) || !!(c && c.extrapolated),
+        single_total: s && s.state === 'ok' ? s.total : null,
+        single_state: s ? s.state : null,
+        single_extrapolated: !!(s && s.extrapolated),
+      };
+    });
+    let cheapest = null;
+    for (const r of rows) if (r.total !== null && (cheapest === null || r.total < rows.find((x) => x.variant === cheapest).total)) cheapest = r.variant;
+    return {
+      hot_days: hotDays, cold_days: all.has('cold_retention_days') ? all.get('cold_retention_days') : null,
+      hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems,
+      hot_inputs: hotInputs, cold_inputs: coldInputs,
+    };
+  }
+
   SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
-    unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS });
+    unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS,
+    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);
