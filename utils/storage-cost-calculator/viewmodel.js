@@ -225,6 +225,8 @@
 
   // A note with a number ends in "= value"; a text note stands alone.
   const noteText = (n) => (typeof n.value === 'number' ? `${n.text} = ${fmtQuantity(n.value)}` : n.text);
+  // A `text` note is a plain sentence about one operation of a column (replicas in one AZ); it shows like a cell note.
+  const isCellNote = (n) => n.kind === 'cell' || n.kind === 'text';
 
   // A cell is extrapolated when the pipeline says so (a fitted or assumed coefficient outside its range, a substituted
   // lookup key) or when it prices money with a coefficient whose basis is `assumed`.
@@ -370,7 +372,7 @@
       for (const c of cells) delete c.money;
       for (const c of cells) {
         const vr = result.variants[c.variant];
-        c.notes = c.state === 'ok' ? (vr.notes || []).filter((n) => n.kind === 'cell' && n.operation === op).map((n) => cite(noteText(n), measuredBuild(contract))) : [];
+        c.notes = c.state === 'ok' ? (vr.notes || []).filter((n) => isCellNote(n) && n.operation === op).map((n) => cite(noteText(n), measuredBuild(contract))) : [];
       }
       rows.push({ operation: op, label: OPERATION_LABELS[op] || op, cells, note: zero ? zeroHint(op, fields) : null });
     }
@@ -523,6 +525,22 @@
     return q.block === 'simple' ? 'workload' : 'advanced';
   }
 
+  // Registry `presets` that set `id` (shape narrow: columns 5, ...) as quick picks on that field. A pick sets every
+  // quantity of its preset; it shows pressed when all of them hold the preset's values.
+  function quickPicks(contract, id, fields) {
+    const out = [];
+    for (const src of contract.registry) {
+      if (src.kind !== 'input' || !src.presets) continue;
+      for (const key of src.enum || []) {
+        const p = src.presets[key];
+        if (!p || !Object.prototype.hasOwnProperty.call(p, id)) continue;
+        out.push({ source: src.id, key, label: `${key} (${fmtQuantity(p[id])})`, set: Object.assign({}, p),
+          pressed: Object.entries(p).every(([k, v]) => fields && fields[k] && fields[k].value === v) });
+      }
+    }
+    return out;
+  }
+
   function buildInputs(contract, fields, lockOrder, preset, ui, pageState, problems) {
     const R = model();
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
@@ -584,6 +602,7 @@
       f.step = q.unit === 'count' ? 1 : 'any';
       f.fixed = !!f.range && f.range[0] === f.range[1];
       f.range_text = rangeText(f, byId);
+      f.quick_picks = q.kind === 'input' ? quickPicks(contract, q.id, fields) : [];
       b.fields.push(f);
       if (q.hint && q.hint.sql) {
         const h = b.hints.find((x) => x.sql === q.hint.sql);
@@ -708,6 +727,9 @@
       if (sz) items.push({ kind: 'sizing', text: `Volumes: ${sz.short}` });
       if (sz && sz.instance_class) items.push({ kind: 'instance_class', text: `Instance: ${sz.instance_class} or larger for EBS bandwidth` });
       if (vr && vr.state === 'ok' && (vr.lines || []).some((l) => l.rule_id === 'storage')) items.push({ kind: 'gib', text: GIB_NOTE });
+      for (const n of (vr && vr.state === 'ok' ? vr.notes : []) || []) {
+        if (n.kind === 'text' && !items.some((x) => x.kind === 'text' && x.text === n.text)) items.push({ kind: 'text', text: n.text });
+      }
       const by = (contract.evidence_by_variant || {})[v];
       if (by) items.push({ kind: 'evidence', text: `Evidence: ${by.fit_and_holdout} cells fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumption only` });
       out[v] = items;
@@ -843,7 +865,7 @@
     const cell = vr.cells[op];
     const lines = segs.filter((s) => s.operation === op).map((s) => cite(s.text, commit));
     if (cell && cell.rows) for (const r of cell.rows) if (r.trace && r.trace.extrapolated) lines.push(`${rowLabel(r)}: extrapolated outside the measured range`);
-    for (const n of vr.notes || []) if (n.kind === 'cell' && n.operation === op) lines.push(cite(noteText(n), commit));
+    for (const n of vr.notes || []) if (isCellNote(n) && n.operation === op) lines.push(cite(noteText(n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
       description: vr.state === 'ok' ? (cell && cell.extrapolated ? 'Priced, extrapolated.' : 'Priced from measured coefficients.') : stateText(vr.state),
       measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines };
@@ -872,6 +894,8 @@
     const coefIds = new Set(contract.coefficients.map((c) => c.id));
     for (const d of presets().validityDomains(contract)) {
       if (coefIds.has(d.id) && !reached.has(d.id)) continue;
+      // A formula from source is exact outside its verified range: the cell note says so, not an extrapolation note.
+      if (d.basis === 'derived') continue;
       if (!byParam.has(d.param)) byParam.set(d.param, []);
       byParam.get(d.param).push(d);
     }

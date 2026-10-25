@@ -27,6 +27,8 @@
   }
 
   const COUNT_INPUTS = ['replicas', 'shards'];
+  // A `<name>_fraction` of unit 1 is a share of a whole: a value above 1 would price negative requests.
+  const isFraction = (q) => q.unit === '1' && /_fraction$/.test(q.id);
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
   const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -47,6 +49,7 @@
       // Counts of servers are whole and at least one; no workload quantity is negative.
       if (COUNT_INPUTS.includes(q.id) && !(Number.isInteger(v) && v >= 1)) return { problem: `${q.id}: expected a whole number of 1 or more, got ${v}` };
       if (v < 0) return { problem: `${q.id}: expected a number of 0 or more, got ${v}` };
+      if (isFraction(q) && v > 1) return { problem: `${q.id}: expected a fraction from 0 to 1, got ${v}` };
       return { value: v };
     }
     if (q.value_type === 'enum') {
@@ -117,6 +120,26 @@
       if (p.problem) { problems.push(p.problem); values.delete(id); } else values.set(id, p.value);
     }
 
+    // An enum input with registry `presets` (shape narrow: columns 5, ...) sets the quantities that neither the
+    // caller's raw values nor its overrides set. A value the caller gave always wins, even an invalid one.
+    const setByCaller = new Set([...Object.keys(raw || {}), ...Object.keys(overrides || {})]);
+    const presetOf = new Map();
+    for (const x of inputs) {
+      if (!x.presets || !values.has(x.id)) continue;
+      const v = values.get(x.id);
+      const preset = x.presets[v];
+      if (!preset || typeof preset !== 'object') { problems.push(`${x.id} = ${JSON.stringify(v)} has no preset`); continue; }
+      for (const [id, pv] of Object.entries(preset)) {
+        if (setByCaller.has(id)) continue;
+        if (!isInput(id)) { problems.push(`${x.id} preset ${v}: ${id} is not a registry input`); continue; }
+        if (presetOf.has(id)) { problems.push(`${id} is set by both ${presetOf.get(id)} and ${x.id} = ${v}`); continue; }
+        const p = parseValue(byId.get(id), pv);
+        if (p.problem) { problems.push(`${x.id} preset ${v}: ${p.problem}`); values.delete(id); continue; }
+        values.set(id, p.value);
+        presetOf.set(id, `${x.id} = ${v}`);
+      }
+    }
+
     const locks = normaliseLocks(contract, lockOrder, problems);
     const persisted = locks.flat();
     const eff = locks.map((l) => l.slice());
@@ -184,7 +207,11 @@
         rule_text: ruleText.get(x.id) || null,
         validity: range || null,
         out_of_range: !!range && typeof value === 'number' && (value < range[0] || value > range[1]),
+        // Read only by formulas from source: outside the range is exact, so the form shows no warning.
+        verified_only: derivedOnlyInputs(contract).has(x.id),
+        preset_from: presetOf.get(x.id) || null,
       };
+      if (fields[x.id].verified_only) fields[x.id].out_of_range = false;
     }
     return { inputs: resolved, fields, lockOrder: persisted, problems };
   }
@@ -192,10 +219,46 @@
   // ---- evaluation: cells -> variant aggregate -> billing -> allocation (spec §4.1, §4.4) -----------------------
 
   const billingMod = () => root.SCC.billing || require('./billing.js');
+  const SAME_AZ_NOTE = 'replicas in one AZ: interserver traffic not charged';
   // Precedence when several states hold for one variant: a column that cannot run the workload says so first.
   const STATE_ORDER = ['not_supported', 'unsupported_cut', 'backlog_grows', 'unavailable'];
 
-  // References a cut card or an unsupported registry row leaves without a usable value.
+  // The basis of a registry derivation: its own `basis`, else `derived` when its evidence is ClickHouse source (a
+  // formula read from the code), else `fitted`.
+  function derivationBasis(q) {
+    if (q.basis !== undefined && q.basis !== null) return model().basisOf(q);
+    return q.evidence && q.evidence.kind === 'source' ? 'derived' : 'fitted';
+  }
+
+  function inputsOf(node) {
+    const ids = new Set();
+    walk(node, (n) => { if (n.kind === 'input') ids.add(n.id); });
+    return ids;
+  }
+
+  // Inputs that only formulas from source read (registry derivations with basis `derived`): a value outside their
+  // verified range is exact, so it extrapolates nothing. Cells, other derivations and precedence rules count as
+  // fitted readers.
+  const derivedOnlyCache = new WeakMap();
+  function derivedOnlyInputs(contract) {
+    if (derivedOnlyCache.has(contract)) return derivedOnlyCache.get(contract);
+    const fitted = new Set();
+    const derived = new Set();
+    for (const ops of Object.values(contract.formulas || {})) for (const cell of Object.values(ops || {})) for (const id of inputsOf(cell)) fitted.add(id);
+    for (const g of contract.precedence || []) for (const r of Object.values(g.rules || {})) for (const id of inputsOf(r)) fitted.add(id);
+    for (const q of contract.registry) {
+      if (q.kind !== 'derivation' || !q.rule) continue;
+      const into = derivationBasis(q) === 'derived' ? derived : fitted;
+      for (const id of inputsOf(q.rule)) into.add(id);
+    }
+    const out = new Set(contract.registry.filter((q) => q.kind === 'input' && derived.has(q.id) && !fitted.has(q.id)).map((q) => q.id));
+    derivedOnlyCache.set(contract, out);
+    return out;
+  }
+
+  // References a cut card or an unsupported registry row leaves without a usable value. `via` maps a registry
+  // derivation to the cut references its rule reaches (through other derivations too): a cell that reads the
+  // derivation reads the cut.
   function unsupportedRefs(contract) {
     const coefs = new Set();
     const inputs = new Set();
@@ -205,7 +268,23 @@
       if (qr.coef) coefs.add(qr.coef);
       if (qr.kind === 'input') inputs.add(qr.id);
     }
-    return { coefs, inputs };
+    const rules = new Map(contract.registry.filter((q) => q && q.kind === 'derivation' && q.rule).map((q) => [q.id, q.rule]));
+    const via = new Map();
+    for (const id of rules.keys()) {
+      const refs = new Set();
+      const seen = new Set([id]);
+      const todo = [rules.get(id)];
+      while (todo.length) {
+        walk(todo.pop(), (n) => {
+          if (n.kind === 'coef' && coefs.has(n.id)) refs.add(n.id);
+          else if (n.kind === 'lookup' && coefs.has(n.table_id)) refs.add(n.table_id);
+          else if (n.kind === 'input' && inputs.has(n.id)) refs.add(n.id);
+          else if (n.kind === 'input' && rules.has(n.id) && !seen.has(n.id)) { seen.add(n.id); todo.push(rules.get(n.id)); }
+        });
+      }
+      if (refs.size) via.set(id, [...refs].sort());
+    }
+    return { coefs, inputs, via };
   }
 
   function buildCtx(contract, inputs, cut) {
@@ -219,17 +298,21 @@
       coefs.set(c.id, { value: c.value, validity: model().basisOf(c) === 'derived' ? null : model().rangeOf(c), verified_range: model().rangeOf(c), basis: model().basisOf(c) });
     }
     const tables = new Map(Object.entries(contract.tables || {}).filter(([id]) => !cut.coefs.has(id)));
-    // A lookup miss on an enum key falls back to the nearest measured key: by `ui.nearest` (an order or a map) or the
-    // enum's declared order. The substitution is extrapolated and named in a cell note.
+    // A lookup miss falls back to the nearest measured key only on an ordinal enum that declares `ui.nearest` (true:
+    // the enum order; an order; a map). Any other miss is unavailable: a variant or operation key never borrows
+    // another's number. A substitution is extrapolated and named in a cell note.
     const nearest = new Map();
     for (const q of contract.registry) {
-      if (q.value_type !== 'enum' || !Array.isArray(q.enum)) continue;
       const n = q.ui && q.ui.nearest;
-      nearest.set(q.id, n && !Array.isArray(n) && typeof n === 'object' ? { map: n } : { order: Array.isArray(n) ? n : q.enum });
+      if (q.value_type !== 'enum' || !Array.isArray(q.enum) || !n) continue;
+      nearest.set(q.id, n === true ? { order: q.enum } : Array.isArray(n) ? { order: n } : { map: n });
     }
     const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set(), nearest };
-    // An input outside its own measured range makes every number that reads it extrapolated.
+    // An input outside its own measured range makes every number that reads it extrapolated, unless only formulas
+    // from source read it (derivedOutside notes those).
+    const derivedOnly = derivedOnlyInputs(contract);
     for (const q of contract.registry) {
+      if (derivedOnly.has(q.id)) continue;
       const r = q.kind === 'input' ? (model().rangeOf(q) || {})[q.id] : null;
       const x = values.get(q.id);
       if (r && typeof x === 'number' && (x < r[0] || x > r[1])) ctx.extrapolatedInputs.add(q.id);
@@ -257,13 +340,33 @@
     if (!cell) return [];
     const ids = new Set();
     walk(cell.ledger_rows, (n) => { if (n.kind === 'coef') ids.add(n.id); if (n.kind === 'lookup') ids.add(n.table_id); });
+    const outside = (range) => Object.entries(range || {}).filter(([p, r]) => typeof ctx.inputs.get(p) === 'number' && (ctx.inputs.get(p) < r[0] || ctx.inputs.get(p) > r[1]));
+    const verifiedAt = (off) => off.map(([p, r]) => `${p} ${r[0]} to ${r[1]}`).join(', ');
     const out = [];
     for (const c of contract.coefficients) {
       if (!ids.has(c.id) || model().basisOf(c) !== 'derived') continue;
-      const range = model().rangeOf(c) || {};
-      const off = Object.entries(range).filter(([p, r]) => typeof ctx.inputs.get(p) === 'number' && (ctx.inputs.get(p) < r[0] || ctx.inputs.get(p) > r[1]));
-      if (off.length) out.push(`${c.id}: formula from source; verified at ${off.map(([p, r]) => `${p} ${r[0]} to ${r[1]}`).join(', ')}`);
+      const off = outside(model().rangeOf(c));
+      if (off.length) out.push(`${c.id}: formula from source; verified at ${verifiedAt(off)}`);
     }
+    // Registry derivations the cell reads, directly or through other derivations; one note per verified range.
+    const rules = new Map(contract.registry.filter((q) => q.kind === 'derivation' && q.rule).map((q) => [q.id, q]));
+    const seen = new Set();
+    const todo = [...inputsOf(cell)];
+    const byRange = new Map();
+    while (todo.length) {
+      const id = todo.pop();
+      if (seen.has(id) || !rules.has(id)) continue;
+      seen.add(id);
+      const q = rules.get(id);
+      todo.push(...inputsOf(q.rule));
+      if (derivationBasis(q) !== 'derived') continue;
+      const off = outside(model().rangeOf(q));
+      if (!off.length) continue;
+      const key = verifiedAt(off);
+      if (!byRange.has(key)) byRange.set(key, []);
+      byRange.get(key).push(id);
+    }
+    for (const [key, list] of byRange) out.push(`${list.sort().join(', ')}: formula from source; verified at ${key}`);
     return out;
   }
 
@@ -288,12 +391,18 @@
     }
   }
 
-  const refOf = (n, cut) => (n.kind === 'coef' && cut.coefs.has(n.id) ? n.id
-    : n.kind === 'lookup' && cut.coefs.has(n.table_id) ? n.table_id
-      : n.kind === 'input' && cut.inputs.has(n.id) ? n.id : null);
-  function hasCut(node, cut) {
+  // The cut references `n` stands for, or null. A derivation that reaches a cut is cut unless the context holds its
+  // value (its rule took a side without the cut).
+  function refOf(n, cut, ctx) {
+    if (n.kind === 'coef' && cut.coefs.has(n.id)) return [n.id];
+    if (n.kind === 'lookup' && cut.coefs.has(n.table_id)) return [n.table_id];
+    if (n.kind === 'input' && cut.inputs.has(n.id)) return [n.id];
+    if (n.kind === 'input' && cut.via && cut.via.has(n.id) && !(ctx && ctx.inputs.has(n.id))) return cut.via.get(n.id);
+    return null;
+  }
+  function hasCut(node, cut, ctx) {
     let found = false;
-    walk(node, (n) => { if (refOf(n, cut)) found = true; });
+    walk(node, (n) => { if (refOf(n, cut, ctx)) found = true; });
     return found;
   }
   function inputIds(node) {
@@ -317,15 +426,15 @@
   // const of the same dim. Returns {node, tainted: {refs, dependents} | null}; a tainted result is a cut that the
   // workload needs. Product structure decides the term: a zero factor (or numerator) zeroes the whole product.
   function rewriteCut(node, ctx, cut, zeroed) {
-    if (!node || typeof node !== 'object' || !hasCut(node, cut)) return { node, tainted: null };
-    const ref = refOf(node, cut);
-    if (ref) {
-      if (node.kind === 'input') {
-        const v = ctx.inputs.get(ref);
-        if (v === 0) { zeroed.push({ refs: [ref], by: [ref] }); return { node: { kind: 'const', value: 0, dim: node.dim }, tainted: null }; }
-        return { node, tainted: { refs: [ref], dependents: [ref] } };
+    if (!node || typeof node !== 'object' || !hasCut(node, cut, ctx)) return { node, tainted: null };
+    const refs = refOf(node, cut, ctx);
+    if (refs) {
+      if (node.kind === 'input' && cut.inputs.has(node.id)) {
+        const v = ctx.inputs.get(node.id);
+        if (v === 0) { zeroed.push({ refs, by: [node.id] }); return { node: { kind: 'const', value: 0, dim: node.dim }, tainted: null }; }
+        return { node, tainted: { refs, dependents: [node.id] } };
       }
-      return { node, tainted: { refs: [ref], dependents: [] } };
+      return { node, tainted: { refs, dependents: [] } };
     }
     const merge = (ts) => {
       const live = ts.filter(Boolean);
@@ -346,7 +455,7 @@
       const clean = [a, b].filter((x) => !x.tainted).map((x) => x.node);
       return { node, tainted: { refs: t.refs, dependents: [...new Set([...t.dependents, ...clean.flatMap(inputIds)])] } };
     }
-    if (node.kind === 'branch' && !hasCut(node.cond, cut) && !hasVar(node.cond)) {
+    if (node.kind === 'branch' && !hasCut(node.cond, cut, ctx) && !hasVar(node.cond)) {
       // Only the taken side is evaluated, so only its cut terms matter. The probe evaluates the condition alone.
       const probe = model().evaluate(Object.assign({}, node, { then: { kind: 'const', value: 1, dim: '1' }, else: { kind: 'const', value: 0, dim: '1' } }), ctx);
       if (probe.state === 'ok') {
@@ -385,6 +494,19 @@
       if (n.kind === 'coef' && !ctx.coefs.has(n.id)) out.add(`coef ${n.id}`);
       if (n.kind === 'lookup' && !ctx.tables.has(n.table_id)) out.add(`table ${n.table_id}`);
     });
+    return [...out];
+  }
+
+  // Table keys a trace looked up and did not find (no `ui.nearest` stand-in either).
+  function missingKeys(trace) {
+    const out = new Set();
+    const visit = (t) => {
+      if (!t || typeof t !== 'object') return;
+      if (t.kind === 'lookup' && t.state === 'unavailable' && typeof t.lookup_key === 'string' && !t.reason
+        && (t.children || []).every((k) => k && k.state === 'ok')) out.add(`table ${t.table_id} has no key ${t.lookup_key}`);
+      for (const k of t.children || []) visit(k);
+    };
+    visit(trace);
     return [...out];
   }
 
@@ -441,7 +563,7 @@
         }
       }
       for (const st of ev.states) if (st.active) states.push({ id: st.id, reason: `${v}.${op}: ${st.reason}` });
-      const unavailableRows = ev.rows.map((r, i) => (r.state === 'ok' ? null : `${r.row_type} ${r.op_kind}: unavailable (${missingRefs(effective.ledger_rows[i].expr, ctx).join(', ') || 'see trace'})`)).filter(Boolean);
+      const unavailableRows = ev.rows.map((r, i) => (r.state === 'ok' ? null : `${r.row_type} ${r.op_kind}: unavailable (${[...missingRefs(effective.ledger_rows[i].expr, ctx), ...missingKeys(r.trace)].join(', ') || 'see trace'})`)).filter(Boolean);
       if (!taints.length && (unavailableRows.length || ev.state !== 'ok')) {
         states.push({ id: 'unavailable', reason: `${v}.${op}: ${[...unavailableRows, ev.reason].filter(Boolean).join('; ')}` });
       }
@@ -529,6 +651,10 @@
       for (const [op, c] of Object.entries(ev.cells)) {
         for (const s of substitutions(c.trace)) c.notes.push({ text: `${s.table_id}: measured for ${s.measured}; applied to ${s.requested}`, value: null, state: 'ok', substitution: s });
         for (const m of derivedOutside(contract, (contract.formulas[v] || {})[op], ctx)) c.notes.push({ text: m, value: null, state: 'ok', verified_only: true });
+        // A zero interserver row in one zone is a priced fact, not a missing number: the page says why it is zero.
+        if (ctx.inputs.get('topology') === 'same_az' && ctx.inputs.get('replicas') > 1 && c.rows.some((r) => r.row_type === 'transfer' && r.op_kind === 'interserver' && r.state === 'ok' && r.quantity === 0)) {
+          out.notes.push({ kind: 'text', operation: op, text: SAME_AZ_NOTE });
+        }
         out.cells[op] = { money: null, quantities: c.quantities, lines: null, rows: c.rows, extrapolated: c.extrapolated, trace: c.trace, notes: c.notes, zeroed_cut_terms: c.zeroed, ev: c.ev };
         for (const n of c.notes) out.notes.push({ kind: 'cell', operation: op, text: n.text, value: n.value });
       }
@@ -605,6 +731,7 @@
   // The evaluation context of `inputs`: pinned constants and registry derivations included (presets.coverageReport).
   const evaluationInputs = (contract, inputs) => buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), unsupportedRefs(contract)).inputs;
 
-  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs });
+  SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
+    unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -125,16 +125,34 @@ test('test_cites_point_at_the_measured_build', () => {
   assert.equal(vm.cite('src/A.cpp:12 @ 09d0772a842', '09d0772a842'), 'src/A.cpp:12 @ 09d0772a842');
 });
 
-test('test_columns_field_has_narrow_and_wide_quick_picks', () => {
-  const c = load((x) => {
-    const q = JSON.parse(JSON.stringify(x.registry.find((r) => r.id === 'mutations_per_month')));
-    Object.assign(q, { id: 'columns', label: 'Columns of the table', default: 40, ui: { tier: 'setting', name: null, short: 'Columns', measured_by: 'x' } });
-    x.registry.push(q);
-  });
+// The table-width picks come from the registry `shape` presets and set every quantity of the preset.
+function withShape(x) {
+  const base = x.registry.find((r) => r.id === 'mutations_per_month');
+  const num = (id, def, tier) => Object.assign(JSON.parse(JSON.stringify(base)), { id, label: id, default: def, ui: { tier, name: null, short: id, measured_by: 'x' } });
+  x.registry.push(num('columns', 40, 'setting'), num('streams_per_column', 1, 'advanced'));
+  x.registry.push(Object.assign(JSON.parse(JSON.stringify(base)), {
+    id: 'shape', label: 'Table preset', unit: '', value_type: 'enum', enum: ['narrow', 'wide'], default: 'wide', verified_range: null, validity: null,
+    ui: { tier: 'hidden', name: null, short: 'Table width', measured_by: 'x' },
+    presets: { narrow: { columns: 5, streams_per_column: 1 }, wide: { columns: 40, streams_per_column: 2 } },
+  }));
+}
+
+test('test_columns_quick_picks_set_the_registry_preset', () => {
+  const c = load(withShape);
   const { parts } = page({}, c);
-  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-value="5" aria-pressed="false">narrow \(5\)<\/button>/);
-  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-value="40" aria-pressed="true">wide \(40\)<\/button>/);
+  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-source="shape" data-key="narrow" aria-pressed="false">narrow \(5\)<\/button>/);
+  assert.match(parts.inputs, /data-action="quick" data-id="columns" data-source="shape" data-key="wide" aria-pressed="true">wide \(40\)<\/button>/);
+  // A hidden enum is not on the form; its picks are.
+  assert.doesNotMatch(parts.inputs, /data-id="shape"/);
   const s = Object.assign(ui.defaultState(c, 'custom'), { inputs: {} });
-  const r = ui.update(c, s, {}, { type: 'quick', data: { id: 'columns', value: '5' } }, {});
-  assert.equal(r.state.inputs.columns, 5);
+  const r = ui.update(c, s, {}, { type: 'quick', data: { id: 'columns', source: 'shape', key: 'narrow' } }, {});
+  assert.deepEqual([r.state.inputs.columns, r.state.inputs.streams_per_column], [5, 1]);
+  assert.throws(() => ui.update(c, s, {}, { type: 'quick', data: { id: 'columns', source: 'shape', key: 'huge' } }, {}), /shape has no preset "huge"/);
+});
+
+test('test_choosing_a_shape_sets_its_preset_quantities', () => {
+  const c = load(withShape);
+  const s = Object.assign(ui.defaultState(c, 'custom'), { inputs: { columns: 12 } });
+  const r = ui.update(c, s, {}, { type: 'input', data: { id: 'shape' }, value: 'wide' }, {});
+  assert.deepEqual([r.state.inputs.shape, r.state.inputs.columns, r.state.inputs.streams_per_column], ['wide', 40, 2]);
 });

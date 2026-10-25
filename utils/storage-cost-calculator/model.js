@@ -148,7 +148,7 @@
     if (anyUnavailable(keys)) return unavailable(node, kids, ex);
     const key = keys.map((k) => String(k.value)).join('|');
     const table = ctx.tables.get(node.table_id);
-    const extra = { lookup_key: key };
+    const extra = { lookup_key: key, table_id: node.table_id };
     if (table && table.index.length !== node.keys.length) {
       return unavailable(node, kids, ex, { reason: 'lookup arity' });
     }

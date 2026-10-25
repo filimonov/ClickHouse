@@ -102,6 +102,38 @@
 
   const isObj = (v) => typeOf(v) === 'object';
 
+  // `ui.nearest` opts an ordinal enum into nearest-key lookups: `true` (the declared enum order), an order (a
+  // permutation of the enum) or a map {value: stand-in value}. Any other enum must match a table key exactly.
+  function nearestProblems(q) {
+    const n = q.ui && q.ui.nearest;
+    if (n === undefined || n === null || n === false) return [];
+    if (q.value_type !== 'enum' || !Array.isArray(q.enum)) return ['ui.nearest is set on a quantity that is not an enum'];
+    if (n === true) return [];
+    if (Array.isArray(n)) {
+      const same = n.length === q.enum.length && n.every((x) => q.enum.includes(x)) && new Set(n).size === n.length;
+      return same ? [] : [`ui.nearest order ${JSON.stringify(n)} is not a permutation of the enum ${JSON.stringify(q.enum)}`];
+    }
+    if (isObj(n)) {
+      return Object.entries(n).filter(([a, b]) => !q.enum.includes(a) || !q.enum.includes(b))
+        .map(([a, b]) => `ui.nearest maps ${JSON.stringify(a)} to ${JSON.stringify(b)}; both must be enum values`);
+    }
+    return [`ui.nearest must be true, an order or a map, got ${JSON.stringify(n)}`];
+  }
+
+  // `presets` of an enum input set other inputs per enum value (shape narrow: columns 5, ...); every value has one.
+  function presetProblems(q, ids) {
+    if (q.presets === undefined || q.presets === null) return [];
+    if (q.kind !== 'input' || q.value_type !== 'enum' || !isObj(q.presets)) return ['presets need an enum input and an object of presets'];
+    const out = [];
+    for (const v of q.enum) if (!isObj(q.presets[v])) out.push(`presets has no entry for ${JSON.stringify(v)}`);
+    for (const [v, p] of Object.entries(q.presets)) {
+      if (!q.enum.includes(v)) { out.push(`presets.${v} is not an enum value`); continue; }
+      if (!isObj(p)) continue;
+      for (const k of Object.keys(p)) if (!ids.has(k) || ids.get(k).kind !== 'input') out.push(`presets.${v}.${k} is not a registry input`);
+    }
+    return out;
+  }
+
   // Returns id -> kind for the well-formed coefficient records; malformed elements become problems.
   function checkUnique(c, problems, tables) {
     const seen = new Set();
@@ -109,7 +141,10 @@
       if (!isObj(q)) { problems.push(`registry[${i}]: expected object, got ${typeOf(q)}`); return; }
       if (seen.has(q.id)) problems.push(`registry: duplicate quantity id ${q.id}`);
       seen.add(q.id);
+      for (const p of nearestProblems(q)) problems.push(`registry ${q.id}: ${p}`);
     });
+    const ids = new Map(c.registry.filter(isObj).map((q) => [q.id, q]));
+    for (const q of c.registry.filter(isObj)) for (const p of presetProblems(q, ids)) problems.push(`registry ${q.id}: ${p}`);
     const owner = new Map();
     c.coefficients.forEach((rec, i) => {
       if (!isObj(rec)) { problems.push(`coefficients[${i}]: expected object, got ${typeOf(rec)}`); return; }

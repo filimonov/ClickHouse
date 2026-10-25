@@ -9,7 +9,8 @@
   // Scenario values are a product manager's round numbers for a plausible ClickHouse workload. Sizes are compressed
   // on-disk bytes (`bytes_on_disk`); `ingest_rate` is per day, `insert_rate` is per second. Only the locked members of the
   // data = ingest × retention group carry a value: the third member is derived, and a value for it would be ignored.
-  // Every value lies inside every validity domain of the contract; `coverageProblems` checks it.
+  // Every value lies inside every validity domain of the contract; `coverageProblems` checks it. Each scenario sets
+  // `columns` itself: the table width is a workload fact, not left to the `shape` preset.
   // Real tables often merge into larger parts than the measured `merge_size_ratio` range; such a workload is
   // entered by the user and labelled extrapolated, not shipped as a preset.
   const SCENARIOS = {
@@ -24,7 +25,7 @@
         ingest_rate: 500, retention_days: 30, replicas: 2,
         insert_rows: 100000, insert_rate: 1, insert_bytes_uncompressed: 62914560, insert_clients: 4,
         // Ratio 256 merges ~5.9 MiB inserts into ~1.5 GiB parts.
-        async_insert: '0', shape: 'wide', merge_size_ratio: 256,
+        async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 256,
         // Append-only: logs are never updated or deleted in place, so no mutation of any kind runs.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Searches over recent logs: 2,000 parts read a day that miss the cache. One rolling restart a month.
@@ -41,7 +42,7 @@
       values: {
         ingest_rate: 20, retention_days: 90, replicas: 2,
         insert_rows: 1000, insert_rate: 50, insert_bytes_uncompressed: 102400, insert_clients: 50,
-        async_insert: '1', shape: 'narrow', merge_size_ratio: 256,
+        async_insert: '1', shape: 'narrow', columns: 5, merge_size_ratio: 256,
         // Append-only: samples are never rewritten; expiry is by TTL or partition drop, not by mutation.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Dashboards re-read history often: 5,000 parts read a day that miss the cache. One rolling restart a month.
@@ -62,7 +63,7 @@
         data_bytes: 10240, retention_days: 365, replicas: 2,
         insert_rows: 100000, insert_rate: 0.05, insert_bytes_uncompressed: 104857600, insert_clients: 1,
         // Ratio 400 merges ~6.6 MiB inserts into ~2.6 GiB parts.
-        async_insert: '0', shape: 'wide', merge_size_ratio: 400,
+        async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 400,
         // Periodic corrections and backfills: 30 ALTER UPDATE statements a month, each rewriting ~10 wide parts of the
         // affected partitions (300 parts a month). The CAS rate is the same 30 a month per second (30 / 2,628,000 s).
         mutations_per_month: 30, mutation_kind: 'update_column', mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 300,
@@ -82,7 +83,7 @@
         data_bytes: 51200, retention_days: 730, replicas: 1,
         insert_rows: 100000, insert_rate: 0.1, insert_bytes_uncompressed: 104857600, insert_clients: 1,
         // Ratio 450 merges ~8.3 MiB inserts into ~3.7 GiB parts, the largest a measured ratio allows.
-        async_insert: '0', shape: 'wide', merge_size_ratio: 450,
+        async_insert: '0', shape: 'wide', columns: 40, merge_size_ratio: 450,
         // Append-only: an archive is written once and expires by partition drop.
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Rare lookups: 200 parts read a day. One restart a month.
@@ -97,7 +98,7 @@
       label: 'Custom',
       description: 'A typical deployment: wide table, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, one restart a month, no ALTER UPDATE/DELETE; edit any input',
       values: {
-        replicas: 3, topology: 'same_az', shape: 'wide', async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000, restarts_per_month: 1,
+        replicas: 3, topology: 'same_az', shape: 'wide', columns: 40, async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000, restarts_per_month: 1,
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
       },
       locks: [],
@@ -233,7 +234,11 @@
     const out = [];
     const M = root.SCC.model || require('./model.js');
     for (const c of contract.coefficients) for (const [param, range] of Object.entries(M.rangeOf(c) || {})) out.push({ id: c.id, owner: `coefficient ${c.id}`, param, range, basis: M.basisOf(c) });
-    for (const q of contract.registry) for (const [param, range] of Object.entries(M.rangeOf(q) || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range, basis: 'fitted' });
+    // A registry row is `derived` when it is a formula from source, or an input only such formulas read.
+    const P = pipeline();
+    const derivedOnly = P.derivedOnlyInputs(contract);
+    const basisOf = (q) => (q.kind === 'derivation' ? P.derivationBasis(q) : derivedOnly.has(q.id) ? 'derived' : 'fitted');
+    for (const q of contract.registry) for (const [param, range] of Object.entries(M.rangeOf(q) || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range, basis: basisOf(q) });
     return out;
   }
 
@@ -265,7 +270,8 @@
   // registry row). A validity parameter the pipeline does not resolve cannot be checked and is a problem too.
   // `scenario.expected_extrapolated` ({variant: [coefficient ids]}) declares coefficients that lie out of range on
   // purpose: such a coefficient is listed in `declared` instead of `problems`. A declaration must stay true, so a
-  // declared coefficient the variant does not reach, or one that is in range, is a problem.
+  // declared coefficient the variant does not reach, or one that is in range, is a problem. A table whose lookup
+  // the scenario answers with the nearest measured key (`ui.nearest`) must be declared the same way.
   function coverageReport(contract, scenario) {
     const problems = [];
     const declared = [];
@@ -302,6 +308,13 @@
         declared.push(`${text} (declared)`);
       } else problems.push(text);
     }
+    for (const sub of substitutionsReached(contract, scenario)) {
+      const text = `${sub.variant}.${sub.operation}: ${sub.table_id} measured for ${sub.measured}, applied to ${sub.requested}`;
+      if ((expected[sub.variant] || []).includes(sub.table_id)) {
+        seenOut.add(`${sub.variant}:${sub.table_id}`);
+        declared.push(`${text} (declared)`);
+      } else problems.push(`${text}: nearest-key substitution not declared in expected_extrapolated`);
+    }
     for (const [x, ids] of Object.entries(expected)) {
       for (const id of ids) if (!seenOut.has(`${x}:${id}`)) problems.push(`declared extrapolation ${x}:${id} is not out of range for a coefficient that variant reaches`);
     }
@@ -315,6 +328,21 @@
     }
     for (const m of allowed) if (!misses.includes(m)) problems.push(`declared lookup miss ${m} does not occur`);
     return { problems, declared, info };
+  }
+
+  // Lookups the scenario answers with the nearest measured key: [{variant, operation, table_id, requested, measured}].
+  function substitutionsReached(contract, scenario) {
+    const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
+    const preset = ((contract.billing && contract.billing.presets) || [])[0];
+    if (!preset) return [];
+    const run = pipeline().run(contract, res.inputs, preset, {});
+    const out = [];
+    for (const [v, vr] of Object.entries(run.variants || {})) {
+      for (const [op, cell] of Object.entries(vr.cells || {})) {
+        for (const s of pipeline().substitutions(cell.trace)) out.push(Object.assign({ variant: v, operation: op }, s));
+      }
+    }
+    return out;
   }
 
   // Lookup keys the scenario reaches that a table does not hold: "<variant>.<operation>: <key>" per miss.
@@ -340,6 +368,6 @@
 
   function coverageProblems(contract, scenario) { return coverageReport(contract, scenario).problems; }
 
-  SCC.presets = { lookupMisses, SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
+  SCC.presets = { lookupMisses, substitutionsReached, SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);

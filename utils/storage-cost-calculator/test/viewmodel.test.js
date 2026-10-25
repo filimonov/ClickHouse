@@ -312,10 +312,10 @@ test('test_out_of_range_note_once_per_param', () => {
     const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
     return vm.notes.filter((n) => n.kind === 'out_of_range');
   };
-  // Coefficients no cell reads raise no note.
+  // Coefficients no cell reads raise no note; formulas from source are exact outside their range and raise none either.
   const reached = presets.reachedCoefficients(live);
   const coefIds = new Set(live.coefficients.map((c) => c.id));
-  const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows' && (!coefIds.has(d.id) || reached.has(d.id)));
+  const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows' && d.basis !== 'derived' && (!coefIds.has(d.id) || reached.has(d.id)));
   const fmt = (n) => n.toLocaleString('en-US');
   const range = (d) => `[${fmt(d.range[0])}, ${fmt(d.range[1])}]`;
   // 2,000,000 is above the 1,000-100,000, 1,000-400,000 and 1,000-600,000 maxima: several owners with different ranges, one note.

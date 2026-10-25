@@ -196,11 +196,10 @@
       + `<span class="control">${num}${unit}</span>`;
   }
 
-  // Quick picks for a number with well-known shapes: the table widths the measurements used (registry `shape`).
-  const QUICK_PICKS = { columns: [['narrow', 5], ['wide', 40]] };
-  const quickPicks = (f, page) => (QUICK_PICKS[f.id] && f.editable && !page.cannot_reproduce
-    ? `<span class="quick">${QUICK_PICKS[f.id].map(([label, v]) => `<button type="button" class="pill pill-small" data-action="quick" data-id="${esc(f.id)}" data-value="${esc(v)}"`
-      + ` aria-pressed="${f.value === v}">${esc(label)} (${esc(v)})</button>`).join('')}</span>` : '');
+  // Quick picks from registry presets (the table widths the measurements used): a pick sets every quantity of its preset.
+  const quickPicks = (f, page) => ((f.quick_picks || []).length && f.editable && !page.cannot_reproduce
+    ? `<span class="quick">${f.quick_picks.map((p) => `<button type="button" class="pill pill-small" data-action="quick" data-id="${esc(f.id)}" data-source="${esc(p.source)}" data-key="${esc(p.key)}"`
+      + ` aria-pressed="${p.pressed}">${esc(p.label)}</button>`).join('')}</span>` : '');
 
   // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
   const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code></span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
@@ -584,6 +583,11 @@
       if (!x) throw new Error(`ui: ${id} is not a registry row`);
       return x;
     };
+    const setInput = (id, v) => {
+      const f = fields[id];
+      if (f && (f.derived || f.overridden)) s.overrides[id] = v;
+      else s.inputs[id] = v;
+    };
     switch (action.type) {
       case 'scenario': {
         const sc = presetsLib().SCENARIOS[d.id];
@@ -603,12 +607,21 @@
         break;
       }
       case 'input':
-      case 'slider':
+      case 'slider': {
+        const src = q(d.id);
+        const v = parseInput(src, action.value, s.units);
+        setInput(d.id, v);
+        // Choosing a value with a registry preset (shape) sets the preset's quantities too, as a quick pick does.
+        const p = src.presets && typeof v === 'string' ? src.presets[v] : null;
+        if (p) for (const [id, x] of Object.entries(p)) setInput(id, x);
+        break;
+      }
       case 'quick': {
-        const v = parseInput(q(d.id), action.type === 'quick' ? d.value : action.value, s.units);
-        const f = fields[d.id];
-        if (f && (f.derived || f.overridden)) s.overrides[d.id] = v;
-        else s.inputs[d.id] = v;
+        const src = q(d.source);
+        const p = src.presets && Object.prototype.hasOwnProperty.call(src.presets, d.key) ? src.presets[d.key] : null;
+        if (!p) throw new Error(`ui: ${d.source} has no preset ${JSON.stringify(d.key)}`);
+        // Preset values are stored in registry units already: no unit conversion.
+        for (const [id, x] of Object.entries(p)) setInput(id, x);
         break;
       }
       case 'lock': {
