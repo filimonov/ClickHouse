@@ -1,0 +1,131 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "startup.cas-tables-8",
+  "card": "startup",
+  "case_id": "cas-tables-8",
+  "policies": [
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "tables": [
+      {
+        "name": "t0",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t1",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t2",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t3",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t4",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t5",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t6",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      },
+      {
+        "name": "t7",
+        "columns": "k UInt64, u0 UInt64, u1 UInt64, u2 UInt64, u3 UInt64",
+        "order_by": "k",
+        "row_bytes": 40
+      }
+    ],
+    "inserts": [
+      {
+        "table": "t0",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 0) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t1",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 1) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t2",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 2) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t3",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 3) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t4",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 4) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t5",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 5) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t6",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 6) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      },
+      {
+        "table": "t7",
+        "rows": 20000,
+        "count": 2,
+        "insert": "INSERT INTO {table} SELECT number * {n} + {i} AS k, sipHash64(k, {seed}, 7) AS u0, u0 % 1000 AS u1, k * 7 AS u2, intDiv(k, 3) AS u3 FROM numbers({rows})"
+      }
+    ]
+  },
+  "scale": 1.0,
+  "repeats": 1,
+  "timeout_s": 600,
+  "description": "Hold-out on cas: 8 table(s) of two Compact parts each (5 columns, 20 000 rows); stop, start and count() per table inside the window."
+}

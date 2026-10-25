@@ -22,12 +22,11 @@ CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-pe
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'drop-60s', 'drop-60s-12', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-3k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
-         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}, 'gc-tables': {'n1', 'n4', 'n16'},
+         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'},
          'cold-select': {'cas-holdout-narrow-3', 'cas-holdout-on-narrow-3', 'cas-off-narrow', 'cas-off-wide',
                          'cas-on-narrow', 'cas-on-narrow-2', 'cas-on-wide', 'cas-on-wide-2', 'cas-warm-off-narrow',
                          'cas-warm-off-wide'},
-         'startup': {'cas-compact-5', 'cas-holdout-wide-4', 'cas-intact', 'cas-wide-parts', 'cas-wide-parts-3',
-                     'cas-tables-1', 'cas-tables-4', 'cas-tables-16'}}
+         'startup': {'cas-compact-5', 'cas-holdout-wide-4', 'cas-intact', 'cas-wide-parts', 'cas-wide-parts-3'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
 P = 'cost-20261024T000000Z/cas/gc-idle/populated/k1/shared'
 BLOB = f'{P}/blobs/ch128/7e/7e04f7775690055a4f834c628c1cd41d'
@@ -477,14 +476,35 @@ class GcScaleTest(unittest.TestCase):
             self.assertEqual([r['requests'] for r in rounds], [2, 1])
 
 
+TABLES = os.path.join(probes.REPO, 'docs', 'superpowers', 'reports', '2026-10-25-storage-cost-cas-tables')
+
+
+def tables_manifest(experiment_id):
+    with open(os.path.join(TABLES, 'experiments', f'{experiment_id}.json')) as f:
+        m = json.load(f)
+    m['params']['report_dir'] = TABLES
+    return m
+
+
 class GcTablesTest(unittest.TestCase):
+    def test_tables_report_manifests_and_predictions_validate(self):
+        names = sorted(os.listdir(os.path.join(TABLES, 'experiments')))
+        self.assertEqual(len(names), 8)
+        for name in names:
+            m = tables_manifest(name[:-5])
+            self.assertEqual(artifacts.validate_experiment(m), [], name)
+            self.assertIn(m['card'], CARDS, name)
+            pred = probes.prediction(m['experiment_id'], 'cas', TABLES)
+            self.assertEqual(artifacts.validate_prediction(pred), [], name)
+
+
     RULE = {'fold': {'GetObject': 18, 'PutObject': 6, 'ListObjectsV2': 4},
             'deferred': {'GetObject': 13, 'PutObject': 2, 'ListObjectsV2': 3},
             'gets_per_new_manifest': 1, 'gets_per_tail_record': 1, 'records_per_insert': 3}
 
     def test_tables_knob_defaults_to_one_and_names_distinct_tables(self):
         card = CARDS['gc-tables']
-        m = manifest('gc-tables.n4')
+        m = tables_manifest('gc-tables.n4')
         with tempfile.TemporaryDirectory() as tmp:
             ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
             self.assertEqual(card.tables(ctx), ['t0', 't1', 't2', 't3'])
@@ -494,7 +514,7 @@ class GcTablesTest(unittest.TestCase):
 
     def test_measured_inserts_every_table_then_runs_rounds_without_overlap(self):
         card = CARDS['gc-tables']
-        m = manifest('gc-tables.n4')
+        m = tables_manifest('gc-tables.n4')
         m['params'].update(bursts=2, rounds_per_burst=2, first_round_s=0, round_spacing_s=0, burst_period_s=0)
         with tempfile.TemporaryDirectory() as tmp:
             ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
@@ -509,7 +529,7 @@ class GcTablesTest(unittest.TestCase):
 
     def run_rounds(self, tmp, extra_get=False, listing_in_round=False):
         card = CARDS['gc-tables']
-        m = manifest('gc-tables.n4')
+        m = tables_manifest('gc-tables.n4')
         led = Ledger(os.path.join(tmp, 'l'))
         # Fold round after 4 inserts: 18 + 4 manifests + 12 tail records GET, PUT 6, LIST 4.
         t = 5_000_000

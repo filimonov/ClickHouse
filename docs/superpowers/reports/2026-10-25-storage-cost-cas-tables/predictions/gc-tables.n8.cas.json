@@ -1,0 +1,134 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-tables.n8",
+  "policy": "cas",
+  "inputs": {
+    "role": "holdout",
+    "tables": 8,
+    "cas_tables": 8,
+    "inserts": 96,
+    "exact": true,
+    "rule": {
+      "fold": {
+        "GetObject": 116,
+        "PutObject": 6,
+        "ListObjectsV2": 4
+      },
+      "deferred": {
+        "GetObject": 13,
+        "PutObject": 2,
+        "ListObjectsV2": 3
+      },
+      "gets_per_new_manifest": 1,
+      "gets_per_tail_record": 1,
+      "records_per_insert": 3
+    },
+    "rule_text": "fit of cost-20261025T060213Z at 1, 4 and 16 tables (coefficient gc_round_requests_steady): a fold after the first reads GET 19 + 1 per new manifest + 1 per tail record + 12 per table, PUT 5, LIST 4 (5 from the fourth fold), DELETE 0 (2 from the fourth fold); the first fold of a process reads GET 13 + 8 per table with its new records only; a Deferred round GET 12, PUT 1, LIST 3; each manual round adds one heartbeat pulse (GET 1, PUT 1). The card rule carries the per-table term in the fold base for this N; the first fold and the gen pruning give the residuals below",
+    "listing_rule": "per table one catalog GET and one LIST of _files/ every 305 s: 2 per table in 12 minutes",
+    "insert_rule": "fresh Compact part: HEAD 1, PUT 9, GET 7 per insert, plus 1 GET per table life"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 864,
+        "HeadObject": 96,
+        "GetObject": {
+          "min": 680,
+          "max": 704,
+          "basis": "derived",
+          "reason": "inserts plus 0-3 cleanup listings per table outside the rounds"
+        },
+        "ListObjectsV2": {
+          "min": 0,
+          "max": 24,
+          "basis": "derived",
+          "reason": "cleanup listings outside the rounds; one inside a round is maintenance"
+        }
+      }
+    },
+    "observations": {
+      "tables": 8,
+      "inserts": 96,
+      "fold_rounds": 12,
+      "deferred_rounds": 60,
+      "fold_round_ops": {
+        "GetObject": 3290,
+        "PutObject": 72,
+        "ListObjectsV2": 57,
+        "DeleteObject": 18,
+        "HeadObject": 0,
+        "DeleteObjects": 0
+      },
+      "deferred_round_ops": {
+        "GetObject": 780,
+        "PutObject": 120,
+        "ListObjectsV2": 180,
+        "DeleteObject": 0,
+        "HeadObject": 0,
+        "DeleteObjects": 0
+      },
+      "max_abs_round_residual": 70,
+      "cleanup_listings_per_table": {
+        "min": 1,
+        "max": 3
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "SYSTEM CAS GC RUN runs one synchronous round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 336
+    },
+    {
+      "claim": "a round with no changed shard and no due graduation is Deferred: no fold",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 303
+    },
+    {
+      "claim": "each ref transaction appends one immutable _log object (create-only PUT)",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 3320
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "a round that acquires the lease pulses once more",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 182
+    },
+    {
+      "claim": "one pulse is a GET of gc/hb and one conditional PUT",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp",
+      "line": 5076
+    },
+    {
+      "claim": "a _snap snapshot is published after more than 256 log records or 1 MiB of tail",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h",
+      "line": 296
+    },
+    {
+      "claim": "idle cleanup runs sleep max_cleanup_delay_period plus up to cleanup_delay_period_random_add",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeCleanupThread.cpp",
+      "line": 134
+    },
+    {
+      "claim": "it iterates the table directory: on CAS a catalog GET and a LIST of the namespace files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 4028
+    },
+    {
+      "claim": "max_cleanup_delay_period 300 s",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 1682
+    }
+  ],
+  "prediction_commit": "pending"
+}

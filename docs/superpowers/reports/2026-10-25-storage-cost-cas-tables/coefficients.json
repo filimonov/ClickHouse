@@ -1,0 +1,308 @@
+[
+ {
+  "id": "gc_round_requests_steady",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "gc_round_term"
+   ],
+   "values": {
+    "fold_get": 19,
+    "fold_put": 5,
+    "fold_list": 5,
+    "fold_delete": 2,
+    "fold_get_per_manifest": 1,
+    "fold_get_per_tail_log_record": 1,
+    "fold_get_per_table": 12,
+    "deferred_get": 12,
+    "deferred_put": 1,
+    "deferred_list": 3
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "cas_tables": [
+    1,
+    16
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T060213Z/cas/gc-tables/n1/k1",
+    "cost-20261025T060213Z/cas/gc-tables/n4/k1",
+    "cost-20261025T060213Z/cas/gc-tables/n16/k1"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "requests of one GC round in steady state, without its heartbeat pulse: a fold reads a base, one GET per new manifest, one GET per ref log record of every table tail since its last snapshot and 12 GETs per table (7 ref stream reads beyond the tail, 2 _ckpt reads, 3 reads of the table mount objects under gc/server-roots, 2 of them 404); from the fourth fold of a process on it lists and deletes an old gc/gen generation (LIST +1, DELETE 2); a Deferred round does not depend on the table count; the first fold of a process reads GET 13 + 8 per table with its new records only",
+  "fit": {
+   "method": "per op and term, a linear fit over folds 2-12 of the three passes against tables and tail records; folds 2-3 carry LIST 4 and DELETE 0 (no generation to prune yet)",
+   "residuals": {
+    "cost-20261025T060213Z/cas/gc-tables/n1/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0,
+     "DeleteObject": 0
+    },
+    "cost-20261025T060213Z/cas/gc-tables/n4/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0,
+     "DeleteObject": 0
+    },
+    "cost-20261025T060213Z/cas/gc-tables/n16/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0,
+     "DeleteObject": 0
+    }
+   },
+   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+  }
+ },
+ {
+  "id": "cas_startup_requests_base",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "cache_enabled",
+    "replication_op"
+   ],
+   "values": {
+    "0|GetObject": 17,
+    "0|PutObject": 7,
+    "0|HeadObject": 3,
+    "0|DeleteObject": 2,
+    "0|ListObjectsV2": 2
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "cas_tables": [
+    1,
+    16
+   ]
+  },
+  "tolerance": {
+   "abs": 1,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "requests of a server start answered 2xx that do not depend on the table count, besides part loads and log replay; the tolerance is one mount lease renewal",
+  "fit": {
+   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables",
+   "residuals": {
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+  }
+ },
+ {
+  "id": "cas_startup_error_requests_base",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "cache_enabled",
+    "replication_op"
+   ],
+   "values": {
+    "0|GetObject": 1,
+    "0|PutObject": 2,
+    "0|HeadObject": 3,
+    "0|DeleteObject": 1
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "cas_tables": [
+    1,
+    16
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "requests of a server start answered 4xx that do not depend on the table count",
+  "fit": {
+   "method": "per op, intercept of a linear fit over 1, 4 and 16 tables",
+   "residuals": {
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+     "GetObject": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+     "GetObject": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+     "GetObject": 0
+    }
+   },
+   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+  }
+ },
+ {
+  "id": "cas_startup_requests_per_table",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "replication_op"
+   ],
+   "values": {
+    "GetObject": 11,
+    "PutObject": 2,
+    "ListObjectsV2": 5
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "cas_tables": [
+    1,
+    16
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "requests of a server start answered 2xx per table on the disk, besides its parts and log records: catalog, _ckpt and table file reads, table file listings and the table ref transaction",
+  "fit": {
+   "method": "per op, slope of a linear fit over 1, 4 and 16 tables",
+   "residuals": {
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+     "GetObject": 0,
+     "PutObject": 0,
+     "ListObjectsV2": 0
+    }
+   },
+   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+  }
+ },
+ {
+  "id": "cas_startup_error_requests_per_table",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "replication_op"
+   ],
+   "values": {
+    "GetObject": 3
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "cas_tables": [
+    1,
+    16
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "GetObject answered 404 per table on the disk at a server start (absent _log records and table files)",
+  "fit": {
+   "method": "slope of a linear fit over 1, 4 and 16 tables",
+   "residuals": {
+    "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+     "GetObject": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+     "GetObject": 0
+    },
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+     "GetObject": 0
+    }
+   },
+   "holdout": "gc-tables.n8 / startup.cas-tables-8 (predicted before their run)"
+  }
+ }
+]
