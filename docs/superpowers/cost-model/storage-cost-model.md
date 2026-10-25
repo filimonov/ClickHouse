@@ -175,6 +175,12 @@ States below match the presets and the [Break-even](#break-even) block.
   small-I/O workloads may be underpriced. The gp3 3,000-IOPS baseline usually dominates (D16).
 - **Cut P2 cards.** `async-inserts`, `amplification-run`, `detach-attach`, `cache-eviction`, `replacement` and
   `fault-fetch` were not run. A 36-hour deadline cut them (D14). A non-zero replacement rate is not modelled.
+- **CAS on wide tables.** On the Logs preset the CAS column is `backlog_grows` from 67 columns. A Wide part
+  uploads a blob per stream plus its distinct mark files, so retired blobs per GC round grow with the column count.
+  From 67 columns they exceed the per-round graduation and redelete budgets (5,000 blobs each). The threshold uses
+  the `wide` preset's share of distinct mark files, 1/30. With the default share of 1 it drops to 35 columns. A
+  30 s `cas_gc_interval_s` raises it to 133. The round duration (276.2 ms + 6.962 ms per new part) adds under 1 s
+  to the 60 s interval, so it barely moves the threshold.
 - **No rates or latency.** The model prices request counts and bytes. S3 rate limits, `503 Slow Down` and commit
   latency are not modelled.
 - **Card cells.** `card_cells` reconcile single rig cards; the page does not evaluate them.

@@ -469,6 +469,11 @@ content), `cas_mutation_marks_hit_fraction` 0 (compressed marks change with the 
 - **Reclaim requests per object** (HEAD 2, `.meta` GET 3 and PUT 1, DELETE 2 per blob; GET 2 per manifest) come
   from `gc-lifecycle.drop` maintenance rows and are priced as constants; the integrated GC cost under load is not
   validated (`gc-under-load.default` is cut by D14).
+- **Wide tables reach the GC budget.** Retired blobs per round grow with blobs per part, and a Wide part has one
+  per stream plus its distinct mark files. On the Logs preset (`wide` shape, 1/30 of mark files distinct, 60 s
+  interval) the `gc` cell is `backlog_grows` from 67 columns, 35 with all mark files distinct. There the retired
+  blobs per round exceed the 5,000-blob graduation and redelete budgets. Round duration adds under 1 s to the
+  interval and is not the limit. Shorter intervals or larger budgets raise the threshold.
 - **Concurrent runs.** The `s3` report's run `cost-20261024T075800Z` overlapped run `cost-20261024T075656Z` on the same
   RustFS; counts are per pass prefix and unaffected, timings may be.
 
