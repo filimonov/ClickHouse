@@ -145,6 +145,23 @@ Run `cost-20261025T080040Z` (start 08:00:40Z, record `ok`) from a detached workt
   the upper bound.
 - **Result:** `gc_round_requests_steady` has a done hold-out; `verified_range` `cas_tables` [1, 500] stands.
 
+GETs of one steady-state fold round, in registry terms; the CAS variant `gc` cell
+(`docs/superpowers/reports/2026-10-24-storage-cost-cas/formulas.json`) prices it. All terms are keys of
+`gc_round_requests_steady`:
+
+```
+fold_get                                      19: catalog 4, gc 14, gc/hb 1; the round's heartbeat pulse is extra
++ parts per round × fold_get_per_manifest     1
++ parts per round × cas_log_records_per_part × fold_get_per_new_log_record    1
++ changed tables × fold_get_per_changed_table 4: 1 _ckpt + at most 3 mount objects (2 answer 404); upper bound
++ min(cas_tables, sweep_namespace_budget) × (cas_ref_log_tail_records × fold_get_per_swept_tail_log_record
+                                             + fold_get_per_swept_table)    budget 20; 1; 5
+```
+
+PUT is `fold_put`, DELETE `fold_delete`, LIST `fold_list` for one listing page. The paged `cas/ns/stream/` listing
+is not modeled. The report has no formulas cells: the `gc-tables` card checks every round against its prediction, and
+a cell would compare only the insert-side foreground.
+
 ## How to re-run {#rerun}
 
 ```bash
