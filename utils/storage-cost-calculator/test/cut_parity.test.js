@@ -36,15 +36,33 @@ test('test_python_and_js_cut_classifiers_agree_on_the_live_contract', () => {
   assert.deepEqual(javascript(readJson(CM, 'model-contract.json')), python(CM));
 });
 
-// The live contract cuts nothing, so the live comparison alone would pass for any walk. Seed two cuts: one table a
-// cell reads directly and one coefficient only a registry derivation reads.
+// The live contract cuts nothing, so the live comparison alone would pass for any walk. Seed two cuts: a table a cell
+// reads directly and a coefficient only registry derivations read.
 test('test_python_and_js_cut_classifiers_agree_on_seeded_cuts', () => {
   const dir = fs.mkdtempSync(path.join(ROOT, 'tmp', 'cut-parity-'));
   try {
     const contract = readJson(CM, 'model-contract.json');
     const coverage = readJson(CM, 'coverage.json');
     const registry = readJson(CM, 'inputs-registry.json');
-    const seeds = ['acquire_bytes', 'cas_objects_per_part'];
+    // A coefficient that only registry derivations read, picked from the contract so a registry change that turns
+    // one of them into a formula does not silently empty the seed.
+    const direct = new Set();
+    const viaRules = new Set();
+    const refs = (node, into) => JSON.stringify(node, (k, v) => {
+      if (v && v.kind === 'coef') into.add(v.id);
+      if (v && v.kind === 'lookup') into.add(v.table_id);
+      return v;
+    });
+    for (const ops of Object.values(contract.formulas)) for (const cell of Object.values(ops)) refs(cell.ledger_rows, direct);
+    // Both sides must read it through a derivation: the page from the contract's registry, closure_check from the file.
+    const viaFile = new Set();
+    for (const q of contract.registry) if (q.kind === 'derivation' && q.rule) refs(q.rule, viaRules);
+    for (const q of registry.quantities) if (q.kind === 'derivation' && q.rule) refs(q.rule, viaFile);
+    const withEvidence = new Set(coverage.evidence.map((r) => r.coefficient));
+    const derivationOnly = contract.coefficients.map((c) => c.id)
+      .filter((id) => viaRules.has(id) && viaFile.has(id) && !direct.has(id) && withEvidence.has(id)).sort();
+    assert.ok(derivationOnly.length, 'some coefficient is read only through a registry derivation');
+    const seeds = ['acquire_bytes', derivationOnly[0]];
     for (const id of seeds) {
       const c = contract.coefficients.find((x) => x.id === id);
       assert.ok(c, `${id} is in the contract`);
@@ -59,7 +77,7 @@ test('test_python_and_js_cut_classifiers_agree_on_seeded_cuts', () => {
     const py = python(dir);
     assert.deepEqual(py.cut_coefficients, seeds.slice().sort());
     // The derivation-only seed must reach a cell, or the seed does not test the derivation walk.
-    assert.ok(Object.values(py.cells_on_cut).some((ids) => ids.includes('cas_objects_per_part')), JSON.stringify(py.cells_on_cut));
+    assert.ok(Object.values(py.cells_on_cut).some((ids) => ids.includes(seeds[1])), `${seeds[1]}: ${JSON.stringify(py.cells_on_cut)}`);
     assert.deepEqual(javascript(contract), py);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
