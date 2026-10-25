@@ -691,6 +691,33 @@
           "duration_s": 7200,
           "priority": "P2",
           "status": "cut"
+        },
+        {
+          "case_id": "2hz-10m",
+          "policies": [
+            "local"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 660,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "4hz-10m",
+          "policies": [
+            "local",
+            "s3"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 660,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -20968,6 +20995,108 @@
         "cost-20261025T080040Z/cas/gc-tables/n40/k1"
       ],
       "status": "done"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "amplification-run.2hz-10m",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          1200
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8e32aefd0bc",
+      "measurement_ids": [
+        "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "paced inserts: amplification 8.75-8.81 against the rule 4.59-4.60 (+-0.25); fan-in matched"
+    },
+    {
+      "coefficient": "peak_factor",
+      "experiment_id": "amplification-run.2hz-10m",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8e32aefd0bc",
+      "measurement_ids": [
+        "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "constant 1 failed (28.2 at 2/s, 15.5 at 4/s); the peak interval held the largest merge as predicted"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "amplification-run.4hz-10m",
+      "policy": "local",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          2400
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8e32aefd0bc",
+      "measurement_ids": [
+        "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "paced inserts: amplification 8.75-8.81 against the rule 4.59-4.60 (+-0.25); fan-in matched"
+    },
+    {
+      "coefficient": "peak_factor",
+      "experiment_id": "amplification-run.4hz-10m",
+      "policy": "local",
+      "span": {
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "8e32aefd0bc",
+      "measurement_ids": [
+        "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "constant 1 failed (28.2 at 2/s, 15.5 at 4/s); the peak interval held the largest merge as predicted"
+    },
+    {
+      "coefficient": "merge_effective_fan_in",
+      "experiment_id": "amplification-run.4hz-10m",
+      "policy": "s3",
+      "span": {
+        "merge_size_ratio": [
+          1,
+          2400
+        ],
+        "insert_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "8e32aefd0bc",
+      "measurement_ids": [
+        "cost-20261025T130354Z/s3/amplification-run/4hz-10m/k1"
+      ],
+      "status": "consumed",
+      "note": "paced inserts: amplification 8.75-8.81 against the rule 4.59-4.60 (+-0.25); fan-in matched"
     }
   ],
   "domain": {

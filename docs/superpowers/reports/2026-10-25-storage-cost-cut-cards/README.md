@@ -28,7 +28,40 @@ Predictions:
   the peak interval holds the largest merge: between half its write and 1.2 × (the two largest merges + one second
   of inserts).
 
-Results follow the run.
+### Result {#amplification-result}
+
+Run `cost-20261025T130354Z` (rig commit `df8d6526e3e`, a detached checkout; binary `tmp/bin/26.8/clickhouse`, sha256
+`b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`, source
+`09d0772a842c5d73cf3ef35b4c8b017d838215a0`; RustFS 1.0.0-beta.9). All three records are `FAILED` on two assertions: amplification and the
+result-size distribution. Fan-in, part counts, rows and quiescence held.
+
+| Record | Merges | Max level | Amplification, bytes | Rule ± 0.2502 | Rows |
+|---|---|---|---|---|---|
+| `local`, 2/s, 1 200 inserts | 232 | 25 | 8.751 | 4.592 | 12.38 |
+| `local`, 4/s, 2 400 inserts | 466 | 25 | 8.807 | 4.597 | 12.46 |
+| `s3`, 4/s, 2 400 inserts | 466 | 25 | 8.807 | 4.597 | 12.46 |
+
+- **Amplification under paced inserts is about 1.9× the rule.** The selector keeps folding a few new small parts into
+  the largest part: level 25 for a part of 1 053 inserts, where log₆ 1 053 ≈ 3.9 levels. Results of 33–128 inserts
+  make 60 % of the merges (fit: 5–8 inserts, 83 %). The tempo does not matter: 2/s and 4/s give 8.75 and 8.81.
+- **`local` and `s3` merge identically** (same merges, levels and bytes), so the result holds for every variant
+  that prices merges from `write_amplification_rule`.
+- **`merge_effective_fan_in` is right; the level rule is not.** Mean fan-in 6.14–6.16 sits in the fit range, but
+  rows are rewritten 11.4 times, not 3.6. The 1-hour-scale evidence is now two tempos; the rule stays as it is and
+  the coverage edges are `consumed`.
+
+Peak factor (r1 `write_bytes`, window start to the last merge, net of the idle 66 492 B/s):
+
+| Record | Peak, B/s | Mean, B/s | Peak factor | Constant 1 ± 0.105 | Largest merge, B | Largest-merge bound |
+|---|---|---|---|---|---|---|
+| `local`, 2/s | 23 195 673 | 823 177 | 28.2 | fail | 22 747 333 | 11.4–38.1 MB: pass |
+| `local`, 4/s | 23 998 120 | 1 548 902 | 15.5 | fail | 22 749 547 | 11.4–55.4 MB: pass |
+
+- **The 1-s peak is one merge, not a property of the rate.** Doubling the tempo doubled the mean and left the peak at
+  the largest merge, so the factor halved. `peak_factor` is not a constant; it stays an assumed input with default 1
+  (provision for the mean rate, and let a merge run longer within the provisioned throughput).
+- **What a reader can use:** a volume provisioned for peaks needs the bytes of the largest merge per second, about
+  the largest part size of the table; the calculator has no input for it.
 
 ## CAS relink bytes per part {#relink}
 
