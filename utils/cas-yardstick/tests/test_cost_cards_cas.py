@@ -489,7 +489,7 @@ def tables_manifest(experiment_id):
 class GcTablesTest(unittest.TestCase):
     def test_tables_report_manifests_and_predictions_validate(self):
         names = sorted(os.listdir(os.path.join(TABLES, 'experiments')))
-        self.assertEqual(len(names), 12)
+        self.assertEqual(len(names), 13)
         for name in names:
             m = tables_manifest(name[:-5])
             self.assertEqual(artifacts.validate_experiment(m), [], name)
