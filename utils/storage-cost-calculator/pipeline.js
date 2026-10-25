@@ -26,7 +26,10 @@
     return perDay / normaliseRate(1, unit);
   }
 
-  const COUNT_INPUTS = ['replicas', 'shards'];
+  // Whole counts of at least one: servers, and the columns of a table.
+  const COUNT_INPUTS = ['replicas', 'shards', 'columns'];
+  // Averages of at least one: every column writes at least one stream (an average over columns need not be whole).
+  const AT_LEAST_ONE_INPUTS = ['streams_per_column'];
   // A `<name>_fraction` of unit 1 is a share of a whole: a value above 1 would price negative requests.
   const isFraction = (q) => q.unit === '1' && /_fraction$/.test(q.id);
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
@@ -46,8 +49,9 @@
     if (v !== null && typeof v === 'object') return { problem: `${q.id}: ${q.unit || 'value'} is not a rate; expected a plain value, got an object` };
     if (q.value_type === 'number') {
       if (!isFiniteNumber(v)) return { problem: `${q.id}: expected a finite number, got ${JSON.stringify(v)}` };
-      // Counts of servers are whole and at least one; no workload quantity is negative.
+      // Counts are whole and at least one; no workload quantity is negative.
       if (COUNT_INPUTS.includes(q.id) && !(Number.isInteger(v) && v >= 1)) return { problem: `${q.id}: expected a whole number of 1 or more, got ${v}` };
+      if (AT_LEAST_ONE_INPUTS.includes(q.id) && !(v >= 1)) return { problem: `${q.id}: expected a number of 1 or more, got ${v}` };
       if (v < 0) return { problem: `${q.id}: expected a number of 0 or more, got ${v}` };
       if (isFraction(q) && v > 1) return { problem: `${q.id}: expected a fraction from 0 to 1, got ${v}` };
       return { value: v };

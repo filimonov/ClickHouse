@@ -105,7 +105,7 @@ test('test_shape_preset_fills_quantities_the_caller_did_not_set', () => {
 test('test_bad_preset_value_is_an_input_problem', () => {
   const c = copyWith((j) => { j.registry.find((q) => q.id === 'shape').presets.narrow.columns = -5; });
   const r = pipeline.resolveInputs(c, { shape: 'narrow' }, [], {});
-  assert.ok(r.problems.some((p) => /shape preset narrow: columns: expected a number of 0 or more, got -5/.test(p)), r.problems.join('\n'));
+  assert.ok(r.problems.some((p) => /shape preset narrow: columns: expected a whole number of 1 or more, got -5/.test(p)), r.problems.join('\n'));
   assert.equal(r.inputs.has('columns'), false);
 });
 
@@ -164,4 +164,15 @@ test('test_fractions_outside_zero_to_one_are_input_problems', () => {
     for (const ok of [0, 0.5, 1]) assert.deepEqual(pipeline.resolveInputs(LIVE, { [id]: ok }, [], {}).problems, [], `${id} = ${ok}`);
   }
   assert.match(pipeline.resolveInputs(LIVE, { cas_hash_hit_fraction: 2 }, [], {}).problems[0], /expected a fraction from 0 to 1, got 2/);
+});
+
+// Table counts: a table has at least one column, and every column at least one stream. Streams per column is an
+// average over columns (the `types` preset is 3.19), so it need not be whole.
+test('test_columns_and_streams_per_column_are_at_least_one', () => {
+  const problem = (values) => pipeline.resolveInputs(LIVE, values, [], {}).problems;
+  for (const bad of [0, -1, 2.5]) assert.ok(problem({ columns: bad }).some((p) => p.startsWith('columns:')), `columns = ${bad}`);
+  for (const bad of [0, 0.5, -1]) assert.ok(problem({ streams_per_column: bad }).some((p) => p.startsWith('streams_per_column:')), `streams_per_column = ${bad}`);
+  assert.deepEqual(problem({ columns: 1, streams_per_column: 1 }), []);
+  assert.deepEqual(problem({ columns: 21, streams_per_column: 3.19047619047619 }), []);
+  assert.deepEqual(problem({ shape: 'types' }), []);
 });
