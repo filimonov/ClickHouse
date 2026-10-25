@@ -1601,6 +1601,84 @@
           "duration_s": 60,
           "priority": "P1",
           "status": "run"
+        },
+        {
+          "case_id": "cas-tables-1",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "cas-tables-4",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "cas-tables-8",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "cas-tables-16",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 600,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "cas-tables-150",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "cas-tables-500",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
         }
       ]
     },
@@ -2853,6 +2931,93 @@
           "repeats": 1,
           "timeout_s": 900,
           "duration_s": 120,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "gc-tables",
+      "family": "cas_gc",
+      "model_variants": [
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "n1",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "n4",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "n8",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "n16",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 1800,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "n150",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 900,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "n500",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 900,
           "priority": "P1",
           "status": "run"
         }
@@ -20227,6 +20392,552 @@
         "cost-20261024T201554Z/cas_cached/startup/cas-holdout-wide-4/k3"
       ],
       "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-1",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-1/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-4",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          4,
+          4
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-4/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-16",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          16,
+          16
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-8",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "bd19b0524f1",
+      "measurement_ids": [
+        "cost-20261025T070618Z/cas/startup/cas-tables-8/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-150/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_base",
+      "experiment_id": "startup.cas-tables-500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-1",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-1/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-4",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          4,
+          4
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-4/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-16",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          16,
+          16
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-8",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "bd19b0524f1",
+      "measurement_ids": [
+        "cost-20261025T070618Z/cas/startup/cas-tables-8/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-150/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_base",
+      "experiment_id": "startup.cas-tables-500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-1",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-1/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-4",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          4,
+          4
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-4/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-16",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          16,
+          16
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-8",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "bd19b0524f1",
+      "measurement_ids": [
+        "cost-20261025T070618Z/cas/startup/cas-tables-8/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-150/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_requests_per_table",
+      "experiment_id": "startup.cas-tables-500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-1",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-1/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-4",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          4,
+          4
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-4/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-16",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          16,
+          16
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-8",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          8,
+          8
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "bd19b0524f1",
+      "measurement_ids": [
+        "cost-20261025T070618Z/cas/startup/cas-tables-8/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-150/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_startup_error_requests_per_table",
+      "experiment_id": "startup.cas-tables-500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n1",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          1,
+          1
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/gc-tables/n1/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n4",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          4,
+          4
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/gc-tables/n4/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n16",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          16,
+          16
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "049fbdc4a6c",
+      "measurement_ids": [
+        "cost-20261025T060213Z/cas/gc-tables/n16/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n8",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          8,
+          8
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "bd19b0524f1",
+      "measurement_ids": [
+        "cost-20261025T070618Z/cas/gc-tables/n8/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/gc-tables/n150/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/gc-tables/n500/k1"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n150",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          150,
+          150
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/gc-tables/n150/k1"
+      ],
+      "status": "consumed",
+      "note": "predicted from the uncapped 1-16 fit; the refit with the 20-namespace sweep cap uses these records and needs a fresh hold-out"
+    },
+    {
+      "coefficient": "gc_round_requests_steady",
+      "experiment_id": "gc-tables.n500",
+      "policy": "cas",
+      "span": {
+        "cas_tables": [
+          500,
+          500
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "33cb1168b95",
+      "measurement_ids": [
+        "cost-20261025T072322Z/cas/gc-tables/n500/k1"
+      ],
+      "status": "consumed",
+      "note": "predicted from the uncapped 1-16 fit; the refit with the 20-namespace sweep cap uses these records and needs a fresh hold-out"
     }
   ],
   "domain": {
