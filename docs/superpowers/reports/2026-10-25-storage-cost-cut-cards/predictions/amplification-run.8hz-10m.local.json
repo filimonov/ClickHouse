@@ -1,0 +1,256 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "amplification-run.8hz-10m",
+  "policy": "local",
+  "inputs": {
+    "parts_per_insert": 1,
+    "inserted_part_type": "Compact",
+    "rows_per_insert": 1000,
+    "columns": 5,
+    "predicted_merges_for_allowance": 932,
+    "fit_run": "cost-20261025T130354Z",
+    "fit_measurement_ids": [
+      "cost-20261024T174727Z/local/small-inserts/default/k1",
+      "cost-20261025T144517Z/local/amplification-run/1hz-10m/k1",
+      "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1",
+      "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1"
+    ],
+    "merge_effective_fan_in": 6.1437,
+    "amplification_model": "constant",
+    "fit_residuals": {
+      "cost-20261024T174727Z/local/small-inserts/default/k1": -0.2053,
+      "cost-20261025T144517Z/local/amplification-run/1hz-10m/k1": -0.2791,
+      "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1": 0.214,
+      "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1": 0.2703
+    },
+    "pooled_fan_in_distribution": {
+      "2": 0.0149,
+      "3": 0.0089,
+      "4": 0.003,
+      "5": 0.0,
+      "6": 0.7349,
+      "7-8": 0.2383,
+      "9-12": 0.0,
+      "13-20": 0.0,
+      "21+": 0.0
+    },
+    "pooled_result_size_distribution": {
+      "2-4": 0.0,
+      "5-8": 0.0894,
+      "9-16": 0.1182,
+      "17-32": 0.1589,
+      "33-64": 0.3158,
+      "65-128": 0.282,
+      "129-256": 0.0238,
+      "257-512": 0.0089,
+      "513+": 0.003
+    },
+    "fit_max_tv": {
+      "fan_in_distribution": 0.0073,
+      "result_size_distribution": 0.0125
+    },
+    "tolerance_rules": {
+      "amplification_bytes": "largest |fit residual| around the constant",
+      "distributions": "max_tv = 2 x largest TV of a fit record to the pooled fit distribution + 1 / predicted merges, predicted merges = floor((inserts - 1) / (f - 1))",
+      "fan_in_mean": "the fit records' per-record mean range, widened by one part each side",
+      "result_size_distribution": "pooled fit distribution restricted to sizes up to the insert count and renormalised"
+    },
+    "amplification_law": "chain regime: amplification_bytes is a constant for 1000-row (32 KB) Compact inserts of 5 UInt64 columns that merges keep up with: the selector folds 5-6 new parts into one growing part until about 120 inserts (3-4 MB), so the rewrite count is set by part bytes, not by tempo or the final part size. Constant = mean of the 4 chain records",
+    "amplification_constant": 8.5371
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "quiesced": true,
+      "inserted_parts": 4800,
+      "inserted_rows": 4800000,
+      "merges": {
+        "basis": "derived",
+        "reason": "every merge takes at least two parts, and the selector merges a pile of equal parts",
+        "min": 1,
+        "max": 4799
+      },
+      "fan_in_min": {
+        "basis": "derived",
+        "reason": "at least two parts per merge",
+        "min": 2
+      },
+      "fan_in_max": {
+        "basis": "derived",
+        "reason": "max_parts_to_merge_at_once",
+        "max": 100
+      },
+      "fan_in_distribution": {
+        "reference": {
+          "2": 0.0149,
+          "3": 0.0089,
+          "4": 0.003,
+          "5": 0.0,
+          "6": 0.7349,
+          "7-8": 0.2383,
+          "9-12": 0.0,
+          "13-20": 0.0,
+          "21+": 0.0
+        },
+        "max_tv": 0.0156
+      },
+      "result_size_distribution": {
+        "reference": {
+          "2-4": 0.0,
+          "5-8": 0.0894,
+          "9-16": 0.1182,
+          "17-32": 0.1589,
+          "33-64": 0.3158,
+          "65-128": 0.282,
+          "129-256": 0.0238,
+          "257-512": 0.0089,
+          "513+": 0.003
+        },
+        "max_tv": 0.026
+      },
+      "fan_in_mean": {
+        "min": 5.1395,
+        "max": 7.1552,
+        "basis": "fit",
+        "reason": "fit per-record mean range widened by one part"
+      },
+      "amplification_bytes": {
+        "min": 8.258,
+        "max": 8.8162,
+        "basis": "fit",
+        "reason": "constant 8.5371 +- largest fit residual 0.2791"
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {
+      "amplification_bytes": 0.2791
+    },
+    "rel": {
+      "amplification_bytes": 0
+    }
+  },
+  "source_refs": [
+    {
+      "claim": "a natural merge takes at least two parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.cpp",
+      "line": 283
+    },
+    {
+      "claim": "and at most max_parts_to_merge_at_once = 100",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 636
+    },
+    {
+      "claim": "an insert below min_insert_block_size_rows is one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "the type starts Wide; the predicate turns it Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6402
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compact marks with substreams are .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "pending"
+}
