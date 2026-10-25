@@ -378,7 +378,8 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   assert.equal(vmod.plainReason('ebs: no operation has a supported family in this contract'), 'No measured model for this column yet');
   assert.equal(vmod.plainReason('price preset gcs has no prices (structure only)'), 'This price list has no prices yet; quantities are shown without money');
   assert.equal(vmod.plainReason('s3plain.replacement: cannot replace a replica; s3plain.storage: cannot replace a replica'), 'cannot replace a replica');
-  const gcs = presets.resolvePrice(C, 'gcs');
+  // The fixture's gcs preset is structure-only; no shipped preset is.
+  const gcs = C.billing.presets.find((p) => p.id === 'gcs');
   const { vm } = view({}, { preset: gcs });
   assert.equal(vm.page_reason, 'This price list has no prices yet; quantities are shown without money');
   assert.equal(vm.notes.some((n) => n.kind === 'prices_missing'), false, 'the banner says it once');

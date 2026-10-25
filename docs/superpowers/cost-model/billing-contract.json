@@ -1,6 +1,6 @@
 {
   "schema": "billing/1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "presets": [
     {
       "id": "aws-us-east-1",
@@ -636,11 +636,536 @@
     },
     {
       "id": "gcs",
-      "structure_only": true
+      "as_of": "2026-10-25",
+      "currency": "USD",
+      "units": "binary_gb",
+      "units_evidence": {
+        "source_url": "https://cloud.google.com/storage/pricing",
+        "checked": "2026-10-25",
+        "note": "pricing page: 'Storage and network usage are calculated in JEDEC binary gigabytes (GB), also known as IEC gibibytes (GiB), where 1 JEDEC GB is 2^30 bytes.'"
+      },
+      "assumptions": [
+        "Tier 1 assumes: Cloud Storage Standard class in a us-central1 regional bucket with a flat namespace, reached through the XML API (the S3-compatible API ClickHouse uses); soft delete, Object Versioning, Autoclass, website configuration and Requester Pays off; no credits or committed-use discounts; Hyperdisk Balanced only; VM↔Cloud Storage transfer in the same region free; VM↔VM across zones of the region per GiB, charged to the sending side; internet egress 0 by default.",
+        "Other configurations are unsupported, not approximated."
+      ],
+      "request_classes": [
+        {
+          "id": "class_a",
+          "ops": [
+            "PutObject",
+            "CopyObject",
+            "CreateMultipartUpload",
+            "UploadPart",
+            "UploadPartCopy",
+            "CompleteMultipartUpload",
+            "ListObjectsV2",
+            "CreateBucket",
+            "DeleteObjects"
+          ],
+          "price_per_1000": 0.005,
+          "source_url": "https://cloud.google.com/storage/pricing",
+          "checked": "2026-10-25",
+          "note": "pricing page, Standard storage in a region: 'Class A operations, flat namespace (per 1,000 operations)' $0.005. XML API Class A: 'GET Bucket (when listing objects in a bucket)', 'PUT', 'POST'. Multipart initiate and complete are POST, parts and copies are PUT. DeleteObjects is the XML API multi-object delete, a POST Bucket request (https://cloud.google.com/storage/docs/xml-api/reference-methods); the page names no exception for it, so it is billed as Class A."
+        },
+        {
+          "id": "class_b",
+          "ops": [
+            "ListMultipartUploads",
+            "ListParts",
+            "GetObject",
+            "HeadObject",
+            "HeadBucket"
+          ],
+          "price_per_1000": 0.0004,
+          "source_url": "https://cloud.google.com/storage/pricing",
+          "checked": "2026-10-25",
+          "note": "pricing page: 'Class B operations, flat namespace (per 1,000 operations)' $0.0004. XML API Class B: 'GET Bucket (when retrieving bucket configuration or when listing ongoing multipart uploads)', 'GET Object', 'HEAD'. ListParts is a GET Object request ('List Object Parts', https://cloud.google.com/storage/docs/xml-api/reference-methods)."
+        },
+        {
+          "id": "free_ops",
+          "ops": [
+            "DeleteObject",
+            "AbortMultipartUpload"
+          ],
+          "price_per_1000": 0,
+          "source_url": "https://cloud.google.com/storage/pricing",
+          "checked": "2026-10-25",
+          "note": "pricing page: XML API free operations: 'DELETE'. AbortMultipartUpload is a DELETE Object request ('Abort a multipart upload', https://cloud.google.com/storage/docs/xml-api/reference-methods)."
+        }
+      ],
+      "outcome_billing": {
+        "source_url": "https://cloud.google.com/storage/pricing",
+        "checked": "2026-10-25",
+        "note": "pricing page: 'Generally, you are not charged for operations that return 307, 4xx, or 5xx responses. The exception is 404 responses returned by buckets with Website Configuration enabled and the NotFoundPage property set to a public object in that bucket.' Tier 1 assumes no website configuration, so every 4xx is free. The dropped entry is the same model assumption as for AWS.",
+        "free": [
+          {
+            "outcome_class": "server_error",
+            "status": "5XX",
+            "s3_code": null,
+            "condition": "any server error response",
+            "source_url": "https://cloud.google.com/storage/pricing"
+          },
+          {
+            "outcome_class": "client_error",
+            "status": "4XX",
+            "s3_code": null,
+            "condition": null,
+            "source_url": "https://cloud.google.com/storage/pricing"
+          },
+          {
+            "outcome_class": "dropped",
+            "status": null,
+            "s3_code": null,
+            "condition": "upstream outcome unknown: no response from the store was seen, so nothing shows the store did billable work (a model assumption, not a provider rule)",
+            "source_url": "https://cloud.google.com/storage/pricing"
+          },
+          {
+            "outcome_class": "not_sent",
+            "status": null,
+            "s3_code": null,
+            "condition": "the request never reached the store (injected, rejected by the proxy, no connection)",
+            "source_url": "https://cloud.google.com/storage/pricing"
+          },
+          {
+            "status": 307,
+            "s3_code": null,
+            "condition": null
+          }
+        ]
+      },
+      "storage": {
+        "tiers": [
+          {
+            "up_to_gb": null,
+            "price_per_gb_month": 0.02
+          }
+        ],
+        "incomplete_multipart": "as_storage",
+        "source_url": "https://cloud.google.com/storage/pricing",
+        "checked": "2026-10-25",
+        "note": "Standard storage, Iowa (us-central1), regional: '$0.02 / 1 gibibyte month' (hourly view: '$0.000027397 / 1 gibibyte hour'); one tier. Monthly usage includes 'Uploaded parts of an XML API multipart upload, until the multipart upload is either completed or aborted.'"
+      },
+      "transfer": [
+        {
+          "id": "ec2_s3_same_region",
+          "price_per_gb": 0,
+          "direction": "both",
+          "source_url": "https://cloud.google.com/storage/pricing",
+          "checked": "2026-10-25",
+          "note": "pricing page, data transfer within Google Cloud: free when 'Data moves within the same location'; 'Data moves from different zones within the same region are considered within the same location.' Inbound data (writes) is not listed as charged."
+        },
+        {
+          "id": "ec2_ec2_cross_az",
+          "price_per_gb": 0.01,
+          "direction": "out",
+          "source_url": "https://cloud.google.com/vpc/network-pricing",
+          "checked": "2026-10-25",
+          "note": "VPC pricing: 'Data transfer to a different Google Cloud zone in the same Google Cloud region when using the internal or external IP addresses within the same VPC network (per GiB)' $0.01; 'The cost is attributed to the project of the VM that is sending the traffic.'"
+        },
+        {
+          "id": "internet",
+          "price_per_gb": null,
+          "direction": "out",
+          "source_url": null,
+          "checked": null,
+          "note": "Tier 1 assumes 0 egress by default; the tiered internet price was not looked up"
+        }
+      ],
+      "block": {
+        "gp3": {
+          "price_per_gib_month": 0.08,
+          "iops_baseline": 3000,
+          "iops_price": 0.005,
+          "mibps_baseline": 140,
+          "mibps_price": 0.04,
+          "iops_per_gib_max": 500,
+          "mibps_per_iops_max": 0.25,
+          "size_gib": [
+            4,
+            65536
+          ],
+          "iops": [
+            3000,
+            160000
+          ],
+          "mibps": [
+            140,
+            2400
+          ],
+          "source_url": "https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced, the gp3 analogue, in the block slot. Prices, Iowa (us-central1), from https://cloud.google.com/compute/disks-image-pricing: 'Hyperdisk Balanced provisioned space' $0.08 / 1 gibibyte month, 'provisioned IOPS' $0.005 / 1 month, 'provisioned throughput' $0.04 / 1 month, charged 'in excess of the baseline values of 3,000 IOPS and 140 MBps throughput'. Limits from the Hyperdisk Balanced page: 'Size: between 4 GiB and 64 TiB', 'IOPS: between 3,000 and 160,000', 'Throughput: between 140 and 2,400 MiB/s', 'Maximum IOPS: MIN (500x, 160,000)', 'Maximum throughput: MIN (2,400, P/4) MiB/s'; the floor 'Minimum throughput: MAX (140, P/256) MiB/s' is not modelled. The page says MiB/s, the price page MBps; MiB/s is used."
+        }
+      },
+      "allocation": {
+        "layouts": [
+          {
+            "id": "single",
+            "volumes": 1
+          },
+          {
+            "id": "stripe2",
+            "volumes": 2
+          },
+          {
+            "id": "stripe4",
+            "volumes": 4
+          }
+        ],
+        "objective": "min_monthly_cost",
+        "tie_break": [
+          "fewest_volumes",
+          "smallest_total_iops"
+        ]
+      },
+      "ec2_ebs_bandwidth": [
+        {
+          "instance_class": "n4-standard-2",
+          "max_mbps": 2013.27,
+          "max_mibps": 240,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'n4-*-2 | 30,000 | 240 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "n4-standard-4",
+          "max_mbps": 2013.27,
+          "max_mibps": 240,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'n4-*-4 | 30,000 | 240 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "n4-standard-8",
+          "max_mbps": 4026.53,
+          "max_mibps": 480,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'n4-*-8 | 30,000 | 480 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "n4-standard-16",
+          "max_mbps": 10066.33,
+          "max_mibps": 1200,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'n4-*-16 | 80,000 | 1,200 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "c3-standard-4",
+          "max_mbps": 3355.44,
+          "max_mibps": 400,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'c3-*-4 | 25,000 | 400 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "c3-standard-8",
+          "max_mbps": 6710.89,
+          "max_mibps": 800,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'c3-*-8 | 50,000 | 800 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "c3-standard-22",
+          "max_mbps": 15099.49,
+          "max_mibps": 1800,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'c3-*-22 | 120,000 | 1,800 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        },
+        {
+          "instance_class": "c3-standard-44",
+          "max_mbps": 20132.66,
+          "max_mibps": 2400,
+          "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+          "checked": "2026-10-25",
+          "note": "Hyperdisk Balanced performance limits: 'c3-*-44 | 160,000 | 2,400 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+        }
+      ],
+      "multipart": {
+        "abort_days_after_initiation_default": 7,
+        "residence_time_assumption": "measured_or_assumed",
+        "note": "plan default, the same as AWS; Cloud Storage has none: 'There is no limit to how long a multipart upload and its uploaded parts can remain unfinished or idle in a bucket' (https://cloud.google.com/storage/docs/multipart-uploads). Configure a lifecycle rule with the AbortIncompleteMultipartUpload action and an age condition (https://cloud.google.com/storage/docs/lifecycle)."
+      }
     },
     {
       "id": "azure",
-      "structure_only": true
+      "as_of": "2026-10-25",
+      "currency": "USD",
+      "units": "binary_gb",
+      "units_evidence": {
+        "source_url": "https://azure.microsoft.com/en-us/pricing/details/storage/blobs/",
+        "checked": "2026-10-25",
+        "note": "pricing page: 'Azure Blob Storage usage is calculated in binary Gigabytes (GB), where 1 GB = 2^30 bytes. ... Similarly, 1 TB is 2^40 bytes, i.e. 1,024 GBs.'"
+      },
+      "assumptions": [
+        "Tier 1 assumes: Blob Storage general-purpose v2 account, Hot tier, LRS, flat namespace (no hierarchical namespace), East US; each S3 call ClickHouse makes is priced as its Blob REST counterpart; blob soft delete, versioning, index tags and reservations off; no credits; Premium SSD v2 only; VM↔Blob transfer in the same region free; cross-AZ VM↔VM per GB in each direction; internet egress 0 by default.",
+        "Other configurations are unsupported, not approximated."
+      ],
+      "request_classes": [
+        {
+          "id": "write_ops",
+          "ops": [
+            "PutObject",
+            "CopyObject",
+            "UploadPart",
+            "UploadPartCopy",
+            "CompleteMultipartUpload"
+          ],
+          "price_per_1000": 0.005,
+          "source_url": "https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'General%20Block%20Blob%20v2'",
+          "checked": "2026-10-25",
+          "note": "price list, Hot LRS: 'Hot LRS Write Operations' $0.05 per 10K; pricing page row 'Write operations (per 10,000)'. Mapping (https://learn.microsoft.com/en-us/azure/storage/blobs/map-rest-apis-transaction-categories): Put Blob, Copy Blob, Put Block, Put Block from URL and Put Block List are Write for standard general purpose v2."
+        },
+        {
+          "id": "list_create_container_ops",
+          "ops": [
+            "ListObjectsV2",
+            "ListMultipartUploads",
+            "CreateBucket"
+          ],
+          "price_per_1000": 0.005,
+          "source_url": "https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'General%20Block%20Blob%20v2'",
+          "checked": "2026-10-25",
+          "note": "price list: 'LRS List and Create Container Operations' $0.05 per 10K. Mapping: List Blobs and Create Container are 'List and create container'. ListMultipartUploads has no Blob counterpart; it is priced as List Blobs with uncommitted blobs, the nearest call."
+        },
+        {
+          "id": "read_ops",
+          "ops": [
+            "GetObject"
+          ],
+          "price_per_1000": 0.0004,
+          "source_url": "https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'General%20Block%20Blob%20v2'",
+          "checked": "2026-10-25",
+          "note": "price list: 'Hot Read Operations' $0.004 per 10K. Mapping: Get Blob is Read."
+        },
+        {
+          "id": "other_ops",
+          "ops": [
+            "HeadObject",
+            "HeadBucket",
+            "ListParts",
+            "DeleteObjects"
+          ],
+          "price_per_1000": 0.0004,
+          "source_url": "https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'General%20Block%20Blob%20v2'",
+          "checked": "2026-10-25",
+          "note": "price list: 'All Other Operations' $0.004 per 10K; pricing page: 'All other Operations (per 10,000), except Delete, which is free'. Mapping: Get Blob Properties, Get Container Properties and Get Block List are Other. DeleteObjects is a Blob Batch: 'The Blob Batch REST request is counted as one transaction, and each individual subrequest is also counted as one transaction' (https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch); the parent is Other, its Delete Blob subrequests are free."
+        },
+        {
+          "id": "delete_free",
+          "ops": [
+            "DeleteObject"
+          ],
+          "price_per_1000": 0.0,
+          "source_url": "https://azure.microsoft.com/en-us/pricing/details/storage/blobs/",
+          "checked": "2026-10-25",
+          "note": "pricing page: 'All other Operations (per 10,000), except Delete, which is free'. Mapping: Delete Blob is Free for standard general purpose v2."
+        },
+        {
+          "id": "no_request",
+          "ops": [
+            "CreateMultipartUpload",
+            "AbortMultipartUpload"
+          ],
+          "price_per_1000": 0.0,
+          "source_url": "https://learn.microsoft.com/en-us/rest/api/storageservices/put-block",
+          "checked": "2026-10-25",
+          "note": "Blob Storage has no call that starts or aborts a block upload: blocks are staged with Put Block and committed with Put Block List, and uncommitted blocks are garbage collected 'within a week following the last successful Put Block operation'. No request is sent."
+        }
+      ],
+      "outcome_billing": {
+        "source_url": "https://learn.microsoft.com/en-us/rest/api/storageservices/storage-analytics-logged-operations-and-status-messages",
+        "checked": "2026-10-25",
+        "note": "Storage Analytics status messages, column 'Billable': ThrottlingError (503), ServerTimeoutError and ServerOtherError (500) are 'No'; ClientOtherError ('many 300-400 level HTTP status codes and conditions such as NotFound'), NetworkError and ClientTimeoutError are 'Yes'. https://learn.microsoft.com/en-us/azure/storage/blobs/map-rest-apis-transaction-categories: 'REST operations aren't billed when authentication fails. After an identity is authenticated, all operations and requests that the identity makes are billed, including the ones that don't succeed.' So 4xx is billed and dropped is billed: a client timeout or a closed connection is billable on Azure.",
+        "free": [
+          {
+            "outcome_class": "server_error",
+            "status": "5XX",
+            "s3_code": null,
+            "condition": "any server error response",
+            "source_url": "https://learn.microsoft.com/en-us/rest/api/storageservices/storage-analytics-logged-operations-and-status-messages"
+          },
+          {
+            "outcome_class": "not_sent",
+            "status": null,
+            "s3_code": null,
+            "condition": "the request never reached the store (injected, rejected by the proxy, no connection)",
+            "source_url": "https://learn.microsoft.com/en-us/rest/api/storageservices/storage-analytics-logged-operations-and-status-messages"
+          },
+          {
+            "status": 403,
+            "s3_code": null,
+            "condition": "authentication failed"
+          }
+        ]
+      },
+      "storage": {
+        "tiers": [
+          {
+            "up_to_gb": 51200,
+            "price_per_gb_month": 0.0208
+          },
+          {
+            "up_to_gb": 512000,
+            "price_per_gb_month": 0.019968
+          },
+          {
+            "up_to_gb": null,
+            "price_per_gb_month": 0.019136
+          }
+        ],
+        "incomplete_multipart": "as_storage",
+        "source_url": "https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'General%20Block%20Blob%20v2'",
+        "checked": "2026-10-25",
+        "note": "price list, 'Hot LRS Data Stored' per '1 GB/Month': 0.0208 from 0, 0.019968 from 51200, 0.019136 from 512000 (tierMinimumUnits); pricing page rows 'First 50 terabyte (TB)/month', 'Next 450 TB/month', 'Over 500 TB/month', 'All prices are per GB per month'. Uncommitted blocks count: the billing size includes 'SizeInBytes(data in uncommitted data blocks)'; 'If the uncommitted blocks are not used after a week, they are garbage-collected. After that, they don't count toward billing.' (https://learn.microsoft.com/en-us/azure/storage/scripts/storage-blobs-container-calculate-billing-size-powershell)"
+      },
+      "transfer": [
+        {
+          "id": "ec2_s3_same_region",
+          "price_per_gb": 0,
+          "direction": "both",
+          "source_url": "https://learn.microsoft.com/en-us/azure/storage/common/storage-plan-manage-costs",
+          "checked": "2026-10-25",
+          "note": "'Any data that leaves the Azure region incurs either a data transfer or network bandwidth charge'; data in the region does not. Blob pricing page, Hot: 'Data Retrieval (per GB)' Free, 'Data Write (per GB)' Free; bandwidth page: 'Data Transfer In' Free."
+        },
+        {
+          "id": "ec2_ec2_cross_az",
+          "price_per_gb": 0.01,
+          "direction": "each_direction",
+          "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Bandwidth'%20and%20armRegionName%20eq%20'eastus'%20and%20contains(meterName,'Availability%20Zone')",
+          "checked": "2026-10-25",
+          "note": "price list, eastus: 'Standard Inter-Availability Zone Data Transfer In' $0.01 per 1 GB and '... Out' $0.01 per 1 GB. The bandwidth page (https://azure.microsoft.com/en-us/pricing/details/bandwidth/) lists only 'Data transfer within same Availability Zone' Free and no cross-zone row; the price-list meters are used."
+        },
+        {
+          "id": "internet",
+          "price_per_gb": null,
+          "direction": "out",
+          "source_url": null,
+          "checked": null,
+          "note": "Tier 1 assumes 0 egress by default; the tiered internet price was not looked up"
+        }
+      ],
+      "block": {
+        "gp3": {
+          "price_per_gib_month": 0.0803,
+          "iops_baseline": 3000,
+          "iops_price": 0.00511,
+          "mibps_baseline": 119.20929,
+          "mibps_price": 0.0421,
+          "iops_per_gib_max": 500,
+          "mibps_per_iops_max": 0.238419,
+          "size_gib": [
+            1,
+            65536
+          ],
+          "iops": [
+            3000,
+            80000
+          ],
+          "mibps": [
+            119.20929,
+            1907.348633
+          ],
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types",
+          "checked": "2026-10-25",
+          "note": "Premium SSD v2, the gp3 analogue, in the block slot. Price list (https://prices.azure.com/api/retail/prices?$filter=armRegionName%20eq%20'eastus'%20and%20productName%20eq%20'Azure%20Premium%20SSD%20v2'), Premium LRS: 'Provisioned Capacity' 0.00011 per 1 GiB/Hour, 'Provisioned IOPS' 0.000007 per hour from 3000, 'Provisioned Throughput (MBps)' 0.000055 per hour from 125; times 730 hours ('Price is based on 730 hours per month', https://azure.microsoft.com/en-us/pricing/details/managed-disks/). The pricing page's own East US example uses $0.081, $0.0052 and $0.041. Limits: 'capacities range from 1 GiB to 64 TiB', 'baseline IOPS of 3,000', 'increases at a rate of 500 per GiB, up to 80,000 IOPS', 'baseline throughput of 125 MB/s', '0.25 MB/s per set IOPS', '2,000 MB/s is the maximum throughput'. MB/s = 10^6 bytes/s; throughput fields are converted to MiB/s (125 MB/s = 119.209 MiB/s)."
+        }
+      },
+      "allocation": {
+        "layouts": [
+          {
+            "id": "single",
+            "volumes": 1
+          },
+          {
+            "id": "stripe2",
+            "volumes": 2
+          },
+          {
+            "id": "stripe4",
+            "volumes": 4
+          }
+        ],
+        "objective": "min_monthly_cost",
+        "tie_break": [
+          "fewest_volumes",
+          "smallest_total_iops"
+        ]
+      },
+      "ec2_ebs_bandwidth": [
+        {
+          "instance_class": "Standard_D2s_v5",
+          "max_mbps": 680,
+          "max_mibps": 81.06,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 85 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_D4s_v5",
+          "max_mbps": 1160,
+          "max_mibps": 138.28,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 145 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_D8s_v5",
+          "max_mbps": 2320,
+          "max_mibps": 276.57,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 290 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_D16s_v5",
+          "max_mbps": 4800,
+          "max_mibps": 572.2,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dsv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 600 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_E2s_v5",
+          "max_mbps": 680,
+          "max_mibps": 81.06,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/esv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 85 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_E4s_v5",
+          "max_mbps": 1160,
+          "max_mibps": 138.28,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/esv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 145 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_E8s_v5",
+          "max_mbps": 2320,
+          "max_mibps": 276.57,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/esv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 290 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        },
+        {
+          "instance_class": "Standard_E16s_v5",
+          "max_mbps": 4800,
+          "max_mibps": 572.2,
+          "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/memory-optimized/esv5-series",
+          "checked": "2026-10-25",
+          "note": "'Uncached Premium SSD Throughput' 600 MB/s, the sustained limit (burst: 1,200 MB/s for up to 30 minutes, not used); MB/s = 10^6 bytes/s per https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/dv5-series"
+        }
+      ],
+      "multipart": {
+        "abort_days_after_initiation_default": 7,
+        "residence_time_assumption": "measured_or_assumed",
+        "note": "service behaviour, not configurable: 'Any uncommitted blocks are also garbage collected if there are no successful calls to Put Block or Put Block List on the same blob within a week following the last successful Put Block operation.' (https://learn.microsoft.com/en-us/rest/api/storageservices/put-block)"
+      }
     }
   ]
 }

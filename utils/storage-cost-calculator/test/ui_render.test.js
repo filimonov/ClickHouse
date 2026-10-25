@@ -7,6 +7,7 @@ const path = require('node:path');
 const contract = require('../contract.js');
 const urlstate = require('../urlstate.js');
 const ui = require('../ui.js');
+const presets = require('../presets.js');
 
 const MINIMAL = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'contracts', 'minimal.json'), 'utf8'));
 const load = (mutate) => {
@@ -156,8 +157,12 @@ test('test_render_cannot_reproduce_shows_mismatch_and_no_numbers', () => {
   assert.equal(next.state.scenario, 'logs');
 });
 
-test('test_render_prices_missing_shows_quantities_without_money', () => {
-  const { vm, parts, html } = page(base({ price_preset: 'gcs' }));
+test('test_render_prices_missing_shows_quantities_without_money', (t) => {
+  // No shipped preset is structure-only; a contract preset without values, offered by the page, renders quantities only.
+  const bare = load((x) => x.billing.presets.push({ id: 'bare', structure_only: true }));
+  presets.PRICES.bare = { label: 'Bare', source: 'contract', structure_only: true, note: 'values not provided' };
+  t.after(() => { delete presets.PRICES.bare; });
+  const { vm, parts, html } = page(base({ price_preset: 'bare' }), {}, bare);
   assert.equal(vm.page_state, 'prices_missing');
   assert.equal(/\$|data-kind="money"|card-total/.test(html), false);
   assert.ok(parts.cards.includes('<p class="banner">This price list has no prices yet; quantities are shown without money.</p>'));

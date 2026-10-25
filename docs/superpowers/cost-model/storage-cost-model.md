@@ -131,13 +131,35 @@ The EBS card shows one line: volume size per replica, the IOPS and MiB/s it need
 |---|---|
 | Volume size per replica | Stored data × `ebs_capacity_headroom` (assumed, default 1.3) |
 | Peak demand per replica | Mean demand × `peak_factor` (assumed, default 1) |
-| gp3 baseline per volume | 3,000 IOPS and 125 MiB/s included, from the price preset |
+| Baseline per volume | Included IOPS and MiB/s of the price preset's block volume: 3,000 and 125 for gp3 |
 | Layout | The cheapest feasible gp3 layout, or the manual one: volumes × size, IOPS, MiB/s, replicas |
 | Verdict | Baseline sufficient; provision N IOPS and M MiB/s at the stated monthly extra; several volumes; or no feasible layout |
 | Demand by operation | IOPS and MiB/s of each operation cell |
 
 The same block covers the local disk of the `s3`, `s3plain` and `cas` columns (cache and metadata). A column that
 keeps nothing locally pays the minimum gp3 volume per replica.
+
+### Price presets {#price-presets}
+
+Three presets carry list prices, each with a source URL, a check date and the quoted page wording per rule
+(`docs/superpowers/cost-model/billing-contract.json`). `custom` is an editable copy of `aws-us-east-1`.
+
+| Preset | Object store | Block volume | VM classes |
+|---|---|---|---|
+| `aws-us-east-1` | S3 Standard; PUT/COPY/POST/LIST, GET, DELETE free | gp3 | m6i, m7i |
+| `gcs` | Cloud Storage Standard, us-central1, XML API; Class A, Class B, free | Hyperdisk Balanced | n4, c3 |
+| `azure` | Blob Storage Hot LRS, East US, flat namespace; write, list, read, other, delete free | Premium SSD v2 | Dsv5, Esv5 |
+
+- **Same rule ids.** Every preset uses the AWS ids for routes and the block volume (`ec2_ec2_cross_az`, `block.gp3`);
+  the page shows each provider's own words.
+- **Request mapping.** Each S3 call ClickHouse makes is priced as the provider's counterpart. On GCS, `DeleteObjects`
+  is a `POST` and so Class A, and `ListMultipartUploads` and `ListParts` are Class B. On Azure, `DeleteObjects` is a
+  Blob Batch billed as one other operation; `CreateMultipartUpload` and `AbortMultipartUpload` send no request.
+- **Errors.** GCS does not bill 307, 4xx or 5xx. Azure bills every authenticated request except server errors and
+  throttling, so 4xx and client timeouts are billed there.
+- **Cross-zone transfer.** GCS charges the sending VM, $0.01 per GiB. Azure's price list has $0.01 per GB in and out;
+  its bandwidth page lists no cross-zone row.
+- **Units.** Azure disk MB/s is 10^6 bytes/s; its throughput baseline, limits and price are stored in MiB/s.
 
 ### Formulas from source, measurements verify {#formulas-from-source}
 

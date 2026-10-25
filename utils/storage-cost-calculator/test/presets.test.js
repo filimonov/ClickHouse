@@ -74,12 +74,18 @@ test('test_declared_extrapolation_must_be_declared_and_true', () => {
 test('test_structure_only_prices_set_prices_missing', () => {
   // Preset ids are the billing contract's; `custom` is the page's editable copy.
   assert.deepEqual(Object.keys(presets.PRICES), [...LIVE.billing.presets.map((p) => p.id), 'custom']);
-  const structureOnly = Object.entries(presets.PRICES).filter(([, d]) => d.structure_only).map(([id]) => id);
-  assert.deepEqual(structureOnly, ['gcs', 'azure']);
-  for (const id of structureOnly) {
-    assert.equal(presets.resolvePrice(LIVE, id).structure_only, true, id);
-    assert.equal(presets.priceLabel(LIVE, id), `${presets.PRICES[id].label} (values not provided)`);
-    const preset = presets.resolvePrice(MINIMAL, id);
+  // Every shipped preset carries prices and names the date they were checked.
+  assert.deepEqual(Object.entries(presets.PRICES).filter(([, d]) => d.structure_only).map(([id]) => id), []);
+  for (const p of LIVE.billing.presets) {
+    assert.equal(!!presets.resolvePrice(LIVE, p.id).structure_only, false, p.id);
+    assert.match(presets.priceLabel(LIVE, p.id), / \(\d{4}-\d{2}-\d{2}\)$/, p.id);
+  }
+  // A contract whose preset lost its values while presets.js still prices it is refused, not shown as priced.
+  assert.throws(() => presets.resolvePrice(MINIMAL, 'gcs'), /structure_only is true in the billing contract, false in presets.js/);
+  // The fixture's structure-only presets still render quantities without money.
+  for (const id of ['gcs', 'azure']) {
+    const preset = MINIMAL.billing.presets.find((p) => p.id === id);
+    assert.equal(preset.structure_only, true, id);
     const r0 = pipeline.resolveInputs(MINIMAL, {}, [], {});
     const res = pipeline.run(MINIMAL, r0.inputs, preset, {});
     assert.equal(res.page_state, 'prices_missing', id);
