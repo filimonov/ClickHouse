@@ -13,8 +13,11 @@
     "fold_list": 5,
     "fold_delete": 2,
     "fold_get_per_manifest": 1,
-    "fold_get_per_tail_log_record": 1,
-    "fold_get_per_table": 12,
+    "fold_get_per_new_log_record": 1,
+    "fold_get_per_changed_table": 4,
+    "fold_get_per_swept_tail_log_record": 1,
+    "fold_get_per_swept_table": 5,
+    "sweep_namespace_budget": 20,
     "deferred_get": 12,
     "deferred_put": 1,
     "deferred_list": 3
@@ -24,7 +27,7 @@
   "verified_range": {
    "cas_tables": [
     1,
-    16
+    500
    ]
   },
   "tolerance": {
@@ -38,36 +41,20 @@
    "measurement_ids": [
     "cost-20261025T060213Z/cas/gc-tables/n1/k1",
     "cost-20261025T060213Z/cas/gc-tables/n4/k1",
-    "cost-20261025T060213Z/cas/gc-tables/n16/k1"
+    "cost-20261025T060213Z/cas/gc-tables/n16/k1",
+    "cost-20261025T070618Z/cas/gc-tables/n8/k1",
+    "cost-20261025T072322Z/cas/gc-tables/n150/k1",
+    "cost-20261025T072322Z/cas/gc-tables/n500/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
   },
   "status": "ok",
-  "rule": "requests of one GC round in steady state, without its heartbeat pulse: a fold reads a base, one GET per new manifest, one GET per ref log record of every table tail since its last snapshot and 12 GETs per table (7 ref stream reads beyond the tail, 2 _ckpt reads, 3 reads of the table mount objects under gc/server-roots, 2 of them 404); from the fourth fold of a process on it lists and deletes an old gc/gen generation (LIST +1, DELETE 2); a Deferred round does not depend on the table count; the first fold of a process reads GET 13 + 8 per table with its new records only",
+  "rule": "requests of one GC fold round in steady state, without its heartbeat pulse: the intake reads per changed table its new manifests and new log records, 1 _ckpt and up to 3 mount objects (2 answer 404; fewer as the process ages at 150-500 tables); the orphan-manifest sweep builds a protection view for at most sweep_namespace_budget namespaces per round (gc_round_sweep_namespace_budget = 20, Pool/CasPool.h:114), each reading its whole tail since the last snapshot plus 4 stream objects and 1 _ckpt; from the fourth fold GC prunes an old generation (LIST +1, DELETE 2). Deferred terms hold while the pool-wide cas/ns/stream/ listing fits one page: at 150 and 500 tables Deferred rounds listed up to 51 pages",
   "fit": {
-   "method": "per op and term, a linear fit over folds 2-12 of the three passes against tables and tail records; folds 2-3 carry LIST 4 and DELETE 0 (no generation to prune yet)",
-   "residuals": {
-    "cost-20261025T060213Z/cas/gc-tables/n1/k1": {
-     "GetObject": 0,
-     "PutObject": 0,
-     "ListObjectsV2": 0,
-     "DeleteObject": 0
-    },
-    "cost-20261025T060213Z/cas/gc-tables/n4/k1": {
-     "GetObject": 0,
-     "PutObject": 0,
-     "ListObjectsV2": 0,
-     "DeleteObject": 0
-    },
-    "cost-20261025T060213Z/cas/gc-tables/n16/k1": {
-     "GetObject": 0,
-     "PutObject": 0,
-     "ListObjectsV2": 0,
-     "DeleteObject": 0
-    }
-   },
-   "holdout": "gc-tables.n8 (cost-20261025T070618Z/cas/gc-tables/n8/k1, predicted in bd19b0524f1): every fold and Deferred term exact (fold GET 3290, PUT 72, LIST 57, DELETE 18; Deferred 780/120/180); the record is FAILED on its foreground GET bound only (760 against 680-704), an insert-side term outside this coefficient"
+   "method": "per family over folds 2-12 at 1, 4, 8, 16 tables (all family counts exact) and 150, 500 tables (stream and _ckpt exact except one 150-table fold that swept 8 namespaces at a page wrap); mount-object reads and the paged stream listing are not fitted",
+   "holdout": "consumed: gc-tables.n150 and gc-tables.n500 (run cost-20261025T072322Z) were predicted from the uncapped fit (fold GET 57534 and 191234) and measured 18665 and 43615; this refit needs a fresh hold-out",
+   "residuals": {}
   }
  },
  {
@@ -91,7 +78,7 @@
   "verified_range": {
    "cas_tables": [
     1,
-    16
+    500
    ]
   },
   "tolerance": {
@@ -105,7 +92,10 @@
    "measurement_ids": [
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
-    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+    "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -131,7 +121,7 @@
      "ListObjectsV2": 0
     }
    },
-   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
+   "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
   }
  },
  {
@@ -154,7 +144,7 @@
   "verified_range": {
    "cas_tables": [
     1,
-    16
+    500
    ]
   },
   "tolerance": {
@@ -168,7 +158,10 @@
    "measurement_ids": [
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
-    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+    "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -188,7 +181,7 @@
      "GetObject": 0
     }
    },
-   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
+   "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
   }
  },
  {
@@ -209,7 +202,7 @@
   "verified_range": {
    "cas_tables": [
     1,
-    16
+    500
    ]
   },
   "tolerance": {
@@ -223,7 +216,10 @@
    "measurement_ids": [
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
-    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+    "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -249,7 +245,7 @@
      "ListObjectsV2": 0
     }
    },
-   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
+   "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
   }
  },
  {
@@ -268,7 +264,7 @@
   "verified_range": {
    "cas_tables": [
     1,
-    16
+    500
    ]
   },
   "tolerance": {
@@ -282,7 +278,10 @@
    "measurement_ids": [
     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
-    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1"
+    "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+    "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+    "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -302,7 +301,7 @@
      "GetObject": 0
     }
    },
-   "holdout": "startup.cas-tables-8 (cost-20261025T070618Z/cas/startup/cas-tables-8/k1, predicted in bd19b0524f1): ok, exact (GET 194, PUT 25, HEAD 6, DELETE 3, LIST 42)"
+   "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
   }
  }
 ]

@@ -9,18 +9,19 @@ doc_type: 'reference'
 
 # Storage cost calculator — CAS cost by table count {#cas-tables}
 
-A GC fold round and a server start each cost a fixed amount per table on the CAS disk. The `gc` and `recovery`
-cells of `docs/superpowers/reports/2026-10-24-storage-cost-cas/formulas.json` price neither. Per table, a fold reads
-**12 GETs** beyond the table's tail records. A start costs **GET 14 (3 of them 404), PUT 2 and LIST 5**. Deferred
-rounds and the cleanup listing do not depend on the table count. Fitted at 1, 4 and 16 tables with residual 0;
-the fit held exactly at 8 tables (§[Hold-out](#holdout)).
+A server start costs a fixed amount per table on the CAS disk: **GET 14 (3 of them 404), PUT 2 and LIST 5**, exact
+from 1 to 500 tables. A GC fold round costs per changed table its new manifests and log records, 1 `_ckpt` and up
+to 3 mount-object GETs. On top of that, the orphan-manifest sweep re-reads the whole tail plus 5 objects of **at most
+20 tables per round** (`gc_round_sweep_namespace_budget`, `Pool/CasPool.h:114`). Below 20 tables this is the
+12-GET-per-table law fitted at 1–16 tables. At 150 and 500 tables the uncapped fit overpredicted fold GETs 3–4×
+(§[Large table counts](#large)).
 
-- **Run:** `cost-20261025T060213Z`, rig commit `a2004c7dd62`, `rig_dirty` false, RustFS 1.0.0-beta.9 (sha256
+- **Runs:** `cost-20261025T060213Z` (1, 4, 16), `cost-20261025T070618Z` (8), `cost-20261025T072322Z` (150, 500); all rig commit `a2004c7dd62`, `rig_dirty` false, RustFS 1.0.0-beta.9 (sha256
   `bf4aca66af21…`), one pass per case, `cas` only.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`,
   source `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
 - **Cards:** `GcTables` in `utils/cas-yardstick/yardstick/cost/cards/cas.py`; `Startup` in `cards/ops.py`.
-- **Coefficients:** `coefficients.json` (`basis: fitted`, `cas_tables` 1–16).
+- **Coefficients:** `coefficients.json` (`basis: fitted`, `cas_tables` 1–500).
 
 ## Design {#design}
 
@@ -91,6 +92,34 @@ The `gc-tables.n8` record is `FAILED` on its foreground GET bound only, an inser
 manifest reads): 10, 40, 80 and 160 at 1, 4, 8 and 16 tables, 2 cleanup runs per table. That is about 5 GETs per
 cleanup run of a table with parts, against 1 on the empty table of `lease.idle-10min`. The `lease` cell prices 1. This
 term is measured, not attributed to source, and not fitted.
+
+## Large table counts {#large}
+
+Run `cost-20261025T072322Z` (start 07:23:22Z) from the same detached worktree at `a2004c7dd62`; predictions from the
+1–16 fit committed in `33cb1168b95` before it. Each 500-table burst took about 14 s and the slowest fold 5.6 s, so the
+12-minute window held.
+
+| Case | N | Predicted | Measured | Deviation |
+|---|---|---|---|---|
+| 12 fold rounds, GET | 150 | 57 534 | 18 665 | −38 869 (−68 %) |
+| | 500 | 191 234 | 43 615 | −147 619 (−77 %) |
+| 12 fold rounds, LIST | 150 | 57 | 150 | +93 |
+| | 500 | 57 | 401 | +344 |
+| 12 fold rounds, DELETE | 150, 500 | 18 | 18 | 0 |
+| 60 Deferred rounds, GET / LIST | 150 | 780 / 180 | 771 / 625 | −9 / +445 |
+| | 500 | 780 / 180 | 2 194 / 1 830 | +1 414 / +1 650 |
+| start, GET / PUT / LIST | 150 | 3 318 / 309–310 / 752 | 3 318 / 309 / 752 | 0 (ok) |
+| | 500 | 11 018 / 1 009–1 010 / 2 502 | 11 018 / 1 009 / 2 502 | 0 (ok) |
+
+- **Start:** the per-table terms hold exactly from 1 to 500 tables.
+- **Fold, sweep cap:** from the second fold the `ref_stream` and `_ckpt` reads are 3N + min(N, 20) × (3k + 4) and
+  N + min(N, 20), with k the inserts per table so far. This law was written down before the 500-table record was read
+  and matched every fold there. At 150 tables one fold swept 8 namespaces where the sweep page wrapped.
+- **Fold, mount objects:** 3 GETs per changed table (2 of them 404) in the early folds. At 150 and 500 tables they
+  fall as the run ages (500 tables: 1 501 down to 223). Not fitted; 3 per changed table is the upper bound.
+- **Paged stream listing:** GC lists `cas/ns/stream/` pool-wide in fold and Deferred rounds. Past one page the pages
+  grow with the pool's log objects: up to 51 pages a round at 500 tables. Not fitted.
+- **Hold-outs consumed:** the capped fold law in `gc_round_requests_steady` needs a fresh hold-out.
 
 ## How to re-run {#rerun}
 
