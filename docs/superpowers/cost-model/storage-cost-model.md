@@ -187,6 +187,83 @@ share of distinct mark files (`cas_marks_blob_fraction`), which the `shape` pres
 and wide as quick picks. Outside 5–40 columns or 1–3.29 streams the formulas still apply and carry the informational
 mark.
 
+## Tiered storage {#tiered-storage}
+
+With `hot_tier_days` above 0, the page prices two tiers. New parts stay on local disk (`ebs`) for
+`hot_tier_days`, then a `TTL ... TO VOLUME` move takes them to object storage (`s3`, `s3plain` or `cas`) for the rest
+of the retention. A "Tiered" block under the four columns shows, per cold variant, the hot `ebs` total plus the cold
+total, beside the single-tier total of that variant. The preset "Logs, tiered (7 days hot)" sets 7 days.
+
+Each tier is an ordinary pipeline run on its own inputs (`pipeline.tiered`). Every cell, state and badge is the
+single-tier one; only the `tiering` registry rows below differ.
+
+### Inputs {#tiered-inputs}
+
+| Input | Default | Form | Meaning |
+|---|---|---|---|
+| `hot_tier_days` | 0 | Tiering row | Days on local disk; 0 keeps one tier. A value not below the retention is refused with the reason. |
+| `cold_gc_interval_s` | 3600 | Low-level, and in the Tiered block | `cas_gc_interval_sec` of the cold CAS disk. |
+| `cold_mutations_per_month` | 0 | Low-level | ALTER UPDATE/DELETE that rewrite a cold part. |
+| `cold_select_part_reads_per_day` | 0 | Low-level | Cold parts read by SELECT per day. |
+
+### Derivations {#tiered-derivations}
+
+| Run input | Hot tier | Cold tier |
+|---|---|---|
+| `retention_days` | `hot_tier_days` | `cold_retention_days` = `retention_days − hot_tier_days` |
+| `data_bytes` | `hot_data_bytes` = `ingest_rate × hot_tier_days` | `cold_data_bytes` = `data_bytes − hot_data_bytes` |
+| `insert_rate` | unchanged | `cold_insert_rate` = `insert_rate × parts_per_insert / merge_size_ratio` |
+| `insert_rows` | unchanged | `cold_insert_rows` = `part_rows × merge_size_ratio` |
+| `insert_bytes_uncompressed` | unchanged | `cold_insert_bytes_uncompressed` = `part_bytes_uncompressed × merge_size_ratio` |
+| `parts_per_insert` | derived as usual | `cold_parts_per_insert` = 1: the mover clones a whole part (`MergeTreePartsMover::clonePart`) |
+| `merge_size_ratio` | unchanged | `cold_merge_size_ratio` = 1 |
+| `async_insert` | unchanged | 0: a move never goes through the async insert queue |
+| `cas_gc_interval_s` | unchanged | `cold_gc_interval_s` |
+| `mutations_per_month` | unchanged | `cold_mutations_per_month`, one moved part each, wide or compact by `min_bytes_for_wide_part` |
+| `select_part_reads_per_day` | unchanged | `cold_select_part_reads_per_day` |
+
+Everything else (`ingest_rate`, `replicas`, `cas_tables`, restarts, schema) is the same in both runs. By
+construction the cold tier takes in, per month, the parts the hot tier expires (`expired_parts_per_month`), and the
+two data sizes add up to the single-tier `data_bytes`.
+
+### Assumptions {#tiered-assumptions}
+
+- **A part moves once, at its final size.** The final size is `part_rows × merge_size_ratio`, the size
+  `expired_parts_per_month` and `mutated_part_rows` already use. `merge_result_rows` and `merge_result_bytes` are
+  one merge's result (`× merge_effective_fan_in`), not the final size, so they are not used here.
+- **No merges in the cold tier.** Moved parts are final-sized, so the merge selector gains nothing.
+  `cold_merge_size_ratio` = 1 makes `merge_results_per_month` 0, so the `s3` and `s3plain` merges cells price 0.
+  The `cas` merges cell does not read `merge_size_ratio`: it prices
+  `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. In the cold tier
+  that is $1.27 a month on Logs, more than the tier runs; its cell note says so.
+- **A TTL move is priced as the write of the moved part.** The cold intake goes through the existing insert cells.
+  Each cold inserts cell carries the note "TTL move priced as the write of the moved part (assumption)".
+- **One moved part per cold mutation.** A mutation over N cold parts is N mutations here.
+
+The cold columns are `extrapolated`; the hot `ebs` run is not. On Logs a moved part has 25.6 million rows, above
+every measured insert size. `cold_merge_size_ratio` = 1 lies below the measured 18.21–472.95, and a 3,600 s GC
+interval above the measured 10–60 s.
+
+### What the numbers show {#tiered-numbers}
+
+Logs, tiered (7 days hot, 23 cold), `aws-us-east-1`, per month:
+
+| Cold variant | Hot `ebs` | Cold | Tiered | Single tier, same variant |
+|---|---|---|---|---|
+| `s3` | $728.00 | $540.38 | $1,268.38 | $3,689.81 |
+| `s3plain` | $728.00 | $552.72 | $1,280.72 | $6,803.81 |
+| `cas` | $728.00 | $279.56 | $1,007.56 | $2,847.13 |
+
+Single-tier `ebs` is $3,120.00.
+
+- **Hot tier.** The 7 hot days take all inserts and merges. On `ebs` their I/O fits the gp3 baseline, so the hot
+  total is capacity only. On object storage the same 7 days cost $3,160.74 on `s3`: inserts $2,441.94, merges
+  $555.49. On `cas` they cost $2,582.52: inserts $1,229.03, GC at 60 s $943.09, merges $324.74.
+- **Cold tier.** The cold tier takes 337.5 final-sized parts a day. Its total is mostly stored bytes: $529.00 on `s3`
+  and `s3plain`, $264.64 on `cas`, which stores one copy for both replicas. Hourly GC costs $4.04.
+- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,007.56. That is the
+  lowest of the seven options on the page.
+
 ## Known inaccuracies {#known-inaccuracies}
 
 ### Model limits {#model-limits}
