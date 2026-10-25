@@ -16,24 +16,9 @@
   "expected": {
     "foreground": {
       "r1": {
-        "PutObject": {
-          "min": 91,
-          "max": 91,
-          "basis": "source",
-          "reason": "files, then per part directory create and rename, plus moving/ once"
-        },
-        "HeadObject": {
-          "min": 6,
-          "max": 6,
-          "basis": "source",
-          "reason": "one per directory created: each moving/<part>/ and moving/ once"
-        },
-        "GetObject": {
-          "min": 50,
-          "max": 50,
-          "basis": "source",
-          "reason": "one load of the clone per moved part"
-        }
+        "PutObject": 91,
+        "HeadObject": 6,
+        "GetObject": 50
       }
     },
     "observations": {
@@ -192,5 +177,5 @@
       "line": 239
     }
   ],
-  "note": "TTL move = the s3plain insert write of the same part (files, directory create, rename) plus one part load; once per table the moving/ container directory (PutObject + HeadObject)."
+  "prediction_commit": "6cc255b6593"
 }

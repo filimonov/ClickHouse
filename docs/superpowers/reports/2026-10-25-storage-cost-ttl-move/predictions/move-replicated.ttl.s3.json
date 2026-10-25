@@ -16,32 +16,12 @@
   "expected": {
     "foreground": {
       "r1": {
-        "PutObject": {
-          "min": 24,
-          "max": 24,
-          "basis": "source",
-          "reason": "each replica moves its own copy: insert write per part"
-        },
-        "GetObject": {
-          "min": 20,
-          "max": 20,
-          "basis": "source",
-          "reason": "and loads its clone"
-        }
+        "PutObject": 24,
+        "GetObject": 20
       },
       "r2": {
-        "PutObject": {
-          "min": 24,
-          "max": 24,
-          "basis": "source",
-          "reason": "each replica moves its own copy: insert write per part"
-        },
-        "GetObject": {
-          "min": 20,
-          "max": 20,
-          "basis": "source",
-          "reason": "and loads its clone"
-        }
+        "PutObject": 24,
+        "GetObject": 20
       }
     },
     "observations": {
@@ -194,5 +174,5 @@
       "line": 11336
     }
   ],
-  "note": "The follower moves its own copy: two replicas pay the move twice, with no fetch and no interserver bytes."
+  "prediction_commit": "6cc255b6593"
 }

@@ -46,19 +46,19 @@
         "HeadObject": {
           "min": 17,
           "max": 27,
-          "basis": "source",
+          "basis": "derived",
           "reason": "one HEAD per blob, fresh or hash hit"
         },
         "PutObject": {
           "min": 67,
           "max": 89,
-          "basis": "source",
+          "basis": "derived",
           "reason": "manifest + 3 ref transactions per part, body + .meta per fresh blob"
         },
         "GetObject": {
           "min": 42,
           "max": 54,
-          "basis": "source",
+          "basis": "derived",
           "reason": "3 ref transactions + promote read per part, the clone load, .meta per hash hit"
         }
       }
@@ -203,5 +203,5 @@
       "line": 56
     }
   ],
-  "note": "TTL move = the CAS insert publish of the same part (blobs by branch, manifest, 3 ref transactions) plus one manifest GET to load the clone and, for a Wide part, its first marks blob."
+  "prediction_commit": "6cc255b6593"
 }

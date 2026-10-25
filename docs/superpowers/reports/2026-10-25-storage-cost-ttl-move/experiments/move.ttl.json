@@ -13,7 +13,7 @@
   "controls": {
     "merges": "stop",
     "gc": "off",
-    "ttl": "move"
+    "ttl": "measure"
   },
   "settings": {
     "table": {

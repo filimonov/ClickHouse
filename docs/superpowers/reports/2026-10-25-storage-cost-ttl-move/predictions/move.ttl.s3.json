@@ -16,18 +16,8 @@
   "expected": {
     "foreground": {
       "r1": {
-        "PutObject": {
-          "min": 80,
-          "max": 80,
-          "basis": "source",
-          "reason": "insert write of every moved part: one PutObject per file"
-        },
-        "GetObject": {
-          "min": 50,
-          "max": 50,
-          "basis": "source",
-          "reason": "one load of the clone per moved part, 10 small files"
-        }
+        "PutObject": 80,
+        "GetObject": 50
       }
     },
     "observations": {
@@ -170,5 +160,5 @@
       "line": 55
     }
   ],
-  "note": "TTL move = the insert write of the same part (one PutObject per file) plus one part load from the cold disk (10 GetObject); the local source part costs no object request."
+  "prediction_commit": "6cc255b6593"
 }
