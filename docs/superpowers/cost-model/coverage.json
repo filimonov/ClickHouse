@@ -2176,6 +2176,32 @@
           "duration_s": 1200,
           "priority": "P1",
           "status": "cut"
+        },
+        {
+          "case_id": "short",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 180,
+          "priority": "P2",
+          "status": "run"
+        },
+        {
+          "case_id": "olt-10",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 1,
+          "timeout_s": 3600,
+          "duration_s": 180,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -21692,6 +21718,24 @@
       ],
       "status": "done",
       "note": "8.77, predicted 9 +- 20 %"
+    },
+    {
+      "coefficient": "reclaim_delay_periods",
+      "experiment_id": "gc-under-load.short",
+      "policy": "cas",
+      "span": {
+        "objects": [
+          1187,
+          1187
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "e59a1d32ed9",
+      "measurement_ids": [
+        "cost-20261025T141616Z/cas/gc-under-load/short/k1"
+      ],
+      "status": "consumed",
+      "note": "reclaimed 0 of 1187 retired objects in an 81 s window, as predicted (old_parts_lifetime 480 s); the record is FAILED on unpredicted foreground ops, a prediction-shape gap"
     },
     {
       "coefficient": "ttl_move_table_once_requests",

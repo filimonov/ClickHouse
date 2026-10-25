@@ -167,3 +167,25 @@ waiting clients, …) as before.
 | `steady-40hz-c16` | 25 ms | 92–139 (9 per flush) | 114 / 114 | 114 / 114 | 8.77: pass |
 
 All eight records are `ok`. The client cap stays an upper bound (`steady-50hz-c4`: 70–90 % of it).
+
+## GC under load {#gc-under-load}
+
+`gc-under-load` (1 000 inserts of 1 000 rows with natural merges on `cas`, GC every 20 s) compares retired objects
+with the objects GC deletes inside the window. Predicted in `e59a1d32ed9`, run `cost-20261025T141616Z`:
+
+| Case | Prediction | Result |
+|---|---|---|
+| `gc-under-load.short` (`old_parts_lifetime` 480 s) | nothing reclaimed in the window | 1 187 objects and 1 187 manifests retired, 0 reclaimed, 3 GC rounds in 81 s: as predicted |
+| `gc-under-load.olt-10` (`old_parts_lifetime` 10 s) | some sources reclaimed | not measured: the card failed |
+
+- **Reclamation starts after `old_parts_lifetime`.** A merged-away part keeps its blobs until the server removes it
+  (8 minutes by default), then GC needs 2.75 ± 1 periods (`reclaim_delay_periods`). A window shorter than that
+  reclaims nothing however many rounds run.
+- **The `short` record is `FAILED`** on `ledger.unpredicted`: the prediction left the foreground empty, as the cut
+  `gc-under-load.default` prediction did, and the rig rejects unpredicted foreground operations. The observations
+  above are from the record's `partial` section.
+- **`olt-10` cannot run on this rig commit.** The card lists part files every 60 s (`LAYOUT_EVERY_S`) and fails
+  when a merged-away part is gone before a listing (`lifecycle.py:333`). A 10 s lifetime removes parts first.
+- **Not run:** `gc-scale.mounts-2.10k` and `gc-scale.refgrowth-*` need card changes (a second mount on one pool;
+  a ref log past the 256-record snapshot), so the `mounts` and `ref_growth` terms of `gc_round_requests` stay
+  unsupported.
