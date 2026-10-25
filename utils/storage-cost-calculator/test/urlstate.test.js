@@ -10,7 +10,7 @@ const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 const fullState = () => ({
-  inputs: { data_bytes: 1.5e12, ingest_rate: { value: 50, per: 'hour' }, retention_days: 30, shape: 'wide' },
+  inputs: { data_bytes: 1.5e12, ingest_rate: { value: 50, per: 'hour' }, retention_days: 30, type_mix: 'plain' },
   locks: ['ingest_rate', 'retention_days'],
   overrides: { replicas: 4 },
   scenario: 'logs',
@@ -134,7 +134,7 @@ test('test_out_of_domain_values_are_a_url_format_problem', () => {
     ['price NaN', (s) => { s.custom_prices = { 'block.gp3.iops_price': 'NaN' }; }, /custom price block\.gp3\.iops_price: "NaN" is not a finite number/],
     ['price negative', (s) => { s.custom_prices = { 'block.gp3.iops_price': -1 }; }, /is not a finite number of 0 or more/],
     ['unknown input', (s) => { s.inputs.label = 'x'; }, /inputs: "label" is not a registry input/],
-    ['enum value', (s) => { s.inputs.shape = 'round'; }, /inputs\.shape: "round" is not one of/],
+    ['enum value', (s) => { s.inputs.type_mix = 'round'; }, /inputs\.type_mix: "round" is not one of/],
     ['number as word', (s) => { s.overrides.replicas = 'many'; }, /overrides\.replicas: "many" is not a number/],
     ['null input', (s) => { s.inputs.replicas = null; }, /inputs\.replicas: null is not a finite number or a word/],
     ['rate shape', (s) => { s.inputs.ingest_rate = { value: 1, per: 'fortnight' }; }, /inputs\.ingest_rate: expected a number, a word or \{value, per\}/],
