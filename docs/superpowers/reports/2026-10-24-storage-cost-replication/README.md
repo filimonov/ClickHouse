@@ -339,7 +339,9 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 `cas_relink_bytes_per_part` (assumed basis) is 19 428.8 B per fetched part: the relink sends the manifest, so the
 bytes follow the file count, not the part bytes. It is the mean of the `insert`, `insert-wide`, `merge` and
 `mutation` fetch cases at 100 000–300 000 rows per insert, an upper bound for smaller parts. The 1 000-row
-hold-out sent 13 030 B (−33 %). A size-dependent manifest model is Tier 2.
+hold-out sent 13 030 B (−33 %). The registry now derives `cas_relink_bytes_per_part` from part type, granules and
+rows, fitted on these and later cases; this constant is no longer a coefficient (see
+[cut cards](/superpowers/reports/storage-cost-cut-cards#relink-derivation)).
 
 Values are in `coefficients.json`. The cut cases measure no replacement or fetch-retry coefficient, so the registry has no rows for them.
 

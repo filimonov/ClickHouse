@@ -578,6 +578,11 @@
           "kind": "const",
           "value": "IOPS at the AWS floor of 4 I/Os per MiB (a merged sequential stream): a lower bound; the rig syscall proxy counted 1.3-6.5x more; the gp3 3000-IOPS baseline usually dominates. Throughput x peak_factor (assumed, default 1 = average rate)",
           "dim": "enum:note"
+        },
+        {
+          "kind": "input",
+          "id": "ebs_peak_mibps_bound",
+          "dim": "MiB/s"
         }
       ]
     },

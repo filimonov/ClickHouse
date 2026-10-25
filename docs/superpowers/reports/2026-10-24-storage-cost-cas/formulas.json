@@ -516,7 +516,7 @@
          }
         },
         "b": {
-         "kind": "coef",
+         "kind": "input",
          "id": "cas_relink_bytes_per_part",
          "dim": "B"
         }
@@ -550,7 +550,7 @@
      "dim": "1"
     },
     {
-     "kind": "coef",
+     "kind": "input",
      "id": "cas_relink_bytes_per_part",
      "dim": "B"
     }

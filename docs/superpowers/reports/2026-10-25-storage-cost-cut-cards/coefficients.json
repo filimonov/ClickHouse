@@ -1,1 +1,362 @@
-[]
+[
+  {
+    "id": "cas_relink_compact_base_bytes",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 2571.3,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "CAS relink bytes per fetched Compact part besides granules and inline files",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  },
+  {
+    "id": "cas_relink_bytes_per_granule",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 13.85,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "CAS relink bytes per granule of a fetched Compact part",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  },
+  {
+    "id": "cas_relink_wide_base_bytes",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 3798.0,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "CAS relink bytes per fetched Wide part besides inline files",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  },
+  {
+    "id": "cas_relink_inline_ceiling_bytes",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 16516.5,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "Ceiling of the inline file bytes a CAS relink sends per part",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  },
+  {
+    "id": "cas_relink_inline_deficit_bytes",
+    "kind": "scalar",
+    "dim": "B",
+    "value": 17470.6,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "Inline file bytes below the ceiling at zero rows",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  },
+  {
+    "id": "cas_relink_inline_half_rows",
+    "kind": "scalar",
+    "dim": "count",
+    "value": 530,
+    "basis": "fitted",
+    "verified_range": {
+      "insert_rows": [
+        1000,
+        300000
+      ]
+    },
+    "tolerance": {
+      "abs": 0.0,
+      "rel": 0.0125
+    },
+    "evidence": {
+      "kind": "measured",
+      "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+      "version": "0.2.0",
+      "measurement_ids": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+      ],
+      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+    },
+    "status": "ok",
+    "rule": "Rows at which inline file bytes are halfway to the ceiling",
+    "fit": {
+      "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+      "records": [
+        "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+        "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+        "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+        "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+        "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+      ],
+      "residuals_pct": {
+        "insert": -0.12,
+        "insert_3": -0.29,
+        "merge": 0.28,
+        "mutation": -0.09,
+        "insert_1k": -0.15,
+        "insert_3k": -0.93,
+        "insert_10k": 1.19,
+        "insert_wide": -0.62,
+        "insert_30k_wide": -0.07,
+        "insert_50k": -0.0,
+        "insert_10k_wide": 0.72
+      }
+    }
+  }
+]

@@ -175,59 +175,6 @@
     }
   },
   {
-    "id": "cas_relink_bytes_per_part",
-    "kind": "scalar",
-    "dim": "B",
-    "value": 19428.8,
-    "basis": "assumed",
-    "verified_range": {
-      "insert_rows": [
-        100000,
-        300000
-      ]
-    },
-    "tolerance": {
-      "abs": 0.0,
-      "rel": 0.05
-    },
-    "evidence": {
-      "kind": "measured",
-      "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-      "version": "0.3.0",
-      "measurement_ids": [
-        "cost-20261024T115147Z/cas/replication-fetch/insert/k1",
-        "cost-20261024T115147Z/cas/replication-fetch/insert/k2",
-        "cost-20261024T115147Z/cas/replication-fetch/insert/k3",
-        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k1",
-        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k2",
-        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k3",
-        "cost-20261024T115147Z/cas/replication-fetch/merge/k1",
-        "cost-20261024T115147Z/cas/replication-fetch/merge/k2",
-        "cost-20261024T115147Z/cas/replication-fetch/merge/k3",
-        "cost-20261024T115147Z/cas/replication-fetch/mutation/k1",
-        "cost-20261024T115147Z/cas/replication-fetch/mutation/k2",
-        "cost-20261024T115147Z/cas/replication-fetch/mutation/k3"
-      ],
-      "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-      "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-    },
-    "status": "ok",
-    "rule": "interserver bytes the originator sends per fetched part (relay0 from_target / fetched parts): the relink ships the part manifest, not its blobs. The fitting parts held 2.17-6.49 MB on disk at 100 000-300 000 rows",
-    "fit": {
-      "method": "cas_relink_bytes_per_part: ASSUMPTION — upper bound from the insert/insert-wide/merge/mutation/insert-3 records (±3.8%); the small-part hold-out replication-fetch.insert-1k gave 13 030 B/part (−33%), so relink bytes are not constant per part; a size-dependent shape is Tier 2",
-      "residuals": {
-        "insert": -0.0142,
-        "insert-wide": 0.0375,
-        "merge": 0.0006,
-        "mutation": -0.0139,
-        "insert-3": -0.0101
-      },
-      "holdout": {
-        "replication-fetch.insert-1k": -0.3293
-      }
-    }
-  },
-  {
     "id": "local_exec_requests",
     "kind": "table",
     "dim": "count",

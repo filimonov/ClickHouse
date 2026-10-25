@@ -16,8 +16,8 @@ each predicted and committed before its run. Results:
 |---|---|---|
 | Paced natural merges (§[Amplification](#amplification-result)) | rule fails: amplification 8.8 against 4.6 | `merge_effective_fan_in` valid for 50 000–100 000-row inserts only |
 | Chain-regime amplification law (§[Hold-out](#amplification-holdout)) | fails its hold-out: 8.258 against 7.754 ± 0.4465 | none; the law is evidence only |
-| EBS `peak_factor` (§[Amplification](#amplification-result)) | constant fails: 28.2 and 15.5; the peak is the largest merge | none; stays assumed, default 1 |
-| `cas_relink_bytes_per_part` (§[Relink](#relink-revised)) | constant fails below 30 000 rows; revised form passes | none in the registry: the form needs inline bytes per part, which the calculator lacks |
+| EBS `peak_factor` (§[Peak bound](#peak-bound)) | constant fails: 28.2, 15.5 and 19.8; the peak is the largest merge | stays assumed, default 1; `ebs_peak_mibps_bound` shown as a note on the EBS merges cell |
+| `cas_relink_bytes_per_part` (§[Relink](#relink-derivation)) | constant fails below 30 000 rows; revised form passes | registry derivation from part type, granules and rows (basis fitted); the constant is retired |
 | `inserts_per_async_flush` (§[Async](#async-revised)) | rule fails below 20/s; revised rule passes | registry rule returns 1 when 1 / rate ≥ `async_insert_busy_timeout_min_ms` |
 | `gc-under-load` (§[GC](#gc-under-load)) | nothing reclaimed within `old_parts_lifetime`, as predicted | none |
 | s3plain big-file removal (§[Big file](#big-file)) | exact | none; the `plain_unlink_requests` edge is done |
@@ -183,6 +183,60 @@ Wide:    relink bytes per part = 3340.5 + inline bytes
 - **Inline bytes are mostly `statistics.packed`:** 9.2 kB at 1 000 rows, 15.1 kB at 100 000 rows, for 5
   `UInt64` columns. The calculator has no input for them, so `cas_relink_bytes_per_part` stays the assumed scalar,
   an upper bound for 5-column parts above 30 000 rows and too high by up to a third below.
+
+### Registry derivation {#relink-derivation}
+
+`cas_relink_bytes_per_part` is now a registry derivation (basis fitted, valid for 1 000–300 000-row inserts). The
+calculator has every input it needs: `part_type`, `part_rows` and `index_granularity`. The inline file bytes become a
+saturating curve of rows, and the constants are refitted with the curve in place of the measured inline bytes:
+
+```
+relink(rows) = base + inline(rows)
+base         = Compact: 2571.3 + 13.85 × ceil(rows / index_granularity);  Wide: 3798.0
+inline(rows) = 16516.5 − 17470.6 × 530 / (rows + 530)
+```
+
+- **The curve.** Least squares over the mean inline bytes of the 8 Compact cases (1 000–200 000 rows); residuals
+  −119…+259 B. Inline bytes are 63 % of the ceiling at 1 000 rows and within 2 % of it from 30 000 rows. Wide
+  parts read 325–608 B above the curve; the Wide base absorbs it.
+- **The constants.** Least squares of the measured bytes per part minus the curve: the granule term over the 8
+  Compact cases, the Wide base as the mean of 3 Wide cases. The old constant 19 428.8 B is the value near the
+  ceiling (19 176–19 388 B at 100 000–200 000 rows) and is no longer a coefficient.
+- **Not a fresh hold-out.** The form passed its hold-out with measured inline bytes (§[Revised form](#relink-revised));
+  the curve is fitted on all 11 cases, including those two.
+
+| Case | Part | Rows | Measured B per part | Derivation | Residual |
+|---|---|---|---|---|---|
+| `relink-1k` | Compact | 1 000 | 13 030 | 13 050 | −0.15 % |
+| `relink-3k` | Compact | 3 000 | 16 326 | 16 479 | −0.93 % |
+| `relink-10k` | Compact | 10 000 | 18 452 | 18 236 | +1.19 % |
+| `relink-50k` | Compact | 50 000 | 19 001 | 19 002 | +0.00 % |
+| replication `insert` | Compact | 100 000 | 19 153 | 19 176 | −0.12 % |
+| replication `mutation` | Compact | 100 000 | 19 158 | 19 176 | −0.09 % |
+| validation `insert-3` | Compact | 150 000 | 19 233 | 19 289 | −0.29 % |
+| replication `merge` | Compact | 200 000 | 19 441 | 19 388 | +0.28 % |
+| `relink-10k-wide` | Wide | 10 000 | 19 575 | 19 435 | +0.72 % |
+| `relink-30k-wide` | Wide | 30 000 | 19 997 | 20 011 | −0.07 % |
+| replication `insert-wide` | Wide | 300 000 | 20 158 | 20 284 | −0.62 % |
+
+`coefficients.json` holds the six constants (`cas_relink_*`, tolerance rel 1.25 %). The CAS `inserts` transfer row
+reads the derivation in place of the retired coefficient.
+
+## EBS 1-s peak bound {#peak-bound}
+
+The 1-s write peak of a paced run is one merge: 1.02–1.06 × the bytes of the largest merge in all three local runs.
+`peak_factor` stays an assumed input with default 1. The EBS `merges` cell shows `ebs_peak_mibps_bound` as a note:
+the largest merge written in one second, with the largest merge capped by `max_bytes_to_merge_at_max_space_in_pool`
+and by the data size. The bound is not priced. On EBS a merge past the provisioned throughput runs longer instead.
+
+| Record | Peak, B/s | Mean, B/s | Peak factor | Largest merge, B | Peak / largest merge |
+|---|---|---|---|---|---|
+| `local`, 2/s | 23 195 673 | 823 177 | 28.2 | 22 747 333 | 1.020 |
+| `local`, 4/s | 23 998 120 | 1 548 902 | 15.5 | 22 749 547 | 1.055 |
+| `local`, 1/s | 8 798 937 | 444 462 | 19.8 | 8 607 829 | 1.022 |
+
+The rule multiplies by 1.055, the largest ratio, as a constant: the three records failed on their amplification
+assertion, so they cannot back a coefficient. The 1/s record was not predicted for the peak; it adds a third point.
 
 ## Async inserts {#async}
 
