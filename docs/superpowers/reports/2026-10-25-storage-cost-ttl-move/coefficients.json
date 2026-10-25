@@ -36,12 +36,12 @@
    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move",
    "version": "0.1.0",
    "measurement_ids": [
-    "cost-20261025T133717Z/s3plain/move/ttl/k1",
-    "cost-20261025T133717Z/s3plain/move/ttl/k2",
-    "cost-20261025T133717Z/cas/move/ttl/k1",
-    "cost-20261025T133717Z/cas/move/ttl/k2",
-    "cost-20261025T135003Z/cas/move/ttl-holdout/k1",
-    "cost-20261025T135003Z/cas/move/ttl-holdout/k2"
+    "cost-20261025T142655Z/s3plain/move/ttl/k1",
+    "cost-20261025T142655Z/s3plain/move/ttl/k2",
+    "cost-20261025T142655Z/cas/move/ttl/k1",
+    "cost-20261025T142655Z/cas/move/ttl/k2",
+    "cost-20261025T142655Z/cas/move/ttl-holdout/k1",
+    "cost-20261025T142655Z/cas/move/ttl-holdout/k2"
    ],
    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
@@ -51,28 +51,28 @@
   "fit": {
    "method": "measured remainder of move.ttl (5 parts) after the insert write and the per-part load: s3plain source term (Disks/IDisk.cpp:165 creates moving/ through createDirectories), exact in both passes; CAS: every extra request precedes the first part publish in both passes",
    "residuals": {
-    "cost-20261025T133717Z/s3plain/move/ttl/k1": {
+    "cost-20261025T142655Z/s3plain/move/ttl/k1": {
      "PutObject": 0,
      "GetObject": 0,
      "HeadObject": 0
     },
-    "cost-20261025T133717Z/s3plain/move/ttl/k2": {
+    "cost-20261025T142655Z/s3plain/move/ttl/k2": {
      "PutObject": 0,
      "GetObject": 0,
      "HeadObject": 0
     },
-    "cost-20261025T133717Z/cas/move/ttl/k1": {
+    "cost-20261025T142655Z/cas/move/ttl/k1": {
      "PutObject": 0,
      "GetObject": 0,
      "HeadObject": 0
     },
-    "cost-20261025T133717Z/cas/move/ttl/k2": {
+    "cost-20261025T142655Z/cas/move/ttl/k2": {
      "PutObject": 0,
      "GetObject": 0,
      "HeadObject": 0
     }
    },
-   "holdout": "ok, exact: move.ttl-holdout on cas (4 Compact, 1 Wide part; cost-20261025T135003Z, predicted in aed33b5c352): PUT 70, GET 54, HEAD 16 in both passes. The s3plain term has no separate hold-out: it is one source-cited directory"
+   "holdout": "ok, exact: move.ttl-holdout on cas (4 Compact, 1 Wide part; cost-20261025T142655Z, predicted in aed33b5c352): PUT 70, GET 54, HEAD 16 in both passes. The s3plain term has no separate hold-out: it is one source-cited directory"
   }
  }
 ]

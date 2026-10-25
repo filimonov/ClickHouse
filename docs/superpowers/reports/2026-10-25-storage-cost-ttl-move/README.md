@@ -16,9 +16,11 @@ object request. Without zero-copy replication every replica moves its own copy.
 - **Verdict:** the rule holds exactly on all three variants, plus a once-per-table term
   (`ttl_move_table_once_requests`): `s3plain` PUT 1 and HEAD 1 for `moving/`, CAS PUT 3 and GET 13 for the table's
   namespace birth on the pool.
-- **Runs:** `cost-20261025T133717Z` (`move.ttl` on `s3`, `s3plain`, `cas`; `move-replicated.ttl` on `s3`) and
-  `cost-20261025T135003Z` (`move.ttl-holdout` on `cas`), `cost-20261025T141926Z` (`move-replicated.ttl-cas`); rig commits `f3fea9a2efe` and `455dc9b8f77`, `rig_dirty`
-  false, RustFS 1.0.0-beta.9, two passes per case. An uncited `s3` smoke pass (`cost-20261025T130324Z`) came first.
+- **Runs:** `cost-20261025T142655Z`, all cases in one session (rig commit `7186870ad4c`, `rig_dirty` false,
+  RustFS 1.0.0-beta.9, two passes per case). The same counts were first measured in `cost-20261025T133717Z`,
+  `cost-20261025T135003Z` and `cost-20261025T141926Z`, each case after its prediction; the report keeps the
+  one-session rerun so its records name one rig commit. An uncited `s3` smoke pass (`cost-20261025T130324Z`) came
+  first.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`,
   source `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
 - **Cards:** `move` and `move-replicated` in `utils/cas-yardstick/yardstick/cost/cards/move.py`.
@@ -97,7 +99,7 @@ Foreground requests of the moving replica, both passes identical. `HEAD`/`PUT`/`
 - **CAS follower.** With moves run one replica at a time (`params.sequential_moves`), `r2` found every blob `r1`
   had published: each blob is a hash hit (HEAD and a `.meta` GET), no blob PUT. `r2` still pays per part the
   manifest and 3 ref transactions in its own namespace, the load GET and its own namespace birth. It uploaded
-  29 379 B against 4 424 477 B on `r1`. Moves that overlap on two replicas can both miss; this case does not
+  about 29 KB against 4.42 MB on `r1`. Moves that overlap on two replicas can both miss; this case does not
   measure that race.
 
 ## Rule for the calculator {#rule}
