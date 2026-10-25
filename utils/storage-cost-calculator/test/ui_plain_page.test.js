@@ -90,9 +90,11 @@ test('test_sizes_use_three_significant_digits', () => {
 test('test_notes_row_is_one_short_line_per_column', () => {
   const { vm, parts } = page('logs');
   const ebs = vm.cards.find((c) => c.variant === 'ebs').sizing;
-  assert.equal(vm.table.column_lines.ebs, `19,500 GiB/replica · ${vmod.fmtSig(ebs.peak_iops)} IOPS · ${vmod.fmtSig(ebs.peak_mibps)} MiB/s · gp3 baseline ok`);
+  // Size and verdict only; the IOPS and MiB/s figures are in the column dialog.
+  assert.equal(vm.table.column_lines.ebs, '19,500 GiB/replica · gp3 ok');
+  assert.ok(ebs.lines.some((l) => l.includes(`${vmod.fmtSig(ebs.peak_iops)} IOPS, ${vmod.fmtSig(ebs.peak_mibps)} MiB/s`)));
   assert.match(vm.table.column_lines.cas, /^207 MiB\/replica · /);
-  assert.match(vm.table.column_lines.s3plain, /^no local data · /);
+  assert.match(vm.table.column_lines.s3plain, /^6 GiB gp3, no local data$/);
   const notes = parts.table.slice(parts.table.indexOf('<tr class="notes-row"'));
   assert.equal(/<ul|<li/.test(notes), false, 'no paragraph lists in the notes row');
   for (const v of ['ebs', 's3', 's3plain', 'cas']) {

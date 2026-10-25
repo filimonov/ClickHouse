@@ -656,9 +656,11 @@
     const mibpsNeed = d.peak_mibps || 0;
     let verdict;
     let brief;
+    let tag;
     if (r.feasible === false) {
       verdict = `no feasible gp3 layout: ${(r.notes || []).join('; ')}`;
       brief = 'no gp3 layout fits';
+      tag = brief;
     } else if (r.volumes > 1) {
       // Why one volume is not enough decides what the reader should look at: the peak or the size.
       const why = g && (iopsNeed > g.iops_baseline || mibpsNeed > g.mibps_baseline)
@@ -668,12 +670,15 @@
       const cost = !priced ? null : extra ? `+${extra}/month per replica above the baseline` : 'no charge above the baseline';
       verdict = [`${r.volumes} striped gp3 volumes of ${fmtQuantity(r.size_gib, 'GiB')}`, why, cost].filter(Boolean).join('; ');
       brief = `${r.volumes} striped volumes${extra ? `, +${extra}/month` : ''}`;
+      tag = `${r.volumes} volumes`;
     } else if (g && r.iops <= g.iops_baseline && r.mibps <= g.mibps_baseline) {
       verdict = 'gp3 baseline sufficient';
       brief = 'gp3 baseline ok';
+      tag = 'gp3 ok';
     } else {
       verdict = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${priced ? ` (+${fmtMoney(above / p.replicas, preset.currency)}/month per replica)` : ''}`;
       brief = `provision ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s${extra ? `, +${extra}/month` : ''}`;
+      tag = 'gp3 above baseline';
     }
     const components = [];
     for (const [op, c] of Object.entries(vr.cells || {})) {
@@ -699,9 +704,8 @@
       volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
       short: empty ? `no local data; the minimum gp3 volume (${fmtSize(r.size_gib)}) per replica`
         : `${fmtSize(d.capacity_gib || 0)} per replica, needs ${need}: ${verdict}`,
-      // One line for the breakdown's notes row; the column dialog has the rest.
-      line: empty ? `no local data · minimum gp3 volume ${fmtSize(r.size_gib)}`
-        : `${fmtSize(d.capacity_gib || 0)}/replica · ${fmtSig(iopsNeed)} IOPS · ${fmtSig(mibpsNeed)} MiB/s · ${brief}`,
+      // One line for the breakdown's notes row: size and verdict; IOPS and MiB/s are in the column dialog.
+      line: empty ? `${fmtSize(r.size_gib)} gp3, no local data` : `${fmtSize(d.capacity_gib || 0)}/replica · ${tag}`,
       instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
     };
   }
@@ -748,7 +752,8 @@
       const by = (contract.evidence_by_variant || {})[v];
       out[v] = sz ? sz.line
         : bad ? (bad.need_gib !== null ? `no gp3 layout fits ${fmtSize(bad.need_gib)}/replica` : 'no gp3 layout fits')
-          : vr.state !== 'ok' ? cardSentence(v, vr, contract, null)
+          // The card says why a column is off; the Notes row names the state and its (i) has the sentence.
+          : vr.state !== 'ok' ? cellText(vr.state)
             : by ? `evidence: ${by.fit_and_holdout} fit and hold-out, ${by.fit_only} fit only, ${by.assumption} assumed`
               : (vr.lines || []).some((l) => l.rule_id === 'storage') ? 'storage GB read as GiB' : null;
     }
