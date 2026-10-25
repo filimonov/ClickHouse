@@ -34,6 +34,13 @@
   const AT_LEAST_ONE_INPUTS = ['streams_per_column', 'read_streams_per_part', 'merge_size_ratio'];
   // Sizes and periods of a setting: 0 has no meaning (a GC round every 0 s, a blob of 0 bytes), so it is not priced.
   const POSITIVE_INPUTS = ['insert_bytes_uncompressed', 'cas_gc_interval_s', 'cas_blob_bytes', 'cas_table_cleanup_period_s'];
+  // The page models one shard: it holds at most 200 TiB, one day cannot add more than that, and data is kept at most
+  // 100 years. Above a bound the input is refused, whether typed or derived from its group partners.
+  const INPUT_LIMITS = {
+    data_bytes: { max: 204800, why: 'a single shard holds at most 200 TiB; multi-shard is out of scope' },
+    ingest_rate: { max: 204800, why: 'one day cannot add more than a 200 TiB shard holds' },
+    retention_days: { max: 36500, why: 'retention is at most 100 years' },
+  };
   // A `<name>_fraction` of unit 1 is a share of a whole: a value above 1 would price negative requests.
   const isFraction = (q) => q.unit === '1' && /_fraction$/.test(q.id);
   const isRate = (q) => typeof q.unit === 'string' && q.unit.endsWith('/day');
@@ -198,6 +205,17 @@
         else values.set(id, r.value);
       }
     });
+
+    const plainUnit = (u) => (u === 'day' ? 'days' : u);
+    for (const [id, lim] of Object.entries(INPUT_LIMITS)) {
+      const v = values.get(id);
+      if (typeof v !== 'number' || !(v > lim.max)) continue;
+      const q = byId.get(id);
+      const rule = derivedIds.has(id) && ruleText.has(id) ? ` (${ruleText.get(id)})` : '';
+      const n = (x) => Number(x.toPrecision(6)).toLocaleString('en-US');
+      problems.push(`${id}: ${n(v)} ${plainUnit(q.unit)}${rule} is above ${n(lim.max)} ${plainUnit(q.unit)}: ${lim.why}`);
+      values.delete(id);
+    }
 
     // Zero ingest is a valid workload; data that arrives without INSERTs is not. The rate is left without a value.
     if (values.get('insert_rate') === 0 && values.get('ingest_rate') > 0) {
@@ -774,6 +792,6 @@
   const evaluationInputs = (contract, inputs) => buildCtx(contract, inputs instanceof Map ? inputs : new Map(Object.entries(inputs || {})), unsupportedRefs(contract)).inputs;
 
   SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
-    unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE });
+    unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

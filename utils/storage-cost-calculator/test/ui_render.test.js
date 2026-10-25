@@ -71,8 +71,9 @@ test('test_render_contains_substituted_values_for_fixture_vm', () => {
   // Every container has its part, in page order.
   assert.deepEqual([...html.matchAll(/<div data-part="(\w+)">/g)].map((m) => m[1]), ui.PARTS);
   // Simple inputs: a slider and an editable number per numeric input, the derived member greyed with its rule.
-  // Sliders span the view model's bounds: the sweep ladder for data_bytes; no ladder and no range means no slider.
-  assert.match(parts.inputs, /type="range" min="250" max="8000" step="any" data-action="slider" data-id="data_bytes" value="1000"/);
+  // Sliders span the view model's bounds: data_bytes on a log scale from 10 GiB to one shard's 204,800 GiB; no ladder
+  // and no range means no slider.
+  assert.match(parts.inputs, /type="range" min="0" max="1000" step="1" data-action="slider" data-id="data_bytes" data-scale="log" data-lo="10" data-hi="204800" value="464"/);
   assert.equal(/type="range"[^>]*data-id="inserts_per_month"/.test(parts.inputs), false);
   assert.match(parts.inputs, /type="number" step="1" data-action="input" data-id="inserts_per_month" value="1000"/);
   assert.match(parts.inputs, /class="field is-derived" data-field="data_bytes"/);

@@ -121,12 +121,12 @@ test('test_sizing_verdict_when_one_volume_is_not_enough', () => {
   assert.equal(card(page('logs', { volumes_per_replica: 1 }).vm, 'ebs').reason, 'EBS: the manual volume layout needs a value for '
     + LIVE.registry.find((q) => q.id === 'provisioned_size_gib').label);
   assert.match(single.sizing.verdict, /^provision [\d,]+ IOPS, [\d,]+ MiB\/s \(\+\$[\d,.]+\/month per replica\)$/);
-  // Ten times the archive: no gp3 layout holds the data; the card says so with the numbers.
-  const { vm } = page('single_replica_archive', { data_bytes: 512000 });
+  // A full 200 TiB shard: with headroom no gp3 layout holds the data; the card says so with the numbers.
+  const { vm } = page('single_replica_archive', { data_bytes: 204800 });
   const ebs = card(vm, 'ebs');
   assert.notEqual(ebs.state, 'ok');
-  assert.equal(ebs.reason, 'EBS needs 666,000 GiB per replica; the largest gp3 layout is 4 volumes of 65,536 GiB (262,144 GiB)');
-  assert.equal(vm.table.column_lines.ebs, 'no gp3 layout fits 666,000 GiB/replica');
+  assert.equal(ebs.reason, 'EBS needs 266,000 GiB per replica; the largest gp3 layout is 4 volumes of 65,536 GiB (262,144 GiB)');
+  assert.equal(vm.table.column_lines.ebs, 'no gp3 layout fits 266,000 GiB/replica');
 });
 
 test('test_input_dialog_has_no_kind_or_generic_evidence', () => {

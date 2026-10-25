@@ -353,8 +353,8 @@ test('test_field_display_values_ranges_and_steps', () => {
   assert.equal(f(day, 'replicas').step, 1);
   assert.equal(f(day, 'replicas').fixed, false);
   assert.equal(f(day, 'replicas').range_text, 'measured for 1 to 6');
-  assert.equal(f(day, 'shards').fixed, true);
-  assert.equal(f(day, 'shards').range_text, 'measured at 1 only');
+  // One shard: a pinned constant, never a control.
+  assert.equal(f(day, 'shards').editable, false);
   assert.equal(f(day, 'data_bytes').step, 'any');
   const fan = f(day, 'merge_effective_fan_in');
   assert.match(fan.range_text, /measured for .*1,000 to 100,000/);
@@ -402,9 +402,9 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   const lm = vmod.build(pipeline.run(live, mut.inputs, aws, {}), live, mut.fields, mut.lockOrder, { pricePreset: aws, units: 'hour' });
   assert.match(lm.cards.find((c) => c.variant === 's3plain').reason, /^S3 plain rewritable cannot run ALTER UPDATE\/DELETE; this workload runs 5 ALTER UPDATE\/DELETE per month$/);
   assert.equal(lv.cards.find((c) => c.variant === 'ebs').state, 'ok');
-  // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
-  // 500 GiB/day ×1/4 … ×8, shown per hour.
-  assert.deepEqual(f('ingest_rate').slider, { min: 5.20833, max: 166.667 });
+  // Slider bounds in the shown unit: a log scale for a bounded rate, the range for replicas.
+  // 1 to 204,800 GiB/day, shown per hour.
+  assert.deepEqual(f('ingest_rate').slider, { min: 0.0416667, max: 8533.33, log: true });
   assert.deepEqual(f('replicas').slider, { min: 1, max: 6 });
   assert.equal(f('shards').slider, null);
   // Drill composition and card bars carry words, not rule ids.

@@ -118,8 +118,8 @@
     {
       "id": "shards",
       "block": "simple",
-      "label": "Shards",
-      "kind": "input",
+      "label": "Shards: one; multi-shard is out of scope",
+      "kind": "pinned",
       "scope": "cluster",
       "unit": "count",
       "value_type": "number",
@@ -136,12 +136,12 @@
       },
       "evidence": {
         "kind": "assumed",
-        "ref": "preset default",
-        "version": "0.1.0"
+        "ref": "the page models one shard of at most 200 TiB",
+        "version": "0.3.0"
       },
       "hint": null,
       "ui": {
-        "tier": "workload",
+        "tier": "hidden",
         "name": null,
         "short": "Shards"
       },

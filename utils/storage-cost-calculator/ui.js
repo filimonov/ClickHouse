@@ -171,6 +171,17 @@
     return tags.join('');
   }
 
+  // A logarithmic slider has LOG_STEPS positions from its low to its high value; a position maps to three digits.
+  const LOG_STEPS = 1000;
+  const logValue = (d, pos) => {
+    const lo = Number(d.lo);
+    const hi = Number(d.hi);
+    const p = Math.min(LOG_STEPS, Math.max(0, Number(pos)));
+    if (p >= LOG_STEPS) return hi;
+    if (p <= 0) return lo;
+    return Number((lo * Math.pow(hi / lo, p / LOG_STEPS)).toPrecision(3));
+  };
+
   function control(f, page, simple) {
     const busy = page.cannot_reproduce;
     if (f.kind === 'price') {
@@ -193,6 +204,11 @@
     const unit = f.rate ? `<select class="unit" data-action="units" aria-label="Rate unit">${UNITS.map(([u, l]) => `<option value="${u}"${u === page.units ? ' selected' : ''}>${esc(rateUnit(f.unit, u))}</option>`).join('')}</select>`
       : f.display_unit && f.display_unit !== 'count' ? `<span class="unit">${esc(f.display_unit)}</span>` : '';
     if (!simple || v === null || !f.slider) return `<span class="control">${num}${unit}</span>`;
+    if (f.slider.log) {
+      const pos = Math.round(LOG_STEPS * Math.log(Math.max(v, f.slider.min) / f.slider.min) / Math.log(f.slider.max / f.slider.min));
+      return `<input type="range" min="0" max="${LOG_STEPS}" step="1" data-action="slider" data-id="${esc(f.id)}" data-scale="log" data-lo="${esc(f.slider.min)}" data-hi="${esc(f.slider.max)}"`
+        + ` value="${esc(Math.min(LOG_STEPS, Math.max(0, pos)))}" aria-label="${esc(f.label || '')}"><span class="control">${num}${unit}</span>`;
+    }
     return `<input type="range" min="${esc(f.slider.min)}" max="${esc(f.slider.max)}" step="${esc(f.step)}" data-action="slider" data-id="${esc(f.id)}" value="${esc(v)}" aria-label="${esc(f.label || '')}">`
       + `<span class="control">${num}${unit}</span>`;
   }
@@ -648,7 +664,8 @@
       case 'input':
       case 'slider': {
         const src = q(d.id);
-        const v = parseInput(src, action.value, s.units);
+        const raw = action.type === 'slider' && d.scale === 'log' ? String(logValue(d, action.value)) : action.value;
+        const v = parseInput(src, raw, s.units);
         setInput(d.id, v);
         // Choosing a value with a registry preset (shape) sets the preset's quantities too, as a quick pick does.
         const p = src.presets && typeof v === 'string' ? src.presets[v] : null;
@@ -816,7 +833,7 @@
       const el = ev.target.closest('[data-action="slider"]');
       if (!el) return;
       const box = el.parentElement.querySelector(`input[type="number"][data-id="${el.dataset.id}"]`);
-      if (box) box.value = el.value;
+      if (box) box.value = el.dataset.scale === 'log' ? logValue(el.dataset, el.value) : el.value;
       dispatch(actionOf(el, el.value), 'inputs');
     });
     // Open advanced blocks stay open across redraws.

@@ -16,10 +16,13 @@ const INTERNAL = ['unavailable', 'unsupported_cut'];
 // cannot be 0) and, with a range, the bounds, bounds ± 1 and 10x outside.
 function trials(q) {
   if (q.value_type === 'enum') return q.enum.slice();
+  // An input with a hard bound (one shard: data, ingest, retention) also tries the bound and one above it.
+  const lim = pipeline.INPUT_LIMITS[q.id];
+  const atBound = lim ? [lim.max, lim.max + 1] : [];
   const r = q.validity && q.validity[q.id];
-  if (!r) return q.value_type === 'number' ? [0] : [];
+  if (!r) return q.value_type === 'number' ? [0, ...atBound] : [];
   const [lo, hi] = r;
-  return [...new Set([lo, hi, lo - 1, hi + 1, lo / 10, hi * 10, 0].filter((x) => Number.isFinite(x)))];
+  return [...new Set([lo, hi, lo - 1, hi + 1, lo / 10, hi * 10, 0, ...atBound].filter((x) => Number.isFinite(x)))];
 }
 
 // A trial the pipeline rejects with a problem naming the input is the form saying "not a valid value", not an unpriced
@@ -56,6 +59,7 @@ test('test_trials_cover_enums_and_out_of_range_numbers', () => {
   assert.deepEqual(trials({ id: 'a', value_type: 'enum', enum: ['x', 'y'] }), ['x', 'y']);
   assert.deepEqual(trials({ id: 'n', value_type: 'number', validity: { n: [1, 6] } }), [1, 6, 0, 7, 0.1, 60]);
   assert.deepEqual(trials({ id: 'n', value_type: 'number', validity: null }), [0]);
+  assert.deepEqual(trials({ id: 'ingest_rate', value_type: 'number', validity: null }), [0, 204800, 204801]);
 });
 
 test('test_no_input_or_preset_leaves_a_column_unpriced', (t) => {
@@ -67,4 +71,6 @@ test('test_no_input_or_preset_leaves_a_column_unpriced', (t) => {
   // A zero workload prices; a setting that cannot be 0 is an input problem.
   for (const id of ['ingest_rate', 'retention_days', 'select_part_reads_per_day', 'mutations_per_month']) assert.ok(!rejected.includes(`custom ${id}=0`), id);
   for (const id of ['insert_rate', 'insert_rows', 'cas_gc_interval_s', 'read_streams_per_part']) assert.ok(rejected.includes(`custom ${id}=0`), id);
+  // Above one shard's bound the input is refused, not priced.
+  for (const id of ['ingest_rate', 'retention_days']) assert.ok(rejected.includes(`custom ${id}=${pipeline.INPUT_LIMITS[id].max + 1}`), id);
 });

@@ -577,6 +577,9 @@
     }).join('; ');
   }
 
+  // Low end of the logarithmic sliders, in registry units: 10 GiB of data, 1 GiB a day. The high end is the input bound.
+  const LOG_SLIDER_MIN = { data_bytes: 10, ingest_rate: 1 };
+
   // Form placement (registry `ui.tier`). Rows that are not inputs are model constants: the info dialog shows them.
   const TIERS = ['workload', 'setting', 'advanced', 'hidden'];
   function tierOf(q, problems) {
@@ -657,9 +660,12 @@
       f.display_range = f.range ? f.range.map((x) => roundDisplay(shown(q, x))) : null;
       if (f.rule_text) f.derived_text = `Derived from ${worded(f.rule_text)}`;
       if (f.kind === 'derivation') f.value_text = f.derived_text;
-      // Slider bounds in the shown unit: the measured range, else the sweep ladder's span, else no slider.
+      // Slider bounds in the shown unit: a logarithmic span from a small value to the input's bound, else the measured
+      // range, else the sweep ladder's span, else no slider.
       const ladder = presets().SWEEP_INPUTS[q.id] ? presets().ladderFor(q.id, f.value, f.range) : null;
-      f.slider = f.display_range && f.display_range[1] > f.display_range[0] ? { min: f.display_range[0], max: f.display_range[1] }
+      const lim = pipeline().INPUT_LIMITS[q.id];
+      f.slider = lim && LOG_SLIDER_MIN[q.id] ? { min: roundDisplay(shown(q, LOG_SLIDER_MIN[q.id])), max: roundDisplay(shown(q, lim.max)), log: true }
+        : f.display_range && f.display_range[1] > f.display_range[0] ? { min: f.display_range[0], max: f.display_range[1] }
         : ladder ? { min: roundDisplay(shown(q, ladder[0])), max: roundDisplay(shown(q, ladder[ladder.length - 1])) } : null;
       // Counts move in whole steps; a range of one value is fixed, not a control.
       f.step = q.unit === 'count' ? 1 : 'any';
