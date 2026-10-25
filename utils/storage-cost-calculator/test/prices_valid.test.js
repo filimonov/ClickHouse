@@ -55,3 +55,21 @@ test('test_run_with_an_invalid_price_shows_quantities_not_money', () => {
   assert.equal(res.cheapest, null);
   for (const vr of Object.values(res.variants)) assert.equal(vr.total, null);
 });
+
+test('test_last_tier_without_up_to_gb_is_open_as_in_closure', () => {
+  const p = aws();
+  delete p.storage.tiers[p.storage.tiers.length - 1].up_to_gb;
+  assert.deepEqual(billing.priceProblems(p), []);
+  // It bills like an explicit open tier.
+  const q = aws();
+  const rows = [{ row_type: 'storage', op_kind: 'stored', outcome_class: 'ok', category: 'active', quantity: 10 * 51200, state: 'ok', scope: 'variant' }];
+  const money = (preset) => billing.bill(rows, preset).lines.find((l) => l.rule_id === 'storage').money;
+  assert.ok(money(q) > 0);
+  assert.equal(money(p), money(q));
+  // A middle tier still needs its bound.
+  const m = aws();
+  if (m.storage.tiers.length > 1) {
+    delete m.storage.tiers[0].up_to_gb;
+    assert.ok(billing.priceProblems(m).some((x) => /tiers\[0\]\.up_to_gb: expected a number/.test(x)));
+  }
+});

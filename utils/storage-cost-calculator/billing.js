@@ -116,7 +116,8 @@
     let from = 0;
     let money = 0;
     for (const t of st.tiers) {
-      const upTo = t.up_to_gb === null ? Infinity : t.up_to_gb;
+      // A last tier without `up_to_gb` is open, as `null` is (closure_check reads both the same).
+      const upTo = t.up_to_gb === null || t.up_to_gb === undefined ? Infinity : t.up_to_gb;
       const part = Math.max(0, Math.min(gb, upTo) - from);
       if (part > 0) tiers.push({ from_gb: from, up_to_gb: t.up_to_gb, gb: part, price_per_gb_month: t.price_per_gb_month, money: part * t.price_per_gb_month });
       money += part * t.price_per_gb_month;
@@ -289,7 +290,7 @@
   }
 
   // Every price a priced preset bills with must be a finite number >= 0; a missing price never bills as $0.
-  // Storage tiers ascend and end with an open tier (`up_to_gb: null`). Only the internet route may be unpriced.
+  // Storage tiers ascend and end with an open tier (`up_to_gb` null or absent). Only the internet route may be unpriced.
   function priceProblems(preset) {
     const out = [];
     if (!preset || typeof preset !== 'object') return ['price preset: expected an object'];
@@ -304,10 +305,10 @@
       let prev = 0;
       tiers.forEach((t, i) => {
         price(t && t.price_per_gb_month, `${id}.storage.tiers[${i}].price_per_gb_month`);
-        const up = t ? t.up_to_gb : undefined;
+        const up = t && t.up_to_gb !== undefined ? t.up_to_gb : null;
         const last = i === tiers.length - 1;
-        if (last && up !== null) out.push(`${id}.storage.tiers[${i}].up_to_gb: the last tier must be open (null), got ${JSON.stringify(up === undefined ? null : up)}`);
-        if (!last && !(typeof up === 'number' && Number.isFinite(up) && up > prev)) out.push(`${id}.storage.tiers[${i}].up_to_gb: expected a number above ${prev}, got ${JSON.stringify(up === undefined ? null : up)}`);
+        if (last && up !== null) out.push(`${id}.storage.tiers[${i}].up_to_gb: the last tier must be open (null), got ${JSON.stringify(up)}`);
+        if (!last && !(typeof up === 'number' && Number.isFinite(up) && up > prev)) out.push(`${id}.storage.tiers[${i}].up_to_gb: expected a number above ${prev}, got ${JSON.stringify(up)}`);
         if (typeof up === 'number') prev = up;
       });
     }

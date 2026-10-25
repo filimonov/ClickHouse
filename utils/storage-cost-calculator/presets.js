@@ -181,7 +181,7 @@
     const out = [];
     const add = (f) => out.push(Object.assign(f, { unit: `${preset.currency} ${f.per}` }));
     for (const c of preset.request_classes) add({ path: `request_classes.${c.id}.price_per_1000`, label: ruleLabel(c.id, preset), per: 'per 1,000 requests', value: c.price_per_1000, source_url: c.source_url });
-    preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
+    preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null || t.up_to_gb === undefined ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
     for (const t of preset.transfer) {
       if (!Object.prototype.hasOwnProperty.call(TRANSFER_LABELS, t.id)) throw new Error(`transfer rule ${t.id} has no label in presets.js`);
       add({ path: `transfer.${t.id}.price_per_gb`, label: TRANSFER_LABELS[t.id], per: 'per GB', value: t.price_per_gb, source_url: t.source_url });
