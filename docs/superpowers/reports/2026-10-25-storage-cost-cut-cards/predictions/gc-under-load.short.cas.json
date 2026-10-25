@@ -1,0 +1,88 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "gc-under-load.short",
+  "policy": "cas",
+  "inputs": {
+    "role": "holdout of the reclaim lag: old_parts_lifetime before GC",
+    "reason": "merged-away parts stay outdated for old_parts_lifetime = 480 s, longer than the window (about 2-4 min), so no retired object is removed by the server and GC reclaims nothing inside the window",
+    "reclaim_delay_periods": {
+      "condemn": 0.8076,
+      "manifest_delete": 0.8051,
+      "blob_delete": 2.7543
+    }
+  },
+  "expected": {
+    "foreground": {
+      "r1": {}
+    },
+    "observations": {
+      "retired_objects": {
+        "min": 1
+      },
+      "reclaimed_objects": 0,
+      "reclaimed_manifests": 0
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "cas_gc_interval_sec: seconds between GC rounds",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 58
+    },
+    {
+      "claim": "the scheduler loop waits a full interval after each round returns, so a round starts interval seconds after the previous one finished",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcScheduler.cpp",
+      "line": 349
+    },
+    {
+      "claim": "a condemned blob graduates to delete_pending in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 65
+    },
+    {
+      "claim": "a delete_pending blob is deleted with an exact-token delete in a later round",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedSettings.cpp",
+      "line": 66
+    },
+    {
+      "claim": "cas_gc_log Finish rows carry the per-round counters",
+      "path": "tmp/src-26.8/src/Interpreters/ContentAddressedGarbageCollectionLog.cpp",
+      "line": 48
+    },
+    {
+      "claim": "blob bodies POOL/blobs/<algo>/<2 hex>/<hex>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 115
+    },
+    {
+      "claim": "part manifests cas/manifests/<ns>/<epoch>-<seq>/<ordinal>",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 292
+    },
+    {
+      "claim": "gc/hb is the advisory GC heartbeat",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
+      "line": 344
+    },
+    {
+      "claim": "every blob materialization starts with a mandatory HEAD",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 397
+    },
+    {
+      "claim": "old_parts_lifetime defaults to 480 s",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 556
+    },
+    {
+      "claim": "cleanup runs every cleanup_delay_period (30 s) plus a random add",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 1679
+    }
+  ],
+  "prediction_commit": "pending"
+}
