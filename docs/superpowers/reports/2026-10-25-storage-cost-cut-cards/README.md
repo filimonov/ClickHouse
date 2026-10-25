@@ -58,6 +58,10 @@ result-size distribution. Fan-in, part counts, rows and quiescence held.
 - **Amplification under paced inserts is about 1.9× the rule.** The selector keeps folding a few new small parts into
   the largest part: level 25 for a part of 1 053 inserts, where log₆ 1 053 ≈ 3.9 levels. Results of 33–128 inserts
   make 60 % of the merges (fit: 5–8 inserts, 83 %). The tempo does not matter: 2/s and 4/s give 8.75 and 8.81.
+- **The merge sequence is a chain.** Result sizes in inserts run 6, 11, 16, … 66, then 72, 78, … 114: each merge
+  folds the next 5 or 6 single inserts into the growing part, about 22 merges to reach 114–125 inserts. Rows of a
+  chain of C inserts are rewritten about C / (2 × 5) times, 11–12 at C ≈ 120; chains then merge at 125, 191 and
+  1 053 inserts. This is an observation of these runs (5 `UInt64` columns, 1 000-row inserts), not a fitted rule.
 - **`local` and `s3` merge identically** (same merges, levels and bytes), so the result holds for every variant
   that prices merges from `write_amplification_rule`.
 - **`merge_effective_fan_in` is right; the level rule is not.** Mean fan-in 6.14–6.16 sits in the fit range, but
