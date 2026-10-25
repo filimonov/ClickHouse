@@ -302,7 +302,7 @@
     const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}</li>`), 'card-deltas');
     // With a total, "comparable" says nothing to the reader: the badges and deltas carry the comparison.
     const stateLine = c.total_text === null ? `<p class="card-state">${esc(c.state_text)}</p>` : '';
-    const sizing = c.sizing ? `<p class="card-sizing">${esc(`Volumes: ${c.sizing.short}`)}${infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} sizing`)}</p>` : '';
+    const sizing = c.sizing ? `<p class="card-sizing">${esc(c.sizing.short)}${infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} sizing`)}</p>` : '';
     return `<article class="card${c.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(c.variant)}" data-state="ok">${head}${total}`
       + `${stateLine}${deltas}${bar(c.bar_segments, 'bar')}${sizing}</article>`;
   }

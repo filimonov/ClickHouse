@@ -147,7 +147,7 @@ test('test_notes_cell_is_at_most_sixty_characters', () => {
     }
   }
   const { vm } = page('logs');
-  assert.equal(vm.table.column_lines.ebs, '19,500 GiB/replica · gp3 ok');
+  assert.equal(vm.table.column_lines.ebs, 'data 19,500 GiB · gp3 ok');
   // The figures moved into the column dialog.
   const info = page('logs', {}, { info: { kind: 'column', variant: 'ebs' } }).vm.info;
   assert.ok(info.lines.some((l) => /IOPS/.test(l) && /MiB\/s/.test(l)));

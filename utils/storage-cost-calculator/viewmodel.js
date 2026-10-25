@@ -751,8 +751,13 @@
       if (iops > 0 || mibps > 0) components.push(`${OPERATION_LABELS[op] || op}: ${fmtSig(iops)} IOPS, ${fmtSig(mibps)} MiB/s`);
     }
     const need = `${fmtSig(iopsNeed)} IOPS, ${fmtSig(mibpsNeed)} MiB/s`;
+    // What the volume holds: equal data on every column, so a small local disk must not read as less data.
+    const cache = fields && fields.cache_enabled && String(fields.cache_enabled.value) === '1' && fields.cache_size_gib && fields.cache_size_gib.value > 0;
+    const holds = v === 'ebs' ? 'Data volume' : v === 'cas' ? 'Local disk, upload staging only' : cache ? 'Local disk, metadata and cache' : 'Local disk, metadata only';
+    const word = v === 'ebs' ? 'data' : v === 'cas' ? 'staging' : cache ? 'meta+cache' : 'metadata';
+    const stored = v === 'ebs' && headroom ? (d.capacity_gib || 0) / headroom : null;
     const lines = [
-      `Volume size per replica: ${fmtSize(d.capacity_gib || 0)}${headroom !== null ? ` (stored data × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
+      `Volume size per replica: ${fmtSize(d.capacity_gib || 0)}${stored !== null ? ` (stored data ${fmtSize(stored)} × ${fmtQuantity(headroom)} ebs_capacity_headroom)` : ''}`,
       `Peak demand per replica: ${need}${peak !== null ? ` (average × ${fmtQuantity(peak)} peak_factor)` : ''}`,
       g ? `gp3 baseline per volume: ${fmtQuantity(g.iops_baseline)} IOPS, ${fmtQuantity(g.mibps_baseline)} MiB/s included` : null,
       `${r.manual ? 'Manual layout' : 'Cheapest feasible layout'}: ${r.volumes} × ${fmtQuantity(r.size_gib, 'GiB')}, ${fmtQuantity(r.iops)} IOPS, ${fmtQuantity(r.mibps)} MiB/s, on ${p.replicas} ${p.replicas === 1 ? 'replica' : 'replicas'}`,
@@ -765,10 +770,12 @@
     return {
       variant: v, replicas: p.replicas, capacity_gib: d.capacity_gib, peak_iops: d.peak_iops, peak_mibps: d.peak_mibps, headroom, peak_factor: peak,
       volumes: r.volumes, size_gib: r.size_gib, iops: r.iops, mibps: r.mibps, layout: r.layout, manual: !!r.manual, verdict, components, lines,
-      short: empty ? `no local data; the minimum gp3 volume (${fmtSize(r.size_gib)}) per replica`
-        : `${fmtSize(d.capacity_gib || 0)} per replica, needs ${need}: ${verdict}`,
-      // One line for the breakdown's notes row: size and verdict; IOPS and MiB/s are in the column dialog.
-      line: empty ? `${fmtSize(r.size_gib)} gp3, no local data` : `${fmtSize(d.capacity_gib || 0)}/replica · ${tag}`,
+      short: empty ? `Local disk, nothing persistent: the minimum gp3 volume (${fmtSize(r.size_gib)}) per replica`
+        : `${holds}: ${fmtSize(d.capacity_gib || 0)} per replica${stored !== null ? ` (${fmtSize(stored)} + ${fmtQuantity(Math.round((headroom - 1) * 100))}% headroom)` : ''}`
+          + ` · ${iopsNeed > 0 || mibpsNeed > 0 ? `needs ${need}` : '0 IOPS'}: ${verdict}`,
+      // The notes row: what the volume holds, its size per replica and the verdict, in about 26 characters so four
+      // notes stay on one line at 1440 px; per replica, IOPS and MiB/s are in the dialog.
+      line: empty ? `nothing local · ${fmtSize(r.size_gib)} gp3` : `${word} ${fmtSize(d.capacity_gib || 0)} · ${tag}`,
       instance_class: instance ? instance.instance_class || null : null, instance_text: instance ? instance.text : null,
     };
   }
@@ -791,7 +798,7 @@
       const vr = result.variants[v];
       const items = [];
       const sz = vr ? buildSizing(v, vr, preset, fields, pageState) : null;
-      if (sz) items.push({ kind: 'sizing', text: `Volumes: ${sz.short}` });
+      if (sz) items.push({ kind: 'sizing', text: sz.short });
       if (sz && sz.instance_class) items.push({ kind: 'instance_class', text: `Instance: ${sz.instance_class} or larger for EBS bandwidth` });
       if (vr && vr.state === 'ok' && (vr.lines || []).some((l) => l.rule_id === 'storage')) items.push({ kind: 'gib', text: GIB_NOTE });
       for (const n of (vr && vr.state === 'ok' ? vr.notes : []) || []) {
@@ -1065,7 +1072,7 @@
       // The cheapest card's badge reads "extrapolated" without a count; its (i) opens this dialog, which names the cells.
       const exOps = vr.state === 'ok' && result.page_state === 'ok' ? extrapolatedCells(contract, open.variant, vr, !!x.split, preset) : [];
       const exLine = exOps.length ? [`Extrapolated: ${exOps.length} ${exOps.length === 1 ? 'cell' : 'cells'} (${exOps.map((o) => OPERATION_LABELS[o] || o).join(', ')}).`] : [];
-      const lines = [...exLine, ...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
+      const lines = [...(sz ? [sz.short] : []), ...exLine, ...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
         ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing').map((n) => n.text),
         ...(vr.state === 'ok' ? [] : segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`))];
       return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs),

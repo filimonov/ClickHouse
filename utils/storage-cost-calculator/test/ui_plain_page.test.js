@@ -83,19 +83,19 @@ test('test_sizes_use_three_significant_digits', () => {
   assert.equal(vmod.fmtSig(42.19), '42.2');
   const { vm } = page('logs');
   const ebs = card(vm, 'ebs').sizing;
-  assert.equal(ebs.short, `19,500 GiB per replica, needs ${vmod.fmtSig(ebs.peak_iops)} IOPS, ${vmod.fmtSig(ebs.peak_mibps)} MiB/s: gp3 baseline sufficient`);
+  assert.equal(ebs.short, `Data volume: 19,500 GiB per replica (15,000 GiB + 30% headroom) · needs ${vmod.fmtSig(ebs.peak_iops)} IOPS, ${vmod.fmtSig(ebs.peak_mibps)} MiB/s: gp3 baseline sufficient`);
   assert.match(ebs.short, /needs \d{1,3} IOPS, \d{1,3}(\.\d)? MiB\/s/);
-  assert.match(card(vm, 'cas').sizing.short, /^207 MiB per replica/);
+  assert.match(card(vm, 'cas').sizing.short, /^Local disk, upload staging only: 207 MiB per replica/);
 });
 
 test('test_notes_row_is_one_short_line_per_column', () => {
   const { vm, parts } = page('logs');
   const ebs = vm.cards.find((c) => c.variant === 'ebs').sizing;
   // Size and verdict only; the IOPS and MiB/s figures are in the column dialog.
-  assert.equal(vm.table.column_lines.ebs, '19,500 GiB/replica · gp3 ok');
+  assert.equal(vm.table.column_lines.ebs, 'data 19,500 GiB · gp3 ok');
   assert.ok(ebs.lines.some((l) => l.includes(`${vmod.fmtSig(ebs.peak_iops)} IOPS, ${vmod.fmtSig(ebs.peak_mibps)} MiB/s`)));
-  assert.match(vm.table.column_lines.cas, /^207 MiB\/replica · /);
-  assert.match(vm.table.column_lines.s3plain, /^6 GiB gp3, no local data$/);
+  assert.match(vm.table.column_lines.cas, /^staging 207 MiB · /);
+  assert.match(vm.table.column_lines.s3plain, /^nothing local · 6 GiB gp3$/);
   const notes = parts.table.slice(parts.table.indexOf('<tr class="notes-row"'));
   assert.equal(/<ul|<li/.test(notes), false, 'no paragraph lists in the notes row');
   for (const v of ['ebs', 's3', 's3plain', 'cas']) {
