@@ -1,24 +1,24 @@
 {
  "schema": "contract/1",
- "version": "ac4da195670cdc98",
+ "version": "96d9659c4e9e3ae1",
  "manifest": {
-  "code_sha256": "69a0c20bfb83724a85c475485e3fcef16346686cdb0ff5dae2645b861917609d",
+  "code_sha256": "d939a1f67bad886ca0483343d35dde60429cd95050e4db618c972f2d63094dfb",
   "code_files": {
    "billing.js": "6992c901b510841e76af2ba6690bdf194ac207d4179c17948681dd8cb0272063",
    "contract.js": "ba4653168b64f0921f86550ee5c4b15fd7d39b276314971f3049054602951b1c",
    "model.js": "27d0184486ebfe9a9cc71bab56352771ddadbfb261f34461053a15b660e35efd",
-   "pipeline.js": "25ce08aad75f2e2fcb454c0db786d35707c547053f91f44d45f239cfb4c80fe4",
-   "presets.js": "6a01c10a9d31fd0c80e50c2540055c2207fb999d2b8ad25ddbe91fdc8f68bb8d",
+   "pipeline.js": "062f80c1fe2c2e3487118525bc4b4747f7d9eabc15dcbe9587a231072fa8b44b",
+   "presets.js": "e9d7401360440f6f329c7a0a56a3ad2279c9c8e5fcae794dea709a27dcf4392d",
    "urlstate.js": "e0722c2c47ba25c94b728eefc390c5d3fe96d07c1c7abaff4b4f3bd68a5b7b86"
   },
   "code_missing": [],
-  "contract_version": "ac4da195670cdc98",
+  "contract_version": "96d9659c4e9e3ae1",
   "registry_version": "0.3.0",
-  "registry_sha256": "5468c6f976e85a56982cf28645826422ef6282d7f302b6e274d83c6ebebdcc95",
+  "registry_sha256": "9745fb4621c84f0a9dacaa97ae8bbc285316f4777a4f7f2c1993c7f2f9c8b7e5",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "3b2bee7085062f6295335da7968c8d4fd6fc51f3274182f63768750ab706d14f",
-  "billing_version": "0.1.0",
-  "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
+  "coverage_sha256": "dc10cd44f8e04c29eb047cc54ac97f0430c8aea64428e4de8e579dccc37b3ed7",
+  "billing_version": "0.2.0",
+  "billing_sha256": "e36cf9a51930dec31327f03e6881bbe8a3e15320509455b3ed7f3b9a77cb648d",
   "evidence": [
    {
     "report": "2026-10-24-storage-cost-cas",
@@ -75,11 +75,18 @@
     "rig_commit": "9ed2efcd450dc096a11766631d40b73ebef7f4fe",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
+   },
+   {
+    "report": "2026-10-25-storage-cost-cas-tables",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
+    "rig_commit": "a2004c7dd62e68c7b542bf911ecbe4a5277b44e4",
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "raw_sha256sums": "4d689cc7e3e320130c358dce6dc26a2e619b12ab0e5d97bdbe420ba553d56bc8"
    }
   ],
-  "breakeven_sha256": "fff4c796bb53e74097723060b3948d4810dd1ab3a49d92797db21645716a7f51"
+  "breakeven_sha256": "0200ab6f6a94ea7034682d49ed2da4ffc7d7fabbe3ccdc71f0bce984606f4515"
  },
- "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 68 coefficient(s): 43 measured, 25 pinned to source. 65 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet. The records predate per-record store fields (9cc0121c86d): store identified post hoc by its pinned release. Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
+ "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 9 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables. 73 coefficient(s): 48 measured, 25 pinned to source. 70 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 5 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
  "registry": [
   {
    "id": "data_bytes",
@@ -210,8 +217,8 @@
   {
    "id": "shards",
    "block": "simple",
-   "label": "Shards",
-   "kind": "input",
+   "label": "Shards: one; multi-shard is out of scope",
+   "kind": "pinned",
    "scope": "cluster",
    "unit": "count",
    "value_type": "number",
@@ -228,15 +235,14 @@
    },
    "evidence": {
     "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.1.0"
+    "ref": "the page models one shard of at most 200 TiB",
+    "version": "0.3.0"
    },
    "hint": null,
    "ui": {
-    "tier": "workload",
+    "tier": "hidden",
     "name": null,
-    "short": "Shards",
-    "measured_by": "Assumed: preset default."
+    "short": "Shards"
    },
    "status": "ok",
    "validity": {
@@ -7967,28 +7973,42 @@
   {
    "id": "cas_mutations_per_s",
    "block": "cas",
-   "label": "Mutations (ALTER UPDATE/DELETE) per second",
-   "kind": "input",
+   "label": "Mutations per second: ALTER UPDATE/DELETE per month / 2 628 000 s",
+   "kind": "derivation",
    "scope": "cluster",
    "unit": "1/s",
    "value_type": "number",
    "enum": null,
    "table": null,
-   "default": 0,
-   "rule": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "a": {
+     "kind": "input",
+     "id": "mutations_per_month",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "const",
+     "value": 2628000,
+     "dim": "s"
+    },
+    "dim": "1/s",
+    "on_zero": "unavailable"
+   },
    "coef": null,
+   "basis": "derived",
    "verified_range": null,
    "evidence": {
     "kind": "assumed",
-    "ref": "preset default",
+    "ref": "a month is 730 h (2 628 000 s), the month of every per-month input",
     "version": "0.3.0"
    },
    "hint": null,
    "ui": {
-    "tier": "advanced",
+    "tier": "hidden",
     "name": null,
-    "short": "CAS mutations per second",
-    "measured_by": "Assumed: preset default."
+    "short": "CAS mutations per second"
    },
    "status": "ok",
    "validity": null
@@ -7996,28 +8016,73 @@
   {
    "id": "cas_parts_per_mutation",
    "block": "cas",
-   "label": "Parts one mutation rewrites",
-   "kind": "input",
+   "label": "Parts one mutation rewrites: parts mutated per month / mutations per month (0 without mutations)",
+   "kind": "derivation",
    "scope": "cluster",
    "unit": "count",
    "value_type": "number",
    "enum": null,
    "table": null,
-   "default": 1,
-   "rule": null,
+   "default": null,
+   "rule": {
+    "kind": "branch",
+    "dim": "count",
+    "cond": {
+     "op": "==",
+     "a": {
+      "kind": "input",
+      "id": "mutations_per_month",
+      "dim": "count"
+     },
+     "b": {
+      "kind": "const",
+      "value": 0,
+      "dim": "count"
+     }
+    },
+    "then": {
+     "kind": "const",
+     "value": 0,
+     "dim": "count"
+    },
+    "else": {
+     "kind": "div",
+     "a": {
+      "kind": "add",
+      "a": {
+       "kind": "input",
+       "id": "mutated_compact_parts_per_month",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "input",
+       "id": "mutated_wide_parts_per_month",
+       "dim": "count"
+      },
+      "dim": "count"
+     },
+     "b": {
+      "kind": "input",
+      "id": "mutations_per_month",
+      "dim": "count"
+     },
+     "dim": "count",
+     "on_zero": "unavailable"
+    }
+   },
    "coef": null,
+   "basis": "derived",
    "verified_range": null,
    "evidence": {
     "kind": "assumed",
-    "ref": "preset default",
+    "ref": "parts mutated per month spread evenly over the month's mutations",
     "version": "0.3.0"
    },
    "hint": null,
    "ui": {
-    "tier": "advanced",
+    "tier": "hidden",
     "name": null,
-    "short": "Parts per mutation",
-    "measured_by": "Assumed: preset default."
+    "short": "Parts per mutation"
    },
    "status": "ok",
    "validity": null
@@ -8025,28 +8090,54 @@
   {
    "id": "cas_mutated_columns",
    "block": "cas",
-   "label": "Columns one mutation rewrites",
-   "kind": "input",
+   "label": "Columns one mutation rewrites: every column for ALTER DELETE, one for UPDATE of one column and lightweight DELETE",
+   "kind": "derivation",
    "scope": "cluster",
    "unit": "count",
    "value_type": "number",
    "enum": null,
    "table": null,
-   "default": 1,
-   "rule": null,
+   "default": null,
+   "rule": {
+    "kind": "branch",
+    "dim": "count",
+    "cond": {
+     "op": "==",
+     "a": {
+      "kind": "input",
+      "id": "mutation_kind",
+      "dim": "enum:mutation_kind"
+     },
+     "b": {
+      "kind": "const",
+      "value": "delete",
+      "dim": "enum:mutation_kind"
+     }
+    },
+    "then": {
+     "kind": "input",
+     "id": "columns",
+     "dim": "count"
+    },
+    "else": {
+     "kind": "const",
+     "value": 1,
+     "dim": "count"
+    }
+   },
    "coef": null,
+   "basis": "derived",
    "verified_range": null,
    "evidence": {
-    "kind": "assumed",
-    "ref": "preset default",
-    "version": "0.3.0"
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Storages/MergeTree/MutateTask.cpp:1247",
+    "version": "26.8@09d0772a842"
    },
    "hint": null,
    "ui": {
-    "tier": "advanced",
+    "tier": "hidden",
     "name": null,
-    "short": "Columns per mutation",
-    "measured_by": "Assumed: preset default."
+    "short": "Columns per mutation"
    },
    "status": "ok",
    "validity": null
@@ -8054,28 +8145,111 @@
   {
    "id": "cas_table_drops_per_s",
    "block": "cas",
-   "label": "DROP TABLE per second",
-   "kind": "input",
+   "label": "DROP TABLE per second: tables dropped per month / 2 628 000 s",
+   "kind": "derivation",
    "scope": "cluster",
    "unit": "1/s",
    "value_type": "number",
    "enum": null,
    "table": null,
-   "default": 0,
-   "rule": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "a": {
+     "kind": "input",
+     "id": "cas_table_drops_per_month",
+     "dim": "count"
+    },
+    "b": {
+     "kind": "const",
+     "value": 2628000,
+     "dim": "s"
+    },
+    "dim": "1/s",
+    "on_zero": "unavailable"
+   },
    "coef": null,
+   "basis": "derived",
    "verified_range": null,
    "evidence": {
     "kind": "assumed",
-    "ref": "preset default",
+    "ref": "a month is 730 h (2 628 000 s), the month of every per-month input",
     "version": "0.3.0"
    },
    "hint": null,
    "ui": {
-    "tier": "advanced",
+    "tier": "hidden",
     "name": null,
-    "short": "DROP TABLE per second",
-    "measured_by": "Assumed: preset default."
+    "short": "DROP TABLE per second"
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cas_table_create_requests",
+   "block": "cas",
+   "label": "Requests of one CREATE TABLE on a CAS disk: GET 9, GET 404 2, HEAD 404 1, PUT 4, LIST 5 (21); catalog birth, first _ckpt, ref-log recovery, format_version.txt, table-start listings",
+   "kind": "derivation",
+   "scope": "replica",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "add",
+    "a": {
+     "kind": "add",
+     "a": {
+      "kind": "add",
+      "a": {
+       "kind": "add",
+       "a": {
+        "kind": "const",
+        "value": 9,
+        "dim": "count"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2,
+        "dim": "count"
+       },
+       "dim": "count"
+      },
+      "b": {
+       "kind": "const",
+       "value": 1,
+       "dim": "count"
+      },
+      "dim": "count"
+     },
+     "b": {
+      "kind": "const",
+      "value": 4,
+      "dim": "count"
+     },
+     "dim": "count"
+    },
+    "b": {
+     "kind": "const",
+     "value": 5,
+     "dim": "count"
+    },
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "derived",
+   "verified_range": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp:1297",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "ui": {
+    "tier": "hidden",
+    "name": null,
+    "short": "Requests per CREATE TABLE"
    },
    "status": "ok",
    "validity": null
@@ -8456,9 +8630,37 @@
    }
   },
   {
+   "id": "cas_cleanup_gets_per_table",
+   "block": "cas",
+   "label": "GETs one cleanup run reads for a table with parts, besides its LIST; every table on the disk is assumed to hold parts (an empty table reads 1)",
+   "kind": "pinned",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 5,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables/README.md: 10 foreground GETs per table in 12 minutes beyond the insert graph at 1, 4, 8 and 16 tables, 2 cleanup runs per table; measured, not fitted, not traced to source",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "ui": {
+    "tier": "hidden",
+    "name": null,
+    "short": "Cleanup GETs per table"
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
    "id": "cas_tables",
    "block": "cas",
-   "label": "Tables on the CAS disk with inserts",
+   "label": "MergeTree tables on the CAS disk",
    "kind": "input",
    "scope": "cluster",
    "unit": "count",
@@ -8474,12 +8676,85 @@
     "ref": "preset default",
     "version": "0.3.0"
    },
-   "hint": null,
+   "hint": {
+    "sql": "SELECT count() FROM system.tables WHERE engine LIKE '%MergeTree' AND storage_policy = '<cas policy>'",
+    "mapping": {
+     "cas_tables": "count()"
+    }
+   },
    "ui": {
-    "tier": "advanced",
+    "tier": "workload",
     "name": null,
-    "short": "Tables on the CAS disk",
-    "measured_by": "Assumed: preset default. Measured from 1 to 1 by cas_startup_requests (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1 to 1 by cas_startup_error_requests (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1 to 1 by cas_startup_gets_per_log_record (2026-10-24-storage-cost-cas, 24 measurement(s))."
+    "short": "Tables on the disk",
+    "measured_by": "Assumed: preset default. Measured from 1 to 1 by cas_startup_requests (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1 to 1 by cas_startup_error_requests (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1 to 1 by cas_startup_gets_per_log_record (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1 to 500 by gc_round_requests_steady (2026-10-25-storage-cost-cas-tables, 7 measurement(s)). Measured from 1 to 500 by cas_startup_requests_base (2026-10-25-storage-cost-cas-tables, 6 measurement(s)). Measured from 1 to 500 by cas_startup_error_requests_base (2026-10-25-storage-cost-cas-tables, 6 measurement(s)). Measured from 1 to 500 by cas_startup_requests_per_table (2026-10-25-storage-cost-cas-tables, 6 measurement(s)). Measured from 1 to 500 by cas_startup_error_requests_per_table (2026-10-25-storage-cost-cas-tables, 6 measurement(s))."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cas_table_creates_per_month",
+   "block": "cas",
+   "label": "CREATE TABLE statements per month for MergeTree tables on the CAS disk",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Create' AND query ILIKE 'CREATE TABLE%' AND event_date >= today() - 30",
+    "mapping": {
+     "cas_table_creates_per_month": "CREATE TABLE statements over 30 days"
+    }
+   },
+   "ui": {
+    "tier": "workload",
+    "name": null,
+    "short": "Tables created per month",
+    "measured_by": "Assumed: preset default."
+   },
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "cas_table_drops_per_month",
+   "block": "cas",
+   "label": "DROP TABLE statements per month for MergeTree tables on the CAS disk",
+   "kind": "input",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 0,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "assumed",
+    "ref": "preset default",
+    "version": "0.3.0"
+   },
+   "hint": {
+    "sql": "SELECT count() FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Drop' AND query ILIKE 'DROP TABLE%' AND event_date >= today() - 30",
+    "mapping": {
+     "cas_table_drops_per_month": "DROP TABLE statements over 30 days"
+    }
+   },
+   "ui": {
+    "tier": "workload",
+    "name": null,
+    "short": "Tables dropped per month",
+    "measured_by": "Assumed: preset default."
    },
    "status": "ok",
    "validity": null
@@ -8522,6 +8797,34 @@
      256
     ]
    }
+  },
+  {
+   "id": "cas_log_records_per_part",
+   "block": "cas",
+   "label": "Ref log records one part adds: the precommit, promote and rename transactions (Pool/CasPartWriteTxn.cpp:697, :810; ContentAddressedTransaction.cpp:1306)",
+   "kind": "pinned",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": 3,
+   "rule": null,
+   "coef": null,
+   "verified_range": null,
+   "evidence": {
+    "kind": "source",
+    "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:697",
+    "version": "26.8@09d0772a842"
+   },
+   "hint": null,
+   "ui": {
+    "tier": "hidden",
+    "name": null,
+    "short": "Log records per part"
+   },
+   "status": "ok",
+   "validity": null
   },
   {
    "id": "gc_stage",
@@ -8868,6 +9171,44 @@
    }
   },
   {
+   "id": "gc_round_requests_steady",
+   "block": "cas",
+   "label": "Requests of one steady-state GC round: fold base, per new manifest, per tail record, per table; Deferred round",
+   "kind": "measured",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "gc_round_term"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "gc_round_requests_steady",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
    "id": "gc_round_duration",
    "block": "cas",
    "label": "Duration of one GC round",
@@ -9183,7 +9524,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9198,8 +9539,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9218,7 +9559,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9233,8 +9574,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9253,7 +9594,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9268,8 +9609,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9288,7 +9629,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9303,8 +9644,218 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_requests_fold_delete",
+   "block": "cas",
+   "label": "GC round requests: fold DELETEs (an old gc/gen generation pruned)",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "fold_delete",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_sweep_namespace_budget",
+   "block": "cas",
+   "label": "Tables the orphan-manifest sweep visits per GC round at most (gc_round_sweep_namespace_budget)",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "sweep_namespace_budget",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_requests_fold_get_per_swept_table",
+   "block": "cas",
+   "label": "GC fold GETs per table the orphan-manifest sweep visits, besides its tail (4 stream objects, 1 _ckpt)",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "fold_get_per_swept_table",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+   "block": "cas",
+   "label": "GC fold GETs per tail record of a table the orphan-manifest sweep visits",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "fold_get_per_swept_tail_log_record",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_requests_fold_get_per_new_log_record",
+   "block": "cas",
+   "label": "GC fold GETs per new ref log record",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "fold_get_per_new_log_record",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": null
+  },
+  {
+   "id": "gc_round_requests_fold_get_per_changed_table",
+   "block": "cas",
+   "label": "GC fold GETs per table with new data: its _ckpt and up to 3 mount objects (2 answer 404)",
+   "kind": "derivation",
+   "scope": "pool",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "lookup",
+    "table_id": "gc_round_requests_steady",
+    "keys": [
+     {
+      "kind": "const",
+      "value": "fold_get_per_changed_table",
+      "dim": "enum:gc_round_term"
+     }
+    ],
+    "dim": "count"
+   },
+   "coef": null,
+   "basis": "fitted",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9323,7 +9874,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9338,8 +9889,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9358,7 +9909,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9373,8 +9924,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -9393,7 +9944,7 @@
    "default": null,
    "rule": {
     "kind": "lookup",
-    "table_id": "gc_round_requests",
+    "table_id": "gc_round_requests_steady",
     "keys": [
      {
       "kind": "const",
@@ -9408,8 +9959,8 @@
    "verified_range": null,
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+    "version": "0.1.0"
    },
    "hint": null,
    "status": "ok",
@@ -12241,6 +12792,162 @@
     "cas_tables": [
      1,
      1
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_requests_per_table",
+   "block": "topology_recovery",
+   "label": "Requests a CAS server start sends per table on the disk (catalog row, _ckpt, table files), answered 2xx",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cas_startup_requests_per_table",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_error_requests_per_table",
+   "block": "topology_recovery",
+   "label": "Requests a CAS server start sends per table on the disk that are answered 404",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cas_startup_error_requests_per_table",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_requests_base",
+   "block": "topology_recovery",
+   "label": "Requests a CAS server start without the filesystem cache sends besides tables, parts and log replay, answered 2xx",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cas_startup_requests_base",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_error_requests_base",
+   "block": "topology_recovery",
+   "label": "Requests a CAS server start without the filesystem cache sends besides tables, answered 4xx",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "table",
+   "enum": null,
+   "table": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "dim": "count"
+   },
+   "default": null,
+   "rule": null,
+   "coef": "cas_startup_error_requests_base",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "cas_tables": [
+     1,
+     500
     ]
    }
   },
@@ -18296,11 +19003,383 @@
    },
    "status": "ok",
    "validity": null
+  },
+  {
+   "id": "gc_round_requests_steady",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "gc_round_term"
+    ],
+    "values": {
+     "fold_get": 19,
+     "fold_put": 5,
+     "fold_list": 5,
+     "fold_delete": 2,
+     "fold_get_per_manifest": 1,
+     "fold_get_per_new_log_record": 1,
+     "fold_get_per_changed_table": 4,
+     "fold_get_per_swept_tail_log_record": 1,
+     "fold_get_per_swept_table": 5,
+     "sweep_namespace_budget": 20,
+     "deferred_get": 12,
+     "deferred_put": 1,
+     "deferred_list": 3
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T060213Z/cas/gc-tables/n1/k1",
+     "cost-20261025T060213Z/cas/gc-tables/n4/k1",
+     "cost-20261025T060213Z/cas/gc-tables/n16/k1",
+     "cost-20261025T070618Z/cas/gc-tables/n8/k1",
+     "cost-20261025T072322Z/cas/gc-tables/n150/k1",
+     "cost-20261025T072322Z/cas/gc-tables/n500/k1",
+     "cost-20261025T080040Z/cas/gc-tables/n40/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "requests of one GC fold round in steady state, without its heartbeat pulse: the intake reads per changed table its new manifests and new log records, 1 _ckpt and up to 3 mount objects (2 answer 404; fewer as the process ages at 150-500 tables); the orphan-manifest sweep builds a protection view for at most sweep_namespace_budget namespaces per round (gc_round_sweep_namespace_budget = 20, Pool/CasPool.h:114), each reading its whole tail since the last snapshot plus 4 stream objects and 1 _ckpt; from the fourth fold GC prunes an old generation (LIST +1, DELETE 2). Deferred terms hold while the pool-wide cas/ns/stream/ listing fits one page: at 150 and 500 tables Deferred rounds listed up to 51 pages",
+   "fit": {
+    "method": "per family over folds 2-12 at 1, 4, 8, 16 tables (all family counts exact) and 150, 500 tables (stream and _ckpt exact except one 150-table fold that swept 8 namespaces at a page wrap); mount-object reads and the paged stream listing are not fitted",
+    "holdout": "done: gc-tables.n40 (run cost-20261025T080040Z, predictions d48e456e190) matched the capped law exactly per family in all 12 folds, mount objects at the 3N+1 bound (121 per fold), fold GET 9794. gc-tables.n150 and gc-tables.n500 (run cost-20261025T072322Z) were predicted from the uncapped fit (fold GET 57534 and 191234), measured 18665 and 43615, and are fit records of this law",
+    "residuals": {}
+   },
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_requests_base",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "values": {
+     "0|GetObject": 17,
+     "0|PutObject": 7,
+     "0|HeadObject": 3,
+     "0|DeleteObject": 2,
+     "0|ListObjectsV2": 2,
+     "1|GetObject": 20,
+     "1|PutObject": 8,
+     "1|HeadObject": 6,
+     "1|DeleteObject": 3,
+     "1|ListObjectsV2": 2
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 1,
+    "rel": 0,
+    "assumed_keys": [
+     "1|GetObject",
+     "1|PutObject",
+     "1|HeadObject",
+     "1|DeleteObject",
+     "1|ListObjectsV2"
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+     "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "requests of a server start answered 2xx that do not depend on the table count, besides part loads and log replay; the tolerance is one mount lease renewal",
+   "fit": {
+    "method": "per op, intercept of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. 1|PutObject: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. 1|HeadObject: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. 1|DeleteObject: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. 1|ListObjectsV2: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5",
+    "residuals": {
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     }
+    },
+    "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
+   },
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_error_requests_base",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "values": {
+     "0|GetObject": 1,
+     "0|PutObject": 2,
+     "0|HeadObject": 3,
+     "0|DeleteObject": 1,
+     "1|GetObject": 1,
+     "1|PutObject": 2,
+     "1|HeadObject": 5,
+     "1|DeleteObject": 1
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0,
+    "assumed_keys": [
+     "1|GetObject",
+     "1|PutObject",
+     "1|HeadObject",
+     "1|DeleteObject"
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+     "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "requests of a server start answered 4xx that do not depend on the table count",
+   "fit": {
+    "method": "per op, intercept of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. 1|PutObject: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. 1|HeadObject: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. 1|DeleteObject: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0",
+    "residuals": {
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+      "GetObject": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+      "GetObject": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+      "GetObject": 0
+     }
+    },
+    "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
+   },
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_requests_per_table",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "values": {
+     "0|GetObject": 11,
+     "0|PutObject": 2,
+     "0|ListObjectsV2": 5,
+     "1|GetObject": 11,
+     "1|PutObject": 2,
+     "1|ListObjectsV2": 5
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0,
+    "assumed_keys": [
+     "1|GetObject",
+     "1|PutObject",
+     "1|ListObjectsV2"
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+     "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "requests of a server start answered 2xx per table on the disk, besides its parts and log records: catalog, _ckpt and table file reads, table file listings and the table ref transaction",
+   "fit": {
+    "method": "per op, slope of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). 1|PutObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). 1|ListObjectsV2: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests)",
+    "residuals": {
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+      "GetObject": 0,
+      "PutObject": 0,
+      "ListObjectsV2": 0
+     }
+    },
+    "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
+   },
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
+  },
+  {
+   "id": "cas_startup_error_requests_per_table",
+   "kind": "table",
+   "dim": "count",
+   "value": {
+    "index": [
+     "cache_enabled",
+     "replication_op"
+    ],
+    "values": {
+     "0|GetObject": 3,
+     "1|GetObject": 3
+    }
+   },
+   "basis": "fitted",
+   "verified_range": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   },
+   "tolerance": {
+    "abs": 0,
+    "rel": 0,
+    "assumed_keys": [
+     "1|GetObject"
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+    "version": "0.1.0",
+    "measurement_ids": [
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1",
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1",
+     "cost-20261025T070618Z/cas/startup/cas-tables-8/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-150/k1",
+     "cost-20261025T072322Z/cas/startup/cas-tables-500/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "GetObject answered 404 per table on the disk at a server start (absent _log records and table files)",
+   "fit": {
+    "method": "slope of a linear fit over 1, 4 and 16 tables. 1|GetObject: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests)",
+    "residuals": {
+     "cost-20261025T060213Z/cas/startup/cas-tables-1/k1": {
+      "GetObject": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-4/k1": {
+      "GetObject": 0
+     },
+     "cost-20261025T060213Z/cas/startup/cas-tables-16/k1": {
+      "GetObject": 0
+     }
+    },
+    "holdout": "ok, exact: startup.cas-tables-8 (cost-20261025T070618Z, predicted in bd19b0524f1), startup.cas-tables-150 and -500 (cost-20261025T072322Z, predicted in 33cb1168b95): GET 194 / 3318 / 11018, PUT 25 / 309 / 1009, LIST 42 / 752 / 2502, HEAD 6, DELETE 3"
+   },
+   "validity": {
+    "cas_tables": [
+     1,
+     500
+    ]
+   }
   }
  ],
  "billing": {
   "schema": "billing/1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "presets": [
    {
     "id": "aws-us-east-1",
@@ -18936,11 +20015,264 @@
    },
    {
     "id": "gcs",
-    "structure_only": true
+    "as_of": "2026-10-25",
+    "currency": "USD",
+    "units": "binary_gb",
+    "units_evidence": {
+     "source_url": "https://cloud.google.com/storage/pricing",
+     "checked": "2026-10-25",
+     "note": "pricing page: 'Storage and network usage are calculated in JEDEC binary gigabytes (GB), also known as IEC gibibytes (GiB), where 1 JEDEC GB is 2^30 bytes.'"
+    },
+    "assumptions": [
+     "Tier 1 assumes: Cloud Storage Standard class in a us-central1 regional bucket with a flat namespace, reached through the XML API (the S3-compatible API ClickHouse uses); soft delete, Object Versioning, Autoclass, website configuration and Requester Pays off; no credits or committed-use discounts; Hyperdisk Balanced only; VM↔Cloud Storage transfer in the same region free; VM↔VM across zones of the region per GiB, charged to the sending side; internet egress 0 by default.",
+     "Other configurations are unsupported, not approximated."
+    ],
+    "request_classes": [
+     {
+      "id": "class_a",
+      "ops": [
+       "PutObject",
+       "CopyObject",
+       "CreateMultipartUpload",
+       "UploadPart",
+       "UploadPartCopy",
+       "CompleteMultipartUpload",
+       "ListObjectsV2",
+       "CreateBucket",
+       "DeleteObjects"
+      ],
+      "price_per_1000": 0.005,
+      "source_url": "https://cloud.google.com/storage/pricing",
+      "checked": "2026-10-25",
+      "note": "pricing page, Standard storage in a region: 'Class A operations, flat namespace (per 1,000 operations)' $0.005. XML API Class A: 'GET Bucket (when listing objects in a bucket)', 'PUT', 'POST'. Multipart initiate and complete are POST, parts and copies are PUT. DeleteObjects is the XML API multi-object delete, a POST Bucket request (https://cloud.google.com/storage/docs/xml-api/reference-methods); the page names no exception for it, so it is billed as Class A."
+     },
+     {
+      "id": "class_b",
+      "ops": [
+       "ListMultipartUploads",
+       "ListParts",
+       "GetObject",
+       "HeadObject",
+       "HeadBucket"
+      ],
+      "price_per_1000": 0.0004,
+      "source_url": "https://cloud.google.com/storage/pricing",
+      "checked": "2026-10-25",
+      "note": "pricing page: 'Class B operations, flat namespace (per 1,000 operations)' $0.0004. XML API Class B: 'GET Bucket (when retrieving bucket configuration or when listing ongoing multipart uploads)', 'GET Object', 'HEAD'. ListParts is a GET Object request ('List Object Parts', https://cloud.google.com/storage/docs/xml-api/reference-methods)."
+     },
+     {
+      "id": "free_ops",
+      "ops": [
+       "DeleteObject",
+       "AbortMultipartUpload"
+      ],
+      "price_per_1000": 0,
+      "source_url": "https://cloud.google.com/storage/pricing",
+      "checked": "2026-10-25",
+      "note": "pricing page: XML API free operations: 'DELETE'. AbortMultipartUpload is a DELETE Object request ('Abort a multipart upload', https://cloud.google.com/storage/docs/xml-api/reference-methods)."
+     }
+    ],
+    "outcome_billing": {
+     "source_url": "https://cloud.google.com/storage/pricing",
+     "checked": "2026-10-25",
+     "note": "pricing page: 'Generally, you are not charged for operations that return 307, 4xx, or 5xx responses. The exception is 404 responses returned by buckets with Website Configuration enabled and the NotFoundPage property set to a public object in that bucket.' Tier 1 assumes no website configuration, so every 4xx is free. The dropped entry is the same model assumption as for AWS.",
+     "free": [
+      {
+       "outcome_class": "server_error",
+       "status": "5XX",
+       "s3_code": null,
+       "condition": "any server error response",
+       "source_url": "https://cloud.google.com/storage/pricing"
+      },
+      {
+       "outcome_class": "client_error",
+       "status": "4XX",
+       "s3_code": null,
+       "condition": null,
+       "source_url": "https://cloud.google.com/storage/pricing"
+      },
+      {
+       "outcome_class": "dropped",
+       "status": null,
+       "s3_code": null,
+       "condition": "upstream outcome unknown: no response from the store was seen, so nothing shows the store did billable work (a model assumption, not a provider rule)",
+       "source_url": "https://cloud.google.com/storage/pricing"
+      },
+      {
+       "outcome_class": "not_sent",
+       "status": null,
+       "s3_code": null,
+       "condition": "the request never reached the store (injected, rejected by the proxy, no connection)",
+       "source_url": "https://cloud.google.com/storage/pricing"
+      },
+      {
+       "status": 307,
+       "s3_code": null,
+       "condition": null
+      }
+     ]
+    },
+    "storage": {
+     "tiers": [
+      {
+       "up_to_gb": null,
+       "price_per_gb_month": 0.02
+      }
+     ],
+     "incomplete_multipart": "as_storage",
+     "source_url": "https://cloud.google.com/storage/pricing",
+     "checked": "2026-10-25",
+     "note": "Standard storage, Iowa (us-central1), regional: '$0.02 / 1 gibibyte month' (hourly view: '$0.000027397 / 1 gibibyte hour'); one tier. Monthly usage includes 'Uploaded parts of an XML API multipart upload, until the multipart upload is either completed or aborted.'"
+    },
+    "transfer": [
+     {
+      "id": "ec2_s3_same_region",
+      "price_per_gb": 0,
+      "direction": "both",
+      "source_url": "https://cloud.google.com/storage/pricing",
+      "checked": "2026-10-25",
+      "note": "pricing page, data transfer within Google Cloud: free when 'Data moves within the same location'; 'Data moves from different zones within the same region are considered within the same location.' Inbound data (writes) is not listed as charged."
+     },
+     {
+      "id": "ec2_ec2_cross_az",
+      "price_per_gb": 0.01,
+      "direction": "out",
+      "source_url": "https://cloud.google.com/vpc/network-pricing",
+      "checked": "2026-10-25",
+      "note": "VPC pricing: 'Data transfer to a different Google Cloud zone in the same Google Cloud region when using the internal or external IP addresses within the same VPC network (per GiB)' $0.01; 'The cost is attributed to the project of the VM that is sending the traffic.'"
+     },
+     {
+      "id": "internet",
+      "price_per_gb": null,
+      "direction": "out",
+      "source_url": null,
+      "checked": null,
+      "note": "Tier 1 assumes 0 egress by default; the tiered internet price was not looked up"
+     }
+    ],
+    "block": {
+     "gp3": {
+      "price_per_gib_month": 0.08,
+      "iops_baseline": 3000,
+      "iops_price": 0.005,
+      "mibps_baseline": 140,
+      "mibps_price": 0.04,
+      "iops_per_gib_max": 500,
+      "mibps_per_iops_max": 0.25,
+      "size_gib": [
+       4,
+       65536
+      ],
+      "iops": [
+       3000,
+       160000
+      ],
+      "mibps": [
+       140,
+       2400
+      ],
+      "source_url": "https://cloud.google.com/compute/docs/disks/hd-types/hyperdisk-balanced",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced, the gp3 analogue, in the block slot. Prices, Iowa (us-central1), from https://cloud.google.com/compute/disks-image-pricing: 'Hyperdisk Balanced provisioned space' $0.08 / 1 gibibyte month, 'provisioned IOPS' $0.005 / 1 month, 'provisioned throughput' $0.04 / 1 month, charged 'in excess of the baseline values of 3,000 IOPS and 140 MBps throughput'. Limits from the Hyperdisk Balanced page: 'Size: between 4 GiB and 64 TiB', 'IOPS: between 3,000 and 160,000', 'Throughput: between 140 and 2,400 MiB/s', 'Maximum IOPS: MIN (500x, 160,000)', 'Maximum throughput: MIN (2,400, P/4) MiB/s'; the floor 'Minimum throughput: MAX (140, P/256) MiB/s' is not modelled. The page says MiB/s, the price page MBps; MiB/s is used."
+     }
+    },
+    "allocation": {
+     "layouts": [
+      {
+       "id": "single",
+       "volumes": 1
+      },
+      {
+       "id": "stripe2",
+       "volumes": 2
+      },
+      {
+       "id": "stripe4",
+       "volumes": 4
+      }
+     ],
+     "objective": "min_monthly_cost",
+     "tie_break": [
+      "fewest_volumes",
+      "smallest_total_iops"
+     ]
+    },
+    "ec2_ebs_bandwidth": [
+     {
+      "instance_class": "n4-standard-2",
+      "max_mbps": 2013.27,
+      "max_mibps": 240,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'n4-*-2 | 30,000 | 240 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "n4-standard-4",
+      "max_mbps": 2013.27,
+      "max_mibps": 240,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'n4-*-4 | 30,000 | 240 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "n4-standard-8",
+      "max_mbps": 4026.53,
+      "max_mibps": 480,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'n4-*-8 | 30,000 | 480 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "n4-standard-16",
+      "max_mbps": 10066.33,
+      "max_mibps": 1200,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'n4-*-16 | 80,000 | 1,200 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "c3-standard-4",
+      "max_mbps": 3355.44,
+      "max_mibps": 400,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'c3-*-4 | 25,000 | 400 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "c3-standard-8",
+      "max_mbps": 6710.89,
+      "max_mibps": 800,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'c3-*-8 | 50,000 | 800 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "c3-standard-22",
+      "max_mbps": 15099.49,
+      "max_mibps": 1800,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'c3-*-22 | 120,000 | 1,800 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     },
+     {
+      "instance_class": "c3-standard-44",
+      "max_mbps": 20132.66,
+      "max_mibps": 2400,
+      "source_url": "https://cloud.google.com/compute/docs/disks/hyperdisk-perf-limits",
+      "checked": "2026-10-25",
+      "note": "Hyperdisk Balanced performance limits: 'c3-*-44 | 160,000 | 2,400 MiB/s' maximum throughput; max_mbps converted from MiB/s"
+     }
+    ],
+    "multipart": {
+     "abort_days_after_initiation_default": 7,
+     "residence_time_assumption": "measured_or_assumed",
+     "note": "plan default, the same as AWS; Cloud Storage has none: 'There is no limit to how long a multipart upload and its uploaded parts can remain unfinished or idle in a bucket' (https://cloud.google.com/storage/docs/multipart-uploads). Configure a lifecycle rule with the AbortIncompleteMultipartUpload action and an age condition (https://cloud.google.com/storage/docs/lifecycle)."
+    }
    },
    {
     "id": "azure",
-    "structure_only": true
+    "structure_only": true,
+    "note": "not supported yet (owner, 2026-10-25)"
    }
   ]
  },
@@ -27656,39 +28988,230 @@
        "a": {
         "kind": "mul",
         "a": {
-         "kind": "input",
-         "id": "cas_table_drops_per_s",
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "add",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_parts_per_dropped_table",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 2,
+            "dim": "1"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 3,
+           "dim": "count"
+          },
+          "dim": "count"
+         },
          "dim": "1/s"
         },
         "b": {
-         "kind": "add",
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
          "a": {
-          "kind": "mul",
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "add",
           "a": {
-           "kind": "input",
-           "id": "cas_parts_per_dropped_table",
+           "kind": "mul",
+           "a": {
+            "kind": "input",
+            "id": "cas_parts_per_dropped_table",
+            "dim": "count"
+           },
+           "b": {
+            "kind": "const",
+            "value": 2,
+            "dim": "1"
+           },
            "dim": "count"
           },
           "b": {
            "kind": "const",
            "value": 2,
-           "dim": "1"
+           "dim": "count"
           },
           "dim": "count"
          },
-         "b": {
-          "kind": "const",
-          "value": 3,
-          "dim": "count"
-         },
-         "dim": "count"
+         "dim": "1/s"
         },
-        "dim": "1/s"
+        "b": {
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        },
+        "dim": "count"
        },
        "b": {
-        "kind": "const",
-        "value": 2628000,
-        "dim": "s"
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "HeadObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "ListObjectsV2",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "input",
+          "id": "cas_table_drops_per_s",
+          "dim": "1/s"
+         },
+         "b": {
+          "kind": "const",
+          "value": 2,
+          "dim": "count"
+         },
+         "dim": "1/s"
+        },
+        "b": {
+         "kind": "const",
+         "value": 2628000,
+         "dim": "s"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "input",
+        "id": "replicas",
+        "dim": "count"
        },
        "dim": "count"
       }
@@ -27707,38 +29230,53 @@
         "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cas_table_drops_per_s",
-         "dim": "1/s"
-        },
-        "b": {
-         "kind": "add",
-         "a": {
-          "kind": "mul",
-          "a": {
-           "kind": "input",
-           "id": "cas_parts_per_dropped_table",
-           "dim": "count"
-          },
-          "b": {
-           "kind": "const",
-           "value": 2,
-           "dim": "1"
-          },
-          "dim": "count"
-         },
-         "b": {
-          "kind": "const",
-          "value": 2,
-          "dim": "count"
-         },
+         "id": "cas_table_creates_per_month",
          "dim": "count"
         },
-        "dim": "1/s"
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
        },
        "b": {
         "kind": "const",
-        "value": 2628000,
-        "dim": "s"
+        "value": 9,
+        "dim": "count"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "GetObject",
+      "outcome_class": "client_error",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "predicted",
+      "status": 404,
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_table_creates_per_month",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2,
+        "dim": "count"
        },
        "dim": "count"
       }
@@ -27746,38 +29284,39 @@
      {
       "row_type": "request",
       "op_kind": "HeadObject",
-      "outcome_class": "ok",
+      "outcome_class": "client_error",
       "category": null,
       "route": null,
       "scope": "variant",
       "basis": "predicted",
+      "status": 404,
       "expr": {
        "kind": "mul",
        "a": {
         "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cas_table_drops_per_s",
-         "dim": "1/s"
-        },
-        "b": {
-         "kind": "const",
-         "value": 1,
+         "id": "cas_table_creates_per_month",
          "dim": "count"
         },
-        "dim": "1/s"
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
        },
        "b": {
         "kind": "const",
-        "value": 2628000,
-        "dim": "s"
+        "value": 1,
+        "dim": "count"
        },
        "dim": "count"
       }
      },
      {
       "row_type": "request",
-      "op_kind": "DeleteObject",
+      "op_kind": "PutObject",
       "outcome_class": "ok",
       "category": null,
       "route": null,
@@ -27789,20 +29328,20 @@
         "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cas_table_drops_per_s",
-         "dim": "1/s"
-        },
-        "b": {
-         "kind": "const",
-         "value": 1,
+         "id": "cas_table_creates_per_month",
          "dim": "count"
         },
-        "dim": "1/s"
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
        },
        "b": {
         "kind": "const",
-        "value": 2628000,
-        "dim": "s"
+        "value": 4,
+        "dim": "count"
        },
        "dim": "count"
       }
@@ -27821,20 +29360,20 @@
         "kind": "mul",
         "a": {
          "kind": "input",
-         "id": "cas_table_drops_per_s",
-         "dim": "1/s"
-        },
-        "b": {
-         "kind": "const",
-         "value": 2,
+         "id": "cas_table_creates_per_month",
          "dim": "count"
         },
-        "dim": "1/s"
+        "b": {
+         "kind": "input",
+         "id": "replicas",
+         "dim": "count"
+        },
+        "dim": "count"
        },
        "b": {
         "kind": "const",
-        "value": 2628000,
-        "dim": "s"
+        "value": 5,
+        "dim": "count"
        },
        "dim": "count"
       }
@@ -27846,6 +29385,11 @@
      {
       "kind": "input",
       "id": "cas_foreground_ref_removal_requests",
+      "dim": "count"
+     },
+     {
+      "kind": "input",
+      "id": "cas_table_create_requests",
       "dim": "count"
      }
     ]
@@ -28065,21 +29609,51 @@
            }
           },
           "b": {
-           "kind": "lookup",
-           "dim": "count",
-           "table_id": "cas_startup_requests",
-           "keys": [
-            {
+           "kind": "add",
+           "a": {
+            "kind": "lookup",
+            "dim": "count",
+            "table_id": "cas_startup_requests_base",
+            "keys": [
+             {
+              "kind": "input",
+              "id": "cache_enabled",
+              "dim": "enum:cache_enabled"
+             },
+             {
+              "kind": "const",
+              "value": "GetObject",
+              "dim": "enum:replication_op"
+             }
+            ]
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
              "kind": "input",
-             "id": "cache_enabled",
-             "dim": "enum:cache_enabled"
+             "id": "cas_tables",
+             "dim": "count"
             },
-            {
-             "kind": "const",
-             "value": "GetObject",
-             "dim": "enum:replication_op"
-            }
-           ]
+            "b": {
+             "kind": "lookup",
+             "dim": "count",
+             "table_id": "cas_startup_requests_per_table",
+             "keys": [
+              {
+               "kind": "input",
+               "id": "cache_enabled",
+               "dim": "enum:cache_enabled"
+              },
+              {
+               "kind": "const",
+               "value": "GetObject",
+               "dim": "enum:replication_op"
+              }
+             ]
+            },
+            "dim": "count"
+           },
+           "dim": "count"
           }
          },
          "b": {
@@ -28310,21 +29884,51 @@
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "count",
-         "table_id": "cas_startup_requests",
-         "keys": [
-          {
+         "kind": "add",
+         "a": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "cas_startup_requests_base",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "PutObject",
+            "dim": "enum:replication_op"
+           }
+          ]
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
            "kind": "input",
-           "id": "cache_enabled",
-           "dim": "enum:cache_enabled"
+           "id": "cas_tables",
+           "dim": "count"
           },
-          {
-           "kind": "const",
-           "value": "PutObject",
-           "dim": "enum:replication_op"
-          }
-         ]
+          "b": {
+           "kind": "lookup",
+           "dim": "count",
+           "table_id": "cas_startup_requests_per_table",
+           "keys": [
+            {
+             "kind": "input",
+             "id": "cache_enabled",
+             "dim": "enum:cache_enabled"
+            },
+            {
+             "kind": "const",
+             "value": "PutObject",
+             "dim": "enum:replication_op"
+            }
+           ]
+          },
+          "dim": "count"
+         },
+         "dim": "count"
         }
        },
        "b": {
@@ -28432,7 +30036,7 @@
        "b": {
         "kind": "lookup",
         "dim": "count",
-        "table_id": "cas_startup_requests",
+        "table_id": "cas_startup_requests_base",
         "keys": [
          {
           "kind": "input",
@@ -28476,7 +30080,7 @@
        "b": {
         "kind": "lookup",
         "dim": "count",
-        "table_id": "cas_startup_requests",
+        "table_id": "cas_startup_requests_base",
         "keys": [
          {
           "kind": "input",
@@ -28518,21 +30122,51 @@
         }
        },
        "b": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_requests",
-        "keys": [
-         {
+        "kind": "add",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "cas_startup_requests_base",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "ListObjectsV2",
+           "dim": "enum:replication_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "cas_tables",
+          "dim": "count"
          },
-         {
-          "kind": "const",
-          "value": "ListObjectsV2",
-          "dim": "enum:replication_op"
-         }
-        ]
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "cas_startup_requests_per_table",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "ListObjectsV2",
+            "dim": "enum:replication_op"
+           }
+          ]
+         },
+         "dim": "count"
+        },
+        "dim": "count"
        }
       }
      },
@@ -28562,21 +30196,51 @@
         }
        },
        "b": {
-        "kind": "lookup",
-        "dim": "count",
-        "table_id": "cas_startup_error_requests",
-        "keys": [
-         {
+        "kind": "add",
+        "a": {
+         "kind": "lookup",
+         "dim": "count",
+         "table_id": "cas_startup_error_requests_base",
+         "keys": [
+          {
+           "kind": "input",
+           "id": "cache_enabled",
+           "dim": "enum:cache_enabled"
+          },
+          {
+           "kind": "const",
+           "value": "GetObject",
+           "dim": "enum:replication_op"
+          }
+         ]
+        },
+        "b": {
+         "kind": "mul",
+         "a": {
           "kind": "input",
-          "id": "cache_enabled",
-          "dim": "enum:cache_enabled"
+          "id": "cas_tables",
+          "dim": "count"
          },
-         {
-          "kind": "const",
-          "value": "GetObject",
-          "dim": "enum:replication_op"
-         }
-        ]
+         "b": {
+          "kind": "lookup",
+          "dim": "count",
+          "table_id": "cas_startup_error_requests_per_table",
+          "keys": [
+           {
+            "kind": "input",
+            "id": "cache_enabled",
+            "dim": "enum:cache_enabled"
+           },
+           {
+            "kind": "const",
+            "value": "GetObject",
+            "dim": "enum:replication_op"
+           }
+          ]
+         },
+         "dim": "count"
+        },
+        "dim": "count"
        }
       },
       "status": 404
@@ -28609,7 +30273,7 @@
        "b": {
         "kind": "lookup",
         "dim": "count",
-        "table_id": "cas_startup_error_requests",
+        "table_id": "cas_startup_error_requests_base",
         "keys": [
          {
           "kind": "input",
@@ -28654,7 +30318,7 @@
        "b": {
         "kind": "lookup",
         "dim": "count",
-        "table_id": "cas_startup_error_requests",
+        "table_id": "cas_startup_error_requests_base",
         "keys": [
          {
           "kind": "input",
@@ -28699,7 +30363,7 @@
        "b": {
         "kind": "lookup",
         "dim": "count",
-        "table_id": "cas_startup_error_requests",
+        "table_id": "cas_startup_error_requests_base",
         "keys": [
          {
           "kind": "input",
@@ -28719,7 +30383,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "Start with the filesystem cache: ASSUMPTION, the per-table terms repeat the cache-off fit; the cached start was measured at one table only",
+      "dim": "enum:note"
+     }
+    ]
    },
    "gc": {
     "ledger_rows": [
@@ -28950,15 +30620,113 @@
             "dim": "count"
            },
            "b": {
-            "kind": "mul",
+            "kind": "add",
             "a": {
-             "kind": "input",
-             "id": "cas_tables",
+             "kind": "mul",
+             "a": {
+              "kind": "branch",
+              "dim": "count",
+              "cond": {
+               "op": ">",
+               "a": {
+                "kind": "input",
+                "id": "cas_tables",
+                "dim": "count"
+               },
+               "b": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "insert_rate",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "cas_gc_interval_s",
+                 "dim": "s"
+                },
+                "dim": "count"
+               }
+              },
+              "then": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "cas_gc_interval_s",
+                "dim": "s"
+               },
+               "dim": "count"
+              },
+              "else": {
+               "kind": "input",
+               "id": "cas_tables",
+               "dim": "count"
+              }
+             },
+             "b": {
+              "kind": "input",
+              "id": "gc_round_requests_fold_get_per_changed_table",
+              "dim": "count"
+             },
              "dim": "count"
             },
             "b": {
-             "kind": "input",
-             "id": "cas_ref_log_tail_records",
+             "kind": "mul",
+             "a": {
+              "kind": "branch",
+              "dim": "count",
+              "cond": {
+               "op": ">",
+               "a": {
+                "kind": "input",
+                "id": "cas_tables",
+                "dim": "count"
+               },
+               "b": {
+                "kind": "input",
+                "id": "gc_round_sweep_namespace_budget",
+                "dim": "count"
+               }
+              },
+              "then": {
+               "kind": "input",
+               "id": "gc_round_sweep_namespace_budget",
+               "dim": "count"
+              },
+              "else": {
+               "kind": "input",
+               "id": "cas_tables",
+               "dim": "count"
+              }
+             },
+             "b": {
+              "kind": "add",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "cas_ref_log_tail_records",
+                "dim": "count"
+               },
+               "b": {
+                "kind": "input",
+                "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+                "dim": "count"
+               },
+               "dim": "count"
+              },
+              "b": {
+               "kind": "input",
+               "id": "gc_round_requests_fold_get_per_swept_table",
+               "dim": "count"
+              },
+              "dim": "count"
+             },
              "dim": "count"
             },
             "dim": "count"
@@ -28993,13 +30761,53 @@
              "b": {
               "kind": "mul",
               "a": {
-               "kind": "input",
-               "id": "cas_tables",
-               "dim": "count"
+               "kind": "branch",
+               "dim": "count",
+               "cond": {
+                "op": ">",
+                "a": {
+                 "kind": "input",
+                 "id": "cas_tables",
+                 "dim": "count"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "gc_round_sweep_namespace_budget",
+                 "dim": "count"
+                }
+               },
+               "then": {
+                "kind": "input",
+                "id": "gc_round_sweep_namespace_budget",
+                "dim": "count"
+               },
+               "else": {
+                "kind": "input",
+                "id": "cas_tables",
+                "dim": "count"
+               }
               },
               "b": {
-               "kind": "input",
-               "id": "cas_ref_log_tail_records",
+               "kind": "add",
+               "a": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "cas_ref_log_tail_records",
+                 "dim": "count"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+                 "dim": "count"
+                },
+                "dim": "count"
+               },
+               "b": {
+                "kind": "input",
+                "id": "gc_round_requests_fold_get_per_swept_table",
+                "dim": "count"
+               },
                "dim": "count"
               },
               "dim": "count"
@@ -29020,27 +30828,13 @@
          "dim": "1/s"
         },
         "b": {
-         "kind": "mul",
+         "kind": "add",
          "a": {
-          "kind": "add",
+          "kind": "mul",
           "a": {
            "kind": "add",
            "a": {
-            "kind": "mul",
-            "a": {
-             "kind": "input",
-             "id": "insert_rate",
-             "dim": "1/s"
-            },
-            "b": {
-             "kind": "input",
-             "id": "parts_per_insert",
-             "dim": "1"
-            },
-            "dim": "1/s"
-           },
-           "b": {
-            "kind": "div",
+            "kind": "add",
             "a": {
              "kind": "mul",
              "a": {
@@ -29056,44 +30850,149 @@
              "dim": "1/s"
             },
             "b": {
-             "kind": "sub",
+             "kind": "div",
              "a": {
-              "kind": "coef",
-              "id": "merge_effective_fan_in",
-              "dim": "1"
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
              },
              "b": {
-              "kind": "const",
-              "value": 1,
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
               "dim": "1"
              },
-             "dim": "1"
+             "dim": "1/s",
+             "on_zero": "unavailable"
             },
-            "dim": "1/s",
-            "on_zero": "unavailable"
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
            },
            "dim": "1/s"
           },
           "b": {
-           "kind": "mul",
-           "a": {
-            "kind": "input",
-            "id": "cas_mutations_per_s",
-            "dim": "1/s"
-           },
-           "b": {
-            "kind": "input",
-            "id": "cas_parts_per_mutation",
-            "dim": "count"
-           },
-           "dim": "1/s"
+           "kind": "input",
+           "id": "gc_round_requests_fold_get_per_manifest",
+           "dim": "count"
           },
           "dim": "1/s"
          },
          "b": {
-          "kind": "input",
-          "id": "gc_round_requests_fold_get_per_manifest",
-          "dim": "count"
+          "kind": "mul",
+          "a": {
+           "kind": "mul",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "add",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "div",
+              "a": {
+               "kind": "mul",
+               "a": {
+                "kind": "input",
+                "id": "insert_rate",
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "input",
+                "id": "parts_per_insert",
+                "dim": "1"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "sub",
+               "a": {
+                "kind": "coef",
+                "id": "merge_effective_fan_in",
+                "dim": "1"
+               },
+               "b": {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+               },
+               "dim": "1"
+              },
+              "dim": "1/s",
+              "on_zero": "unavailable"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "cas_mutations_per_s",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "cas_parts_per_mutation",
+              "dim": "count"
+             },
+             "dim": "1/s"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "cas_log_records_per_part",
+            "dim": "count"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "input",
+           "id": "gc_round_requests_fold_get_per_new_log_record",
+           "dim": "count"
+          },
+          "dim": "1/s"
          },
          "dim": "1/s"
         },
@@ -29350,6 +31249,272 @@
            "b": {
             "kind": "input",
             "id": "gc_round_requests_fold_put",
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 9,
+           "dim": "1"
+          },
+          "dim": "count",
+          "on_zero": "unavailable"
+         }
+        },
+        "dim": "1/s"
+       },
+       "b": {
+        "kind": "const",
+        "value": 2628000,
+        "dim": "s"
+       },
+       "dim": "count"
+      }
+     },
+     {
+      "row_type": "request",
+      "op_kind": "DeleteObject",
+      "outcome_class": "ok",
+      "category": null,
+      "route": null,
+      "scope": "variant",
+      "basis": "measured",
+      "expr": {
+       "kind": "mul",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "div",
+         "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+         },
+         "b": {
+          "kind": "add",
+          "a": {
+           "kind": "input",
+           "id": "cas_gc_interval_s",
+           "dim": "s"
+          },
+          "b": {
+           "kind": "div",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "input",
+             "id": "gc_round_duration_fold_base",
+             "dim": "ms"
+            },
+            "b": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "gc_round_duration_fold_per_part",
+              "dim": "ms"
+             },
+             "b": {
+              "kind": "mul",
+              "a": {
+               "kind": "add",
+               "a": {
+                "kind": "add",
+                "a": {
+                 "kind": "mul",
+                 "a": {
+                  "kind": "input",
+                  "id": "insert_rate",
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "input",
+                  "id": "parts_per_insert",
+                  "dim": "1"
+                 },
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "div",
+                 "a": {
+                  "kind": "mul",
+                  "a": {
+                   "kind": "input",
+                   "id": "insert_rate",
+                   "dim": "1/s"
+                  },
+                  "b": {
+                   "kind": "input",
+                   "id": "parts_per_insert",
+                   "dim": "1"
+                  },
+                  "dim": "1/s"
+                 },
+                 "b": {
+                  "kind": "sub",
+                  "a": {
+                   "kind": "coef",
+                   "id": "merge_effective_fan_in",
+                   "dim": "1"
+                  },
+                  "b": {
+                   "kind": "const",
+                   "value": 1,
+                   "dim": "1"
+                  },
+                  "dim": "1"
+                 },
+                 "dim": "1/s",
+                 "on_zero": "unavailable"
+                },
+                "dim": "1/s"
+               },
+               "b": {
+                "kind": "mul",
+                "a": {
+                 "kind": "input",
+                 "id": "cas_mutations_per_s",
+                 "dim": "1/s"
+                },
+                "b": {
+                 "kind": "input",
+                 "id": "cas_parts_per_mutation",
+                 "dim": "count"
+                },
+                "dim": "1/s"
+               },
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "cas_gc_interval_s",
+               "dim": "s"
+              },
+              "dim": "count"
+             },
+             "dim": "ms"
+            },
+            "dim": "ms"
+           },
+           "b": {
+            "kind": "const",
+            "value": 1000,
+            "dim": "ms/s"
+           },
+           "dim": "s",
+           "on_zero": "unavailable"
+          },
+          "dim": "s"
+         },
+         "dim": "1/s",
+         "on_zero": "unavailable"
+        },
+        "b": {
+         "kind": "branch",
+         "dim": "count",
+         "cond": {
+          "op": ">",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "add",
+            "a": {
+             "kind": "mul",
+             "a": {
+              "kind": "input",
+              "id": "insert_rate",
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "input",
+              "id": "parts_per_insert",
+              "dim": "1"
+             },
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "div",
+             "a": {
+              "kind": "mul",
+              "a": {
+               "kind": "input",
+               "id": "insert_rate",
+               "dim": "1/s"
+              },
+              "b": {
+               "kind": "input",
+               "id": "parts_per_insert",
+               "dim": "1"
+              },
+              "dim": "1/s"
+             },
+             "b": {
+              "kind": "sub",
+              "a": {
+               "kind": "coef",
+               "id": "merge_effective_fan_in",
+               "dim": "1"
+              },
+              "b": {
+               "kind": "const",
+               "value": 1,
+               "dim": "1"
+              },
+              "dim": "1"
+             },
+             "dim": "1/s",
+             "on_zero": "unavailable"
+            },
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_mutations_per_s",
+             "dim": "1/s"
+            },
+            "b": {
+             "kind": "input",
+             "id": "cas_parts_per_mutation",
+             "dim": "count"
+            },
+            "dim": "1/s"
+           },
+           "dim": "1/s"
+          },
+          "b": {
+           "kind": "const",
+           "value": 0,
+           "dim": "1/s"
+          }
+         },
+         "then": {
+          "kind": "input",
+          "id": "gc_round_requests_fold_delete",
+          "dim": "count"
+         },
+         "else": {
+          "kind": "div",
+          "a": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "const",
+             "value": 8,
+             "dim": "1"
+            },
+            "b": {
+             "kind": "const",
+             "value": 0,
+             "dim": "count"
+            },
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "gc_round_requests_fold_delete",
             "dim": "count"
            },
            "dim": "count"
@@ -32045,6 +34210,21 @@
        "dim": "s"
       },
       "dim": "count"
+     },
+     {
+      "kind": "const",
+      "value": "GC fold: tables with new data per round = min(tables, inserts per GC interval), assuming each insert of a round lands in a different table until every table has one",
+      "dim": "enum:note"
+     },
+     {
+      "kind": "const",
+      "value": "GC fold: the orphan-manifest sweep reads cas_ref_log_tail_records per swept table, min(tables, gc_round_sweep_namespace_budget) tables per round",
+      "dim": "enum:note"
+     },
+     {
+      "kind": "const",
+      "value": "GC: the paged cas/ns/stream/ listing of Deferred rounds is not modeled (up to 51 pages at 150-500 tables)",
+      "dim": "enum:note"
      }
     ]
    },
@@ -32097,13 +34277,22 @@
         "a": {
          "kind": "mul",
          "a": {
-          "kind": "input",
-          "id": "cas_tables",
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_tables",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
           "dim": "count"
          },
          "b": {
           "kind": "input",
-          "id": "replicas",
+          "id": "cas_cleanup_gets_per_table",
           "dim": "count"
          },
          "dim": "count"
@@ -32169,7 +34358,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "const",
+      "value": "Cleanup: each run reads 5 GETs for a table with parts (measured on the gc-tables passes, not fitted); every table on the disk is assumed to hold parts",
+      "dim": "enum:note"
+     }
+    ]
    },
    "storage": {
     "ledger_rows": [
@@ -33948,9 +36143,13 @@
    "cas_inline_cap_bytes": "2026-10-24-storage-cost-phase0",
    "cas_relink_bytes_per_part": "2026-10-24-storage-cost-replication",
    "cas_startup_error_requests": "2026-10-24-storage-cost-cas",
+   "cas_startup_error_requests_base": "2026-10-25-storage-cost-cas-tables",
+   "cas_startup_error_requests_per_table": "2026-10-25-storage-cost-cas-tables",
    "cas_startup_gets_per_log_record": "2026-10-24-storage-cost-cas",
    "cas_startup_gets_per_part": "2026-10-24-storage-cost-cas",
    "cas_startup_requests": "2026-10-24-storage-cost-cas",
+   "cas_startup_requests_base": "2026-10-25-storage-cost-cas-tables",
+   "cas_startup_requests_per_table": "2026-10-25-storage-cost-cas-tables",
    "cas_warm_gets_per_stream_read": "2026-10-24-storage-cost-cas",
    "catchup_requests_per_missed_part": "2026-10-24-storage-cost-replication",
    "compact_part_data_files": "2026-10-24-storage-cost-s3",
@@ -33962,6 +36161,7 @@
    "files_per_wide_stream": "2026-10-24-storage-cost-s3",
    "gc_round_duration": "2026-10-24-storage-cost-cas",
    "gc_round_requests": "2026-10-24-storage-cost-cas",
+   "gc_round_requests_steady": "2026-10-25-storage-cost-cas-tables",
    "gets_per_stream_read": "2026-10-24-storage-cost-s3",
    "insert_tx_checks": "2026-10-24-storage-cost-s3",
    "insert_write_overhead_rows": "2026-10-24-storage-cost-ebs",

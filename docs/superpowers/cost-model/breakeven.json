@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "ac4da195670cdc98",
+ "contract_version": "96d9659c4e9e3ae1",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -36,7 +36,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2561.669119649159,
+         "value": 2588.2838231217056,
          "state": "ok",
          "extrapolated": false
         }
@@ -61,7 +61,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2647.952063875309,
+         "value": 2674.5667673478556,
          "state": "ok",
          "extrapolated": false
         }
@@ -86,7 +86,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2820.5179523276092,
+         "value": 2847.132655800156,
          "state": "ok",
          "extrapolated": false
         }
@@ -111,7 +111,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3165.64972923221,
+         "value": 3192.264432704757,
          "state": "ok",
          "extrapolated": false
         }
@@ -136,7 +136,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3847.0822949786775,
+         "value": 3873.6969984512243,
          "state": "ok",
          "extrapolated": false
         }
@@ -161,7 +161,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 5167.586484874541,
+         "value": 5194.201188347089,
          "state": "ok",
          "extrapolated": false
         }
@@ -242,7 +242,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2561.669119649159,
+         "value": 2588.2838231217056,
          "state": "ok",
          "extrapolated": false
         }
@@ -267,7 +267,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2647.952063875309,
+         "value": 2674.5667673478556,
          "state": "ok",
          "extrapolated": false
         }
@@ -292,7 +292,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2820.5179523276092,
+         "value": 2847.132655800156,
          "state": "ok",
          "extrapolated": false
         }
@@ -317,7 +317,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3165.64972923221,
+         "value": 3192.264432704757,
          "state": "ok",
          "extrapolated": false
         }
@@ -342,7 +342,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3847.0822949786775,
+         "value": 3873.6969984512243,
          "state": "ok",
          "extrapolated": false
         }
@@ -367,7 +367,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 5167.586484874541,
+         "value": 5194.201188347089,
          "state": "ok",
          "extrapolated": false
         }
@@ -446,7 +446,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2818.6687023402064,
+         "value": 2844.72596059636,
          "state": "ok",
          "extrapolated": false
         }
@@ -471,7 +471,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2820.5179523276092,
+         "value": 2847.132655800156,
          "state": "ok",
          "extrapolated": false
         }
@@ -496,7 +496,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2824.216452302415,
+         "value": 2851.946046207749,
          "state": "ok",
          "extrapolated": false
         }
@@ -521,7 +521,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2827.9149522772213,
+         "value": 2856.7594366153417,
          "state": "ok",
          "extrapolated": false
         }
@@ -585,7 +585,7 @@
         "ebs": {
          "value": 93.60000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1725.7591756666293,
@@ -598,7 +598,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 984.6633237130571,
+         "value": 1048.2529583311807,
          "state": "ok",
          "extrapolated": false
         }
@@ -610,7 +610,7 @@
         "ebs": {
          "value": 187.20000000000002,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1746.463034823167,
@@ -623,7 +623,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 995.1424894578386,
+         "value": 1058.732124075962,
          "state": "ok",
          "extrapolated": false
         }
@@ -635,7 +635,7 @@
         "ebs": {
          "value": 374.40000000000003,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1787.8707531362425,
@@ -648,7 +648,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1016.1008209474015,
+         "value": 1079.690455565525,
          "state": "ok",
          "extrapolated": false
         }
@@ -660,7 +660,7 @@
         "ebs": {
          "value": 748.8000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1870.6861897623937,
@@ -673,7 +673,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1058.0174839265276,
+         "value": 1121.607118544651,
          "state": "ok",
          "extrapolated": false
         }
@@ -685,7 +685,7 @@
         "ebs": {
          "value": 1497.6000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 2036.317063014696,
@@ -698,7 +698,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1141.8508098847794,
+         "value": 1205.4404445029031,
          "state": "ok",
          "extrapolated": false
         }
@@ -710,7 +710,7 @@
         "ebs": {
          "value": 2995.2000000000003,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 2367.5788095193006,
@@ -723,7 +723,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1309.5174618012834,
+         "value": 1373.1070964194068,
          "state": "ok",
          "extrapolated": false
         }
@@ -752,7 +752,7 @@
         7200,
         14400
        ],
-       "extrapolated": true
+       "extrapolated": false
       },
       {
        "a": "ebs",
@@ -761,7 +761,7 @@
         3600,
         7200
        ],
-       "extrapolated": true
+       "extrapolated": false
       }
      ],
      "problems": []
@@ -782,7 +782,7 @@
         "ebs": {
          "value": 93.60000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1725.7591756666293,
@@ -795,7 +795,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 984.6633237130571,
+         "value": 1048.2529583311807,
          "state": "ok",
          "extrapolated": false
         }
@@ -807,7 +807,7 @@
         "ebs": {
          "value": 187.20000000000002,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1746.463034823167,
@@ -820,7 +820,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 995.1424894578386,
+         "value": 1058.732124075962,
          "state": "ok",
          "extrapolated": false
         }
@@ -832,7 +832,7 @@
         "ebs": {
          "value": 374.40000000000003,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1787.8707531362425,
@@ -845,7 +845,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1016.1008209474015,
+         "value": 1079.690455565525,
          "state": "ok",
          "extrapolated": false
         }
@@ -857,7 +857,7 @@
         "ebs": {
          "value": 748.8000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1870.6861897623937,
@@ -870,7 +870,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1058.0174839265276,
+         "value": 1121.607118544651,
          "state": "ok",
          "extrapolated": false
         }
@@ -882,7 +882,7 @@
         "ebs": {
          "value": 1497.6000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 2036.317063014696,
@@ -895,7 +895,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1141.8508098847794,
+         "value": 1205.4404445029031,
          "state": "ok",
          "extrapolated": false
         }
@@ -907,7 +907,7 @@
         "ebs": {
          "value": 2995.2000000000003,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 2367.5788095193006,
@@ -920,7 +920,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1309.5174618012834,
+         "value": 1373.1070964194068,
          "state": "ok",
          "extrapolated": false
         }
@@ -949,7 +949,7 @@
         80,
         160
        ],
-       "extrapolated": true
+       "extrapolated": false
       },
       {
        "a": "ebs",
@@ -958,7 +958,7 @@
         40,
         80
        ],
-       "extrapolated": true
+       "extrapolated": false
       }
      ],
      "problems": []
@@ -977,7 +977,7 @@
         "ebs": {
          "value": 187.20000000000002,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 846.3056417196364,
@@ -990,7 +990,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1014.2038622255097,
+         "value": 1076.6316388862563,
          "state": "ok",
          "extrapolated": false
         }
@@ -1002,7 +1002,7 @@
         "ebs": {
          "value": 374.40000000000003,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 1787.8707531362425,
@@ -1015,7 +1015,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1016.1008209474015,
+         "value": 1079.690455565525,
          "state": "ok",
          "extrapolated": false
         }
@@ -1027,7 +1027,7 @@
         "ebs": {
          "value": 748.8000000000001,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 3671.0009759694544,
@@ -1040,7 +1040,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1019.8947383911853,
+         "value": 1085.808088924063,
          "state": "ok",
          "extrapolated": false
         }
@@ -1052,7 +1052,7 @@
         "ebs": {
          "value": 1123.2,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "s3": {
          "value": 5554.131198802666,
@@ -1065,7 +1065,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1023.6886558349692,
+         "value": 1091.925722282601,
          "state": "ok",
          "extrapolated": false
         }
@@ -1094,7 +1094,7 @@
         4,
         6
        ],
-       "extrapolated": true
+       "extrapolated": false
       },
       {
        "a": "s3",
@@ -1142,7 +1142,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 193.12431881045418,
+         "value": 203.64704712369942,
          "state": "ok",
          "extrapolated": false
         }
@@ -1167,7 +1167,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 252.02680873550602,
+         "value": 262.5495370487513,
          "state": "ok",
          "extrapolated": false
         }
@@ -1192,7 +1192,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 369.8317885856098,
+         "value": 380.354516898855,
          "state": "ok",
          "extrapolated": false
         }
@@ -1217,7 +1217,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 605.4417482858173,
+         "value": 615.9644765990627,
          "state": "ok",
          "extrapolated": false
         }
@@ -1242,7 +1242,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1076.6616676862322,
+         "value": 1087.1843959994776,
          "state": "ok",
          "extrapolated": false
         }
@@ -1267,7 +1267,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1988.3498150209439,
+         "value": 1998.872543334189,
          "state": "ok",
          "extrapolated": false
         }
@@ -1320,7 +1320,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 193.12431881045418,
+         "value": 203.64704712369942,
          "state": "ok",
          "extrapolated": false
         }
@@ -1345,7 +1345,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 252.02680873550602,
+         "value": 262.5495370487513,
          "state": "ok",
          "extrapolated": false
         }
@@ -1370,7 +1370,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 369.8317885856098,
+         "value": 380.354516898855,
          "state": "ok",
          "extrapolated": false
         }
@@ -1395,7 +1395,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 605.4417482858173,
+         "value": 615.9644765990627,
          "state": "ok",
          "extrapolated": false
         }
@@ -1420,7 +1420,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1076.6616676862322,
+         "value": 1087.1843959994776,
          "state": "ok",
          "extrapolated": false
         }
@@ -1445,7 +1445,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1988.3498150209439,
+         "value": 1998.872543334189,
          "state": "ok",
          "extrapolated": false
         }
@@ -1496,7 +1496,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 367.9879189856299,
+         "value": 378.2552348529735,
          "state": "ok",
          "extrapolated": false
         }
@@ -1521,7 +1521,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 369.8317885856098,
+         "value": 380.354516898855,
          "state": "ok",
          "extrapolated": false
         }
@@ -1546,7 +1546,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 373.5195277855697,
+         "value": 384.55308099061824,
          "state": "ok",
          "extrapolated": false
         }
@@ -1571,7 +1571,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 377.2072669855296,
+         "value": 388.7516450823814,
          "state": "ok",
          "extrapolated": false
         }
@@ -1639,7 +1639,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 548.6380223373112,
+         "value": 554.3333170534002,
          "state": "ok",
          "extrapolated": false
         }
@@ -1664,7 +1664,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 843.1504719625707,
+         "value": 848.8457666786596,
          "state": "ok",
          "extrapolated": false
         }
@@ -1689,7 +1689,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1432.1550136852734,
+         "value": 1437.8503084013623,
          "state": "ok",
          "extrapolated": false
         }
@@ -1714,7 +1714,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2558.985255729744,
+         "value": 2564.680550445833,
          "state": "ok",
          "extrapolated": false
         }
@@ -1739,7 +1739,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 4812.645739818685,
+         "value": 4818.341034534774,
          "state": "ok",
          "extrapolated": false
         }
@@ -1754,18 +1754,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 9207.957744778065,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 9363.726458774,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         },
         "cas": {
-         "value": 9319.966707996567,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         }
        }
@@ -1777,17 +1777,22 @@
        "unavailable"
       ],
       "s3": [
-       "ok"
+       "ok",
+       "unavailable"
       ],
       "s3plain": [
-       "ok"
+       "ok",
+       "unavailable"
       ],
       "cas": [
-       "ok"
+       "ok",
+       "unavailable"
       ]
      },
      "crossing": null,
-     "problems": []
+     "problems": [
+      "data_bytes: 409,600 GiB is above 204,800 GiB: a single shard holds at most 200 TiB; multi-shard is out of scope"
+     ]
     },
     "ingest_rate": {
      "values": [
@@ -1818,7 +1823,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 548.6380223373112,
+         "value": 554.3333170534002,
          "state": "ok",
          "extrapolated": false
         }
@@ -1843,7 +1848,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 843.1504719625707,
+         "value": 848.8457666786596,
          "state": "ok",
          "extrapolated": false
         }
@@ -1868,7 +1873,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1432.1550136852734,
+         "value": 1437.8503084013623,
          "state": "ok",
          "extrapolated": false
         }
@@ -1893,7 +1898,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2558.985255729744,
+         "value": 2564.680550445833,
          "state": "ok",
          "extrapolated": false
         }
@@ -1918,7 +1923,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 4812.645739818685,
+         "value": 4818.341034534774,
          "state": "ok",
          "extrapolated": false
         }
@@ -1933,18 +1938,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 9207.957744778065,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 9363.726458774,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         },
         "cas": {
-         "value": 9319.966707996567,
-         "state": "ok",
+         "value": null,
+         "state": "unavailable",
          "extrapolated": false
         }
        }
@@ -1956,17 +1961,22 @@
        "unavailable"
       ],
       "s3": [
-       "ok"
+       "ok",
+       "unavailable"
       ],
       "s3plain": [
-       "ok"
+       "ok",
+       "unavailable"
       ],
       "cas": [
-       "ok"
+       "ok",
+       "unavailable"
       ]
      },
      "crossing": null,
-     "problems": []
+     "problems": [
+      "data_bytes: 409,600 GiB (ingest_rate × retention_days) is above 204,800 GiB: a single shard holds at most 200 TiB; multi-shard is out of scope"
+     ]
     },
     "replicas": {
      "values": [
@@ -1995,7 +2005,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1432.1550136852734,
+         "value": 1437.8503084013623,
          "state": "ok",
          "extrapolated": false
         }
@@ -2020,7 +2030,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1434.0069653733835,
+         "value": 1439.8368594271774,
          "state": "ok",
          "extrapolated": false
         }
@@ -2045,7 +2055,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1437.7108687496038,
+         "value": 1443.8099614788075,
          "state": "ok",
          "extrapolated": false
         }
@@ -2070,7 +2080,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 1441.4147721258241,
+         "value": 1447.7830635304376,
          "state": "ok",
          "extrapolated": false
         }
@@ -2138,7 +2148,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2592.3116349207085,
+         "value": 2619.483783609649,
          "state": "ok",
          "extrapolated": false
         }
@@ -2163,7 +2173,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2707.3555605555753,
+         "value": 2734.527709244516,
          "state": "ok",
          "extrapolated": false
         }
@@ -2188,7 +2198,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2937.4434118253093,
+         "value": 2964.61556051425,
          "state": "ok",
          "extrapolated": false
         }
@@ -2213,7 +2223,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3397.619114364777,
+         "value": 3424.7912630537176,
          "state": "ok",
          "extrapolated": false
         }
@@ -2238,7 +2248,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 4289.131892140132,
+         "value": 4316.304040829072,
          "state": "ok",
          "extrapolated": false
         }
@@ -2263,7 +2273,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 6049.804145334617,
+         "value": 6076.976294023557,
          "state": "ok",
          "extrapolated": false
         }
@@ -2344,7 +2354,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2592.3116349207085,
+         "value": 2619.483783609649,
          "state": "ok",
          "extrapolated": false
         }
@@ -2369,7 +2379,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2707.3555605555753,
+         "value": 2734.527709244516,
          "state": "ok",
          "extrapolated": false
         }
@@ -2394,7 +2404,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2937.4434118253093,
+         "value": 2964.61556051425,
          "state": "ok",
          "extrapolated": false
         }
@@ -2419,7 +2429,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 3397.619114364777,
+         "value": 3424.7912630537176,
          "state": "ok",
          "extrapolated": false
         }
@@ -2444,7 +2454,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 4289.131892140132,
+         "value": 4316.304040829072,
          "state": "ok",
          "extrapolated": false
         }
@@ -2469,7 +2479,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 6049.804145334617,
+         "value": 6076.976294023557,
          "state": "ok",
          "extrapolated": false
         }
@@ -2548,7 +2558,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2933.674722600217,
+         "value": 2959.7319808563702,
          "state": "ok",
          "extrapolated": false
         }
@@ -2573,7 +2583,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2935.5590672127632,
+         "value": 2962.17377068531,
          "state": "ok",
          "extrapolated": false
         }
@@ -2598,7 +2608,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2937.4434118253093,
+         "value": 2964.61556051425,
          "state": "ok",
          "extrapolated": false
         }
@@ -2623,7 +2633,7 @@
          "extrapolated": false
         },
         "cas": {
-         "value": 2943.0964456629486,
+         "value": 2971.9409300010693,
          "state": "ok",
          "extrapolated": false
         }
