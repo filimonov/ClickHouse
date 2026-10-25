@@ -593,6 +593,151 @@ class GcIdle(PopulatedPool):
         return out
 
 
+def is_cleanup_listing(a) -> bool:
+    """The MergeTree cleanup thread's listing of a table's files (`MergeTreeData.cpp:4028`): a LIST of `_files/`."""
+    return a['op'] == 'ListObjectsV2' and '/_files/' in ((a.get('query') or {}).get('prefix') or '')
+
+
+def fold_prediction(rule: dict, new_manifests: int, tail_records: int) -> dict:
+    """Requests per op of one fold round by the `gc_round_requests` rule, heartbeat pulse included."""
+    out = dict(rule['fold'])
+    out['GetObject'] = (out.get('GetObject', 0) + new_manifests * rule['gets_per_new_manifest']
+                        + tail_records * rule['gets_per_tail_record'])
+    return out
+
+
+@register
+class GcTables(PopulatedPool):
+    """`params.tables` tables (default 1) on one pool, each taking the same insert stream, with card-driven rounds.
+
+    Under `SYSTEM CAS GC STOP` the card runs `params.bursts` minutes: one INSERT per table at the start of each, then
+    `params.rounds_per_burst` synchronous `SYSTEM CAS GC RUN` every `params.round_spacing_s`. Inserts and rounds
+    never overlap, so a round's requests are the round's own; a cleanup listing that lands inside one is set apart.
+    Each round is checked against the prediction's `inputs.rule`: a fold reads the base, one GET per new manifest and
+    one GET per ref log record of every table's tail; a Deferred round reads the base only.
+    """
+
+    name = 'gc-tables'
+
+    def tables_n(self, ctx) -> int:
+        return int(self.p(ctx).get('tables', 1))
+
+    def tables(self, ctx):
+        return [f't{i}' for i in range(self.tables_n(ctx))]
+
+    def setup(self, ctx):
+        client = self.replica_client(ctx)
+        self.gc(ctx, 'STOP')
+        client.query(f'CREATE DATABASE IF NOT EXISTS {DATABASE}')
+        for t in self.tables(ctx):
+            client.query(f'CREATE TABLE {DATABASE}.{t} ({self.p(ctx)["columns"]}) {self.engine(ctx)}')
+        self.state(ctx)['pool_objects'] = {}
+
+    def inserts(self, ctx) -> int:
+        return self.p(ctx)['bursts'] * self.tables_n(ctx)
+
+    def measured(self, ctx):
+        p, client, st = self.p(ctx), self.replica_client(ctx), self.state(ctx)
+        log = st.setdefault('insert_log', [])
+        for b in range(p['bursts']):
+            t_burst = time.monotonic()
+            for ti, t in enumerate(self.tables(ctx)):
+                t0 = time.time_ns() // 1000
+                # `t` keeps the tables' contents distinct: equal parts would take the hash-hit branch.
+                client.query(p['insert'].format(table=f'{DATABASE}.{t}', i=b, t=ti, rows=p['rows'], seed=p['seed']),
+                             settings=ctx.manifest['settings']['query'])
+                log.append({'table': t, 'burst': b, 't0_us': t0, 't1_us': time.time_ns() // 1000})
+            for r in range(p['rounds_per_burst']):
+                delay = t_burst + p['first_round_s'] + r * p['round_spacing_s'] - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                self.gc(ctx, 'RUN')
+            delay = t_burst + p['burst_period_s'] - time.monotonic()
+            if delay > 0 and b + 1 < p['bursts']:
+                time.sleep(delay)
+        rounds = p['bursts'] * p['rounds_per_burst']
+        return {'unit_count': rounds, 'effective_counts': {'rounds': rounds, 'inserts': len(log)}, 'observations': {}}
+
+    def complete(self, ctx, timeout_s=300):
+        for c in ctx.cluster.clients:
+            c.query('SYSTEM FLUSH LOGS')
+        st, client = self.state(ctx), self.replica_client(ctx)
+        st['finishes'] = self.gc_finishes(ctx)
+        st['rows'] = [sum(_count(client, f'SELECT count() FROM {DATABASE}.{t}') for t in self.tables(ctx))]
+        self.collect_rounds(ctx)
+
+    def round_rows(self, ctx, draft) -> list:
+        """Per round: attempts by op, cleanup listings (with the catalog GET before each) set apart."""
+        st, replica = self.state(ctx), self.p(ctx)['replica']
+        rows = [a for a in window_rows(ctx) if a['caller'] == replica and not is_renewal(a)]
+        out = []
+        for start, finish in st['gc_rounds'].get(replica, []):
+            inside = [a for a in rows if start <= a['t_start_us'] <= (math.inf if finish is None else finish)]
+            listings = [a for a in inside if is_cleanup_listing(a)]
+            drop = {a['seq'] for a in listings}
+            for lst in listings:
+                # The listing reads the catalog first (iterateDirectory): the latest catalog GET before it.
+                before = [a for a in inside if a['seq'] < lst['seq'] and a['seq'] not in drop and a['op'] == 'GetObject'
+                          and (L.family_of(CAS_FAMILIES, a.get('key')) or {}).get('name') == 'ref_catalog']
+                if before:
+                    drop.add(before[-1]['seq'])
+            kept = [a for a in inside if a['seq'] not in drop]
+            ops: dict = {}
+            for a in kept:
+                ops[a['op']] = ops.get(a['op'], 0) + 1
+            out.append({'start_us': start, 'finish_us': finish, 'requests': len(kept), 'ops': ops,
+                        'cleanup_listings': len(listings),
+                        'by_family': by_family(kept, CAS_FAMILIES).get(replica, {})})
+        return out
+
+    def observe(self, ctx, draft):
+        st, p = self.state(ctx), self.p(ctx)
+        rule = self.predicted(ctx)['inputs']['rule']
+        rounds, log = self.round_rows(ctx, draft), st.get('insert_log', [])
+        outcomes = [f['outcome'] for f in st['finishes']]
+        checked, folded_until = [], -math.inf
+        for i, r in enumerate(rounds):
+            outcome = outcomes[i] if i < len(outcomes) else None
+            done = [e for e in log if e['t1_us'] < r['start_us']]
+            if outcome == 'Success':
+                new = sum(1 for e in done if e['t1_us'] > folded_until)
+                want = fold_prediction(rule, new, rule['records_per_insert'] * len(done))
+                folded_until = r['start_us']
+            else:
+                want = dict(rule['deferred'])
+            residual = {op: r['ops'].get(op, 0) - want.get(op, 0) for op in sorted(set(r['ops']) | set(want))}
+            checked.append({**r, 'outcome': outcome, 'inserts_before': len(done), 'predicted': want,
+                            'residual': residual})
+        folds = [c for c in checked if c['outcome'] == 'Success']
+        deferred = [c for c in checked if c['outcome'] == 'Deferred']
+        # Counted over the whole window: a listing inside a round is attributed to maintenance but is the table's.
+        listings = sum(1 for a in window_rows(ctx) if a['caller'] == p['replica'] and is_cleanup_listing(a)
+                       and a['seq'] < draft['window']['end_seq'])
+        total = lambda rows, op: sum(c['ops'].get(op, 0) for c in rows)  # noqa: E731
+        return {**CasCard.observe(self, ctx, draft), 'tables': self.tables_n(ctx), 'inserts': len(log),
+                'rounds': checked, 'round_outcomes': outcomes,
+                'fold_rounds': len(folds), 'deferred_rounds': len(deferred),
+                'fold_round_ops': {op: total(folds, op) for op in OPS_GC},
+                'deferred_round_ops': {op: total(deferred, op) for op in OPS_GC},
+                'fold_round_get_predicted': sum(c['predicted'].get('GetObject', 0) for c in folds),
+                'max_abs_round_residual': max((abs(v) for c in checked for v in c['residual'].values()), default=None),
+                'cleanup_listings_in_rounds': sum(c['cleanup_listings'] for c in checked),
+                'cleanup_listings': listings,
+                'cleanup_listings_per_table': listings / self.tables_n(ctx),
+                'round_duration_ms': [int(f['duration_ms']) for f in st['finishes']],
+                'fold_round_duration_ms': [int(f['duration_ms']) for f in st['finishes'] if f['outcome'] == 'Success']}
+
+    def assertions(self, ctx, draft):
+        out = super().assertions(ctx, draft)
+        obs, p = draft['observations'], self.p(ctx)
+        out['rounds'] = (p['bursts'] * p['rounds_per_burst'], len(obs['rounds']))
+        out['inserts'] = (self.inserts(ctx), obs['inserts'])
+        return out
+
+
+OPS_GC = ('GetObject', 'PutObject', 'ListObjectsV2', 'HeadObject', 'DeleteObject', 'DeleteObjects')
+
+
 @register
 class Lease(CasCard):
     """An idle mounted pool with GC off: only the lease renewer writes (Pool/CasMountRuntime.cpp:645-700)."""

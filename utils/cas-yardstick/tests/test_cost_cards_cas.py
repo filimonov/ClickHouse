@@ -22,11 +22,12 @@ CASES = {'cas-branches': {'fresh', 'hash-hit', 'adoption', 'inline', 'staging-pe
          'cas-drop': {'table-sync'},
          'gc-lifecycle': {'drop', 'drop-60s', 'drop-60s-12', 'merge'}, 'gc-idle': {'populated'},
          'gc-scale': {'objects-1k', 'objects-3k', 'objects-5k', 'objects-10k', 'objects-30k', 'objects-100k'},
-         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'},
+         'lease': {'idle-10min', 'idle-20min'}, 'gc-under-load': {'default'}, 'gc-tables': {'n1', 'n4', 'n16'},
          'cold-select': {'cas-holdout-narrow-3', 'cas-holdout-on-narrow-3', 'cas-off-narrow', 'cas-off-wide',
                          'cas-on-narrow', 'cas-on-narrow-2', 'cas-on-wide', 'cas-on-wide-2', 'cas-warm-off-narrow',
                          'cas-warm-off-wide'},
-         'startup': {'cas-compact-5', 'cas-holdout-wide-4', 'cas-intact', 'cas-wide-parts', 'cas-wide-parts-3'}}
+         'startup': {'cas-compact-5', 'cas-holdout-wide-4', 'cas-intact', 'cas-wide-parts', 'cas-wide-parts-3',
+                     'cas-tables-1', 'cas-tables-4', 'cas-tables-16'}}
 PASS_DIR = '/runs/cost-20261024T000000Z/cas/gc-idle/populated/k1'
 P = 'cost-20261024T000000Z/cas/gc-idle/populated/k1/shared'
 BLOB = f'{P}/blobs/ch128/7e/7e04f7775690055a4f834c628c1cd41d'
@@ -119,7 +120,7 @@ class ManifestsTest(unittest.TestCase):
             stopped = m['settings']['table'].get('max_parts_to_merge_at_once') == 1
             self.assertEqual(stopped, m['controls']['merges'] == 'stop', name)
             # GC cards measure GC on a known interval; the branch and lease cards keep it off.
-            gc_card = m['card'] in ('gc-lifecycle', 'gc-idle', 'gc-scale', 'gc-under-load')
+            gc_card = m['card'] in ('gc-lifecycle', 'gc-idle', 'gc-scale', 'gc-under-load', 'gc-tables')
             self.assertEqual(m['controls']['gc'], 'measure' if gc_card else 'off', name)
             if m['card'] in ('gc-lifecycle', 'gc-idle'):
                 self.assertEqual(m['settings']['server']['storage_configuration.disks.cas.cas_gc_interval_sec'],
@@ -474,6 +475,100 @@ class GcScaleTest(unittest.TestCase):
             card.state(ctx)['gc_rounds'] = {'r1': [[1_900_000, 2_100_000], [3_900_000, 4_100_000]]}
             rounds = card.round_rows(ctx, {})
             self.assertEqual([r['requests'] for r in rounds], [2, 1])
+
+
+class GcTablesTest(unittest.TestCase):
+    RULE = {'fold': {'GetObject': 18, 'PutObject': 6, 'ListObjectsV2': 4},
+            'deferred': {'GetObject': 13, 'PutObject': 2, 'ListObjectsV2': 3},
+            'gets_per_new_manifest': 1, 'gets_per_tail_record': 1, 'records_per_insert': 3}
+
+    def test_tables_knob_defaults_to_one_and_names_distinct_tables(self):
+        card = CARDS['gc-tables']
+        m = manifest('gc-tables.n4')
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
+            self.assertEqual(card.tables(ctx), ['t0', 't1', 't2', 't3'])
+            self.assertEqual(card.inserts(ctx), 48)
+            del m['params']['tables']
+            self.assertEqual(card.tables(ctx), ['t0'])
+
+    def test_measured_inserts_every_table_then_runs_rounds_without_overlap(self):
+        card = CARDS['gc-tables']
+        m = manifest('gc-tables.n4')
+        m['params'].update(bursts=2, rounds_per_burst=2, first_round_s=0, round_spacing_s=0, burst_period_s=0)
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = ctx_for(m, tmp, Ledger(os.path.join(tmp, 'l')))
+            out = card.measured(ctx)
+            log = ctx.cluster.clients[0].log
+            self.assertEqual([q.split()[0] if q.startswith('INSERT') else q for q in log],
+                             ['INSERT'] * 4 + ['SYSTEM CAS GC RUN cas'] * 2 + ['INSERT'] * 4 + ['SYSTEM CAS GC RUN cas'] * 2)
+            inserts = [q for q in log if q.startswith('INSERT')]
+            self.assertEqual(len(set(inserts)), 8)  # distinct content per table and burst: no hash hits
+            self.assertEqual(out['unit_count'], 4)
+            self.assertEqual(len(card.state(ctx)['insert_log']), 8)
+
+    def run_rounds(self, tmp, extra_get=False, listing_in_round=False):
+        card = CARDS['gc-tables']
+        m = manifest('gc-tables.n4')
+        led = Ledger(os.path.join(tmp, 'l'))
+        # Fold round after 4 inserts: 18 + 4 manifests + 12 tail records GET, PUT 6, LIST 4.
+        t = 5_000_000
+        for i in range(18 + 4 + 12 + (1 if extra_get else 0)):
+            led.add('GetObject', f'{P}/gc/state', t=t + i)
+        for i in range(6):
+            led.add('PutObject', f'{P}/gc/state', t=t + 100 + i)
+        for i in range(4):
+            led.add('ListObjectsV2', '', t=t + 200 + i)
+        if listing_in_round:
+            led.add('GetObject', f'{P}/cas/ref_catalog', t=t + 300)
+            led.add('ListObjectsV2', '', t=t + 301, query={'prefix': f'{P}/cas/ns/state/{LIFE}/_files/'})
+        led.add('PutObject', f'{P}/gc/server-roots/yardstick-r1/mount', t=t + 400)
+        t = 7_000_000
+        for i in range(13):
+            led.add('GetObject', f'{P}/gc/state', t=t + i)
+        for i in range(2):
+            led.add('PutObject', f'{P}/gc/state', t=t + 100 + i)
+        for i in range(3):
+            led.add('ListObjectsV2', '', t=t + 200 + i)
+        ctx = ctx_for(m, tmp, led)
+        st = card.state(ctx)
+        st.update(gc_rounds={'r1': [[4_900_000, 5_500_000], [6_900_000, 7_500_000]]},
+                  finishes=[{'outcome': 'Success', 'duration_ms': 300}, {'outcome': 'Deferred', 'duration_ms': 20}],
+                  insert_log=[{'table': f't{i}', 'burst': 0, 't0_us': 2_000_000, 't1_us': 2_100_000} for i in range(4)],
+                  rows=[4 * 20000])
+        split = card.classify(ctx, led.rows[1:], cas_probe.CAS_FAMILIES)
+        draft = {'ledger': {'foreground': L.summarize(split['foreground'])},
+                 'window': {'crossing': [], 'start_seq': 1, 'end_seq': led.seq + 1, 't_start_us': 1_000_000,
+                            't_end_us': 11_000_000}}
+        pred = {'inputs': {'rule': self.RULE}, 'expected': {'foreground': {}, 'observations': {}},
+                'tolerance': {'abs': {}, 'rel': {}}}
+        with mock.patch.object(type(card), 'predicted', return_value=pred):
+            draft['observations'] = card.observe(ctx, draft)
+        return draft['observations']
+
+    def test_fold_and_deferred_rounds_match_the_rule_both_directions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = self.run_rounds(tmp)
+            self.assertEqual((obs['fold_rounds'], obs['deferred_rounds']), (1, 1))
+            self.assertEqual(obs['rounds'][0]['predicted'], {'GetObject': 34, 'PutObject': 6, 'ListObjectsV2': 4})
+            self.assertEqual(obs['max_abs_round_residual'], 0)
+            self.assertEqual(obs['fold_round_ops']['GetObject'], 34)
+            self.assertEqual(obs['deferred_round_ops']['PutObject'], 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = self.run_rounds(tmp, extra_get=True)
+            self.assertEqual(obs['max_abs_round_residual'], 1)
+            self.assertEqual(obs['rounds'][0]['residual']['GetObject'], 1)
+
+    def test_cleanup_listing_inside_a_round_is_set_apart_and_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            obs = self.run_rounds(tmp, listing_in_round=True)
+            self.assertEqual(obs['max_abs_round_residual'], 0)
+            self.assertEqual((obs['cleanup_listings_in_rounds'], obs['cleanup_listings']), (1, 1))
+            self.assertEqual(obs['cleanup_listings_per_table'], 0.25)
+
+    def test_fold_prediction_counts_new_manifests_and_every_tail(self):
+        self.assertEqual(cas.fold_prediction(self.RULE, 16, 3 * 16 * 5),
+                         {'GetObject': 18 + 16 + 240, 'PutObject': 6, 'ListObjectsV2': 4})
 
 
 class GcUnderLoadTest(unittest.TestCase):

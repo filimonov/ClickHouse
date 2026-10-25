@@ -1,0 +1,74 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "startup.cas-tables-16",
+  "policy": "cas",
+  "inputs": {
+    "role": "holdout",
+    "replicas": 1,
+    "restarts_per_month": 1,
+    "active_parts": 32,
+    "outdated_parts": 0,
+    "retained_mutation_entries": 0,
+    "cache_enabled": "0",
+    "part_type": "compact",
+    "cas_tables": 16,
+    "cas_ref_log_tail_records": 6,
+    "rule": "cas_startup_requests + cas_startup_error_requests per start (fixed, independent of cas_tables) + active parts x cas_startup_gets_per_part[compact] (1) + cas_tables x cas_ref_log_tail_records x cas_startup_gets_per_log_record (1)"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "GetObject": 160,
+        "PutObject": {
+          "min": 11,
+          "max": 12,
+          "basis": "derived",
+          "reason": "one mount lease renewal may fall inside the window"
+        },
+        "HeadObject": 6,
+        "DeleteObject": 3,
+        "ListObjectsV2": 7
+      }
+    },
+    "observations": {
+      "active_parts": 32
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index and rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a Wide part's index granularity is loaded from its first column's marks file (a blob); a Compact part's data.cmrk4 is inline",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWide.cpp",
+      "line": 60
+    },
+    {
+      "claim": "an inline file is served from the manifest bytes and sends no request",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 2000
+    },
+    {
+      "claim": "a table's refs are recovered by replaying its durable log: one GET per log record since the last snapshot",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp",
+      "line": 441
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    },
+    {
+      "claim": "the mount lease renews every 10 s with one PutObject: a renewal can fall inside the window",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp",
+      "line": 690
+    }
+  ],
+  "prediction_commit": "e9464149ec0"
+}
