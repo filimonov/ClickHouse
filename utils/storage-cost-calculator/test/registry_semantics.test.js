@@ -128,8 +128,9 @@ test('test_bad_preset_value_is_an_input_problem', () => {
 
 test('test_columns_outside_the_verified_range_is_a_note_not_an_extrapolation', () => {
   assert.ok(pipeline.derivedOnlyInputs(LIVE).has('columns'));
-  const base = runWith(LIVE, { columns: 40 }).res;
-  const { r, res } = runWith(LIVE, { columns: 100 });
+  // One CAS table keeps the start requests inside their measured range: columns is the only parameter out of range.
+  const base = runWith(LIVE, { columns: 40, cas_tables: 1 }).res;
+  const { r, res } = runWith(LIVE, { columns: 100, cas_tables: 1 });
   assert.equal(r.fields.columns.out_of_range, false);
   assert.equal(r.fields.columns.verified_only, true);
   const s3 = res.variants.s3;

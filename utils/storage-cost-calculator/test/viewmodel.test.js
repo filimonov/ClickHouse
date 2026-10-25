@@ -308,7 +308,8 @@ test('test_out_of_range_note_once_per_param', () => {
   const s = presets.SCENARIOS.logs;
   const preset = presets.resolvePrice(live, 'aws-us-east-1');
   const notesFor = (rows) => {
-    const r0 = pipeline.resolveInputs(live, Object.assign({}, s.values, { insert_rows: rows }), s.locks, {});
+    // One CAS table keeps the start requests inside their measured range: only insert_rows is out of range.
+    const r0 = pipeline.resolveInputs(live, Object.assign({}, s.values, { insert_rows: rows, cas_tables: 1 }), s.locks, {});
     const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
     return vm.notes.filter((n) => n.kind === 'out_of_range');
   };

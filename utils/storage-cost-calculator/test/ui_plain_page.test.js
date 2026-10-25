@@ -40,7 +40,8 @@ test('test_scenarios_read_and_restart', () => {
   }
   assert.equal(presets.SCENARIOS.logs.values.select_part_reads_per_day, 2000);
   assert.equal(presets.SCENARIOS.metrics.values.select_part_reads_per_day, 5000);
-  const { vm } = page('logs');
+  // At one table the CAS start requests are inside their measured range; more tables extrapolate them.
+  const { vm } = page('logs', { cas_tables: 1 });
   for (const op of ['reads', 'recovery']) {
     assert.equal(row(vm, op).note, null, op);
     // The object-storage columns price reads and recovery from measured cells.

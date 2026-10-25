@@ -30,8 +30,13 @@
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Searches over recent logs: 2,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 2000, restarts_per_month: 1,
+        // A few log streams (app, access, audit, ...) in fixed tables; partitions expire, tables stay.
+        cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
+      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
+      // with one table on the disk, so more tables extrapolate them.
+      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
     // 50 agents send 1,000-row inserts, 50 per second in total: 20 GiB/day over 4,320,000 inserts is ~4.9 KiB
@@ -47,12 +52,17 @@
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Dashboards re-read history often: 5,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 5000, restarts_per_month: 1,
+        // One table per metric family, and rotating tables: 4 created and 4 dropped a month.
+        cas_tables: 20, cas_table_creates_per_month: 4, cas_table_drops_per_month: 4,
       },
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
       // replica fetch transfer was measured at (acquire_bytes, cas_relink_bytes_per_part); the page shows the
-      // dependent numbers as extrapolated.
-      expected_extrapolated: { ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'], cas: ['cas_relink_bytes_per_part'] },
+      // dependent numbers as extrapolated. The CAS start requests were measured with one table on the disk.
+      expected_extrapolated: {
+        ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'],
+        cas: ['cas_relink_bytes_per_part', 'cas_startup_requests', 'cas_startup_error_requests'],
+      },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
     // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts
@@ -71,8 +81,13 @@
         cas_mutations_per_s: 30 / 2628000, cas_parts_per_mutation: 10,
         // Reports scan wide date ranges: 20,000 parts read a day that miss the cache. One rolling restart a month.
         select_part_reads_per_day: 20000, restarts_per_month: 1,
+        // A handful of fact and dimension tables, loaded in place.
+        cas_tables: 5, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
+      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
+      // with one table on the disk, so more tables extrapolate them.
+      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Cold archive without replication: 50 TiB kept two years (~70 GiB/day derived) on one replica.
     // One 100,000-row insert every 10 s: 51,200 GiB / 730 d = 70 GiB/day over 8,640 inserts a day is ~8.3 MiB
@@ -89,20 +104,29 @@
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
         // Rare lookups: 200 parts read a day. One restart a month.
         select_part_reads_per_day: 200, restarts_per_month: 1,
+        // Three archived datasets.
+        cas_tables: 3, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
+      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
+      // with one table on the disk, so more tables extrapolate them.
+      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // The standard deployment: what the workload knobs alone describe. Wide table, async inserts on (the async buffer
     // flushes ~1 MiB, the registry default), default merges, a modest number of cold part reads, one restart a month,
     // no mutations, 3 replicas in one zone, filesystem cache on. Everything else stays at its registry default.
     custom: {
       label: 'Custom',
-      description: 'A typical deployment: wide table, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, one restart a month, no ALTER UPDATE/DELETE; edit any input',
+      description: 'A typical deployment: 10 wide tables, async inserts, 3 replicas in one zone, filesystem cache on, 1,000 cold part reads a day, one restart a month, no ALTER UPDATE/DELETE; edit any input',
       values: {
         replicas: 3, topology: 'same_az', shape: 'wide', columns: 40, async_insert: '1', cache_enabled: '1', select_part_reads_per_day: 1000, restarts_per_month: 1,
         mutations_per_month: 0, mutated_compact_parts_per_month: 0, mutated_wide_parts_per_month: 0, cas_mutations_per_s: 0,
+        cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: [],
+      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
+      // with one table on the disk, so more tables extrapolate them.
+      expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
   };
 
@@ -243,10 +267,13 @@
     const out = [];
     const M = root.SCC.model || require('./model.js');
     for (const c of contract.coefficients) for (const [param, range] of Object.entries(M.rangeOf(c) || {})) out.push({ id: c.id, owner: `coefficient ${c.id}`, param, range, basis: M.basisOf(c) });
-    // A registry row is `derived` when it is a formula from source, or an input only such formulas read.
+    // A registry row is `derived` when it is a formula from source, or an input only such formulas read; a measured
+    // row takes the basis of the coefficient it mirrors.
     const P = pipeline();
     const derivedOnly = P.derivedOnlyInputs(contract);
-    const basisOf = (q) => (q.kind === 'derivation' ? P.derivationBasis(q) : derivedOnly.has(q.id) ? 'derived' : 'fitted');
+    const coefBasis = new Map(contract.coefficients.map((c) => [c.id, M.basisOf(c)]));
+    const basisOf = (q) => (q.kind === 'derivation' ? P.derivationBasis(q) : q.kind === 'measured' && coefBasis.has(q.coef) ? coefBasis.get(q.coef)
+      : derivedOnly.has(q.id) ? 'derived' : 'fitted');
     for (const q of contract.registry) for (const [param, range] of Object.entries(M.rangeOf(q) || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range, basis: basisOf(q) });
     return out;
   }

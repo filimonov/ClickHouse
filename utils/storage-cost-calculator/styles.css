@@ -297,6 +297,13 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .panel-block h2 { margin: 0 0 6px; }
 .panel-inputs .profile-note { margin-top: 6px; }
 .panel-inputs .field-row { flex-direction: row; align-items: center; gap: 8px; }
+/* Several workload inputs on one line (tables: count, created, dropped), one (i) for the set. */
+.panel-inputs .field-set { display: flex; align-items: center; padding: 2px 0; }
+.panel-inputs .field-set .set-controls { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px; width: 100%; }
+.panel-inputs .field-set .set-item { display: flex; align-items: center; gap: 4px; }
+.panel-inputs .field-set .field-label { margin-right: 0; }
+.panel-inputs .field-set .set-label { color: var(--mute); font-size: 13px; white-space: nowrap; }
+.panel-inputs [data-block="simple"] .field-set .control input[type="number"] { width: 46px; min-width: 0; padding: 2px 2px 2px 4px; line-height: 18px; }
 .panel-inputs .inputs > .block[data-block="prices"]:not([open]), .panel-inputs .inputs > .block[data-block="advanced"]:not([open]) { flex-basis: calc(50% - 3px); }
 @media (max-width: 420px) { .panel-inputs .settings-grid { grid-template-columns: minmax(0, 1fr); } }
 .panel-inputs .settings-grid .field-head { flex-wrap: nowrap; align-items: flex-start; }

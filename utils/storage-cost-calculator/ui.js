@@ -223,13 +223,43 @@
 
   const PROFILE_NOTE = 'Other inputs describe a typical deployment: see Low-level assumptions.';
 
+  // Workload inputs that share one line on the form, each with a short label; one (i) explains the set.
+  const FIELD_SETS = [
+    { id: 'tables', members: [['cas_tables', 'Tables'], ['cas_table_creates_per_month', 'created/month'], ['cas_table_drops_per_month', 'dropped/month']] },
+  ];
+
+  function renderFieldSet(set, fs, page) {
+    const items = set.members.map(([id, label], i) => {
+      const f = fs.find((x) => x.id === id);
+      const reset = f.overridden ? `<button type="button" class="btn btn-small" data-action="reset" data-id="${esc(f.id)}">Reset</button>` : '';
+      return `<label class="set-item"><span class="${i ? 'set-label' : 'field-label'}">${esc(label)}</span>${control(f, page, false)}${fieldTags(f)}${reset}</label>`;
+    }).join('');
+    const first = fs.find((x) => x.id === set.members[0][0]);
+    return `<div class="field field-set" data-row="${esc(set.id)}"><div class="field-control set-controls">${items}`
+      + `${infoButton({ 'info-kind': 'input', id: first.id }, first.short || first.label || first.id)}</div></div>`;
+  }
+
+  // Workload fields in registry order; the members of a field set render once, as one line, where the first one stands.
+  function renderWorkload(workload, page) {
+    const out = [];
+    for (const f of workload) {
+      const set = FIELD_SETS.find((x) => x.members.some(([id]) => id === f.id));
+      if (!set) { out.push(renderField(f, page, true)); continue; }
+      const fs = set.members.map(([id]) => workload.find((x) => x.id === id));
+      // A contract that lacks a member keeps every field on its own.
+      if (fs.some((x) => !x)) { out.push(renderField(f, page, true)); continue; }
+      if (f.id === set.members.find(([id]) => workload.some((x) => x.id === id))[0]) out.push(renderFieldSet(set, fs, page));
+    }
+    return out.join('');
+  }
+
   // Workload knobs, then every setting in one visible grid, then two closed lines: price rules and low-level
   // assumptions. Hidden rows (table keys, model constants) are only in the info dialog.
   function renderInputs(vm, page) {
     if (vm.page_state === 'cannot_reproduce') return '';
     const of = (b, tier) => b.fields.filter((f) => f.tier === tier);
     const workload = vm.inputs.blocks.flatMap((b) => of(b, 'workload'));
-    const head = `<section class="panel-block" data-block="simple" aria-label="Workload inputs">${workload.map((f) => renderField(f, page, true)).join('')}</section>`;
+    const head = `<section class="panel-block" data-block="simple" aria-label="Workload inputs">${renderWorkload(workload, page)}</section>`;
     const details = (id, label, body, extra) => `<details class="block" data-block="${esc(id)}"${page.open_blocks.includes(id) ? ' open' : ''}>`
       + `<summary>${esc(label)}${extra || ''}</summary><div class="block-body">${body}</div></details>`;
     const overridden = (fs) => (fs.some((f) => f.overridden) ? ` ${badge('overridden', 'accent')}` : '');

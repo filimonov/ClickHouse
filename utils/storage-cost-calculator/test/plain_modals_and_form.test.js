@@ -74,8 +74,8 @@ test('test_assumption_modal_says_assumption_in_plain_words', () => {
   assert.doesNotMatch(shown, /\b[a-z0-9]+_[a-z0-9_]+\b/, 'no coefficient ids');
   assert.doesNotMatch(shown, /Tier 2|replication-fetch|cost-2026|ASSUMPTION/);
   assert.equal(page('logs', CROSS, { info: { kind: 'cell', variant: 'cas', operation: 'inserts' } }).vm.info.description, 'Priced from measured coefficients.');
-  // In one zone the assumed row moves no bytes: nothing rests on the assumption.
-  const same = page('logs');
+  // In one zone the assumed row moves no bytes: nothing rests on the assumption (one table: start requests measured).
+  const same = page('logs', { cas_tables: 1 });
   assert.equal(cell(same.vm, 'inserts', 'cas').extrapolated, false);
   assert.equal(same.vm.cards.find((c) => c.variant === 'cas').extrapolated_cells, 0);
 });
@@ -167,16 +167,17 @@ test('test_phone_puts_the_form_before_the_cards', () => {
 });
 
 test('test_cas_is_extrapolated_only_where_the_assumption_prices_bytes', () => {
-  const cas = (sc, inputs) => page(sc, inputs).vm.cards.find((c) => c.variant === 'cas');
+  // One table: the CAS start requests stay inside their measured range (more tables: see tables_workload.test.js).
+  const cas = (sc, inputs) => page(sc, Object.assign({ cas_tables: 1 }, inputs)).vm.cards.find((c) => c.variant === 'cas');
   // One zone, or one replica: the relink row moves nothing, so nothing rests on the assumed relink bytes.
   for (const [sc, inputs] of [['logs', {}], ['metrics', {}], ['custom', {}], ['single_replica_archive', {}], ['single_replica_archive', CROSS]]) {
     const c = cas(sc, inputs);
     assert.equal(c.extrapolated, false, `${sc} ${JSON.stringify(inputs)}: ${c.extrapolated_text}`);
   }
-  assert.equal(page('logs').vm.cards.find((c) => c.cheapest).cheapest_text, 'cheapest of 4');
+  assert.equal(page('logs', { cas_tables: 1 }).vm.cards.find((c) => c.cheapest).cheapest_text, 'cheapest of 4');
   // Across zones the relink bytes are priced: the transfer cell carries the badge and the assumption.
   for (const sc of ['logs', 'metrics']) {
-    const { vm } = page(sc, CROSS);
+    const { vm } = page(sc, Object.assign({ cas_tables: 1 }, CROSS));
     assert.equal(cell(vm, 'transfer', 'cas').extrapolated, true, sc);
     const info = page(sc, CROSS, { info: { kind: 'transfer', variant: 'cas' } }).vm.info;
     assert.equal(info.description, 'Priced from a stated assumption.', sc);

@@ -883,7 +883,29 @@
     shards: 'Number of shards the data is split across.',
     insert_rows: 'Rows in one INSERT query.',
     cache_enabled: 'Whether each replica keeps a filesystem cache on its local disk.',
+    cas_tables: 'MergeTree tables stored on the CAS disk, each with its own background requests.',
+    cas_table_creates_per_month: 'CREATE TABLE statements per month on the CAS disk; every replica runs each one.',
+    cas_table_drops_per_month: 'DROP TABLE statements per month on the CAS disk; every replica runs each one.',
   };
+
+  // How the table count, creations and drops enter the CAS column; one text for the three inputs of the tables row.
+  const TABLE_INPUTS = ['cas_tables', 'cas_table_creates_per_month', 'cas_table_drops_per_month'];
+  const constSum = (n) => (!n ? null : n.kind === 'const' ? n.value : n.kind === 'add' ? ((a, b) => (a === null || b === null ? null : a + b))(constSum(n.a), constSum(n.b)) : null);
+  function tableLines(contract) {
+    const q = (id) => contract.registry.find((x) => x.id === id) || {};
+    const period = q('cas_table_cleanup_period_s').default;
+    const tail = q('cas_ref_log_tail_records').default;
+    const creates = constSum(q('cas_table_create_requests').rule);
+    const drop = q('cas_foreground_ref_removal_requests').default;
+    return [
+      `Every replica's MergeTree cleanup thread lists each table's files once per cleanup period (a catalog GET and a LIST${period ? `, every ${fmtQuantity(period)} s when idle` : ''}).`,
+      `A server start replays each table's ref log tail${tail ? ` (${fmtQuantity(tail)} records assumed)` : ''}, and a folding GC round reads the tail of every table.`,
+      `CREATE TABLE sends ${creates === null ? 'a fixed set of' : fmtQuantity(creates)} requests per replica: the catalog entry, the first checkpoint, ref log recovery, format_version.txt and the table-start listings.`,
+      `DROP TABLE SYNC removes each part's ref in one transaction${drop ? ` and pays ${fmtQuantity(drop)} requests for the table` : ''}, per replica; Parts per dropped table (low-level) sets the part count, and the dropped parts become GC work.`,
+      'The measurements ran one table; the per-table scaling is a formula from source.',
+    ];
+  }
+  const TABLE_VERIFIED = 'formula from source; verified at 1 table';
   function describe(q, title) {
     if (FIELD_SENTENCES[q.id]) return FIELD_SENTENCES[q.id];
     return q.label && q.label.toLowerCase() !== String(title).toLowerCase() ? q.label : null;
@@ -924,6 +946,7 @@
 
   // Where the measurements checked a value. A formula from source holds outside it; a fitted value is extrapolated there.
   function verifiedText(contract, q, c, f) {
+    if (q && TABLE_INPUTS.includes(q.id)) return TABLE_VERIFIED;
     let span = null;
     if (c && model().rangeOf(c)) span = rangesText(contract, model().rangeOf(c));
     else if (f && f.display_range) {
@@ -1019,7 +1042,8 @@
         derived_text: f && f.derived && f.derived_text ? f.derived_text : null,
         default_text: q ? defaultLine(contract, q, ev, commit, x.scenario) : null,
         sql: q && q.hint ? q.hint.sql : null, mapping: q && q.hint ? q.hint.mapping : null,
-        lines: group ? [`${group.label.charAt(0).toUpperCase()}${group.label.slice(1)}. Lock two; the third is derived.`] : [], source: [],
+        lines: [...(group ? [`${group.label.charAt(0).toUpperCase()}${group.label.slice(1)}. Lock two; the third is derived.`] : []),
+          ...(q && TABLE_INPUTS.includes(q.id) ? tableLines(contract) : [])], source: [],
       };
     }
     if (open.kind === 'evidence') {
