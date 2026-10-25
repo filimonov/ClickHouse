@@ -10674,9 +10674,61 @@
       "status": "ok"
     },
     {
+      "id": "ebs_largest_merge_bytes",
+      "block": "ebs",
+      "label": "Largest merge result, uncompressed bytes: the final part size part_bytes_uncompressed x merge_size_ratio, at most max_bytes_to_merge_at_max_space_in_pool",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "min",
+        "dim": "B",
+        "args": [
+          {
+            "kind": "input",
+            "id": "max_bytes_to_merge_at_max_space_in_pool",
+            "dim": "B"
+          },
+          {
+            "kind": "mul",
+            "dim": "B",
+            "a": {
+              "kind": "input",
+              "id": "part_bytes_uncompressed",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "input",
+              "id": "merge_size_ratio",
+              "dim": "1"
+            }
+          }
+        ]
+      },
+      "coef": null,
+      "basis": "derived",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#peak-bound",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT max(size_in_bytes) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "ebs_largest_merge_bytes": "on-disk bytes of the largest merge; the rule counts uncompressed bytes"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "ebs_peak_mibps_bound",
       "block": "ebs",
-      "label": "Bound on the 1-s write peak of one replica, MiB/s: the largest merge written in one second (1.02-1.06 x its bytes on a local SSD). The largest merge is at most max_bytes_to_merge_at_max_space_in_pool and at most the data. Not priced: on EBS a merge past the provisioned throughput runs longer; peak_factor stays 1",
+      "label": "1-s write peak of one replica while the largest merge finishes within a second, MiB/s: the merge written in that second, 0.57 x its uncompressed bytes (measured 0.55-0.57 on three local runs, merges of 15.9-42.1 MB uncompressed). Above that size the volume throughput bounds the peak, not the merge size. Not priced; peak_factor stays 1",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "MiB/s",
@@ -10693,33 +10745,13 @@
           "dim": "B",
           "a": {
             "kind": "const",
-            "value": 1.055,
+            "value": 0.57,
             "dim": "1"
           },
           "b": {
-            "kind": "min",
-            "dim": "B",
-            "args": [
-              {
-                "kind": "input",
-                "id": "max_bytes_to_merge_at_max_space_in_pool",
-                "dim": "B"
-              },
-              {
-                "kind": "mul",
-                "dim": "B",
-                "a": {
-                  "kind": "input",
-                  "id": "data_bytes",
-                  "dim": "GiB"
-                },
-                "b": {
-                  "kind": "const",
-                  "value": 1073741824,
-                  "dim": "B/GiB"
-                }
-              }
-            ]
+            "kind": "input",
+            "id": "ebs_largest_merge_bytes",
+            "dim": "B"
           }
         },
         "b": {
@@ -10739,7 +10771,12 @@
       },
       "coef": null,
       "basis": "derived",
-      "verified_range": null,
+      "verified_range": {
+        "ebs_largest_merge_bytes": [
+          15920000,
+          42120000
+        ]
+      },
       "evidence": {
         "kind": "measured",
         "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#peak-bound",

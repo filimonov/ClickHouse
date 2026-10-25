@@ -251,19 +251,24 @@ reads the derivation in place of the retired coefficient.
 
 ## EBS 1-s peak bound {#peak-bound}
 
-The 1-s write peak of a paced run is one merge: 1.02–1.06 × the bytes of the largest merge in all three local runs.
-`peak_factor` stays an assumed input with default 1. The EBS `merges` cell shows `ebs_peak_mibps_bound` as a note:
-the largest merge written in one second, with the largest merge capped by `max_bytes_to_merge_at_max_space_in_pool`
-and by the data size. The bound is not priced. On EBS a merge past the provisioned throughput runs longer instead.
+The 1-s write peak of a paced run is one merge: 1.02–1.06 × the on-disk bytes of the largest merge, or 0.55–0.57 ×
+its uncompressed bytes, in all three local runs. `peak_factor` stays an assumed input with default 1. The EBS
+`merges` cell shows `ebs_peak_mibps_bound` as a note: 0.57 × `ebs_largest_merge_bytes` per second, where
+`ebs_largest_merge_bytes` is the final part size (`part_bytes_uncompressed` × `merge_size_ratio`), at most
+`max_bytes_to_merge_at_max_space_in_pool`. The bound is not priced.
 
-| Record | Peak, B/s | Mean, B/s | Peak factor | Largest merge, B | Peak / largest merge |
-|---|---|---|---|---|---|
-| `local`, 2/s | 23 195 673 | 823 177 | 28.2 | 22 747 333 | 1.020 |
-| `local`, 4/s | 23 998 120 | 1 548 902 | 15.5 | 22 749 547 | 1.055 |
-| `local`, 1/s | 8 798 937 | 444 462 | 19.8 | 8 607 829 | 1.022 |
+- **Valid only for merges that finish within a second.** The verified range is the measured largest merges,
+  15.9–42.1 MB uncompressed; outside it the note is marked extrapolated. A larger merge on EBS is bounded by the
+  volume throughput and runs longer, so its size does not set the peak.
 
-The rule multiplies by 1.055, the largest ratio, as a constant: the three records failed on their amplification
-assertion, so they cannot back a coefficient. The 1/s record was not predicted for the peak; it adds a third point.
+| Record | Peak, B/s | Mean, B/s | Peak factor | Largest merge, B on disk | uncompressed | Peak / on disk | Peak / uncompressed |
+|---|---|---|---|---|---|---|---|
+| `local`, 2/s | 23 195 673 | 823 177 | 28.2 | 22 747 333 | 42 120 000 | 1.020 | 0.551 |
+| `local`, 4/s | 23 998 120 | 1 548 902 | 15.5 | 22 749 547 | 42 120 000 | 1.055 | 0.570 |
+| `local`, 1/s | 8 798 937 | 444 462 | 19.8 | 8 607 829 | 15 920 000 | 1.022 | 0.553 |
+
+The rule multiplies by 0.57, the largest uncompressed ratio, as a constant: the three records failed on their
+amplification assertion, so they cannot back a coefficient. The 1/s record was not predicted for the peak; it adds a third point.
 
 ## Async inserts {#async}
 
