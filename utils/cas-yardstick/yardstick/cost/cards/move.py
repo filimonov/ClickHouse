@@ -149,22 +149,26 @@ class MoveTtl(S3Card):
             out[f'r{n}'] = rows
         return out
 
-    def left_on_hot(self, ctx) -> int:
+    def left_on_hot(self, ctx, clients: list) -> int:
         tables = ', '.join(f"'{t}'" for t in self.table_names(ctx))
         where = f"database = '{DATABASE}' AND table IN ({tables})"
         return sum(_count(c, f"SELECT (SELECT count() FROM system.parts WHERE {where} AND active AND disk_name = "
                              f"'{HOT_DISK}') + (SELECT count() FROM system.moves WHERE {where})")
-                   for c in self.table_clients(ctx))
+                   for c in clients)
 
     def measured(self, ctx):
-        for client in self.table_clients(ctx):
-            for t in self.table_names(ctx):
-                client.query(f'SYSTEM START MOVES {DATABASE}.{t}')
+        # `params.sequential_moves`: one replica at a time, so the later replica finds the earlier one's objects.
+        clients = self.table_clients(ctx)
+        groups = [[c] for c in clients] if self.p(ctx).get('sequential_moves') else [clients]
         deadline = time.monotonic() + ctx.manifest['timeout_s']
-        while self.left_on_hot(ctx):
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f'{self.name}: parts still on the hot volume after {ctx.manifest["timeout_s"]} s')
-            time.sleep(POLL_S)
+        for group in groups:
+            for client in group:
+                for t in self.table_names(ctx):
+                    client.query(f'SYSTEM START MOVES {DATABASE}.{t}')
+            while self.left_on_hot(ctx, group):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f'{self.name}: parts still on the hot volume after {ctx.manifest["timeout_s"]} s')
+                time.sleep(POLL_S)
         n = sum(len(v) for v in self.state(ctx)['hot_parts'].values())
         return {'unit_count': n, 'effective_counts': {'moved_parts': n}, 'observations': {}}
 
@@ -296,7 +300,7 @@ class MoveTtlReplicated(MoveTtl):
     """The same move on two replicas: inserts on `r1`, `r2` fetches onto its hot volume before the window."""
 
     name = 'move-replicated'
-    policies = ('s3',)
+    policies = ('s3', 'cas')
     replicas = 2
 
     def ddl(self, ctx, table):

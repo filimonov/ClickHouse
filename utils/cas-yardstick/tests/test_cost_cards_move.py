@@ -26,7 +26,7 @@ def load(rel):
 class ManifestsTest(unittest.TestCase):
     def test_manifests_and_predictions_validate(self):
         names = sorted(os.listdir(os.path.join(R, 'experiments')))
-        self.assertEqual(names, ['move-replicated.ttl.json', 'move.ttl-holdout.json', 'move.ttl.json'])
+        self.assertEqual(names, ['move-replicated.ttl-cas.json', 'move-replicated.ttl.json', 'move.ttl-holdout.json', 'move.ttl.json'])
         for name in names:
             m = load(f'experiments/{name}')
             self.assertEqual(artifacts.validate_experiment(m), [], name)
