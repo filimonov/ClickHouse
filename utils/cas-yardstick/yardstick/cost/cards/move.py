@@ -229,6 +229,11 @@ class MoveTtl(S3Card):
         else:
             out['requests_per_part'] = self.requests_per_part(ctx, rows)
             out['put_bytes_minus_moved_bytes'] = out['put_bytes'] - out['moved_bytes']
+            layout = {part: files for part, files in st.get('layout', {}).items()}
+            out['layout_bytes'] = sum(size for files in layout.values() for _, size in files.values())
+            out['put_bytes_minus_layout_bytes'] = out['put_bytes'] - out['layout_bytes']
+            out['layout_file_sizes'] = {part: {f: size for f, (_, size) in sorted(files.items())}
+                                        for part, files in sorted(layout.items())}
             moved = [p for p in st['parts_after'][self.p(ctx)['replica']] if p['active']]
             kinds = {f'{p["table"]}/{p["name"]}': p['part_type'].lower() for p in moved}
             out['object_writes_per_part'] = by_kind(out['requests_per_part'], kinds, 'PutObject')

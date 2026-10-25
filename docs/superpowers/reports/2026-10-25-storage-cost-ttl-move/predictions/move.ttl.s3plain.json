@@ -23,7 +23,8 @@
     },
     "observations": {
       "moved_parts": 5,
-      "directory_writes": 11
+      "directory_writes": 11,
+      "put_bytes_minus_layout_bytes": 0
     }
   },
   "tolerance": {
