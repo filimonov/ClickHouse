@@ -1,0 +1,253 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "amplification-run.1hz-10m",
+  "policy": "local",
+  "inputs": {
+    "parts_per_insert": 1,
+    "inserted_part_type": "Compact",
+    "rows_per_insert": 1000,
+    "columns": 5,
+    "predicted_merges_for_allowance": 116,
+    "fit_run": "cost-20261025T130354Z",
+    "fit_measurement_ids": [
+      "cost-20261024T174727Z/local/small-inserts/default/k1",
+      "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1",
+      "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1"
+    ],
+    "merge_effective_fan_in": 2.3348,
+    "amplification_model": "rewrite_levels_at_weighted_ratio",
+    "fit_residuals": {
+      "cost-20261024T174727Z/local/small-inserts/default/k1": 0.4465,
+      "cost-20261025T130354Z/local/amplification-run/2hz-10m/k1": -0.295,
+      "cost-20261025T130354Z/local/amplification-run/4hz-10m/k1": -0.2439
+    },
+    "pooled_fan_in_distribution": {
+      "2": 0.0146,
+      "3": 0.009,
+      "4": 0.0034,
+      "5": 0.0,
+      "6": 0.7351,
+      "7-8": 0.2379,
+      "9-12": 0.0,
+      "13-20": 0.0,
+      "21+": 0.0
+    },
+    "pooled_result_size_distribution": {
+      "2-4": 0.0,
+      "5-8": 0.089,
+      "9-16": 0.1182,
+      "17-32": 0.1599,
+      "33-64": 0.3176,
+      "65-128": 0.2827,
+      "129-256": 0.0236,
+      "257-512": 0.009,
+      "513+": 0.0
+    },
+    "fit_max_tv": {
+      "fan_in_distribution": 0.0079,
+      "result_size_distribution": 0.0112
+    },
+    "tolerance_rules": {
+      "amplification_bytes": "abs = largest |fit residual| (K=1 fit records); rel = 0",
+      "distributions": "max_tv = 2 x largest TV of a fit record to the pooled fit distribution + 1 / predicted merges, predicted merges = floor((inserts - 1) / (f - 1))",
+      "fan_in_mean": "the fit records' per-record mean range, widened by one part each side",
+      "result_size_distribution": "pooled fit distribution restricted to sizes up to the insert count and renormalised"
+    },
+    "chain_regime": "small parts (32 KB at 1000 rows) are folded into one growing part 5-6 at a time; the effective fan-in of the rewrite ladder is fitted on the chain records, not on the S3 burst tree"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "quiesced": true,
+      "inserted_parts": 600,
+      "inserted_rows": 600000,
+      "merges": {
+        "basis": "derived",
+        "reason": "every merge takes at least two parts, and the selector merges a pile of equal parts",
+        "min": 1,
+        "max": 599
+      },
+      "fan_in_min": {
+        "basis": "derived",
+        "reason": "at least two parts per merge",
+        "min": 2
+      },
+      "fan_in_max": {
+        "basis": "derived",
+        "reason": "max_parts_to_merge_at_once",
+        "max": 100
+      },
+      "fan_in_distribution": {
+        "reference": {
+          "2": 0.0146,
+          "3": 0.009,
+          "4": 0.0034,
+          "5": 0.0,
+          "6": 0.7351,
+          "7-8": 0.2379,
+          "9-12": 0.0,
+          "13-20": 0.0,
+          "21+": 0.0
+        },
+        "max_tv": 0.0245
+      },
+      "result_size_distribution": {
+        "reference": {
+          "2-4": 0.0,
+          "5-8": 0.089,
+          "9-16": 0.1182,
+          "17-32": 0.1599,
+          "33-64": 0.3176,
+          "65-128": 0.2827,
+          "129-256": 0.0236,
+          "257-512": 0.009,
+          "513+": 0.0
+        },
+        "max_tv": 0.0309
+      },
+      "fan_in_mean": {
+        "min": 5.1395,
+        "max": 7.1552,
+        "basis": "fit",
+        "reason": "fit per-record mean range widened by one part"
+      },
+      "amplification_bytes": {
+        "model": "rewrite_levels_at_weighted_ratio",
+        "fan_in": 2.3348,
+        "abs": 0.4465,
+        "rel": 0
+      }
+    }
+  },
+  "tolerance": {
+    "abs": {
+      "amplification_bytes": 0.4465
+    },
+    "rel": {
+      "amplification_bytes": 0
+    }
+  },
+  "source_refs": [
+    {
+      "claim": "a natural merge takes at least two parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.cpp",
+      "line": 283
+    },
+    {
+      "claim": "and at most max_parts_to_merge_at_once = 100",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 636
+    },
+    {
+      "claim": "an insert below min_insert_block_size_rows is one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "the type starts Wide; the predicate turns it Compact",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6402
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "compact marks with substreams are .cmrk4",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 98
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "pending"
+}
