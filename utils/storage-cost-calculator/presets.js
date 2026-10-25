@@ -50,8 +50,9 @@
       },
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
-      // replica fetch transfer was measured at (acquire_bytes); the page shows the dependent numbers as extrapolated.
-      expected_extrapolated: { ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'], cas: ['acquire_bytes'] },
+      // replica fetch transfer was measured at (acquire_bytes, cas_relink_bytes_per_part); the page shows the
+      // dependent numbers as extrapolated.
+      expected_extrapolated: { ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'], cas: ['cas_relink_bytes_per_part'] },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
     // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts

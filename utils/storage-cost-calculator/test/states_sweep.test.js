@@ -49,11 +49,7 @@ function offenders(c) {
 }
 
 // Columns the model cannot price by design, each with the reason; an exception that stops occurring fails the test.
-const EXCEPTIONS = {
-  // No replication record measures the CAS relink bytes (acquire_bytes has no cas|insert key); borrowing s3plain's
-  // full-part bytes would overstate the transfer by orders of magnitude.
-  'custom topology=cross_az: cas unavailable': 'acquire_bytes has no cas|insert key',
-};
+const EXCEPTIONS = {};
 
 test('test_trials_cover_enums_and_out_of_range_numbers', () => {
   assert.deepEqual(trials({ id: 'a', value_type: 'enum', enum: ['x', 'y'] }), ['x', 'y']);

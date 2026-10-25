@@ -204,6 +204,17 @@ class EvidenceTest(unittest.TestCase):
         pinned['evidence']['ref'] = 'src/Foo.cpp:12'
         self.assertEqual(cc.evidence(self.cov(), [pinned]), [])
 
+    def test_a_stated_whole_assumption_stands_in_for_the_holdout(self):
+        fit = self.row('fit', 'card.c1', {'x': [0, 1]}, ['m1'])
+        falsified = self.row('holdout', 'card.c2', {'x': [1, 2]}, ['m2'], status='consumed')
+        assumed = dict(self.coefficient, basis='assumed', validity={'x': [0, 1]},
+                       fit={'method': 'k: ASSUMPTION upper bound of the fit records; the small hold-out was 33 % lower'})
+        self.assertEqual(cc.evidence(self.cov(fit, falsified), [assumed]), [])
+        self.assertTrue(any('no done fit row' in p for p in cc.evidence(self.cov(falsified), [assumed])))
+        # Without the stated sentence the coefficient is an ordinary measured one and needs its hold-out.
+        unstated = dict(assumed, fit={'method': 'upper bound'})
+        self.assertTrue(any('no done holdout row' in p for p in cc.evidence(self.cov(fit, falsified), [unstated])))
+
     def test_holdout_disjoint_from_every_fit_validity_and_resolvable_ids(self):
         fit1 = self.row('fit', 'card.c1', {'x': [0, 1]}, ['m1'])
         fit2 = self.row('fit', 'card.c1', {'x': [5, 6]}, ['m3'])
@@ -743,6 +754,14 @@ class EvidenceScopeTest(unittest.TestCase):
                                {"id": "u", "tolerance": {}}])
         self.assertEqual(got, {"t": {"deletes": "ASSUMPTION, the largest record (273 kB fit: no carry)",
                                      "recovery": "ASSUMPTION 0, below the idle baseline", "other": None}})
+
+    def test_a_whole_assumed_scalar_backs_every_cell_that_reads_it(self):
+        got = cc.assumed_keys([{"id": "b", "kind": "scalar", "basis": "assumed",
+                                "fit": {"method": "b: ASSUMPTION upper bound; 33 % lower on small parts"}}])
+        self.assertEqual(got, {"b": {cc.WHOLE: "ASSUMPTION upper bound; 33 % lower on small parts"}})
+        for kind in ("coef", "input"):
+            node = {"ledger_rows": [{"expr": {"kind": kind, "id": "b", "dim": "B"}}]}
+            self.assertEqual(cc._assumed_hits(node, None, got), {("b", cc.WHOLE)})
 
     def test_a_non_constant_key_may_reach_an_assumed_one(self):
         expr = {"kind": "lookup", "table_id": "t", "keys": [{"kind": "input", "id": "op", "dim": "enum:k"}], "dim": "count"}

@@ -9177,6 +9177,38 @@
       "status": "ok"
     },
     {
+      "id": "cas_relink_bytes_per_part",
+      "block": "replication",
+      "label": "Interserver bytes a CAS relink sends per fetched part: the manifest, not the blobs",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "cas_relink_bytes_per_part",
+      "verified_range": {
+        "insert_rows": [
+          100000,
+          300000
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
+        "version": "0.3.0"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
+        "mapping": {
+          "cas_relink_bytes_per_part": "interserver bytes sent / DownloadPart rows"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "local_exec_requests",
       "block": "replication",
       "label": "Requests a follower sends per merge or mutation result it executes itself",

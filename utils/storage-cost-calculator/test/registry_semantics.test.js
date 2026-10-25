@@ -28,36 +28,51 @@ const copyWith = (mutate) => {
 
 // ---- N1: nearest-key substitution -----------------------------------------------------------------
 
-test('test_cas_cross_az_transfer_is_unavailable_without_a_cas_key', () => {
+test('test_cas_cross_az_transfer_prices_relink_bytes_per_part', () => {
   const t = LIVE.coefficients.find((c) => c.id === 'acquire_bytes');
-  assert.ok(!Object.prototype.hasOwnProperty.call(t.value.values, 'cas|insert'), 'the premise: no cas|insert measurement');
-  const { r, res } = runWith(LIVE, { topology: 'cross_az' });
+  assert.ok(!Object.prototype.hasOwnProperty.call(t.value.values, 'cas|insert'), 'the premise: no cas|insert ratio');
+  const relink = LIVE.coefficients.find((c) => c.id === 'cas_relink_bytes_per_part');
+  assert.equal(relink.basis, 'assumed');
+  const values = { topology: 'cross_az' };
+  const { r, res } = runWith(LIVE, values);
   assert.deepEqual(r.problems, []);
   const cas = res.variants.cas;
-  assert.equal(cas.state, 'unavailable');
-  assert.equal(cas.total, null);
-  assert.match(cas.reason, /cas\.inserts: transfer interserver: unavailable \(table acquire_bytes has no key cas\|insert\)/);
-  // Never s3plain's number: no substitution note anywhere.
+  assert.equal(cas.state, 'ok', cas.reason);
+  // The manifest per fetched part, never s3plain's full-part bytes.
   assert.ok(!cas.notes.some((n) => /measured for s3plain/.test(n.text)), JSON.stringify(cas.notes));
+  const row = cas.cells.inserts.rows.find((x) => x.row_type === 'transfer');
+  assert.ok(row.quantity > 0, String(row.quantity));
+  assert.ok(cas.cells.inserts.notes.some((n) => /^cas_relink_bytes_per_part: ASSUMPTION .*insert-1k.*Tier 2/.test(n.text)), JSON.stringify(cas.cells.inserts.notes));
+  // In one zone the row is zero, so the assumption prices nothing and is not noted.
+  const same = runWith(LIVE, { topology: 'same_az' }).res.variants.cas.cells.inserts.notes;
+  assert.ok(!same.some((n) => /ASSUMPTION/.test(n.text)), JSON.stringify(same));
+  // The row is linear in the relink bytes: doubling the coefficient doubles the transferred GiB.
+  const doubled = copyWith((j) => { j.coefficients.find((c) => c.id === 'cas_relink_bytes_per_part').value *= 2; });
+  const row2 = runWith(doubled, values).res.variants.cas.cells.inserts.rows.find((x) => x.row_type === 'transfer');
+  assert.ok(Math.abs(row2.quantity - 2 * row.quantity) <= 1e-9 * row2.quantity, `${row2.quantity} != 2 x ${row.quantity}`);
   for (const v of ['ebs', 's3', 's3plain']) assert.equal(res.variants[v].state, 'ok', v);
 });
 
+// The live registry substitutes no variant; drop s3's measured key and opt variant_id in to see the mechanism.
+const withoutS3Insert = (j) => { delete j.coefficients.find((c) => c.id === 'acquire_bytes').value.values['s3|insert']; };
+
 test('test_nearest_applies_only_to_enums_that_declare_it', () => {
-  // Opting variant_id in (which the registry must never do) shows the mechanism is the declaration alone.
-  const c = copyWith((j) => { j.registry.find((q) => q.id === 'variant_id').ui = { nearest: true }; });
-  const cas = runWith(c, { topology: 'cross_az' }).res.variants.cas;
-  assert.equal(cas.state, 'ok');
-  assert.ok(cas.notes.some((n) => /acquire_bytes: measured for s3plain\|insert; applied to cas\|insert/.test(n.text)));
+  const off = copyWith(withoutS3Insert);
+  assert.equal(runWith(off, { topology: 'cross_az' }).res.variants.s3.state, 'unavailable');
+  const c = copyWith((j) => { withoutS3Insert(j); j.registry.find((q) => q.id === 'variant_id').ui = { nearest: true }; });
+  const s3 = runWith(c, { topology: 'cross_az' }).res.variants.s3;
+  assert.equal(s3.state, 'ok');
+  assert.ok(s3.notes.some((n) => /acquire_bytes: measured for (ebs|s3plain)\|insert; applied to s3\|insert/.test(n.text)), JSON.stringify(s3.notes));
 });
 
 test('test_coverage_requires_reached_substitutions_to_be_declared', () => {
-  const c = copyWith((j) => { j.registry.find((q) => q.id === 'variant_id').ui = { nearest: true }; });
+  const c = copyWith((j) => { withoutS3Insert(j); j.registry.find((q) => q.id === 'variant_id').ui = { nearest: true }; });
   const scenario = { values: Object.assign({}, CUSTOM.values, { topology: 'cross_az' }), locks: [] };
   const rep = presets.coverageReport(c, scenario);
-  assert.ok(rep.problems.some((p) => /cas\.inserts: acquire_bytes measured for s3plain\|insert, applied to cas\|insert: nearest-key substitution not declared/.test(p)), rep.problems.join('\n'));
-  const declared = presets.coverageReport(c, Object.assign({}, scenario, { expected_extrapolated: { cas: ['acquire_bytes'] } }));
+  assert.ok(rep.problems.some((p) => /s3\.inserts: acquire_bytes measured for (ebs|s3plain)\|insert, applied to s3\|insert: nearest-key substitution not declared/.test(p)), rep.problems.join('\n'));
+  const declared = presets.coverageReport(c, Object.assign({}, scenario, { expected_extrapolated: { s3: ['acquire_bytes'] } }));
   assert.ok(!declared.problems.some((p) => /substitution/.test(p)), declared.problems.join('\n'));
-  assert.ok(declared.declared.some((d) => /acquire_bytes measured for s3plain\|insert.*\(declared\)/.test(d)));
+  assert.ok(declared.declared.some((d) => /acquire_bytes measured for (ebs|s3plain)\|insert.*\(declared\)/.test(d)));
 });
 
 test('test_contract_rejects_a_malformed_nearest_or_preset', () => {

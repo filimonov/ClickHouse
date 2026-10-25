@@ -469,67 +469,64 @@
        }
       },
       "then": {
-       "kind": "mul",
+       "kind": "div",
        "dim": "GiB",
        "a": {
         "kind": "mul",
-        "dim": "GiB",
+        "dim": "B",
         "a": {
-         "kind": "div",
-         "dim": "GiB/s",
-         "a": {
-          "kind": "input",
-          "id": "ingest_rate",
-          "dim": "GiB/day"
-         },
-         "b": {
-          "kind": "const",
-          "value": 86400,
-          "dim": "s/day"
-         },
-         "on_zero": "unavailable"
-        },
-        "b": {
-         "kind": "const",
-         "value": 2628000,
-         "dim": "s"
-        }
-       },
-       "b": {
-        "kind": "mul",
-        "dim": "count",
-        "a": {
-         "kind": "sub",
+         "kind": "mul",
          "dim": "count",
          "a": {
-          "kind": "input",
-          "id": "replicas",
-          "dim": "count"
+          "kind": "mul",
+          "dim": "count",
+          "a": {
+           "kind": "mul",
+           "dim": "1/s",
+           "a": {
+            "kind": "input",
+            "id": "insert_rate",
+            "dim": "1/s"
+           },
+           "b": {
+            "kind": "input",
+            "id": "parts_per_insert",
+            "dim": "1"
+           }
+          },
+          "b": {
+           "kind": "const",
+           "value": 2628000,
+           "dim": "s"
+          }
          },
          "b": {
-          "kind": "const",
-          "value": 1,
-          "dim": "count"
+          "kind": "sub",
+          "dim": "count",
+          "a": {
+           "kind": "input",
+           "id": "replicas",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "const",
+           "value": 1,
+           "dim": "count"
+          }
          }
         },
         "b": {
-         "kind": "lookup",
-         "dim": "1",
-         "table_id": "acquire_bytes",
-         "keys": [
-          {
-           "kind": "const",
-           "value": "cas",
-           "dim": "enum:variant_id"
-          },
-          {
-           "kind": "const",
-           "value": "insert",
-           "dim": "enum:result_type"
-          }
-         ]
+         "kind": "coef",
+         "id": "cas_relink_bytes_per_part",
+         "dim": "B"
         }
-       }
+       },
+       "b": {
+        "kind": "const",
+        "value": 1073741824,
+        "dim": "B/GiB"
+       },
+       "on_zero": "unavailable"
       },
       "else": {
        "kind": "const",
@@ -551,6 +548,11 @@
      "kind": "input",
      "id": "cas_hash_hit_fraction",
      "dim": "1"
+    },
+    {
+     "kind": "coef",
+     "id": "cas_relink_bytes_per_part",
+     "dim": "B"
     }
    ]
   },

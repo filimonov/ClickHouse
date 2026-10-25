@@ -201,13 +201,23 @@ def derived_refs(node, registry):
     return out
 
 
+# The key of a scalar coefficient whose whole value is assumed (`basis: assumed`).
+WHOLE = "*"
+
+
 def assumed_keys(coefficients):
     """Coefficient id -> {table key its owner assumed rather than measured (`tolerance.assumed_keys`): the assumption}.
 
     The assumption is the `<key>: ASSUMPTION ...` sentence of `fit.method`; None when the owner did not state one.
+    A scalar with `basis: assumed` is assumed whole (key `WHOLE`); its sentence starts with the coefficient id.
     """
     out = {}
     for c in coefficients or ():
+        if isinstance(c, dict) and c.get("kind") == "scalar" and c.get("basis") == "assumed":
+            method = str((c.get("fit") or {}).get("method") or "")
+            m = re.search(rf"(?:^|\.\s){re.escape(c['id'])}:\s*(ASSUMPTION\b.*?)(?=\.\s|\.?$)", method)
+            out.setdefault(c["id"], {})[WHOLE] = m.group(1) if m else None
+            continue
         if not (isinstance(c, dict) and isinstance(c.get("tolerance"), dict) and c["tolerance"].get("assumed_keys")):
             continue
         method = str((c.get("fit") or {}).get("method") or "")
@@ -240,6 +250,8 @@ def _assumed_hits(node, registry, assumed):
                     hits.add((n["table_id"], key))
             else:
                 hits |= {(n["table_id"], key) for key in assumed[n["table_id"]]}
+        if n.get("kind") in ("coef", "input") and WHOLE in assumed.get(n.get("id"), {}):
+            hits.add((n["id"], WHOLE))
         if n.get("kind") == "input" and n.get("id") in rules and n["id"] not in seen:
             seen.add(n["id"])
             todo.append(rules[n["id"]])
@@ -443,6 +455,11 @@ def evidence(coverage, coefficients, measurement_ids=None, identity=None):
             continue
         if artifacts.verified_range(c) is None:
             problems.append(f"{cid}: P1 measured coefficient needs a verified range")
+        if (assumed_keys([c]).get(cid) or {}).get(WHOLE):
+            # A stated assumption stands in for the hold-out: its value is a bound, not a fitted prediction.
+            if not any(r["role"] == "fit" and r["status"] in ("done", "consumed") for r in rows):
+                problems.append(f"{cid}: assumed coefficient has no done fit row")
+            continue
         fits = [r for r in rows if r["role"] == "fit" and r["status"] in ("done", "consumed")]
         holdouts = [r for r in rows if r["role"] == "holdout" and r["status"] == "done"]
         if not fits:

@@ -340,6 +340,25 @@
 
   // Derived coefficients and tables a cell reads whose verified range does not hold the current values: exact by
   // construction, so only an informational note.
+  // A coefficient with `basis: assumed` states its assumption as `<id>: ASSUMPTION ...` in `fit.method`; a cell that
+  // prices a non-zero row with it carries that sentence as a note.
+  function assumedNotes(contract, cell, rows) {
+    if (!cell) return [];
+    const out = [];
+    for (const c of contract.coefficients) {
+      if (model().basisOf(c) !== 'assumed') continue;
+      const m = String((c.fit && c.fit.method) || '').match(new RegExp(`^${c.id}: (ASSUMPTION\\b.*)$`));
+      if (!m) continue;
+      const used = cell.ledger_rows.some((r, i) => {
+        let reads = false;
+        walk(r.expr, (n) => { if (n.kind === 'coef' && n.id === c.id) reads = true; });
+        return reads && rows[i] && rows[i].state === 'ok' && rows[i].quantity > 0;
+      });
+      if (used) out.push(`${c.id}: ${m[1]}`);
+    }
+    return out;
+  }
+
   function derivedOutside(contract, cell, ctx) {
     if (!cell) return [];
     const ids = new Set();
@@ -655,6 +674,7 @@
       for (const [op, c] of Object.entries(ev.cells)) {
         for (const s of substitutions(c.trace)) c.notes.push({ text: `${s.table_id}: measured for ${s.measured}; applied to ${s.requested}`, value: null, state: 'ok', substitution: s });
         for (const m of derivedOutside(contract, (contract.formulas[v] || {})[op], ctx)) c.notes.push({ text: m, value: null, state: 'ok', verified_only: true });
+        for (const m of assumedNotes(contract, (contract.formulas[v] || {})[op], c.rows)) c.notes.push({ text: m, value: null, state: 'ok', assumption: true });
         // A zero interserver row in one zone is a priced fact, not a missing number: the page says why it is zero.
         if (ctx.inputs.get('topology') === 'same_az' && ctx.inputs.get('replicas') > 1 && c.rows.some((r) => r.row_type === 'transfer' && r.op_kind === 'interserver' && r.state === 'ok' && r.quantity === 0)) {
           out.notes.push({ kind: 'text', operation: op, text: SAME_AZ_NOTE });

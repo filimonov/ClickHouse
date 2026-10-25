@@ -477,7 +477,7 @@ def assumption_text(assumptions):
     cells = {}
     for v, op, fam, coef, key, note in assumptions:
         cells.setdefault((coef, key, note), []).append(f"{v}/{op}/{fam}")
-    return "".join(f" Assumption {coef}[{key}] backs {', '.join(sorted(set(where)))}: {note}."
+    return "".join(f" Assumption {coef}{'' if key == closure_check.WHOLE else f'[{key}]'} backs {', '.join(sorted(set(where)))}: {note}."
                    for (coef, key, note), where in sorted(cells.items()))
 
 

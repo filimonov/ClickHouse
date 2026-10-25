@@ -6085,6 +6085,121 @@
       "status": "done"
     },
     {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.insert",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T115147Z/cas/replication-fetch/insert/k1",
+        "cost-20261024T115147Z/cas/replication-fetch/insert/k2",
+        "cost-20261024T115147Z/cas/replication-fetch/insert/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.insert-wide",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          300000,
+          300000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k1",
+        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k2",
+        "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.merge",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          200000,
+          200000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T115147Z/cas/replication-fetch/merge/k1",
+        "cost-20261024T115147Z/cas/replication-fetch/merge/k2",
+        "cost-20261024T115147Z/cas/replication-fetch/merge/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.mutation",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          100000,
+          100000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "0bc1e557850",
+      "measurement_ids": [
+        "cost-20261024T115147Z/cas/replication-fetch/mutation/k1",
+        "cost-20261024T115147Z/cas/replication-fetch/mutation/k2",
+        "cost-20261024T115147Z/cas/replication-fetch/mutation/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.insert-3",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          150000,
+          150000
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "849c483095f",
+      "measurement_ids": [
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k1",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k2",
+        "cost-20261024T154049Z/cas/replication-fetch/insert-3/k3"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_relink_bytes_per_part",
+      "experiment_id": "replication-fetch.insert-1k",
+      "policy": "cas",
+      "span": {
+        "part_rows": [
+          1000,
+          1000
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "9b032509bbb",
+      "measurement_ids": [
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k1",
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k2",
+        "cost-20261024T164439Z/cas/replication-fetch/insert-1k/k3"
+      ],
+      "status": "consumed",
+      "note": "per-part bytes stated at 9b032509bbb before this run; 1 000-row parts sent 13 030 B, 33 % below the fit"
+    },
+    {
       "coefficient": "local_exec_requests",
       "experiment_id": "replication-local.merge-40k",
       "policy": "cas",
