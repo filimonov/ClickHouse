@@ -126,16 +126,30 @@
   }
 
   // Words for a billing rule id of a preset; an unknown rule throws.
-  // AWS names its request classes by their leading operations; the full op list stays in the billing contract.
-  const REQUEST_LABELS = { put_copy_post_list: 'PUT, COPY, POST and LIST requests', get_and_other: 'GET and other requests', delete_cancel: 'DELETE and cancel requests' };
-  const BLOCK_LABELS = { block_capacity: 'gp3 capacity', block_iops: 'gp3 IOPS above baseline', block_mibps: 'gp3 throughput above baseline' };
+  // Request classes are named as the provider's price page names them; the full op list stays in the billing contract.
+  const REQUEST_LABELS = {
+    put_copy_post_list: 'PUT, COPY, POST and LIST requests', get_and_other: 'GET and other requests', delete_cancel: 'DELETE and cancel requests',
+    class_a: 'Class A operations', class_b: 'Class B operations', free_ops: 'Free operations',
+    write_ops: 'Write operations', list_create_container_ops: 'List and create container operations', read_ops: 'Read operations',
+    other_ops: 'All other operations', delete_free: 'Delete operations', no_request: 'S3 calls with no Blob Storage request',
+  };
+  const BLOCK_SUFFIX = { block_capacity: 'capacity', block_iops: 'IOPS above baseline', block_mibps: 'throughput above baseline' };
+  // The billing contract keeps AWS rule ids (`block.gp3`, `ec2_*` routes) for every provider; these are the words a
+  // non-AWS preset shows instead. `custom` copies AWS and keeps its words.
+  const PROVIDER_WORDS = {
+    gcs: { storage: 'GCS storage', block: 'Hyperdisk Balanced', ec2_s3_same_region: 'Transfer VM to GCS in the same region', ec2_ec2_cross_az: 'Transfer VM to VM across zones' },
+    azure: { storage: 'Blob storage', block: 'Premium SSD v2', ec2_s3_same_region: 'Transfer VM to Blob storage in the same region', ec2_ec2_cross_az: 'Transfer VM to VM across availability zones' },
+  };
+  const words = (preset) => PROVIDER_WORDS[preset.id] || {};
+  function transferLabel(ruleId, preset) {
+    const w = words(preset)[ruleId] || TRANSFER_LABELS[ruleId];
+    if (!w) throw new Error(`transfer rule ${ruleId} has no label in presets.js`);
+    return w;
+  }
   function ruleLabel(ruleId, preset) {
-    if (ruleId === 'storage') return 'S3 storage';
-    if (BLOCK_LABELS[ruleId]) return BLOCK_LABELS[ruleId];
-    if ((preset.transfer || []).some((t) => t.id === ruleId)) {
-      if (!TRANSFER_LABELS[ruleId]) throw new Error(`transfer rule ${ruleId} has no label in presets.js`);
-      return TRANSFER_LABELS[ruleId];
-    }
+    if (ruleId === 'storage') return words(preset).storage || 'S3 storage';
+    if (BLOCK_SUFFIX[ruleId]) return `${words(preset).block || 'gp3'} ${BLOCK_SUFFIX[ruleId]}`;
+    if ((preset.transfer || []).some((t) => t.id === ruleId)) return transferLabel(ruleId, preset);
     if ((preset.request_classes || []).some((c) => c.id === ruleId)) {
       if (!REQUEST_LABELS[ruleId]) throw new Error(`request class ${ruleId} has no label in presets.js`);
       return REQUEST_LABELS[ruleId];
@@ -147,8 +161,8 @@
   // `custom` is an editable copy of `base`.
   const PRICES = {
     'aws-us-east-1': { label: 'AWS us-east-1', source: 'contract', structure_only: false },
-    gcs: { label: 'GCS', source: 'contract', structure_only: true, note: 'values not provided' },
-    azure: { label: 'Azure', source: 'contract', structure_only: true, note: 'values not provided' },
+    gcs: { label: 'GCS us-central1', source: 'contract', structure_only: false },
+    azure: { label: 'Azure East US', source: 'contract', structure_only: false },
     custom: { label: 'Custom', source: 'custom', base: 'aws-us-east-1', structure_only: false },
   };
 
@@ -181,15 +195,12 @@
     const out = [];
     const add = (f) => out.push(Object.assign(f, { unit: `${preset.currency} ${f.per}` }));
     for (const c of preset.request_classes) add({ path: `request_classes.${c.id}.price_per_1000`, label: ruleLabel(c.id, preset), per: 'per 1,000 requests', value: c.price_per_1000, source_url: c.source_url });
-    preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: t.up_to_gb === null || t.up_to_gb === undefined ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
-    for (const t of preset.transfer) {
-      if (!Object.prototype.hasOwnProperty.call(TRANSFER_LABELS, t.id)) throw new Error(`transfer rule ${t.id} has no label in presets.js`);
-      add({ path: `transfer.${t.id}.price_per_gb`, label: TRANSFER_LABELS[t.id], per: 'per GB', value: t.price_per_gb, source_url: t.source_url });
-    }
+    preset.storage.tiers.forEach((t, i) => add({ path: `storage.tiers.${i}.price_per_gb_month`, label: preset.storage.tiers.length === 1 ? 'Storage' : t.up_to_gb === null || t.up_to_gb === undefined ? 'Storage above the last tier' : `Storage up to ${t.up_to_gb.toLocaleString('en-US')} GB`, per: 'per GB-month', value: t.price_per_gb_month, source_url: preset.storage.source_url }));
+    for (const t of preset.transfer) add({ path: `transfer.${t.id}.price_per_gb`, label: transferLabel(t.id, preset), per: 'per GB', value: t.price_per_gb, source_url: t.source_url });
     const g = preset.block.gp3;
-    add({ path: 'block.gp3.price_per_gib_month', label: 'gp3 capacity', per: 'per GiB-month', value: g.price_per_gib_month, source_url: g.source_url });
-    add({ path: 'block.gp3.iops_price', label: 'gp3 IOPS above baseline', per: 'per IOPS-month', value: g.iops_price, source_url: g.source_url });
-    add({ path: 'block.gp3.mibps_price', label: 'gp3 throughput above baseline', per: 'per MiB/s-month', value: g.mibps_price, source_url: g.source_url });
+    add({ path: 'block.gp3.price_per_gib_month', label: ruleLabel('block_capacity', preset), per: 'per GiB-month', value: g.price_per_gib_month, source_url: g.source_url });
+    add({ path: 'block.gp3.iops_price', label: ruleLabel('block_iops', preset), per: 'per IOPS-month', value: g.iops_price, source_url: g.source_url });
+    add({ path: 'block.gp3.mibps_price', label: ruleLabel('block_mibps', preset), per: 'per MiB/s-month', value: g.mibps_price, source_url: g.source_url });
     return out;
   }
 
