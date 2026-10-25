@@ -658,6 +658,8 @@
     return {};
   }
 
+  const pricesSomething = (c) => (typeof c.money === 'number' ? c.money !== 0 : (c.rows || []).some((r) => r.state === 'ok' && r.quantity !== 0));
+
   // Display arithmetic only (spec §4.5): a delta is the difference of two contract totals already computed.
   function delta(a, ref) {
     if (!a || !ref || a.state !== 'ok' || ref.state !== 'ok' || a.total === null || ref.total === null) return null;
@@ -700,8 +702,13 @@
       } else if (!pricesMissing) {
         const billed = billVariantResult(out, ev, preset, opts, ctx.inputs);
         if (billed.problem) { out.state = 'unavailable'; out.reason = `${v}: ${billed.problem}`; }
+      }
+      if (out.state === 'ok') {
+        // A cell that prices nothing extrapolates nothing: the flag needs a non-zero amount, or without prices a
+        // non-zero quantity. The column is extrapolated only through such cells.
+        for (const c of Object.values(out.cells)) if (c.extrapolated && !pricesSomething(c)) c.extrapolated = false;
         // Block lines are multiplied by the replica count, so a count outside its measured range extrapolates them.
-        else if (out.provisioning && ctx.extrapolatedInputs.has('replicas')) out.extrapolated = true;
+        out.extrapolated = Object.values(out.cells).some((c) => c.extrapolated) || (!!out.provisioning && ctx.extrapolatedInputs.has('replicas'));
       }
       for (const c of Object.values(out.cells)) delete c.ev;
       variants[v] = out;

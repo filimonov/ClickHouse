@@ -256,8 +256,14 @@
   // With `split`, the transfer of a cell is shown in the Replica transfer row and is judged there. The pipeline flag is
   // per cell; when its rows say which row was extrapolated, only rows of the shown part count.
   const rowExtrapolated = (r) => !!(r && r.trace && r.trace.extrapolated);
-  function cellExtrapolated(contract, v, op, c, assumed, split) {
-    if (!c) return false;
+  // A cell that shows $0.00 prices nothing, so nothing in it is extrapolated. Without prices, a non-zero quantity counts.
+  const showsMoney = (m) => Math.round(Math.abs(m) * 100) !== 0;
+  function shownAmount(c, split, preset) {
+    if (typeof c.money !== 'number') return (c.rows || []).some((r) => r.state === 'ok' && r.quantity !== 0);
+    return showsMoney(split ? c.money - transferMoney(c, preset) : c.money);
+  }
+  function cellExtrapolated(contract, v, op, c, assumed, split, preset) {
+    if (!c || !shownAmount(c, split, preset)) return false;
     if (c.extrapolated) {
       const rows = c.rows || [];
       if (!split || !rows.some(rowExtrapolated)) return true;
@@ -267,12 +273,18 @@
   }
   const transferExtrapolated = (vr) => Object.values(vr.cells || {}).some((c) => (c.rows || []).some((r) => isTransferRow(r) && r.quantity > 0 && rowExtrapolated(r)));
   const transferAssumed = (contract, v, vr, assumed) => [...new Set(Object.entries(vr.cells || {}).flatMap(([op, c]) => assumedUsed(contract, v, op, c, assumed, 'transfer')))];
+  const transferRowExtrapolated = (contract, v, vr, assumed, preset) => showsMoney(Object.values(vr.cells || {}).reduce((s, c) => s + transferMoney(c, preset), 0))
+    && (transferAssumed(contract, v, vr, assumed).length > 0 || transferExtrapolated(vr));
   // Table cells of a column that carry the extrapolated badge; 'transfer' is the Replica transfer row.
-  function extrapolatedCells(contract, v, vr, split) {
+  function extrapolatedCells(contract, v, vr, split, preset) {
     const assumed = assumedCoefs(contract);
-    const ops = Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed, split)).map(([op]) => op);
-    return split && (transferAssumed(contract, v, vr, assumed).length || transferExtrapolated(vr)) ? [...ops, 'transfer'] : ops;
+    const ops = Object.entries(vr.cells || {}).filter(([op, c]) => cellExtrapolated(contract, v, op, c, assumed, split, preset)).map(([op]) => op);
+    return split && transferRowExtrapolated(contract, v, vr, assumed, preset) ? [...ops, 'transfer'] : ops;
   }
+  const columnExtrapolated = (result, contract, v, split, preset) => {
+    const vr = result.variants[v];
+    return !!vr && vr.state === 'ok' && (!!vr.extrapolated || (!!contract && extrapolatedCells(contract, v, vr, split, preset).length > 0));
+  };
 
   // Money of the transfer lines a cell was allocated (cross-AZ replication); 0 without prices.
   function transferMoney(c, preset) {
@@ -285,13 +297,15 @@
       && Object.values(result.variants[v].cells || {}).some((c) => transferMoney(c, preset) > 0));
   }
 
-  // The cheapest badge needs two priced columns to compare; an extrapolated winner says so.
-  function cheapestOf(result, contract, split) {
+  // The cheapest badge needs two priced columns to compare; an extrapolated winner says so. `short` is the table
+  // header's text, which shows the extrapolated pill beside it.
+  function cheapestOf(result, contract, split, preset) {
     const priced = Object.keys(result.variants).filter((v) => result.variants[v].state === 'ok' && typeof result.variants[v].total === 'number');
     const v = result.cheapest;
-    if (!v || priced.length < 2) return { variant: null, text: null, priced: priced.length };
-    const ex = result.variants[v].extrapolated || (contract && extrapolatedCells(contract, v, result.variants[v], split).length > 0);
-    return { variant: v, text: `cheapest of ${priced.length}${ex ? ', extrapolated' : ''}`, priced: priced.length };
+    if (!v || priced.length < 2) return { variant: null, text: null, short: null, extrapolated: false, priced: priced.length };
+    const ex = columnExtrapolated(result, contract, v, split, preset);
+    const short = `cheapest of ${priced.length}`;
+    return { variant: v, text: `${short}${ex ? ', extrapolated' : ''}`, short, extrapolated: ex, priced: priced.length };
   }
 
   function barSegments(vr, preset) {
@@ -304,27 +318,29 @@
     return [...by].filter(([, m]) => m > 0).map(([cls, m]) => ({ class: cls, money: m, money_text: fmtMoney(m, preset.currency), label: UNIT_CLASS_LABELS[cls], fraction: m / vr.total }));
   }
 
-  function deltaTexts(result, v, currency) {
+  // `refExtrapolated(ref)`: the reference column's own flag. The card's badge already speaks for its own column, so
+  // the line names only an extrapolated reference, in words.
+  function deltaTexts(result, v, currency, refExtrapolated) {
     const out = [];
     for (const [key, ref] of [['vs_ebs', 'ebs'], ['vs_s3', 's3']]) {
       if (v === ref || !result.variants[ref]) continue;
       const d = (result.deltas[v] || {})[key];
-      const name = `vs ${variantLabel(ref)}`;
-      // The flag travels beside the text for the page's badge; a delta is extrapolated when either total is.
-      if (d) out.push({ text: `${name}: ${fmtMoney(d.value, currency, { sign: true })}`, extrapolated: !!d.extrapolated });
+      const ex = !!d && refExtrapolated(ref);
+      const name = `vs ${variantLabel(ref)}${ex ? ' (extrapolated)' : ''}`;
+      if (d) out.push({ text: `${name}: ${fmtMoney(d.value, currency, { sign: true })}`, extrapolated: ex });
       else out.push({ text: `${name}: not comparable (${variantLabel(ref)} ${result.variants[ref].state === 'ok' ? 'has no total' : cellText(result.variants[ref].state)})`, extrapolated: false });
     }
     return out;
   }
 
   function buildCards(result, contract, preset, pageState, inputs, split) {
-    const best = cheapestOf(result, contract, split);
+    const best = cheapestOf(result, contract, split, preset);
     return contract.variants.map((v) => {
       const vr = result.variants[v];
       if (!vr) throw new Error(`result has no variant ${v}`);
       if (result.cheapest === v && vr.state !== 'ok') throw new Error(`result marks ${v} cheapest in state ${vr.state}`);
       const cheapest = best.variant === v && pageState === 'ok';
-      const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr, split) : [];
+      const exCells = vr.state === 'ok' ? extrapolatedCells(contract, v, vr, split, preset) : [];
       const card = { variant: v, label: variantLabel(v), state: vr.state, reason: cardSentence(v, vr, contract, inputs), extrapolated: !!vr.extrapolated || exCells.length > 0,
         extrapolated_cells: exCells.length, extrapolated_text: exCells.length ? `extrapolated: ${exCells.length} ${exCells.length === 1 ? 'cell' : 'cells'}` : vr.extrapolated ? 'extrapolated' : null, cheapest,
         cheapest_text: cheapest ? best.text : null, total_text: null, state_text: null, delta_texts: [], deltas: [], bar_segments: [] };
@@ -339,7 +355,7 @@
       }
       card.total_text = fmtMoney(vr.total, preset.currency);
       card.state_text = cheapest ? best.text : null;
-      card.deltas = deltaTexts(result, v, preset.currency);
+      card.deltas = deltaTexts(result, v, preset.currency, (ref) => columnExtrapolated(result, contract, ref, split, preset));
       card.delta_texts = card.deltas.map((d) => d.text);
       card.bar_segments = barSegments(vr, preset);
       card.sizing = buildSizing(v, vr, preset, inputs ? Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f])) : null, pageState);
@@ -402,7 +418,7 @@
         // Under `split` the cell shows its money without the transfer, which the Replica transfer row carries.
         const own = split ? c.lines.filter((l) => unitClassOf(l.rule_id, preset) !== 'transfer').reduce((s, l) => s + l.money, 0) : c.money;
         const text = pageState === 'prices_missing' ? quantitySummary(c, rowUnits(contract, v, op), problems) : fmtMoney(own, preset.currency);
-        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed, split), clickable: true, money: own };
+        return { variant: v, operation: op, text, state: 'ok', extrapolated: cellExtrapolated(contract, v, op, c, assumed, split, preset), clickable: true, money: own };
       });
       // "no cold reads in this workload" applies to the whole row: said once, beside the row label.
       const zero = pageState === 'ok' && cells.some((c) => c.state === 'ok' && c.money === 0);
@@ -418,12 +434,13 @@
         const vr = result.variants[v];
         if (vr.state !== 'ok') return { variant: v, operation: 'transfer', text: cellText(vr.state), state: vr.state, extrapolated: false, clickable: false, info: false, notes: [] };
         const m = Object.values(vr.cells || {}).reduce((s, c) => s + transferMoney(c, preset), 0);
-        return { variant: v, operation: 'transfer', text: fmtMoney(m, preset.currency), state: 'ok', extrapolated: transferAssumed(contract, v, vr, assumed).length > 0 || transferExtrapolated(vr), clickable: false, info: true, notes: [] };
+        return { variant: v, operation: 'transfer', text: fmtMoney(m, preset.currency), state: 'ok', extrapolated: transferRowExtrapolated(contract, v, vr, assumed, preset), clickable: false, info: true, notes: [] };
       });
       rows.push({ operation: 'transfer', label: OPERATION_LABELS.transfer, cells, note: null });
     }
-    const best = cheapestOf(result, contract, split);
-    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: pageState === 'ok' && best.variant === v, cheapest_text: pageState === 'ok' && best.variant === v ? best.text : null })), rows,
+    const best = cheapestOf(result, contract, split, preset);
+    const top = (v) => pageState === 'ok' && best.variant === v;
+    return { columns: contract.variants.map((v) => ({ variant: v, label: variantLabel(v), cheapest: top(v), cheapest_text: top(v) ? best.short : null, extrapolated: top(v) && best.extrapolated })), rows,
       column_notes: pageState === 'cannot_reproduce' ? {} : columnNotes(result, contract, preset, fields, pageState),
       column_lines: pageState === 'cannot_reproduce' ? {} : columnLines(result, contract, preset, fields, pageState) };
   }
@@ -1021,7 +1038,10 @@
     if (open.kind === 'column') {
       const fields = Object.fromEntries(inputs.blocks.flatMap((b) => b.fields).map((f) => [f.id, f]));
       const sz = buildSizing(open.variant, vr, preset, fields, result.page_state);
-      const lines = [...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
+      // The cheapest card's badge reads "extrapolated" without a count; its (i) opens this dialog, which names the cells.
+      const exOps = vr.state === 'ok' && result.page_state === 'ok' ? extrapolatedCells(contract, open.variant, vr, !!x.split, preset) : [];
+      const exLine = exOps.length ? [`Extrapolated: ${exOps.length} ${exOps.length === 1 ? 'cell' : 'cells'} (${exOps.map((o) => OPERATION_LABELS[o] || o).join(', ')}).`] : [];
+      const lines = [...exLine, ...(sz ? sz.lines : []), ...(sz && sz.instance_text ? [sz.instance_text] : []),
         ...(columnNotes(result, contract, preset, fields, result.page_state)[open.variant] || []).filter((n) => n.kind !== 'sizing').map((n) => n.text),
         ...(vr.state === 'ok' ? [] : segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`))];
       return { kind: 'column', id: open.variant, title: `${variantLabel(open.variant)} notes`, name: null, description: vr.state === 'ok' ? null : cardSentence(open.variant, vr, contract, inputs),
@@ -1072,7 +1092,7 @@
       source.push(a.source);
     }
     // The pipeline's own flag, without assumptions (said above) and, under `split`, without the transfer rows.
-    const ex = cellExtrapolated(contract, open.variant, op, cell, new Set(), split);
+    const ex = cellExtrapolated(contract, open.variant, op, cell, new Set(), split, preset);
     if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
     for (const n of vr.notes || []) if (n.kind === 'text' && n.operation === op) lines.push(n.text);
     for (const s of segs.filter((g) => g.operation === op)) source.push(cite(s.text, commit));

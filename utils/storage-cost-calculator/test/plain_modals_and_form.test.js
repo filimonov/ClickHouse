@@ -40,7 +40,7 @@ test('test_cheapest_badge_is_short_and_wraps', () => {
   const { vm } = page('logs', CROSS);
   const best = vm.cards.find((c) => c.cheapest);
   assert.match(best.cheapest_text, /^cheapest of \d(, extrapolated)?$/);
-  assert.match(CSS, /\.card-head \.badge, \.breakdown thead \.badge \{[^}]*white-space: normal/);
+  assert.match(CSS, /\.card-head \.badge \{[^}]*white-space: normal/);
 });
 
 test('test_replica_transfer_row_reconciles_with_the_cards', () => {

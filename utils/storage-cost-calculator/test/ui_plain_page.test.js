@@ -137,9 +137,13 @@ test('test_input_dialog_has_no_kind_or_generic_evidence', () => {
 });
 
 test('test_extrapolated_cheapest_badge_counts_the_priced_columns', () => {
-  const { vm } = page('metrics');
+  // Across zones the Logs winner, CAS, prices its replica transfer from an assumption.
+  const { vm } = page('logs', { topology: 'cross_az' });
   const best = vm.cards.find((c) => c.cheapest);
-  assert.ok(best && best.extrapolated, 'metrics: the cheapest column is extrapolated');
+  assert.ok(best && best.extrapolated, 'cross-AZ logs: the cheapest column is extrapolated');
   assert.equal(best.cheapest_text, 'cheapest of 4, extrapolated');
-  assert.equal(vm.table.columns.find((c) => c.cheapest).cheapest_text, best.cheapest_text);
+  // The table header shows the short form with a separate extrapolated pill.
+  const col = vm.table.columns.find((c) => c.cheapest);
+  assert.equal(col.cheapest_text, 'cheapest of 4');
+  assert.equal(col.extrapolated, true);
 });

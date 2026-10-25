@@ -79,12 +79,12 @@ test('test_card_text_for_each_state', () => {
   assert.ok(card(cut, 'cas').delta_texts.includes('vs EBS: not comparable (EBS unsupported)'));
   // An extrapolated total keeps its number and says "extrapolated" on the card, its deltas and its cells.
   const ex = view({ inserts_per_month: 60000 }).vm;
-  // The flag is carried by `extrapolated` (the page's badge), not baked into the texts.
+  // Cards and cells carry the flag in `extrapolated` (the page's badge); a delta names an extrapolated reference in words.
   assert.equal(card(ex, 's3').state_text, null);
   assert.equal(card(ex, 's3').extrapolated, true);
   assert.ok(card(ex, 's3').total_text.startsWith('$'));
   const vsS3 = card(ex, 'cas').deltas.find((d) => d.text.startsWith('vs S3'));
-  assert.match(vsS3.text, /^vs S3: [−+]\$[\d,.]+$/);
+  assert.match(vsS3.text, /^vs S3 \(extrapolated\): [−+]\$[\d,.]+$/);
   assert.equal(vsS3.extrapolated, true, 'a delta against an extrapolated reference is flagged');
   assert.match(cell(ex, 'inserts', 's3').text, /^\$[\d,.]+$/);
   assert.equal(cell(ex, 'inserts', 's3').extrapolated, true);

@@ -515,7 +515,14 @@ test('test_extrapolation_survives_derivations_and_table_validity', () => {
     t.status = 'ok';
     t.validity = { mutations_per_month: [0, 10] };
   });
-  const out = run({ mutations_per_month: 20 }, viaTable).variants.ebs;
+  // Within the gp3 baseline the mutation IOPS cost $0: the row is out of range, but a $0 cell extrapolates nothing.
+  const free = run({ mutations_per_month: 20 }, viaTable).variants.ebs;
+  assert.equal(free.cells.mutations.rows[0].trace.extrapolated, true);
+  assert.equal(free.cells.mutations.money, 0);
+  assert.equal(free.cells.mutations.extrapolated, false);
+  assert.equal(free.extrapolated, false);
+  const out = run({ mutations_per_month: 20000 }, viaTable).variants.ebs;
+  assert.ok(out.cells.mutations.money > 0);
   assert.equal(out.cells.mutations.extrapolated, true);
   assert.equal(out.extrapolated, true);
   assert.equal(run({ mutations_per_month: 5 }, viaTable).variants.ebs.extrapolated, false);

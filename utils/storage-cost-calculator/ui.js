@@ -258,15 +258,18 @@
   function renderCard(c, vm) {
     known(VARIANT_STATES, c.state, 'variant state');
     if (c.cheapest && c.state !== 'ok') throw new Error(`ui: ${c.variant} is marked cheapest in state ${c.state}`);
-    const exBadge = c.extrapolated ? badge(c.extrapolated_text || 'extrapolated', 'warn') : '';
-    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${c.cheapest ? badge(c.cheapest_text, 'ok') : ''}${exBadge}</header>`;
+    // One badge per card: the cheapest badge already says "extrapolated", and its (i) names the cells.
+    const exInfo = c.extrapolated_cells ? infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} extrapolated cells`) : '';
+    const mark = c.cheapest ? `<span class="badge-group">${badge(c.cheapest_text, 'ok')}${c.extrapolated ? exInfo : ''}</span>` : c.extrapolated ? badge(c.extrapolated_text || 'extrapolated', 'warn') : '';
+    const head = `<header class="card-head"><h3>${esc(c.label)}</h3>${mark}</header>`;
     if (c.state !== 'ok') {
       const why = `<button type="button" class="btn btn-small" data-action="info" data-info-kind="variant" data-variant="${esc(c.variant)}">Why</button>`;
       return `<article class="card is-off" data-variant="${esc(c.variant)}" data-state="${esc(c.state)}">${head}`
         + `<p class="card-state">${esc(c.state_text)}</p>${c.reason ? `<p class="card-reason">${esc(c.reason)}.</p>` : ''}${why}</article>`;
     }
     const total = c.total_text === null ? '' : `<p class="card-total" data-kind="money">${esc(c.total_text)}</p><p class="card-per">per month</p>`;
-    const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}${extrapolatedBadge(d.extrapolated)}</li>`), 'card-deltas');
+    // A delta text names an extrapolated reference itself; a pill there would read as this card's own flag.
+    const deltas = list(c.deltas.map((d) => `<li>${esc(d.text)}</li>`), 'card-deltas');
     // With a total, "comparable" says nothing to the reader: the badges and deltas carry the comparison.
     const stateLine = c.total_text === null ? `<p class="card-state">${esc(c.state_text)}</p>` : '';
     const sizing = c.sizing ? `<p class="card-sizing">${esc(`Volumes: ${c.sizing.short}`)}${infoButton({ 'info-kind': 'column', variant: c.variant }, `${c.label} sizing`)}</p>` : '';
@@ -293,7 +296,9 @@
     if (vm.page_state === 'cannot_reproduce') return '';
     const t = vm.table;
     if (!t.rows.length) return '<section class="section"><h2>Breakdown</h2><p class="mute">No workload type has a model yet, so there is nothing to break down.</p></section>';
-    const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}${c.cheapest ? ` ${badge(c.cheapest_text, 'ok')}` : ''}</th>`).join('');
+    // Short pills on one line keep the header row the same height with or without the extrapolated pill.
+    const head = t.columns.map((c) => `<th scope="col" data-variant="${esc(c.variant)}">${esc(c.label)}`
+      + `${c.cheapest ? `<span class="th-badges">${badge(c.cheapest_text, 'ok')}${extrapolatedBadge(c.extrapolated)}</span>` : ''}</th>`).join('');
     const colLabel = new Map(t.columns.map((c) => [c.variant, c.label]));
     const body = t.rows.map((r) => `<tr data-operation="${esc(r.operation)}"><th scope="row">${esc(r.label)}${r.note ? `<span class="row-note">${esc(r.note)}</span>` : ''}</th>${r.cells.map((c) => {
       known(CELL_STATES, c.state, 'cell state');

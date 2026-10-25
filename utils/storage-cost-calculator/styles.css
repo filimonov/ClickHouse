@@ -108,7 +108,12 @@ select:disabled { opacity: 0.6; cursor: not-allowed; }
 .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .card-head h3 { margin: 0 auto 0 0; }
 /* A badge longer than the card wraps inside it. */
-.card-head .badge, .breakdown thead .badge { white-space: normal; max-width: 100%; }
+.card-head .badge { white-space: normal; max-width: 100%; }
+.card-head .badge-group { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+/* Header pills are short and stay on one line, so the extrapolated pill does not make the header row taller. */
+.breakdown thead .th-badges { display: block; white-space: nowrap; margin-top: 2px; }
+.breakdown thead .th-badges .badge { font-size: 11px; padding: 0 6px; }
+.breakdown thead .th-badges .badge + .badge { margin-left: 4px; }
 .card-total { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; margin: 8px 0 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .card-per { color: var(--mute); font-size: 13px; margin: 0; }
 .card-state { font-weight: 600; margin-top: 4px; }
@@ -278,7 +283,7 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 @media (min-width: 901px) { .breakdown tbody th[scope="row"] { min-width: 150px; } }
 .evidence-columns td { text-align: right; }
 .notes-row th, .notes-row td { vertical-align: top; }
-.col-note { font-size: 12px; color: var(--mute); }
+.col-note { color: var(--mute); }
 .card-sizing { font-size: 12px; color: var(--mute); margin: 8px 0 0; }
 .scenario-short .info-btn, .evidence-statement .info-btn, td .info-btn, .card-sizing .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .quick { grid-column: 1 / -1; display: flex; gap: 4px; }
@@ -345,9 +350,4 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
   .panel-inputs .settings-grid .control input, .panel-inputs .settings-grid .field-control > select { padding-top: 1px; padding-bottom: 1px; }
   .panel-inputs .quick { flex-wrap: nowrap; }
   .panel-inputs .quick .pill-small { white-space: nowrap; padding: 0 6px; font-size: 11px; line-height: 18px; }
-}
-/* Wide screens: each Notes cell is one line; narrower tables let it wrap rather than scroll sideways. */
-@media (min-width: 1400px) {
-  .col-note { white-space: nowrap; }
-  .notes-row td { padding-left: 4px; padding-right: 4px; }
 }
