@@ -201,12 +201,12 @@ tr[data-exact="true"] td:last-child { color: var(--ok); }
   .top { flex-wrap: wrap; }
 }
 @media (max-width: 600px) {
-  /* The breakdown stacks: one block per workload type, each cell labelled with its column. */
-  .breakdown thead { display: none; }
   /* Phone: the form first, so the inputs are on the first screen; then the cards, then the breakdown. */
   #presets { order: -3; }
   #inputs { order: -2; }
   #cards { order: -1; }
+  /* The breakdown stacks: one block per workload type, each cell labelled with its column. */
+  .breakdown thead { display: none; }
   .breakdown, .breakdown tbody, .breakdown tr, .breakdown th, .breakdown td { display: block; width: 100%; }
   .breakdown tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
   .breakdown th[scope="row"] { border: 0; padding: 4px 0; }
@@ -297,14 +297,14 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .settings-grid .field-label { white-space: normal; overflow-wrap: normal; }
 .panel-inputs .field-row .field-label { white-space: nowrap; margin-right: 0; }
 .panel-inputs .field-row select { flex: 1 1 auto; min-width: 0; }
-/* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
-@media (min-width: 901px) {
 /* The price list closes the preset row; the preset sentence is one line, the rest is behind its (i). */
 .price-pick { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 200px; min-width: 0; }
 .price-pick .field-label { margin: 0; white-space: nowrap; }
 .price-pick select { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 2px 6px; }
 .scenario-short { display: flex; align-items: center; min-width: 0; }
 .scenario-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Desktop: a wider form column; a workload row is label, slider, box; settings rows are label then box. */
+@media (min-width: 901px) {
   .layout { grid-template-columns: minmax(320px, 460px) minmax(0, 1fr); }
   .panel-inputs .panel-block { padding: 10px 14px; margin-bottom: 8px; }
   .panel-inputs .pill { padding: 2px 10px; font-size: 14px; }
