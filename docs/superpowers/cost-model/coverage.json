@@ -3240,13 +3240,27 @@
       "name": "move-replicated",
       "family": "replication",
       "model_variants": [
-        "s3"
+        "s3",
+        "cas"
       ],
       "cases": [
         {
           "case_id": "ttl",
           "policies": [
             "s3"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "ttl-cas",
+          "policies": [
+            "cas"
           ],
           "replicas": 2,
           "scale": 1.0,
@@ -21678,6 +21692,60 @@
       ],
       "status": "done",
       "note": "8.77, predicted 9 +- 20 %"
+    },
+    {
+      "coefficient": "ttl_move_table_once_requests",
+      "experiment_id": "move-replicated.ttl-cas",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "49ef129d6f0",
+      "measurement_ids": [
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k1",
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_move_load_gets_per_part",
+      "experiment_id": "move-replicated.ttl-cas",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "49ef129d6f0",
+      "measurement_ids": [
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k1",
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_branch_requests",
+      "experiment_id": "move-replicated.ttl-cas",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "49ef129d6f0",
+      "measurement_ids": [
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k1",
+        "cost-20261025T141926Z/cas/move-replicated/ttl-cas/k2"
+      ],
+      "status": "done"
     }
   ],
   "domain": {

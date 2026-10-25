@@ -17,7 +17,7 @@ object request. Without zero-copy replication every replica moves its own copy.
   (`ttl_move_table_once_requests`): `s3plain` PUT 1 and HEAD 1 for `moving/`, CAS PUT 3 and GET 13 for the table's
   namespace birth on the pool.
 - **Runs:** `cost-20261025T133717Z` (`move.ttl` on `s3`, `s3plain`, `cas`; `move-replicated.ttl` on `s3`) and
-  `cost-20261025T135003Z` (`move.ttl-holdout` on `cas`); rig commits `f3fea9a2efe` and `455dc9b8f77`, `rig_dirty`
+  `cost-20261025T135003Z` (`move.ttl-holdout` on `cas`), `cost-20261025T141926Z` (`move-replicated.ttl-cas`); rig commits `f3fea9a2efe` and `455dc9b8f77`, `rig_dirty`
   false, RustFS 1.0.0-beta.9, two passes per case. An uncited `s3` smoke pass (`cost-20261025T130324Z`) came first.
 - **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`,
   source `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
@@ -75,6 +75,8 @@ Foreground requests of the moving replica, both passes identical. `HEAD`/`PUT`/`
 | `move.ttl` | `cas` | publish graph at the observed branches: PUT 85, GET 44–45, HEAD 27 | PUT 88, GET 57, HEAD 27 | missed: namespace birth |
 | `move.ttl-holdout` | `cas` | publish graph + birth term at the observed branches: PUT 70, GET 54, HEAD 16 | PUT 70, GET 54, HEAD 16 | exact |
 | `move-replicated.ttl` | `s3`, `r1` and `r2` | PUT 24, GET 20 each | PUT 24, GET 20 each | exact |
+| `move-replicated.ttl-cas` | `cas`, `r1` | PUT 21, GET 29, HEAD 2 | PUT 21, GET 29, HEAD 2 | exact |
+| `move-replicated.ttl-cas` | `cas`, `r2` | PUT 17, GET 31, HEAD 2 | PUT 17, GET 31, HEAD 2 | exact |
 
 - **Per part.** `s3` and `s3plain` wrote 12 objects per Compact part and 22 per Wide part, the objects of an insert
   of that part. Each moved part was loaded with 10 GETs (`move_load_gets_per_part`). `s3plain` added 2 directory
@@ -92,6 +94,11 @@ Foreground requests of the moving replica, both passes identical. `HEAD`/`PUT`/`
   29 055 727 B and read 142 096 B, the manifests and ref objects included.
 - **Replicas.** Each replica logged its own `MovePart` events (2 each), neither logged a `DownloadPart` in the
   window, and the interserver relays carried 0 B: the follower moved its own copy.
+- **CAS follower.** With moves run one replica at a time (`params.sequential_moves`), `r2` found every blob `r1`
+  had published: each blob is a hash hit (HEAD and a `.meta` GET), no blob PUT. `r2` still pays per part the
+  manifest and 3 ref transactions in its own namespace, the load GET and its own namespace birth. It uploaded
+  29 379 B against 4 424 477 B on `r1`. Moves that overlap on two replicas can both miss; this case does not
+  measure that race.
 
 ## Rule for the calculator {#rule}
 
@@ -99,11 +106,13 @@ Per moved part on each replica: the insert write of that part on the cold disk, 
 GETs (`s3`, `s3plain`: `part_load_files` + 1 for `ttl.txt`) or `cas_move_load_gets_per_part` (CAS: 1 manifest
 GET, +1 for a Wide part). Once per table and replica: `ttl_move_table_once_requests[variant_id, replication_op]`.
 Bytes uploaded per moved part are the part's file bytes. The local source part costs no object request.
+On CAS a replica that moves a part already published by another replica takes the hash-hit branch for every blob
+(`cas_branch_requests`): HEAD and `.meta` GET per blob, no blob PUT and no blob bytes.
 
 ## Limits {#limits}
 
 - One table shape (6 narrow columns), 100 000 and 500 000 rows per part, 2–5 parts per window.
 - No filesystem cache variant, no projection, no partitioned table.
-- The two-replica case ran on `s3` only. A CAS follower's move would hash-hit the leader's blobs; it is not measured.
+- The CAS two-replica case moved one replica after the other; concurrent moves of the same part were not measured.
 - Moves ran within seconds of `SYSTEM START MOVES`. A statistics refresh (`refresh_statistics_interval`, 300 s)
   reads the moved parts later; the existing statistics refresh terms price it.
