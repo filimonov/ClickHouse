@@ -61,12 +61,13 @@
         cas_tables: 20, cas_table_creates_per_month: 4, cas_table_drops_per_month: 4,
       },
       locks: ['ingest_rate', 'retention_days'],
-      // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
-      // replica fetch transfer was measured at (acquire_bytes, cas_relink_bytes_per_part); the page shows the
-      // dependent numbers as extrapolated.
+      // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes), below the part sizes the
+      // replica fetch transfer was measured at (acquire_bytes) and below the insert sizes the merge fan-in was
+      // verified at (merge_effective_fan_in); the page shows the dependent numbers as extrapolated.
       expected_extrapolated: {
-        ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'],
-        cas: ['cas_relink_bytes_per_part'],
+        ebs: ['op_write_bytes', 'acquire_bytes', 'merge_effective_fan_in'],
+        s3: ['acquire_bytes', 'merge_effective_fan_in'], s3plain: ['acquire_bytes', 'merge_effective_fan_in'],
+        cas: ['merge_effective_fan_in'],
       },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.

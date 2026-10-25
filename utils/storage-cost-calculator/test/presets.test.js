@@ -26,7 +26,7 @@ test('test_every_scenario_within_coverage', () => {
   // lock outside a precedence group are each reported.
   const bad = (mut) => { const s = copy(presets.SCENARIOS.logs); mut(s); return presets.coverageProblems(LIVE, s).join('\n'); };
   assert.match(bad((s) => { s.values.no_such_input = 1; }), /no_such_input is not a registry/);
-  assert.match(bad((s) => { s.values.insert_rows = 1000000; }), /coefficient merge_effective_fan_in: insert_rows = 1000000 is outside \[1000, 100000\]/);
+  assert.match(bad((s) => { s.values.insert_rows = 1000000; }), /coefficient merge_effective_fan_in: insert_rows = 1000000 is outside \[50000, 100000\]/);
   assert.match(bad((s) => { s.values.data_bytes = 1; }), /value data_bytes is set but derived/);
   assert.match(bad((s) => { s.locks = ['no_such_lock', 'retention_days']; }), /no_such_lock/);
 });

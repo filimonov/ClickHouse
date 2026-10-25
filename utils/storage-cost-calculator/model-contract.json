@@ -1,22 +1,22 @@
 {
  "schema": "contract/1",
- "version": "e735c9548c35ac32",
+ "version": "2b950128e6892714",
  "manifest": {
-  "code_sha256": "26d9879991e7e0e9cf8161ee72049bfef77e2559c8a7abf758a3f9264d8ecc7c",
+  "code_sha256": "dabd19e58789a0a31f006b606e4a7a8c87c78c30fd1233769755ae1fc43f494d",
   "code_files": {
    "billing.js": "6992c901b510841e76af2ba6690bdf194ac207d4179c17948681dd8cb0272063",
    "contract.js": "ba4653168b64f0921f86550ee5c4b15fd7d39b276314971f3049054602951b1c",
    "model.js": "27d0184486ebfe9a9cc71bab56352771ddadbfb261f34461053a15b660e35efd",
-   "pipeline.js": "74493da182c0d952a23be8c00866362a2872e5a7afe6a9feaca39470f1cdc6f1",
-   "presets.js": "d1cb89dbf3b93e67c7ebe9e3dde776befd99567facda9147a6caac2e0de43a66",
+   "pipeline.js": "9b59821800fc0772fd1255b7f0ff980a5ab82e79ec62d9b3dbf34c9f74f1c162",
+   "presets.js": "819d3da14ef0cb17d8c299c19e275e9e6fbb5f13982bf679c7625c71875ad0f7",
    "urlstate.js": "e0722c2c47ba25c94b728eefc390c5d3fe96d07c1c7abaff4b4f3bd68a5b7b86"
   },
   "code_missing": [],
-  "contract_version": "e735c9548c35ac32",
+  "contract_version": "2b950128e6892714",
   "registry_version": "0.3.0",
-  "registry_sha256": "b49e92676e7a28022face7d4f0319d3c78b0ab83c4a120900268c4bf3ecaafa9",
+  "registry_sha256": "110db7a392ab68929d66aecf97eb67024deabf5c8618a817655722d7633ff01b",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "b18053d015a7ca00c967e3ad7d556d9f797bf5d7b9adf8f768cb68873d21e6fd",
+  "coverage_sha256": "9cdeea314531981378b5a058c48ad6a8593ee5bbe6e1aae55374235cb4c90292",
   "billing_version": "0.2.0",
   "billing_sha256": "e36cf9a51930dec31327f03e6881bbe8a3e15320509455b3ed7f3b9a77cb648d",
   "evidence": [
@@ -88,7 +88,7 @@
     "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0",
     "rig_commit": "df8d6526e3e0969dd9fef8bec95d769ade989dac",
     "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "raw_sha256sums": "44f854b001024739728dbb000831aeb43b3baf34005da2a01bfa0f3a51715c11"
+    "raw_sha256sums": "da5d2f26fa6843f43b7cae7f6f45b86cbb59a84df730e233e1f81ccded9c6851"
    },
    {
     "report": "2026-10-25-storage-cost-ttl-move",
@@ -100,7 +100,7 @@
   ],
   "breakeven_sha256": null
  },
- "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 11 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables, 2026-10-25-storage-cost-cut-cards, 2026-10-25-storage-cost-ttl-move. 74 coefficient(s): 49 measured, 25 pinned to source. 71 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 33 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
+ "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 11 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation, 2026-10-25-storage-cost-cas-tables, 2026-10-25-storage-cost-cut-cards, 2026-10-25-storage-cost-ttl-move. 79 coefficient(s): 54 measured, 25 pinned to source. 71 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.2.0. 0 variant x operation x family cell(s) have no evidence yet. Store binary sha256 bf4aca66af21 on 33 record(s); 889 record(s) predate the field: store identified post hoc. Assumption cas_startup_error_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 1 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 4 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 3. Assumption cas_startup_error_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 5 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 2 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests) minus the cache-off per-table term 0. Assumption cas_startup_error_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_error_requests). Assumption cas_startup_requests_base[1|DeleteObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 3 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 31 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 11. Assumption cas_startup_requests_base[1|HeadObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 6 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 0. Assumption cas_startup_requests_base[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 7 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 5. Assumption cas_startup_requests_base[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cached one-table start 10 (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests) minus the cache-off per-table term 2. Assumption cas_startup_requests_per_table[1|GetObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|ListObjectsV2] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption cas_startup_requests_per_table[1|PutObject] backs cas/recovery/startup_recovery: ASSUMPTION the cache-off per-table term holds with the filesystem cache; the cached start was measured at one table only (docs/superpowers/reports/2026-10-24-storage-cost-cas, coefficient cas_startup_requests). Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
  "registry": [
   {
    "id": "data_bytes",
@@ -3190,7 +3190,7 @@
     "tier": "setting",
     "name": null,
     "short": "Rows per INSERT",
-    "measured_by": "Assumed: preset default. Measured from 100 to 4e+06 by cas_branch_population (2026-10-24-storage-cost-cas, 12 measurement(s)). Measured from 100 to 100000 by cas_startup_gets_per_part (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1000 to 300000 by io_bytes_per_op (2026-10-24-storage-cost-ebs, 12 measurement(s)). Measured from 1000 to 300000 by io_request_size_distribution (2026-10-24-storage-cost-ebs, 12 measurement(s)). Measured from 30000 to 400000 by op_write_bytes (2026-10-24-storage-cost-ebs, 21 measurement(s)). Measured from 1000 to 300000 by insert_write_overhead_rows (2026-10-24-storage-cost-ebs, 6 measurement(s)). Measured from 1000 to 100000 by merge_effective_fan_in (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 100000 by merge_fan_in_distribution (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 100000 by merge_result_size_distribution (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 200000 by acquire_requests (2026-10-24-storage-cost-replication, 32 measurement(s)). Measured from 100000 to 300000 by cas_relink_bytes_per_part (2026-10-24-storage-cost-replication, 12 measurement(s)). Measured from 20000 to 400000 by object_size_distribution (2026-10-24-storage-cost-s3, 24 measurement(s)). Measured from 1000 to 600000 by insert_tx_checks (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 1000 to 600000 by metadata_bytes_per_object (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 5000 to 600000 by metadata_iops_per_object_write (2026-10-24-storage-cost-s3, 36 measurement(s)). Measured from 5000 to 600000 by metadata_iops_per_part_write (2026-10-24-storage-cost-s3, 36 measurement(s)). Measured from 1000 to 100000 by startup_requests (2026-10-24-storage-cost-s3, 6 measurement(s)). Measured from 1000 to 100000 by mutation_compact_gets_per_full_granule (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 1000 to 400000 by mutation_gets_per_part (2026-10-24-storage-cost-s3, 24 measurement(s))."
+    "measured_by": "Assumed: preset default. Measured from 100 to 4e+06 by cas_branch_population (2026-10-24-storage-cost-cas, 12 measurement(s)). Measured from 100 to 100000 by cas_startup_gets_per_part (2026-10-24-storage-cost-cas, 24 measurement(s)). Measured from 1000 to 300000 by io_bytes_per_op (2026-10-24-storage-cost-ebs, 12 measurement(s)). Measured from 1000 to 300000 by io_request_size_distribution (2026-10-24-storage-cost-ebs, 12 measurement(s)). Measured from 30000 to 400000 by op_write_bytes (2026-10-24-storage-cost-ebs, 21 measurement(s)). Measured from 1000 to 300000 by insert_write_overhead_rows (2026-10-24-storage-cost-ebs, 6 measurement(s)). Measured from 50000 to 100000 by merge_effective_fan_in (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 100000 by merge_fan_in_distribution (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 100000 by merge_result_size_distribution (2026-10-24-storage-cost-lifecycle, 9 measurement(s)). Measured from 1000 to 200000 by acquire_requests (2026-10-24-storage-cost-replication, 32 measurement(s)). Measured from 20000 to 400000 by object_size_distribution (2026-10-24-storage-cost-s3, 24 measurement(s)). Measured from 1000 to 600000 by insert_tx_checks (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 1000 to 600000 by metadata_bytes_per_object (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 5000 to 600000 by metadata_iops_per_object_write (2026-10-24-storage-cost-s3, 36 measurement(s)). Measured from 5000 to 600000 by metadata_iops_per_part_write (2026-10-24-storage-cost-s3, 36 measurement(s)). Measured from 1000 to 100000 by startup_requests (2026-10-24-storage-cost-s3, 6 measurement(s)). Measured from 1000 to 100000 by mutation_compact_gets_per_full_granule (2026-10-24-storage-cost-s3, 18 measurement(s)). Measured from 1000 to 400000 by mutation_gets_per_part (2026-10-24-storage-cost-s3, 24 measurement(s)). Measured from 1000 to 300000 by cas_relink_compact_base_bytes (2026-10-25-storage-cost-cut-cards, 6 measurement(s)). Measured from 1000 to 300000 by cas_relink_bytes_per_granule (2026-10-25-storage-cost-cut-cards, 6 measurement(s)). Measured from 1000 to 300000 by cas_relink_wide_base_bytes (2026-10-25-storage-cost-cut-cards, 6 measurement(s)). Measured from 1000 to 300000 by cas_relink_inline_ceiling_bytes (2026-10-25-storage-cost-cut-cards, 6 measurement(s)). Measured from 1000 to 300000 by cas_relink_inline_deficit_bytes (2026-10-25-storage-cost-cut-cards, 6 measurement(s)). Measured from 1000 to 300000 by cas_relink_inline_half_rows (2026-10-25-storage-cost-cut-cards, 6 measurement(s))."
    },
    "status": "ok",
    "validity": null
@@ -5242,7 +5242,7 @@
      472.95
     ],
     "insert_rows": [
-     1000,
+     50000,
      100000
     ]
    },
@@ -5264,7 +5264,7 @@
      472.95
     ],
     "insert_rows": [
-     1000,
+     50000,
      100000
     ]
    }
@@ -10963,26 +10963,135 @@
   {
    "id": "cas_relink_bytes_per_part",
    "block": "replication",
-   "label": "Interserver bytes a CAS relink sends per fetched part: the manifest, not the blobs",
-   "kind": "measured",
+   "label": "Interserver bytes a CAS relink sends per fetched part: the manifest, not the blobs. Compact: a base plus bytes per granule; Wide: a larger base; both plus the inline files (checksums, columns, statistics and other small files), which grow with rows and level off near 30 000 rows",
+   "kind": "derivation",
    "scope": "cluster",
    "unit": "B",
    "value_type": "number",
    "enum": null,
    "table": null,
    "default": null,
-   "rule": null,
-   "coef": "cas_relink_bytes_per_part",
+   "rule": {
+    "kind": "add",
+    "dim": "B",
+    "a": {
+     "kind": "branch",
+     "dim": "B",
+     "cond": {
+      "op": "==",
+      "a": {
+       "kind": "input",
+       "id": "part_type",
+       "dim": "enum:part_type"
+      },
+      "b": {
+       "kind": "const",
+       "value": "wide",
+       "dim": "enum:part_type"
+      }
+     },
+     "then": {
+      "kind": "coef",
+      "id": "cas_relink_wide_base_bytes",
+      "dim": "B"
+     },
+     "else": {
+      "kind": "add",
+      "dim": "B",
+      "a": {
+       "kind": "coef",
+       "id": "cas_relink_compact_base_bytes",
+       "dim": "B"
+      },
+      "b": {
+       "kind": "mul",
+       "dim": "B",
+       "a": {
+        "kind": "coef",
+        "id": "cas_relink_bytes_per_granule",
+        "dim": "B"
+       },
+       "b": {
+        "kind": "ceil_to",
+        "dim": "1",
+        "x": {
+         "kind": "div",
+         "dim": "1",
+         "on_zero": "unavailable",
+         "a": {
+          "kind": "input",
+          "id": "part_rows",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "index_granularity",
+          "dim": "count"
+         }
+        },
+        "step": {
+         "kind": "const",
+         "value": 1,
+         "dim": "1"
+        }
+       }
+      }
+     }
+    },
+    "b": {
+     "kind": "sub",
+     "dim": "B",
+     "a": {
+      "kind": "coef",
+      "id": "cas_relink_inline_ceiling_bytes",
+      "dim": "B"
+     },
+     "b": {
+      "kind": "mul",
+      "dim": "B",
+      "a": {
+       "kind": "coef",
+       "id": "cas_relink_inline_deficit_bytes",
+       "dim": "B"
+      },
+      "b": {
+       "kind": "div",
+       "dim": "1",
+       "on_zero": "unavailable",
+       "a": {
+        "kind": "coef",
+        "id": "cas_relink_inline_half_rows",
+        "dim": "count"
+       },
+       "b": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "input",
+         "id": "part_rows",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "coef",
+         "id": "cas_relink_inline_half_rows",
+         "dim": "count"
+        }
+       }
+      }
+     }
+    }
+   },
+   "coef": null,
    "verified_range": {
     "insert_rows": [
-     100000,
+     1000,
      300000
     ]
    },
    "evidence": {
     "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-    "version": "0.3.0"
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
    },
    "hint": {
     "sql": "SELECT count() FROM system.part_log WHERE event_type = 'DownloadPart' AND event_date >= today() - 7",
@@ -10991,12 +11100,292 @@
     }
    },
    "status": "ok",
+   "basis": "fitted",
    "validity": {
     "insert_rows": [
-     100000,
+     1000,
      300000
     ]
    }
+  },
+  {
+   "id": "cas_relink_compact_base_bytes",
+   "block": "replication",
+   "label": "CAS relink bytes per fetched Compact part besides granules and inline files",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_compact_base_bytes",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_bytes_per_granule",
+   "block": "replication",
+   "label": "CAS relink bytes per granule of a fetched Compact part",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_bytes_per_granule",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_wide_base_bytes",
+   "block": "replication",
+   "label": "CAS relink bytes per fetched Wide part besides inline files",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_wide_base_bytes",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_ceiling_bytes",
+   "block": "replication",
+   "label": "Ceiling of the inline file bytes a CAS relink sends per part",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_inline_ceiling_bytes",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_deficit_bytes",
+   "block": "replication",
+   "label": "Inline file bytes below the ceiling at zero rows",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "B",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_inline_deficit_bytes",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_half_rows",
+   "block": "replication",
+   "label": "Rows at which inline file bytes are halfway to the ceiling",
+   "kind": "measured",
+   "scope": "cluster",
+   "unit": "count",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": null,
+   "coef": "cas_relink_inline_half_rows",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#relink-derivation",
+    "version": "0.2.0"
+   },
+   "hint": null,
+   "status": "ok",
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "ebs_peak_mibps_bound",
+   "block": "ebs",
+   "label": "Bound on the 1-s write peak of one replica, MiB/s: the largest merge written in one second (1.02-1.06 x its bytes on a local SSD). The largest merge is at most max_bytes_to_merge_at_max_space_in_pool and at most the data. Not priced: on EBS a merge past the provisioned throughput runs longer; peak_factor stays 1",
+   "kind": "derivation",
+   "scope": "cluster",
+   "unit": "MiB/s",
+   "value_type": "number",
+   "enum": null,
+   "table": null,
+   "default": null,
+   "rule": {
+    "kind": "div",
+    "dim": "MiB/s",
+    "on_zero": "unavailable",
+    "a": {
+     "kind": "mul",
+     "dim": "B",
+     "a": {
+      "kind": "const",
+      "value": 1.055,
+      "dim": "1"
+     },
+     "b": {
+      "kind": "min",
+      "dim": "B",
+      "args": [
+       {
+        "kind": "input",
+        "id": "max_bytes_to_merge_at_max_space_in_pool",
+        "dim": "B"
+       },
+       {
+        "kind": "mul",
+        "dim": "B",
+        "a": {
+         "kind": "input",
+         "id": "data_bytes",
+         "dim": "GiB"
+        },
+        "b": {
+         "kind": "const",
+         "value": 1073741824,
+         "dim": "B/GiB"
+        }
+       }
+      ]
+     }
+    },
+    "b": {
+     "kind": "mul",
+     "dim": "B*s/MiB",
+     "a": {
+      "kind": "const",
+      "value": 1,
+      "dim": "s"
+     },
+     "b": {
+      "kind": "const",
+      "value": 1048576,
+      "dim": "B/MiB"
+     }
+    }
+   },
+   "coef": null,
+   "basis": "derived",
+   "verified_range": null,
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards#peak-bound",
+    "version": "0.2.0"
+   },
+   "hint": {
+    "sql": "SELECT max(size_in_bytes) / 1048576 FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+    "mapping": {
+     "ebs_peak_mibps_bound": "the largest merge of the week in MiB, written in one second"
+    }
+   },
+   "status": "ok",
+   "validity": null
   },
   {
    "id": "local_exec_requests",
@@ -17199,7 +17588,7 @@
      472.95
     ],
     "insert_rows": [
-     1000,
+     50000,
      100000
     ]
    },
@@ -17289,7 +17678,7 @@
      472.95
     ],
     "insert_rows": [
-     1000,
+     50000,
      100000
     ]
    }
@@ -17770,65 +18159,6 @@
     "part_rows": [
      50000,
      200000
-    ]
-   }
-  },
-  {
-   "id": "cas_relink_bytes_per_part",
-   "kind": "scalar",
-   "dim": "B",
-   "value": 19428.8,
-   "basis": "assumed",
-   "verified_range": {
-    "insert_rows": [
-     100000,
-     300000
-    ]
-   },
-   "tolerance": {
-    "abs": 0.0,
-    "rel": 0.05
-   },
-   "evidence": {
-    "kind": "measured",
-    "ref": "docs/superpowers/reports/2026-10-24-storage-cost-replication",
-    "version": "0.3.0",
-    "measurement_ids": [
-     "cost-20261024T115147Z/cas/replication-fetch/insert/k1",
-     "cost-20261024T115147Z/cas/replication-fetch/insert/k2",
-     "cost-20261024T115147Z/cas/replication-fetch/insert/k3",
-     "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k1",
-     "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k2",
-     "cost-20261024T115147Z/cas/replication-fetch/insert-wide/k3",
-     "cost-20261024T115147Z/cas/replication-fetch/merge/k1",
-     "cost-20261024T115147Z/cas/replication-fetch/merge/k2",
-     "cost-20261024T115147Z/cas/replication-fetch/merge/k3",
-     "cost-20261024T115147Z/cas/replication-fetch/mutation/k1",
-     "cost-20261024T115147Z/cas/replication-fetch/mutation/k2",
-     "cost-20261024T115147Z/cas/replication-fetch/mutation/k3"
-    ],
-    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
-    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
-   },
-   "status": "ok",
-   "rule": "interserver bytes the originator sends per fetched part (relay0 from_target / fetched parts): the relink ships the part manifest, not its blobs. The fitting parts held 2.17-6.49 MB on disk at 100 000-300 000 rows",
-   "fit": {
-    "method": "cas_relink_bytes_per_part: ASSUMPTION — upper bound from the insert/insert-wide/merge/mutation/insert-3 records (±3.8%); the small-part hold-out replication-fetch.insert-1k gave 13 030 B/part (−33%), so relink bytes are not constant per part; a size-dependent shape is Tier 2",
-    "residuals": {
-     "insert": -0.0142,
-     "insert-wide": 0.0375,
-     "merge": 0.0006,
-     "mutation": -0.0139,
-     "insert-3": -0.0101
-    },
-    "holdout": {
-     "replication-fetch.insert-1k": -0.3293
-    }
-   },
-   "validity": {
-    "insert_rows": [
-     100000,
-     300000
     ]
    }
   },
@@ -20082,6 +20412,402 @@
    }
   },
   {
+   "id": "cas_relink_compact_base_bytes",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 2571.3,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "CAS relink bytes per fetched Compact part besides granules and inline files",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_bytes_per_granule",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 13.85,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "CAS relink bytes per granule of a fetched Compact part",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_wide_base_bytes",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 3798.0,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "CAS relink bytes per fetched Wide part besides inline files",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_ceiling_bytes",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 16516.5,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "Ceiling of the inline file bytes a CAS relink sends per part",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_deficit_bytes",
+   "kind": "scalar",
+   "dim": "B",
+   "value": 17470.6,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "Inline file bytes below the ceiling at zero rows",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
+   "id": "cas_relink_inline_half_rows",
+   "kind": "scalar",
+   "dim": "count",
+   "value": 530,
+   "basis": "fitted",
+   "verified_range": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   },
+   "tolerance": {
+    "abs": 0.0,
+    "rel": 0.0125
+   },
+   "evidence": {
+    "kind": "measured",
+    "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cut-cards",
+    "version": "0.2.0",
+    "measurement_ids": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1"
+    ],
+    "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+    "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+   },
+   "status": "ok",
+   "rule": "Rows at which inline file bytes are halfway to the ceiling",
+   "fit": {
+    "method": "per fetched part: Compact base + bytes per granule x ceil(rows / index_granularity), Wide base, plus inline(rows) = ceiling - deficit x half_rows / (rows + half_rows). inline(rows) is least squares over the mean inline file bytes of 8 Compact cases (1 000-200 000 rows; Wide parts at 10 000, 30 000 and 300 000 rows read 325-608 B above it, absorbed by the Wide base); the bases and the granule term are least squares of relay0.from_target per part minus inline(rows) over 11 cases. Within 2 % of the ceiling from 30 000 rows",
+    "records": [
+     "cost-20261025T133848Z/cas/replication-fetch/relink-1k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-3k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-10k/k1",
+     "cost-20261025T133848Z/cas/replication-fetch/relink-30k-wide/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-50k/k1",
+     "cost-20261025T135134Z/cas/replication-fetch/relink-10k-wide/k1",
+     "replication: cost-20261024T115147Z cas insert, insert-wide, merge, mutation",
+     "validation: cost-20261024T154049Z insert-3, cost-20261024T164439Z insert-1k"
+    ],
+    "residuals_pct": {
+     "insert": -0.12,
+     "insert_3": -0.29,
+     "merge": 0.28,
+     "mutation": -0.09,
+     "insert_1k": -0.15,
+     "insert_3k": -0.93,
+     "insert_10k": 1.19,
+     "insert_wide": -0.62,
+     "insert_30k_wide": -0.07,
+     "insert_50k": -0.0,
+     "insert_10k_wide": 0.72
+    }
+   },
+   "validity": {
+    "insert_rows": [
+     1000,
+     300000
+    ]
+   }
+  },
+  {
    "id": "ttl_move_table_once_requests",
    "kind": "table",
    "dim": "count",
@@ -22290,6 +23016,11 @@
       "kind": "const",
       "value": "IOPS at the AWS floor of 4 I/Os per MiB (a merged sequential stream): a lower bound; the rig syscall proxy counted 1.3-6.5x more; the gp3 3000-IOPS baseline usually dominates. Throughput x peak_factor (assumed, default 1 = average rate)",
       "dim": "enum:note"
+     },
+     {
+      "kind": "input",
+      "id": "ebs_peak_mibps_bound",
+      "dim": "MiB/s"
      }
     ]
    },
@@ -28841,7 +29572,7 @@
           }
          },
          "b": {
-          "kind": "coef",
+          "kind": "input",
           "id": "cas_relink_bytes_per_part",
           "dim": "B"
          }
@@ -28875,7 +29606,7 @@
       "dim": "1"
      },
      {
-      "kind": "coef",
+      "kind": "input",
       "id": "cas_relink_bytes_per_part",
       "dim": "B"
      }
@@ -36928,7 +37659,12 @@
    "cas_expect_continue_min_bytes": "2026-10-24-storage-cost-phase0",
    "cas_gets_per_stream_read": "2026-10-24-storage-cost-cas",
    "cas_inline_cap_bytes": "2026-10-24-storage-cost-phase0",
-   "cas_relink_bytes_per_part": "2026-10-24-storage-cost-replication",
+   "cas_relink_bytes_per_granule": "2026-10-25-storage-cost-cut-cards",
+   "cas_relink_compact_base_bytes": "2026-10-25-storage-cost-cut-cards",
+   "cas_relink_inline_ceiling_bytes": "2026-10-25-storage-cost-cut-cards",
+   "cas_relink_inline_deficit_bytes": "2026-10-25-storage-cost-cut-cards",
+   "cas_relink_inline_half_rows": "2026-10-25-storage-cost-cut-cards",
+   "cas_relink_wide_base_bytes": "2026-10-25-storage-cost-cut-cards",
    "cas_startup_error_requests": "2026-10-24-storage-cost-cas",
    "cas_startup_error_requests_base": "2026-10-25-storage-cost-cas-tables",
    "cas_startup_error_requests_per_table": "2026-10-25-storage-cost-cas-tables",
@@ -37039,9 +37775,9 @@
  },
  "evidence_by_variant": {
   "cas": {
-   "fit_and_holdout": 6,
+   "fit_and_holdout": 5,
    "fit_only": 0,
-   "assumption": 4
+   "assumption": 5
   },
   "ebs": {
    "fit_and_holdout": 6,

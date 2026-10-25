@@ -31,8 +31,12 @@ const copyWith = (mutate) => {
 test('test_cas_cross_az_transfer_prices_relink_bytes_per_part', () => {
   const t = LIVE.coefficients.find((c) => c.id === 'acquire_bytes');
   assert.ok(!Object.prototype.hasOwnProperty.call(t.value.values, 'cas|insert'), 'the premise: no cas|insert ratio');
-  const relink = LIVE.coefficients.find((c) => c.id === 'cas_relink_bytes_per_part');
-  assert.equal(relink.basis, 'assumed');
+  const reg = LIVE.registry.find((q) => q.id === 'cas_relink_bytes_per_part');
+  assert.equal(reg.kind, 'derivation');
+  assert.equal(reg.basis, 'fitted');
+  assert.equal(LIVE.coefficients.find((c) => c.id === 'cas_relink_bytes_per_part'), undefined, 'no replication coefficient is left');
+  const parts = ['compact_base_bytes', 'bytes_per_granule', 'wide_base_bytes', 'inline_ceiling_bytes', 'inline_deficit_bytes'].map((x) => `cas_relink_${x}`);
+  for (const id of parts.concat('cas_relink_inline_half_rows')) assert.equal(LIVE.coefficients.find((c) => c.id === id).basis, 'fitted', id);
   const values = { topology: 'cross_az' };
   const { r, res } = runWith(LIVE, values);
   assert.deepEqual(r.problems, []);
@@ -42,12 +46,10 @@ test('test_cas_cross_az_transfer_prices_relink_bytes_per_part', () => {
   assert.ok(!cas.notes.some((n) => /measured for s3plain/.test(n.text)), JSON.stringify(cas.notes));
   const row = cas.cells.inserts.rows.find((x) => x.row_type === 'transfer');
   assert.ok(row.quantity > 0, String(row.quantity));
-  assert.ok(cas.cells.inserts.notes.some((n) => /^cas_relink_bytes_per_part: ASSUMPTION .*insert-1k.*Tier 2/.test(n.text)), JSON.stringify(cas.cells.inserts.notes));
-  // In one zone the row is zero, so the assumption prices nothing and is not noted.
-  const same = runWith(LIVE, { topology: 'same_az' }).res.variants.cas.cells.inserts.notes;
-  assert.ok(!same.some((n) => /ASSUMPTION/.test(n.text)), JSON.stringify(same));
-  // The row is linear in the relink bytes: doubling the coefficient doubles the transferred GiB.
-  const doubled = copyWith((j) => { j.coefficients.find((c) => c.id === 'cas_relink_bytes_per_part').value *= 2; });
+  assert.ok(cas.cells.inserts.notes.some((n) => n.text === 'cas_relink_bytes_per_part'), JSON.stringify(cas.cells.inserts.notes));
+  assert.ok(!cas.cells.inserts.notes.some((n) => /ASSUMPTION/.test(n.text)), JSON.stringify(cas.cells.inserts.notes));
+  // The row is linear in the bytes terms: doubling every one of them doubles the transferred GiB.
+  const doubled = copyWith((j) => { for (const id of parts) j.coefficients.find((c) => c.id === id).value *= 2; });
   const row2 = runWith(doubled, values).res.variants.cas.cells.inserts.rows.find((x) => x.row_type === 'transfer');
   assert.ok(Math.abs(row2.quantity - 2 * row.quantity) <= 1e-9 * row2.quantity, `${row2.quantity} != 2 x ${row.quantity}`);
   for (const v of ['ebs', 's3', 's3plain']) assert.equal(res.variants[v].state, 'ok', v);

@@ -210,7 +210,7 @@ test('test_inputs_blocks_from_registry_with_hint_and_lock_state', () => {
   assert.equal(f('merge_effective_fan_in').value, live.coefficients.find((c) => c.id === 'merge_effective_fan_in').value);
   // `range` is always [lo, hi] of the field itself; a validity map over other inputs is `validity`.
   assert.equal(f('merge_effective_fan_in').range, null);
-  assert.deepEqual(f('merge_effective_fan_in').validity.insert_rows, [1000, 100000]);
+  assert.deepEqual(f('merge_effective_fan_in').validity.insert_rows, [50000, 100000]);
   assert.equal(f('replicas').validity, null);
   assert.deepEqual(f('multipart_parts').validity.object_bytes, [0, 8405385216]);
   assert.equal(f('multipart_parts').range, null);
@@ -319,7 +319,7 @@ test('test_out_of_range_note_once_per_param', () => {
   const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows' && d.basis !== 'derived' && (!coefIds.has(d.id) || reached.has(d.id)));
   const fmt = (n) => n.toLocaleString('en-US');
   const range = (d) => `[${fmt(d.range[0])}, ${fmt(d.range[1])}]`;
-  // 2,000,000 is above the 1,000-100,000, 1,000-400,000 and 1,000-600,000 maxima: several owners with different ranges, one note.
+  // 2,000,000 is above the 50,000-100,000, 1,000-400,000 and 1,000-600,000 maxima: several owners with different ranges, one note.
   const low = notesFor(2000000);
   assert.equal(low.length, 1, JSON.stringify(low));
   const hit = domains.filter((d) => 2000000 < d.range[0] || 2000000 > d.range[1]);
@@ -357,7 +357,7 @@ test('test_field_display_values_ranges_and_steps', () => {
   assert.equal(f(day, 'shards').editable, false);
   assert.equal(f(day, 'data_bytes').step, 'any');
   const fan = f(day, 'merge_effective_fan_in');
-  assert.match(fan.range_text, /measured for .*1,000 to 100,000/);
+  assert.match(fan.range_text, /measured for .*50,000 to 100,000/);
   // A row without a label is reported, and its field has no label instead of the id.
   const { vm } = view({}, { contract: load((x) => { delete x.registry[0].label; }) });
   assert.equal(vm.inputs.blocks[0].fields.find((x) => x.id === 'data_bytes').label, null);

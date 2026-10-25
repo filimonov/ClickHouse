@@ -1043,15 +1043,8 @@
 
   // Plain sentences for coefficients whose basis is `assumed`; the contract states the assumption in engineering terms.
   // A sentence that no longer matches its numbers returns null, and the dialog reports the gap.
-  const shareWords = (x) => (Math.abs(x - 1 / 3) < 0.02 ? 'a third' : Math.abs(x - 0.5) < 0.02 ? 'half' : `${Math.round(x * 100)}%`);
-  const ASSUMPTIONS = {
-    cas_relink_bytes_per_part: (c) => {
-      const h = c.fit && c.fit.holdout ? c.fit.holdout['replication-fetch.insert-1k'] : undefined;
-      if (typeof c.value !== 'number' || typeof h !== 'number' || !(h < 0)) return null;
-      return `Each fetched part sends about ${fmtQuantity(Math.round(c.value / 1000))} KB of manifest data regardless of its size. `
-        + `Parts of 1,000 rows sent ${shareWords(-h)} less, so this is an upper bound.`;
-    },
-  };
+  // No coefficient is `assumed` in the current registry; add an entry here when one is.
+  const ASSUMPTIONS = {};
   function assumptionSentence(c) {
     const f = ASSUMPTIONS[c.id];
     return f ? f(c) : null;

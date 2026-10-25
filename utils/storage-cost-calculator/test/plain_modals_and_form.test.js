@@ -62,22 +62,18 @@ test('test_replica_transfer_row_reconciles_with_the_cards', () => {
   assert.equal(row(page('logs').vm, 'transfer'), undefined);
 });
 
-test('test_assumption_modal_says_assumption_in_plain_words', () => {
+test('test_transfer_modal_is_priced_from_measured_coefficients_in_plain_words', () => {
   const { vm } = page('logs', CROSS);
-  // The assumed relink bytes price only the transfer, so the badge sits on that row, not on Inserts.
-  assert.equal(cell(vm, 'transfer', 'cas').extrapolated, true);
+  // The relink bytes are a fitted derivation, so the transfer row carries no assumption badge.
+  assert.equal(cell(vm, 'transfer', 'cas').extrapolated, false);
   assert.equal(cell(vm, 'inserts', 'cas').extrapolated, false);
   const t = page('logs', CROSS, { info: { kind: 'transfer', variant: 'cas' } });
-  assert.equal(t.vm.info.description, 'Priced from a stated assumption.');
-  assert.ok(t.vm.info.lines.includes('Each fetched part sends about 19 KB of manifest data regardless of its size. Parts of 1,000 rows sent a third less, so this is an upper bound.'), JSON.stringify(t.vm.info.lines));
+  assert.equal(t.vm.info.description, 'Priced from measured coefficients.');
+  assert.ok(!t.vm.info.lines.some((l) => /assum|upper bound/i.test(l)), JSON.stringify(t.vm.info.lines));
   const shown = text(t.parts.modal);
   assert.doesNotMatch(shown, /\b[a-z0-9]+_[a-z0-9_]+\b/, 'no coefficient ids');
   assert.doesNotMatch(shown, /Tier 2|replication-fetch|cost-2026|ASSUMPTION/);
   assert.equal(page('logs', CROSS, { info: { kind: 'cell', variant: 'cas', operation: 'inserts' } }).vm.info.description, 'Priced from measured coefficients.');
-  // In one zone the assumed row moves no bytes: nothing rests on the assumption (one table: start requests measured).
-  const same = page('logs', { cas_tables: 1 });
-  assert.equal(cell(same.vm, 'inserts', 'cas').extrapolated, false);
-  assert.equal(same.vm.cards.find((c) => c.variant === 'cas').extrapolated_cells, 0);
 });
 
 test('test_every_assumed_coefficient_has_a_plain_sentence', () => {
@@ -166,21 +162,21 @@ test('test_phone_puts_the_form_before_the_cards', () => {
   assert.ok(order('cards') < 0);
 });
 
-test('test_cas_is_extrapolated_only_where_the_assumption_prices_bytes', () => {
+test('test_cas_is_extrapolated_only_where_a_coefficient_is_out_of_range', () => {
   // One table: the CAS start requests stay inside their measured range (more tables: see tables_workload.test.js).
   const cas = (sc, inputs) => page(sc, Object.assign({ cas_tables: 1 }, inputs)).vm.cards.find((c) => c.variant === 'cas');
-  // One zone, or one replica: the relink row moves nothing, so nothing rests on the assumed relink bytes.
-  for (const [sc, inputs] of [['logs', {}], ['metrics', {}], ['custom', {}], ['single_replica_archive', {}], ['single_replica_archive', CROSS]]) {
+  // The relink bytes are fitted over 1,000 to 300,000 rows, so no preset extrapolates the transfer row.
+  for (const [sc, inputs] of [['logs', {}], ['custom', {}], ['single_replica_archive', {}], ['single_replica_archive', CROSS], ['logs', CROSS]]) {
     const c = cas(sc, inputs);
     assert.equal(c.extrapolated, false, `${sc} ${JSON.stringify(inputs)}: ${c.extrapolated_text}`);
   }
   assert.equal(page('logs', { cas_tables: 1 }).vm.cards.find((c) => c.cheapest).cheapest_text, 'cheapest of 4');
-  // Across zones the relink bytes are priced: the transfer cell carries the badge and the assumption.
-  for (const sc of ['logs', 'metrics']) {
-    const { vm } = page(sc, Object.assign({ cas_tables: 1 }, CROSS));
-    assert.equal(cell(vm, 'transfer', 'cas').extrapolated, true, sc);
-    const info = page(sc, CROSS, { info: { kind: 'transfer', variant: 'cas' } }).vm.info;
-    assert.equal(info.description, 'Priced from a stated assumption.', sc);
+  // Metrics inserts 1,000 rows, below the 50,000 the merge fan-in was verified at: the cells that read it carry the badge.
+  for (const inputs of [{}, CROSS]) {
+    const { vm } = page('metrics', Object.assign({ cas_tables: 1 }, inputs));
+    const flagged = vm.table.rows.filter((r) => cell(vm, r.operation, 'cas').extrapolated).map((r) => r.operation);
+    assert.deepEqual(flagged, ['storage', 'merges', 'recovery', 'gc'], JSON.stringify(inputs));
+    if (inputs.topology) assert.equal(cell(vm, 'transfer', 'cas').extrapolated, false);
   }
 });
 
