@@ -1,1 +1,187 @@
-[]
+{
+ "schema": "formulas/1",
+ "owner": "cas-tables",
+ "variant": "cas",
+ "cells": {
+  "gc-tables": {
+   "ledger_rows": [
+    {
+     "row_type": "request",
+     "op_kind": "GetObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "add",
+      "a": {
+       "kind": "input",
+       "id": "gc_round_requests_fold_get",
+       "dim": "count"
+      },
+      "b": {
+       "kind": "add",
+       "a": {
+        "kind": "mul",
+        "a": {
+         "kind": "input",
+         "id": "cas_tables",
+         "dim": "count"
+        },
+        "b": {
+         "kind": "input",
+         "id": "gc_round_requests_fold_get_per_manifest",
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "b": {
+        "kind": "add",
+        "a": {
+         "kind": "mul",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_tables",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "cas_log_records_per_part",
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "gc_round_requests_fold_get_per_new_log_record",
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "b": {
+         "kind": "add",
+         "a": {
+          "kind": "mul",
+          "a": {
+           "kind": "input",
+           "id": "cas_tables",
+           "dim": "count"
+          },
+          "b": {
+           "kind": "input",
+           "id": "gc_round_requests_fold_get_per_changed_table",
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "b": {
+          "kind": "mul",
+          "a": {
+           "kind": "min",
+           "args": [
+            {
+             "kind": "input",
+             "id": "cas_tables",
+             "dim": "count"
+            },
+            {
+             "kind": "input",
+             "id": "gc_round_sweep_namespace_budget",
+             "dim": "count"
+            }
+           ],
+           "dim": "count"
+          },
+          "b": {
+           "kind": "add",
+           "a": {
+            "kind": "mul",
+            "a": {
+             "kind": "input",
+             "id": "cas_ref_log_tail_records",
+             "dim": "count"
+            },
+            "b": {
+             "kind": "input",
+             "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+             "dim": "count"
+            },
+            "dim": "count"
+           },
+           "b": {
+            "kind": "input",
+            "id": "gc_round_requests_fold_get_per_swept_table",
+            "dim": "count"
+           },
+           "dim": "count"
+          },
+          "dim": "count"
+         },
+         "dim": "count"
+        },
+        "dim": "count"
+       },
+       "dim": "count"
+      },
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "PutObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "input",
+      "id": "gc_round_requests_fold_put",
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "ListObjectsV2",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "input",
+      "id": "gc_round_requests_fold_list",
+      "dim": "count"
+     }
+    },
+    {
+     "row_type": "request",
+     "op_kind": "DeleteObject",
+     "outcome_class": "ok",
+     "category": null,
+     "route": null,
+     "scope": "variant",
+     "basis": "measured",
+     "expr": {
+      "kind": "input",
+      "id": "gc_round_requests_fold_delete",
+      "dim": "count"
+     }
+    }
+   ],
+   "allocation": null,
+   "states": [],
+   "notes": [],
+   "excluded": [
+    {
+     "kind": "op",
+     "id": "ListObjectsV2",
+     "reason": "not modeled: the pool-wide cas/ns/stream/ listing pages with the pool log object count; over 12 folds LIST was 57 at 16 tables, 150 at 150 and 401 at 500, over 60 Deferred rounds 180, 625 and 1830 (cleanup listings inside rounds included); the row prices the one-page base only"
+    }
+   ]
+  }
+ }
+}
