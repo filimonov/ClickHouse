@@ -1,18 +1,18 @@
 {
  "schema": "contract/1",
- "version": "9dd7a9cecb724ab9",
+ "version": "ac4da195670cdc98",
  "manifest": {
-  "code_sha256": "d3872330934606100e8b986434bbd6e59f64b53ac28c86bf4db6e81a9c245be0",
+  "code_sha256": "69a0c20bfb83724a85c475485e3fcef16346686cdb0ff5dae2645b861917609d",
   "code_files": {
-   "billing.js": "2dca1e340ea8d3940c6e31f613aa46d41532fff3936e5cd8a2d7855731691a91",
+   "billing.js": "6992c901b510841e76af2ba6690bdf194ac207d4179c17948681dd8cb0272063",
    "contract.js": "ba4653168b64f0921f86550ee5c4b15fd7d39b276314971f3049054602951b1c",
-   "model.js": "dc9d09c8c2d94e100f24cf8f7ac364826c5f18b2cb9f8b32728829181a2932f5",
-   "pipeline.js": "c777491853d90bd9feaafb4e0da0d15e4debcd4a6ec42699ac971ad4ab469433",
-   "presets.js": "fef10dbcb46c6a8c80f9776bff8ef73b20e95ead00fd64e86f75e38da4894891",
+   "model.js": "27d0184486ebfe9a9cc71bab56352771ddadbfb261f34461053a15b660e35efd",
+   "pipeline.js": "25ce08aad75f2e2fcb454c0db786d35707c547053f91f44d45f239cfb4c80fe4",
+   "presets.js": "6a01c10a9d31fd0c80e50c2540055c2207fb999d2b8ad25ddbe91fdc8f68bb8d",
    "urlstate.js": "e0722c2c47ba25c94b728eefc390c5d3fe96d07c1c7abaff4b4f3bd68a5b7b86"
   },
   "code_missing": [],
-  "contract_version": "9dd7a9cecb724ab9",
+  "contract_version": "ac4da195670cdc98",
   "registry_version": "0.3.0",
   "registry_sha256": "5468c6f976e85a56982cf28645826422ef6282d7f302b6e274d83c6ebebdcc95",
   "coverage_version": "0.2.0",
@@ -77,7 +77,7 @@
     "raw_sha256sums": "9eb69bf8f5f77b7a095fa3d3433df6c102bb927c740978519a136c4c05063411"
    }
   ],
-  "breakeven_sha256": "48a64a732b092ebffeb0bbb3420d8936c26fca15f14558dc2b5611affce659ce"
+  "breakeven_sha256": "fff4c796bb53e74097723060b3948d4810dd1ab3a49d92797db21645716a7f51"
  },
  "evidence_statement": "Measured on ClickHouse commit 09d0772a842 (release 26.8) against a RustFS S3 store. Built from 8 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-ebs, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-replication, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain, 2026-10-24-storage-cost-validation. 68 coefficient(s): 43 measured, 25 pinned to source. 65 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 0 variant x operation x family cell(s) have no evidence yet. The records predate per-record store fields (9cc0121c86d): store identified post hoc by its pinned release. Assumption op_write_bytes[deletes] backs ebs/deletes/mutation_deletes: ASSUMPTION, the largest measured record per dropped part (273 kB fit, 125 kB hold-out: the per-part unit did not carry). Assumption op_write_bytes[recovery] backs ebs/recovery/startup_recovery: ASSUMPTION 0, restart net writes below the idle baseline.",
  "registry": [

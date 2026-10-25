@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "9dd7a9cecb724ab9",
+ "contract_version": "ac4da195670cdc98",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -600,7 +600,7 @@
         "cas": {
          "value": 984.6633237130571,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -625,7 +625,7 @@
         "cas": {
          "value": 995.1424894578386,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -650,7 +650,7 @@
         "cas": {
          "value": 1016.1008209474015,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -675,7 +675,7 @@
         "cas": {
          "value": 1058.0174839265276,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -700,7 +700,7 @@
         "cas": {
          "value": 1141.8508098847794,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -725,7 +725,7 @@
         "cas": {
          "value": 1309.5174618012834,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       }
@@ -797,7 +797,7 @@
         "cas": {
          "value": 984.6633237130571,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -822,7 +822,7 @@
         "cas": {
          "value": 995.1424894578386,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -847,7 +847,7 @@
         "cas": {
          "value": 1016.1008209474015,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -872,7 +872,7 @@
         "cas": {
          "value": 1058.0174839265276,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -897,7 +897,7 @@
         "cas": {
          "value": 1141.8508098847794,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -922,7 +922,7 @@
         "cas": {
          "value": 1309.5174618012834,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       }
@@ -992,7 +992,7 @@
         "cas": {
          "value": 1014.2038622255097,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -1017,7 +1017,7 @@
         "cas": {
          "value": 1016.1008209474015,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -1042,7 +1042,7 @@
         "cas": {
          "value": 1019.8947383911853,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       },
@@ -1067,7 +1067,7 @@
         "cas": {
          "value": 1023.6886558349692,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         }
        }
       }
@@ -1103,7 +1103,7 @@
         1,
         2
        ],
-       "extrapolated": true
+       "extrapolated": false
       }
      ],
      "problems": []
