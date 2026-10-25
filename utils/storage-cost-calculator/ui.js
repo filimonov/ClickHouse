@@ -160,7 +160,7 @@
     return '<section class="panel-block"><h2>Workload</h2>'
       + `<div class="pills" role="group" aria-label="Scenario">${sc}`
       + `<label class="price-pick"><span class="field-label">Prices</span><select data-action="price">${pr}</select></label></div>`
-      + `${current ? `<p class="mute scenario-short"><span class="scenario-text">${esc(shortText(current.description))}</span>${infoButton({ 'info-kind': 'scenario', id: current.id }, current.label)}</p>` : ''}</section>`;
+      + `${current ? `<p class="mute scenario-short"><span class="scenario-text">${esc(page.scenario_edited ? `${current.label} preset with your edits` : shortText(current.description))}</span>${infoButton({ 'info-kind': 'scenario', id: current.id }, current.label)}</p>` : ''}</section>`;
   }
 
   function fieldTags(f) {
@@ -590,6 +590,15 @@
     };
   }
 
+  // The chip stays on the chosen preset while its inputs are edited; the preset's description then no longer
+  // describes the workload on screen.
+  function scenarioEdited(state) {
+    const sc = presetsLib().SCENARIOS[state.scenario];
+    if (!sc || !sc.values) return false;
+    const ids = new Set([...Object.keys(sc.values), ...Object.keys(state.inputs)]);
+    return Object.keys(state.overrides || {}).length > 0 || [...ids].some((id) => JSON.stringify(sc.values[id]) !== JSON.stringify(state.inputs[id]));
+  }
+
   function chrome(contract, state, ui, sweepId) {
     const P = presetsLib();
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
@@ -597,6 +606,7 @@
     return {
       scenarios: Object.entries(P.SCENARIOS).map(([id, s]) => ({ id, label: s.label, description: s.description })),
       scenario: state.scenario,
+      scenario_edited: scenarioEdited(state),
       prices: priceIds.map((id) => ({ id, label: P.priceLabel(contract, id) })),
       price_preset: state.price_preset, units: state.units, open_cell: state.openCell,
       sweep_inputs: contract.registry.filter(isSweepable).map((q) => ({ id: q.id, label: q.label || q.id })),

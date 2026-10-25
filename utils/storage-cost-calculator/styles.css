@@ -277,7 +277,9 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .inputs > .block[open], .panel-inputs .inputs > .block[data-block="advanced"] { flex-basis: 100%; }
 .panel-inputs .block > summary { padding: 8px 12px; font-size: 14px; }
 .panel-inputs .field-head { gap: 2px 4px; }
-.panel-inputs .field-head .field-label { overflow-wrap: normal; }
+.panel-inputs .field-head .field-label { overflow-wrap: normal; min-width: min-content; }
+/* A badge wraps below the label instead of painting over it. */
+.field-head .badge { flex: 0 0 auto; }
 .panel-inputs .control select.unit { max-width: 84px; }
 .panel-inputs .field-head .badge, .panel-inputs .field-head .btn-small { font-size: 11px; padding: 0 6px; line-height: 18px; }
 .panel-inputs .group-note { margin: 4px 0; padding: 4px 8px; }
@@ -309,7 +311,7 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs [data-block="simple"] .field-set .control input[type="number"] { width: 46px; min-width: 0; padding: 2px 2px 2px 4px; line-height: 18px; }
 .panel-inputs .inputs > .block[data-block="prices"]:not([open]), .panel-inputs .inputs > .block[data-block="advanced"]:not([open]) { flex-basis: calc(50% - 3px); }
 @media (max-width: 420px) { .panel-inputs .settings-grid { grid-template-columns: minmax(0, 1fr); } }
-.panel-inputs .settings-grid .field-head { flex-wrap: nowrap; align-items: flex-start; }
+.panel-inputs .settings-grid .field-head { flex-wrap: wrap; align-items: flex-start; }
 /* A long setting name wraps to a second line; a cut-off name hides what the box means. */
 .panel-inputs .settings-grid .field-label { white-space: normal; overflow-wrap: normal; }
 .panel-inputs .field-row .field-label { white-space: nowrap; margin-right: 0; }
