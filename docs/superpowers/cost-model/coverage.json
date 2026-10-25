@@ -1159,6 +1159,19 @@
           "duration_s": 60,
           "priority": "P1",
           "status": "planned"
+        },
+        {
+          "case_id": "big-file",
+          "policies": [
+            "s3plain"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 600,
+          "duration_s": 30,
+          "priority": "P2",
+          "status": "run"
         }
       ]
     },
@@ -21790,6 +21803,25 @@
         "cost-20261025T142655Z/cas/move-replicated/ttl-cas/k2"
       ],
       "status": "done"
+    },
+    {
+      "coefficient": "plain_unlink_requests",
+      "experiment_id": "drop.big-file",
+      "policy": "s3plain",
+      "span": {
+        "active_parts": [
+          1,
+          1
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "e36fce272d8",
+      "measurement_ids": [
+        "cost-20261025T142635Z/s3plain/drop/big-file/k1",
+        "cost-20261025T142635Z/s3plain/drop/big-file/k2"
+      ],
+      "status": "done",
+      "note": "a 40 MB file is copied aside by 1 CreateMultipartUpload, 3 UploadPartCopy, 1 CompleteMultipartUpload; every count exact"
     }
   ],
   "domain": {

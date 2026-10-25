@@ -189,3 +189,24 @@ with the objects GC deletes inside the window. Predicted in `e59a1d32ed9`, run `
 - **Not run:** `gc-scale.mounts-2.10k` and `gc-scale.refgrowth-*` need card changes (a second mount on one pool;
   a ref log past the 256-record snapshot), so the `mounts` and `ref_growth` terms of `gc_round_requests` stay
   unsupported.
+
+## s3plain removal of a file past 32 MiB {#big-file}
+
+Part removal on `s3_plain_rewritable` copies each file aside before deleting it. A file past
+`max_single_operation_copy_size` (32 MiB, `IO/S3Defines.h:34`) is copied by multipart copy in `min_upload_part_size`
+pieces (16 MiB, `IO/S3/copyS3File.cpp:347`, `:673`). `drop.big-file` drops one Wide part of 15 files whose `s.bin` is
+40 003 075 B (1 000 000 rows of `FixedString(40) CODEC(NONE)`). Predicted in `e36fce272d8` from the drop graph of
+`drop.partition-2`/`-3`, run `cost-20261025T142635Z`, two repeats, both `ok`:
+
+| Operation | Predicted | Measured, k1 / k2 |
+|---|---|---|
+| `PutObject` | 15 | 15 / 15 |
+| `HeadObject` | 27 | 27 / 27 |
+| `CopyObject` | 25 | 25 / 25 |
+| `CreateMultipartUpload` | 1 | 1 / 1 |
+| `UploadPartCopy` | 3 | 3 / 3 |
+| `CompleteMultipartUpload` | 1 | 1 / 1 |
+| `DeleteObject` | 54 | 54 / 54 |
+
+A file past 32 MiB costs ceil(size / 16 MiB) `UploadPartCopy` plus the create and the complete (5 requests here) in
+place of one `CopyObject`. The edge of `plain_unlink_requests` is `done`.
