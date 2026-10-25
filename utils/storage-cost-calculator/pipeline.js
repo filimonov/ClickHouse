@@ -829,6 +829,9 @@
   // A move writes the part directly, never through the async insert queue.
   const COLD_FIXED = { async_insert: '0' };
   const TTL_MOVE_NOTE = 'TTL move priced as the write of the moved part plus one part load (measured: move.ttl, each replica moves its own copy)';
+  // Variants whose publish is per part, not per replica: the first replica publishes, each follower takes the hash-hit
+  // branch with the registry row named here in place of `cas_hash_hit_fraction`.
+  const FOLLOWER_HIT = { cas: 'cas_move_follower_hash_hit_fraction' };
   // GETs that load a moved part back from the cold disk, per variant (registry derivations).
   const MOVE_LOAD_GETS = { s3: 'move_load_gets_per_part', s3plain: 'move_load_gets_per_part', cas: 'cas_move_load_gets_per_part' };
   // What the move rule adds to the cold inserts cell beyond the note above (docs/superpowers/cost-model/storage-cost-model.md, TTL move rule).
@@ -839,7 +842,8 @@
     if (v === 's3plain') out.push('once per table, not priced: the moving/ container costs 1 PUT and 1 HEAD');
     if (v === 'cas') {
       out.push('once per table, not priced: the first move into a table costs 3 PUT and 13 GET');
-      out.push('the CAS publish runs on every replica (cas_hash_hit_fraction 0): an upper bound, identical blobs may hit by hash');
+      out.push('a follower replica finds every blob already published: HEAD and .meta GET per blob, no blob PUT (measured: move-replicated.ttl-cas)');
+      out.push('not measured: moves of the same part that overlap on two replicas can both miss and both upload the blobs');
     }
     return out;
   }
@@ -871,6 +875,16 @@
     return found;
   }
 
+  // A copy of `node` with every input `id` replaced by `by`.
+  function substituteInput(node, id, by) {
+    if (Array.isArray(node)) return node.map((x) => substituteInput(x, id, by));
+    if (!node || typeof node !== 'object') return node;
+    if (node.kind === 'input' && node.id === id) return Object.assign({}, by);
+    const out = {};
+    for (const [k, v] of Object.entries(node)) out[k] = v && typeof v === 'object' ? substituteInput(v, id, by) : v;
+    return out;
+  }
+
   // The inserts cell of a cold variant under the TTL move rule: the insert write on every replica, no fetch, plus the
   // GETs that load the moved part. Returns {cell, dropped: [op_kind]} or {problem}.
   function moveCell(contract, v) {
@@ -882,8 +896,12 @@
     const rows = [];
     for (const r of cell.ledger_rows) {
       if (isFetchRow(r)) { dropped.push(`${r.row_type} ${r.op_kind}`); continue; }
-      // Each replica moves its own copy: a row priced once per part is priced once per replica.
-      rows.push(inputsOf(r.expr).has('replicas') ? r : Object.assign({}, r, { expr: op2('mul', r.expr, input('replicas', 'count'), r.expr.dim) }));
+      if (inputsOf(r.expr).has('replicas')) { rows.push(r); continue; }
+      // Each replica moves its own copy. A row priced once per part is the first replica's publish; each follower
+      // pays the same row on the hash-hit branch, or the full publish where no follower rule exists.
+      const follower = FOLLOWER_HIT[v] ? substituteInput(r.expr, 'cas_hash_hit_fraction', input(FOLLOWER_HIT[v], '1')) : r.expr;
+      const followers = op2('sub', input('replicas', 'count'), { kind: 'const', value: 1, dim: 'count' }, 'count');
+      rows.push(Object.assign({}, r, { expr: op2('add', r.expr, op2('mul', follower, followers, r.expr.dim), r.expr.dim) }));
     }
     const load = op2('mul', op2('mul', input('parts_inserted_per_month', 'count'), input('replicas', 'count'), 'count'), input(MOVE_LOAD_GETS[v], 'count'), 'count');
     rows.push({ row_type: 'request', op_kind: 'GetObject', outcome_class: 'ok', category: null, route: null, scope: 'variant', basis: 'predicted', expr: load });
@@ -969,6 +987,6 @@
 
   SCC.pipeline = Object.assign(SCC.pipeline || {}, { resolveInputs, normaliseRate, denormaliseRate, lockMember, DAYS_PER_MONTH, run, sweep, evaluationInputs,
     unsupportedRefs, rewriteCut, derivedOnlyInputs, derivationBasis, substitutions, SAME_AZ_NOTE, INPUT_LIMITS,
-    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE, MOVE_LOAD_GETS, moveCell });
+    tiered, HOT_VARIANT, HOT_INPUTS, COLD_INPUTS, COLD_FIXED, TTL_MOVE_NOTE, COLD_MERGE_NOTE, COLD_MERGE_IGNORED_NOTE, MOVE_LOAD_GETS, FOLLOWER_HIT, moveCell });
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.pipeline;
 })(typeof window !== 'undefined' ? window : globalThis);

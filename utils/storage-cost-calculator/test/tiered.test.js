@@ -211,10 +211,22 @@ test('test_cold_intake_follows_the_ttl_move_rule', () => {
     close(gets[gets.length - 1].quantity, moved * replicas * (v === 'cas' ? 2 : 10), `${v} load GETs`);
     assert.equal(q(v).some((r) => r.row_type === 'transfer'), false, v);
   }
-  // Every replica moves its own copy: the CAS publish, priced once per part for an insert, counts per replica.
-  const insert = pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.cas.cells.inserts.quantities;
-  const put = (rows) => rows.find((r) => r.op_kind === 'PutObject').quantity;
-  close(put(q('cas')), put(insert) * replicas, 'cas PUT per replica');
+  // Every replica moves its own copy. On CAS the first replica publishes; a follower finds every blob published and
+  // takes the hash-hit branch (HEAD and .meta GET per blob, no blob PUT).
+  const leader = pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.cas.cells.inserts.quantities;
+  const hit = pipeline.run(LIVE, new Map([...t.cold_inputs, ['cas_hash_hit_fraction', 1]]), AWS, {}).variants.cas.cells.inserts.quantities;
+  assert.equal(cold.get('cas_move_follower_hash_hit_fraction'), 1);
+  const sum = (rows, op) => rows.filter((r) => r.op_kind === op).reduce((a, r) => a + r.quantity, 0);
+  const blobs = cold.get('cas_blob_uploads_per_part') * moved;
+  close(sum(leader, 'PutObject') - sum(hit, 'PutObject'), 2 * blobs, 'a hit saves the blob and its .meta PUT');
+  close(sum(hit, 'GetObject') - sum(leader, 'GetObject'), blobs, 'a hit reads the .meta');
+  for (const op of ['PutObject', 'HeadObject', 'CreateMultipartUpload', 'UploadPart', 'CompleteMultipartUpload']) {
+    close(sum(q('cas'), op), sum(leader, op) + (replicas - 1) * sum(hit, op), `cas ${op}`);
+  }
+  close(sum(q('cas'), 'GetObject'), sum(leader, 'GetObject') + (replicas - 1) * sum(hit, 'GetObject') + moved * replicas * 2, 'cas GET');
+  const notes = t.cold.variants.cas.cells.inserts.notes.map((x) => x.text);
+  assert.ok(notes.some((x) => /^a follower replica finds every blob already published/.test(x)));
+  assert.ok(notes.some((x) => /^not measured: moves of the same part that overlap on two replicas can both miss/.test(x)));
   // s3 insert PUTs are already per replica.
   close(q('s3').find((r) => r.op_kind === 'PutObject').quantity, pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.s3.cells.inserts.quantities.find((r) => r.op_kind === 'PutObject').quantity, 's3 PUT');
   // The single-tier columns keep the insert cells.

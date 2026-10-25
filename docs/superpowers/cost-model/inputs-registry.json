@@ -8968,6 +8968,28 @@
       "status": "ok"
     },
     {
+      "id": "cas_move_follower_hash_hit_fraction",
+      "block": "tiering",
+      "label": "Share of blobs a follower replica finds already published when it moves a part the first replica moved: 1, every blob takes the hash-hit branch (HEAD and .meta GET, no blob PUT)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move#results (bd731b623d1: move-replicated.ttl-cas, moves one replica after the other, exact on both replicas; overlapping moves not measured)",
+        "version": "0.3.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
       "id": "cas_ref_log_tail_records",
       "block": "cas",
       "label": "Ref log records of one table since its last snapshot that a folding GC round reads",

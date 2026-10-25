@@ -237,7 +237,11 @@ inserts cell, changed in three ways:
 
 - **No fetch.** Rows a follower's fetch prices are dropped: the `replicas − 1` GETs on `s3` and `s3plain`, and the
   interserver transfer on all three.
-- **Per replica.** Rows priced once per part (the `cas` publish) are multiplied by `replicas`.
+- **Per replica.** Rows priced once per part (the `cas` publish) are the first replica's publish. Each of the
+  `replicas − 1` followers pays the same rows on the hash-hit branch: `cas_hash_hit_fraction` is replaced by
+  `cas_move_follower_hash_hit_fraction` = 1. That is a HEAD and a `.meta` GET per blob and no blob PUT, plus the
+  manifest and the 3 ref transactions of its own namespace. Measured exactly on both replicas
+  (`move-replicated.ttl-cas`, `bd731b623d1`).
 - **Part load.** One `GetObject` row of `parts_inserted_per_month × replicas` times
   `move_load_gets_per_part` = `part_load_files + 1` (`ttl.txt`, 10) on `s3` and `s3plain`, or
   `cas_move_load_gets_per_part` = 1 manifest + 1 marks blob for a Wide part on `cas`.
@@ -258,9 +262,9 @@ The cold inserts cell carries the note "TTL move priced as the write of the move
   The `cas` merges cell does not read `merge_size_ratio`: it prices
   `insert_rate × parts_per_insert / (merge_effective_fan_in − 1)` merges, as if parts kept merging. In the cold tier
   that is $1.27 a month on Logs, more than the tier runs; its cell note says so.
-- **Every blob uploads on every replica.** The `cas` publish is multiplied by `replicas` with
-  `cas_hash_hit_fraction` 0, an upper bound: the two-replica run was on `s3` only. If the second replica's
-  identical blobs hit by hash, the cold intake is lower.
+- **Moves of one part do not overlap.** The two-replica `cas` run moved one replica after the other. Moves of the
+  same part that overlap on two replicas can both miss the hash and both upload the blobs; that race was not
+  measured. The cold inserts cell says so.
 - **One moved part per cold mutation.** A mutation over N cold parts is N mutations here.
 
 The cold columns are `extrapolated`; the hot `ebs` run is not. On Logs a moved part has 25.6 million rows, above
@@ -276,7 +280,7 @@ month; their "GB" is a binary GiB.
 |---|---|---|---|---|
 | `s3` | $728.00 | $540.06 | $1,268.06 | $3,689.81 |
 | `s3plain` | $728.00 | $552.39 | $1,280.39 | $6,803.81 |
-| `cas` | $728.00 | $284.38 | $1,012.38 | $2,847.13 |
+| `cas` | $728.00 | $280.30 | $1,008.30 | $2,847.13 |
 
 Single-tier `ebs` is $3,120.00.
 
@@ -287,11 +291,11 @@ Single-tier `ebs` is $3,120.00.
   storage the same 7 days cost $3,160.74 on `s3` (inserts $2,441.94, merges $555.49). On `cas` they cost $2,582.52
   (inserts $1,229.03, GC at 60 s $943.09, merges $324.74).
 - **Cold intake.** 337.5 parts a day per replica, each 25.6 million rows, 15 GiB uncompressed, about 1.48 GiB on
-  disk, Wide. The intake costs $9.22 on `s3` and $9.62 on `cas`.
+  disk, Wide. The intake costs $9.22 on `s3` and $5.54 on `cas`.
 - **Cold storage.** `s3` keeps a copy per replica: 23,000 GiB-months, $529.00. `cas` keeps one copy for both
   replicas: 11,500 active + 1.87 garbage + 4.39 metadata = 11,506.26 GiB-months, $264.64. Hourly GC costs $4.04
   and the mount lease $3.83.
-- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,012.38. That is the
+- **Result.** With these inputs, local disk as the first tier and `cas` as the second costs $1,008.30. That is the
   lowest of the seven options on the page.
 
 ## Known inaccuracies {#known-inaccuracies}
