@@ -904,21 +904,43 @@
   // How the table count, creations and drops enter the CAS column; one text for the three inputs of the tables row.
   const TABLE_INPUTS = ['cas_tables', 'cas_table_creates_per_month', 'cas_table_drops_per_month'];
   const constSum = (n) => (!n ? null : n.kind === 'const' ? n.value : n.kind === 'add' ? ((a, b) => (a === null || b === null ? null : a + b))(constSum(n.a), constSum(n.b)) : null);
+  // The measured per-table GC and start terms (report 2026-10-25-storage-cost-cas-tables): their values and the table
+  // counts they were fitted at, read from the contract; null when the contract predates them.
+  function tableFit(contract) {
+    const c = (id) => contract.coefficients.find((x) => x.id === id);
+    const gc = c('gc_round_requests_steady');
+    const start = c('cas_startup_requests_per_table');
+    const err = c('cas_startup_error_requests_per_table');
+    if (!gc || !start || !err) return null;
+    const r = (model().rangeOf(gc) || {}).cas_tables;
+    const v = gc.value.values;
+    return { span: r ? `${fmtQuantity(r[0])}–${fmtQuantity(r[1])}` : null, changed: v.fold_get_per_changed_table, swept: v.fold_get_per_swept_table,
+      budget: v.sweep_namespace_budget, get: (start.value.values.GetObject || 0) + (err.value.values.GetObject || 0),
+      put: start.value.values.PutObject || 0, list: start.value.values.ListObjectsV2 || 0 };
+  }
   function tableLines(contract) {
     const q = (id) => contract.registry.find((x) => x.id === id) || {};
     const period = q('cas_table_cleanup_period_s').default;
     const tail = q('cas_ref_log_tail_records').default;
     const creates = constSum(q('cas_table_create_requests').rule);
     const drop = q('cas_foreground_ref_removal_requests').default;
+    const fit = tableFit(contract);
     return [
       `Every replica's MergeTree cleanup thread lists each table's files once per cleanup period (a catalog GET and a LIST${period ? `, every ${fmtQuantity(period)} s when idle` : ''}).`,
-      `A server start replays each table's ref log tail${tail ? ` (${fmtQuantity(tail)} records assumed)` : ''}, and a folding GC round reads the tail of every table.`,
+      fit ? `A server start reads each table's catalog row, checkpoint and files (${fmtQuantity(fit.get)} GETs, ${fmtQuantity(fit.put)} PUTs, ${fmtQuantity(fit.list)} LISTs) and replays its ref log tail${tail ? ` (${fmtQuantity(tail)} records assumed)` : ''}.`
+        : `A server start replays each table's ref log tail${tail ? ` (${fmtQuantity(tail)} records assumed)` : ''}.`,
+      fit ? `A GC fold reads ${fmtQuantity(fit.changed)} objects per table with new data; its orphan-manifest sweep re-reads the whole tail plus ${fmtQuantity(fit.swept)} objects of at most ${fmtQuantity(fit.budget)} tables per round.`
+        : 'A folding GC round reads the tail of every table.',
       `CREATE TABLE sends ${creates === null ? 'a fixed set of' : fmtQuantity(creates)} requests per replica: the catalog entry, the first checkpoint, ref log recovery, format_version.txt and the table-start listings.`,
       `DROP TABLE SYNC removes each part's ref in one transaction${drop ? ` and pays ${fmtQuantity(drop)} requests for the table` : ''}, per replica; Parts per dropped table (low-level) sets the part count, and the dropped parts become GC work.`,
-      'The measurements ran one table; the per-table scaling is a formula from source.',
+      fit && fit.span ? `The GC and start requests per table are fitted at ${fit.span} tables; the cleanup listing and CREATE and DROP TABLE are formulas from source, verified at 1 table.`
+        : 'The measurements ran one table; the per-table scaling is a formula from source.',
     ];
   }
-  const TABLE_VERIFIED = 'formula from source; verified at 1 table';
+  const tableVerified = (contract) => {
+    const fit = tableFit(contract);
+    return fit && fit.span ? `fitted at ${fit.span} tables; listing and DDL from source, verified at 1 table` : 'formula from source; verified at 1 table';
+  };
   function describe(q, title) {
     if (FIELD_SENTENCES[q.id]) return FIELD_SENTENCES[q.id];
     return q.label && q.label.toLowerCase() !== String(title).toLowerCase() ? q.label : null;
@@ -959,7 +981,7 @@
 
   // Where the measurements checked a value. A formula from source holds outside it; a fitted value is extrapolated there.
   function verifiedText(contract, q, c, f) {
-    if (q && TABLE_INPUTS.includes(q.id)) return TABLE_VERIFIED;
+    if (q && TABLE_INPUTS.includes(q.id)) return tableVerified(contract);
     let span = null;
     if (c && model().rangeOf(c)) span = rangesText(contract, model().rangeOf(c));
     else if (f && f.display_range) {

@@ -88,11 +88,13 @@ columns (D22).
 
 **Tables.** Tables on the CAS disk, tables created per month and tables dropped per month share one workload line
 with one (i). On every replica, each table adds a catalog GET and a LIST per `cas_table_cleanup_period_s` (the
-cleanup thread's listing, `lease` cell), and its ref log tail to every server start (`recovery`) and to every folding
-GC round (`gc`). A CREATE TABLE sends 21 requests per replica (`cas_table_create_requests`); a DROP TABLE SYNC sends
-9 plus 4 per part per replica (`deletes` cell). The rig ran one table, so the per-table terms are formulas from source
-verified at 1 table. The fixed start requests (`cas_startup_requests`) were measured with one table, so more than one
-table marks the CAS Recovery cell extrapolated.
+cleanup thread's listing, `lease` cell). Each server start reads per table GET 14 (3 of them 404), PUT 2 and LIST 5,
+and replays its ref log tail (`recovery`). A GC fold reads 4 objects per table with new data. Its orphan-manifest
+sweep re-reads the whole tail plus 5 objects of at most 20 tables per round (`gc`). These per-table terms are fitted
+at 1–500 tables (`docs/superpowers/reports/2026-10-25-storage-cost-cas-tables`). A CREATE TABLE sends 21 requests
+per replica (`cas_table_create_requests`). A DROP TABLE SYNC sends 9 plus 4 per part per replica (`deletes` cell).
+Both are formulas from source, verified at 1 table. With the filesystem cache the start was measured with one table
+only, so more tables mark the CAS Recovery cell extrapolated.
 
 ### The (i) dialog {#info-dialog}
 

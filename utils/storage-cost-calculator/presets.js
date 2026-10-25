@@ -34,8 +34,8 @@
         cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['ingest_rate', 'retention_days'],
-      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
-      // with one table on the disk, so more tables extrapolate them.
+      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
+      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
       expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Metrics from many agents: 20 GiB/day compressed kept 90 days (1,800 GiB derived), two replicas.
@@ -58,7 +58,7 @@
       locks: ['ingest_rate', 'retention_days'],
       // 1,000-row inserts lie below the measured mutation part sizes (op_write_bytes) and below the part sizes the
       // replica fetch transfer was measured at (acquire_bytes, cas_relink_bytes_per_part); the page shows the
-      // dependent numbers as extrapolated. The CAS start requests were measured with one table on the disk.
+      // dependent numbers as extrapolated. The cached CAS start was measured with one table on the disk.
       expected_extrapolated: {
         ebs: ['op_write_bytes', 'acquire_bytes'], s3: ['acquire_bytes'], s3plain: ['acquire_bytes'],
         cas: ['cas_relink_bytes_per_part', 'cas_startup_requests', 'cas_startup_error_requests'],
@@ -84,8 +84,8 @@
         cas_tables: 5, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
-      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
-      // with one table on the disk, so more tables extrapolate them.
+      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
+      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
       expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // Cold archive without replication: 50 TiB kept two years (~70 GiB/day derived) on one replica.
@@ -107,8 +107,8 @@
         cas_tables: 3, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: ['data_bytes', 'retention_days'],
-      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
-      // with one table on the disk, so more tables extrapolate them.
+      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
+      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
       expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
     // The standard deployment: what the workload knobs alone describe. Wide table, async inserts on (the async buffer
@@ -123,8 +123,8 @@
         cas_tables: 10, cas_table_creates_per_month: 0, cas_table_drops_per_month: 0,
       },
       locks: [],
-      // A CAS server start reads every table's catalog row, _ckpt and files; those fixed start requests were measured
-      // with one table on the disk, so more tables extrapolate them.
+      // With the filesystem cache the CAS start requests were measured with one table on the disk; more tables
+      // extrapolate them (without the cache they are fitted at 1 to 500 tables).
       expected_extrapolated: { cas: ['cas_startup_requests', 'cas_startup_error_requests'] },
     },
   };

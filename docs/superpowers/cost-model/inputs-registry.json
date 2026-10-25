@@ -8347,6 +8347,33 @@
       "status": "ok"
     },
     {
+      "id": "cas_log_records_per_part",
+      "block": "cas",
+      "label": "Ref log records one part adds: the precommit, promote and rename transactions (Pool/CasPartWriteTxn.cpp:697, :810; ContentAddressedTransaction.cpp:1306)",
+      "kind": "pinned",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3,
+      "rule": null,
+      "coef": null,
+      "verified_range": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp:697",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": null,
+      "ui": {
+        "tier": "hidden",
+        "name": null,
+        "short": "Log records per part"
+      },
+      "status": "ok"
+    },
+    {
       "id": "gc_stage",
       "block": "cas",
       "label": "GC reclamation stage",
@@ -8643,6 +8670,38 @@
       "status": "ok"
     },
     {
+      "id": "gc_round_requests_steady",
+      "block": "cas",
+      "label": "Requests of one steady-state GC round: fold base, per new manifest, per tail record, per table; Deferred round",
+      "kind": "measured",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "gc_round_term"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "gc_round_requests_steady",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          500
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
       "id": "gc_round_duration",
       "block": "cas",
       "label": "Duration of one GC round",
@@ -8916,7 +8975,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -8931,8 +8990,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -8950,7 +9009,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -8965,8 +9024,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -8984,7 +9043,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -8999,8 +9058,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -9018,7 +9077,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -9033,8 +9092,212 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_delete",
+      "block": "cas",
+      "label": "GC round requests: fold DELETEs (an old gc/gen generation pruned)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_delete",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_sweep_namespace_budget",
+      "block": "cas",
+      "label": "Tables the orphan-manifest sweep visits per GC round at most (gc_round_sweep_namespace_budget)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "sweep_namespace_budget",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get_per_swept_table",
+      "block": "cas",
+      "label": "GC fold GETs per table the orphan-manifest sweep visits, besides its tail (4 stream objects, 1 _ckpt)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get_per_swept_table",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get_per_swept_tail_log_record",
+      "block": "cas",
+      "label": "GC fold GETs per tail record of a table the orphan-manifest sweep visits",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get_per_swept_tail_log_record",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get_per_new_log_record",
+      "block": "cas",
+      "label": "GC fold GETs per new ref log record",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get_per_new_log_record",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "gc_round_requests_fold_get_per_changed_table",
+      "block": "cas",
+      "label": "GC fold GETs per table with new data: its _ckpt and up to 3 mount objects (2 answer 404)",
+      "kind": "derivation",
+      "scope": "pool",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "lookup",
+        "table_id": "gc_round_requests_steady",
+        "keys": [
+          {
+            "kind": "const",
+            "value": "fold_get_per_changed_table",
+            "dim": "enum:gc_round_term"
+          }
+        ],
+        "dim": "count"
+      },
+      "coef": null,
+      "basis": "fitted",
+      "verified_range": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -9052,7 +9315,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -9067,8 +9330,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -9086,7 +9349,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -9101,8 +9364,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -9120,7 +9383,7 @@
       "default": null,
       "rule": {
         "kind": "lookup",
-        "table_id": "gc_round_requests",
+        "table_id": "gc_round_requests_steady",
         "keys": [
           {
             "kind": "const",
@@ -9135,8 +9398,8 @@
       "verified_range": null,
       "evidence": {
         "kind": "measured",
-        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-cas coefficient gc_round_requests",
-        "version": "0.3.0"
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables coefficient gc_round_requests_steady",
+        "version": "0.1.0"
       },
       "hint": null,
       "status": "ok"
@@ -11797,6 +12060,136 @@
           "cas_startup_error_requests": "not separable from system.events; use the store access log"
         }
       },
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_requests_per_table",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start sends per table on the disk (catalog row, _ckpt, table files), answered 2xx",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_requests_per_table",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          500
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_error_requests_per_table",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start sends per table on the disk that are answered 404",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_error_requests_per_table",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          500
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_requests_base",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start without the filesystem cache sends besides tables, parts and log replay, answered 2xx",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_requests_base",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          500
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+        "version": "0.1.0"
+      },
+      "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "cas_startup_error_requests_base",
+      "block": "topology_recovery",
+      "label": "Requests a CAS server start without the filesystem cache sends besides tables, answered 4xx",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "cache_enabled",
+          "replication_op"
+        ],
+        "dim": "count"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "cas_startup_error_requests_base",
+      "verified_range": {
+        "cas_tables": [
+          1,
+          500
+        ]
+      },
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-25-storage-cost-cas-tables",
+        "version": "0.1.0"
+      },
+      "hint": null,
       "status": "ok"
     },
     {

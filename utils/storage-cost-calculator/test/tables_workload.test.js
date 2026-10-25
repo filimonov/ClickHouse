@@ -77,12 +77,19 @@ test('test_per_table_cas_requests_scale_with_the_table_count', () => {
     assert.ok(a > 0, op);
     assert.ok(Math.abs(b - 10 * a) < 1e-6 * b, `${op}: ${a} -> ${b}`);
   }
-  // A restart replays each table's ref-log tail: the log GETs grow by 9 tables x the tail.
+  // A restart reads each table's catalog row, checkpoint and files and replays its ref-log tail: per start, 9 more
+  // tables cost 9 x (tail GETs + the measured per-table GETs), with and without the cache.
   const tail = pipeline.evaluationInputs(LIVE, pipeline.resolveInputs(LIVE, presets.SCENARIOS.logs.values, presets.SCENARIOS.logs.locks, {}).inputs);
-  const perRecord = LIVE.coefficients.find((c) => c.id === 'cas_startup_gets_per_log_record').value;
-  const replay = tail.get('restarts_per_month') * tail.get('replicas') * tail.get('cas_ref_log_tail_records') * perRecord;
-  assert.ok(Math.abs(qty(rowsOf(ten, 'recovery'), 'GetObject') - qty(rowsOf(one, 'recovery'), 'GetObject') - 9 * replay) < 1e-6);
-  // The GC fold reads every table's tail: more tables, more fold GETs.
+  const coef = (id) => LIVE.coefficients.find((c) => c.id === id).value;
+  const starts = tail.get('restarts_per_month') * tail.get('replicas');
+  const perTable = tail.get('cas_ref_log_tail_records') * coef('cas_startup_gets_per_log_record') + coef('cas_startup_requests_per_table').values.GetObject;
+  for (const cache of ['0', '1']) {
+    const a = run('logs', { cas_tables: 1, cache_enabled: cache });
+    const b = run('logs', { cas_tables: 10, cache_enabled: cache });
+    assert.ok(Math.abs(qty(rowsOf(b, 'recovery'), 'GetObject') - qty(rowsOf(a, 'recovery'), 'GetObject') - 9 * starts * perTable) < 1e-6, cache);
+    const e404 = qty(rowsOf(b, 'recovery'), 'GetObject', 'client_error') - qty(rowsOf(a, 'recovery'), 'GetObject', 'client_error');
+    assert.ok(Math.abs(e404 - 9 * starts * coef('cas_startup_error_requests_per_table').values.GetObject) < 1e-6, cache);
+  }
   assert.ok(qty(rowsOf(ten, 'gc'), 'GetObject') > qty(rowsOf(one, 'gc'), 'GetObject'));
   assert.ok(ten.variants.cas.total > one.variants.cas.total);
 });
@@ -140,7 +147,7 @@ test('test_tables_modal_explains_how_tables_enter_the_cas_cost', () => {
   assert.match(all, /DROP TABLE SYNC/);
   assert.match(all, /CREATE TABLE/);
   assert.match(all, /parts per dropped table/i);
-  assert.equal(info.range_text, 'formula from source; verified at 1 table');
+  assert.equal(info.range_text, 'fitted at 1–500 tables; listing and DDL from source, verified at 1 table');
   for (const id of TABLE_INPUTS) {
     const i = page('logs', {}, { info: { kind: 'input', id } }).vm.info;
     assert.ok(i.description && i.description.split(/\.\s/).length === 1, `${id}: one sentence, got ${i.description}`);
@@ -149,12 +156,33 @@ test('test_tables_modal_explains_how_tables_enter_the_cas_cost', () => {
 });
 
 test('test_more_tables_extrapolate_only_the_start_requests', () => {
-  // The fixed CAS start requests were measured with one table on the disk; every per-table term is a formula from
-  // source. So in one zone more tables flag the Recovery cell and nothing else.
+  // With the filesystem cache the CAS start was measured with one table on the disk; the per-table terms are fitted at
+  // 1 to 500 tables without it. So in one zone more tables flag the Recovery cell and nothing else.
   const flagged = (sc, inputs) => page(sc, inputs).vm.table.rows
     .filter((r) => (r.cells.find((c) => c.variant === 'cas') || {}).extrapolated).map((r) => r.operation);
   for (const sc of Object.keys(presets.SCENARIOS)) {
     assert.deepEqual(flagged(sc), ['recovery'], sc);
     assert.deepEqual(flagged(sc, { cas_tables: 1 }), [], `${sc} at one table`);
+    // Without the cache the start was measured at 1 to 500 tables: nothing is extrapolated.
+    assert.deepEqual(flagged(sc, { cache_enabled: '0' }), [], `${sc} without the cache`);
   }
+});
+
+test('test_gc_fold_follows_the_capped_sweep_law', () => {
+  // Per fold of a busy pool: per table with new data `fold_get_per_changed_table` GETs, and the orphan-manifest sweep
+  // reads the tail plus `fold_get_per_swept_table` objects of at most `sweep_namespace_budget` tables.
+  const v = LIVE.coefficients.find((c) => c.id === 'gc_round_requests_steady').value.values;
+  const tail = pipeline.evaluationInputs(LIVE, pipeline.resolveInputs(LIVE, presets.SCENARIOS.logs.values, presets.SCENARIOS.logs.locks, {}).inputs).get('cas_ref_log_tail_records');
+  const swept = tail * v.fold_get_per_swept_tail_log_record + v.fold_get_per_swept_table;
+  const gets = (n) => qty(rowsOf(run('logs', { cas_tables: n }), 'gc'), 'GetObject');
+  const d = (n) => gets(n) - gets(1);
+  const B = v.sweep_namespace_budget;
+  const close = (a, b, msg) => assert.ok(Math.abs(a - b) <= 1e-9 * Math.abs(b), `${msg}: ${a} vs ${b}`);
+  // Below the budget every table costs both terms: d(10) / d(5) = 9 / 4.
+  close(d(10) / d(5), 9 / 4, 'linear below the budget');
+  // Above it only the changed-table term grows.
+  const perRound = d(B) / ((B - 1) * (v.fold_get_per_changed_table + swept));
+  close(d(B + 10) - d(B), perRound * 10 * v.fold_get_per_changed_table, 'capped above the budget');
+  // A fold prunes an old generation: DELETE 2 per fold round, priced as a DeleteObject row.
+  assert.ok(rowsOf(run('logs', {}), 'gc').some((r) => r.op_kind === 'DeleteObject' && r.quantity > 0));
 });
