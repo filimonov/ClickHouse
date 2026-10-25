@@ -357,7 +357,13 @@
     const ctx = { inputs: values, coefs, tables, sets: new Map(Object.entries(contract.sets || {})), vars: new Map(), prices: null, extrapolatedInputs: new Set(), nearest };
     // An input outside its own measured range makes every number that reads it extrapolated, unless only formulas
     // from source read it (derivedOutside notes those).
-    for (const o of inputsOutsideRange(contract, values)) ctx.extrapolatedInputs.add(o.id);
+    const derivedOnly = derivedOnlyInputs(contract);
+    for (const q of contract.registry) {
+      if (derivedOnly.has(q.id)) continue;
+      const r = q.kind === 'input' ? (model().rangeOf(q) || {})[q.id] : null;
+      const x = values.get(q.id);
+      if (r && typeof x === 'number' && (x < r[0] || x > r[1])) ctx.extrapolatedInputs.add(q.id);
+    }
     // Registry derivations may read each other; evaluate until no new value appears (they are acyclic, §4.2).
     const pending = contract.registry.filter((x) => x.kind === 'derivation' && x.rule && !values.has(x.id));
     for (let changed = true; changed;) {
@@ -373,20 +379,6 @@
       }
     }
     return ctx;
-  }
-
-  // Registry inputs whose value in `values` lies outside their own measured range, as {id, value, range}. Inputs
-  // that only formulas from source read are exact outside it and stay out.
-  function inputsOutsideRange(contract, values) {
-    const derivedOnly = derivedOnlyInputs(contract);
-    const out = [];
-    for (const q of contract.registry) {
-      if (derivedOnly.has(q.id) || q.kind !== 'input') continue;
-      const r = (model().rangeOf(q) || {})[q.id];
-      const x = values.get(q.id);
-      if (r && typeof x === 'number' && (x < r[0] || x > r[1])) out.push({ id: q.id, value: x, range: r });
-    }
-    return out;
   }
 
   // Derived coefficients and tables a cell reads whose verified range does not hold the current values: exact by
@@ -981,7 +973,7 @@
     return {
       hot_days: hotDays, cold_days: all.has('cold_retention_days') ? all.get('cold_retention_days') : null,
       hot_variant: HOT_VARIANT, cold_variants, hot, cold, rows, cheapest, problems, move_dropped_rows: move,
-      hot_inputs: hotInputs, cold_inputs: coldInputs, cold_outside_range: inputsOutsideRange(contract, coldInputs),
+      hot_inputs: hotInputs, cold_inputs: coldInputs,
     };
   }
 

@@ -1127,6 +1127,70 @@
     return `${what}: ${total} a month, ${joinWords(paid.map((l) => `${fmtMoney(l.money, preset.currency)} for ${label(l)}`))}.`;
   }
 
+  // Inputs of the cold run that lie outside the measured range of a fitted or assumed coefficient (or input) the
+  // variant's cold cells read, as texts. The cold inserts cell is the TTL move cell, not the single-tier one.
+  function coldOutsideRange(contract, t, v) {
+    const P = pipeline();
+    const all = P.evaluationInputs(contract, t.cold_inputs);
+    const move = P.moveCell(contract, v);
+    const cells = Object.assign({}, contract.formulas[v] || {}, move.cell ? { inserts: move.cell } : {});
+    const derivedOnly = P.derivedOnlyInputs(contract);
+    const seen = new Map();
+    const check = (ranges) => {
+      for (const [param, r] of Object.entries(ranges || {})) {
+        const x = all.get(param);
+        if (typeof x !== 'number' || (x >= r[0] && x <= r[1])) continue;
+        const q = contract.registry.find((e) => e.id === param);
+        seen.set(`${param}|${r[0]}|${r[1]}`, `${nameOf(contract, param)} is ${fmtQuantity(x, q && q.unit)} in the cold tier; measured at ${fmtQuantity(r[0])} to ${fmtQuantity(r[1], q && q.unit)}`);
+      }
+    };
+    const derived = new Set();
+    const visit = (n) => {
+      if (!n || typeof n !== 'object') return;
+      if (n.kind === 'input' && !derived.has(n.id)) {
+        // A registry derivation reads coefficients itself; the cell is extrapolated through it.
+        const d = contract.registry.find((e) => e.id === n.id && e.kind === 'derivation' && e.rule);
+        if (d) { derived.add(n.id); visit(d.rule); }
+      }
+      if (n.kind === 'coef') {
+        const c = contract.coefficients.find((e) => e.id === n.id);
+        if (c && model().basisOf(c) !== 'derived') check(model().rangeOf(c));
+      } else if (n.kind === 'input' && !derivedOnly.has(n.id)) {
+        const q = contract.registry.find((e) => e.id === n.id);
+        if (q && q.kind === 'input') check(model().rangeOf(q));
+      }
+      for (const c of Object.values(n)) visit(c);
+    };
+    visit(cells);
+    return [...seen.values()];
+  }
+
+  // The (i) of a tiered row: the cold-tier cells of the variant with their notes (the TTL move rule is the cold
+  // inserts note), and which cold-tier inputs lie outside their measured range.
+  function tieredInfo(result, contract, v, problems, preset, x, commit) {
+    const t = result.tiered;
+    const row = t && t.rows.find((r) => r.variant === v);
+    const cold = t && t.cold.variants[v];
+    if (!row || !cold) { problems.push(`info: no tiered row ${v}`); return null; }
+    const label = variantLabel(v);
+    const lines = [];
+    const source = [];
+    if (cold.state !== 'ok') lines.push(`Cold ${label}: ${cold.reason ? plainReason(cold.reason) : stateText(cold.state)}`);
+    for (const op of Object.keys(cold.cells || {})) {
+      const c = cold.cells[op];
+      lines.push(withExtrapolated(cellSentence(v, op, c, preset, result.page_state, false, x.fields), cellExtrapolated(contract, v, op, c, new Set(), false, preset)));
+      // Assumption notes are sentences; the rest name ids and formulas and go under Source, as in a cell dialog.
+      for (const n of c.notes || []) (n.assumption ? lines : source).push(`${OPERATION_LABELS[op] || op}: ${cite(sourceNote(contract, n), commit)}`);
+    }
+    const out = coldOutsideRange(contract, t, v);
+    const why = !row.extrapolated ? ['Not extrapolated: every cold-tier input lies inside its measured range.']
+      : out.length ? ['Extrapolated: these cold-tier inputs lie outside the measured range.', ...out]
+        : ['Some inputs lie outside the range the model was measured at, so this number is extrapolated.'];
+    return { kind: 'tiered', id: v, title: `Tiered ${label}: cold tier`, name: null,
+      description: `After the TTL move the data sits on ${label}. These are the cells of that cold tier.`,
+      measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: [...lines, ...why], source };
+  }
+
   // What the (i) dialog shows. `open` is {kind: 'input', id} (any registry row or coefficient id), {kind: 'cell',
   // variant, operation}, {kind: 'transfer', variant} or {kind: 'variant', variant}. `ctx`: {split, scenario, fields}.
   function buildInfo(result, contract, inputs, open, problems, preset, ctx) {
@@ -1170,6 +1234,7 @@
       if (!s) { problems.push(`info: no scenario ${open.id}`); return null; }
       return { kind: 'scenario', id: open.id, title: s.label, name: null, description: s.description, measured_by: null, lines: [] };
     }
+    if (open.kind === 'tiered') return tieredInfo(result, contract, open.variant, problems, preset, x, commit);
     const vr = result.variants[open.variant];
     if (!vr) { problems.push(`info: no variant ${open.variant}`); return null; }
     const segs = reasonSegments(vr.reason);

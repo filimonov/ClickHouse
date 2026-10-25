@@ -232,3 +232,33 @@ test('test_cold_intake_follows_the_ttl_move_rule', () => {
   // The single-tier columns keep the insert cells.
   assert.equal(pipeline.run(LIVE, t.cold_inputs, AWS, {}).variants.cas.cells.inserts.quantities.some((r) => r.row_type === 'transfer'), true);
 });
+
+test('test_tiered_rows_open_a_cold_tier_dialog', () => {
+  const s = ui.defaultState(LIVE, 'logs_tiered');
+  const base = ui.compute(LIVE, s, {});
+  const html = ui.renderParts(base.vm, base.page).cards;
+  for (const r of base.vm.tiered.rows) {
+    assert.ok(html.includes(`data-action="info" data-info-kind="tiered" data-variant="${r.variant}"`), `(i) on the ${r.variant} row`);
+    const out = ui.compute(LIVE, s, { info: { kind: 'tiered', variant: r.variant } });
+    const i = out.vm.info;
+    assert.equal(i.kind, 'tiered');
+    const text = i.lines.join('\n');
+    assert.ok(text.includes(`Inserts: ${pipeline.TTL_MOVE_NOTE}`), `${r.variant}: the TTL move rule is the cold Inserts note`);
+    assert.match(text, /Inserts: part load after a move: \d+ GET per part/);
+    assert.match(text, /Extrapolated: these cold-tier inputs lie outside the measured range\./);
+    // Moved part of 25.6 M rows, merge_size_ratio 1 and a 3,600 s GC interval lie outside what was measured.
+    assert.match(text, /is 25,600,000 in the cold tier; measured at/, `${r.variant}: moved part size`);
+    if (r.variant === 'cas') assert.match(text, /is 3,600 s in the cold tier; measured at 10 to 60 s/);
+    assert.match(ui.renderParts(out.vm, out.page).modal, /data-info="tiered:/);
+  }
+  const cas = ui.compute(LIVE, s, { info: { kind: 'tiered', variant: 'cas' } }).vm.info.lines.join('\n');
+  assert.match(cas, /once per table, not priced: the first move into a table costs 3 PUT and 13 GET/);
+});
+
+test('test_tiered_gc_fields_name_the_cards_they_drive', () => {
+  const s = ui.defaultState(LIVE, 'logs_tiered');
+  const out = ui.compute(LIVE, s, {});
+  const parts = ui.renderParts(out.vm, out.page);
+  assert.match(parts.cards, /Cold tier GC interval <span class="mute">\(tiered rows\)<\/span>/);
+  assert.match(parts.inputs, /<code>cas_gc_interval_sec<\/code> <span class="mute">\(single-tier CAS\)<\/span>/);
+});

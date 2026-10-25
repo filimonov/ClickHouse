@@ -219,7 +219,8 @@
       + ` aria-pressed="${p.pressed}">${esc(p.label)}</button>`).join('')}</span>` : '');
 
   // A ClickHouse setting is named as the user knows it, in code font; other inputs carry a short label.
-  const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code></span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
+  // The single-tier GC interval and the tiered block's cold one look alike; each label says which cards it drives.
+  const fieldLabel = (f) => (f.name ? `<span class="field-label"><code>${esc(f.name)}</code>${f.id === 'cas_gc_interval_s' ? ' <span class="mute">(single-tier CAS)</span>' : ''}</span>` : `<span class="field-label">${esc(f.form_label || f.label || '')}</span>`);
 
   // `simple`: workload knob with a slider. `compact`: a setting in the grid. Both keep helper lines behind (i).
   function renderField(f, page, simple, compact) {
@@ -340,11 +341,11 @@
     const rows = t.rows.map((r) => {
       const mark = r.cheapest ? badge(r.cheapest_text, 'ok') : r.extrapolated && r.state === 'ok' ? badge('extrapolated', 'warn') : '';
       return `<li class="tier-row${r.cheapest ? ' is-cheapest' : ''}" data-variant="${esc(r.variant)}" data-state="${esc(r.state)}">`
-        + `<span class="tier-sum" data-kind="money">${esc(r.sum_text)}</span>${mark}`
+        + `<span class="tier-sum" data-kind="money">${esc(r.sum_text)}</span>${mark}${infoButton({ 'info-kind': 'tiered', variant: r.variant }, `${r.label} cold tier`)}`
         + `${r.single_text ? `<span class="tier-single mute">${esc(r.single_text)}</span>` : ''}${r.reason ? `<span class="tier-single mute">${esc(r.reason)}</span>` : ''}</li>`;
     }).join('');
     const g = t.gc_field;
-    const gc = g ? `<div class="tier-gc" data-field="${esc(g.id)}"><span class="field-label">${esc(g.short || g.label)}</span>${control(g, page, false)}`
+    const gc = g ? `<div class="tier-gc" data-field="${esc(g.id)}"><span class="field-label">${esc(g.short || g.label)} <span class="mute">(tiered rows)</span></span>${control(g, page, false)}`
       + `${infoButton({ 'info-kind': 'input', id: g.id }, g.short || g.label)}${fieldTags(g)}</div>` : '';
     return `<section class="panel-block tiered" data-block="tiered" aria-label="Tiered storage"><h2>${esc(t.title)}</h2>`
       + `${t.single_hot_text ? `<p class="mute">${esc(t.single_hot_text)}</p>` : ''}<ul class="tier-rows">${rows}</ul>${gc}`
@@ -502,7 +503,7 @@
     return `<div class="modal-body" data-info="${esc(i.kind)}:${esc(i.id)}"><header class="modal-head"><h2 id="modal-title">${esc(i.title)}</h2>`
       + '<button type="button" class="btn btn-small" data-action="close-info" aria-label="Close">Close</button></header>'
       + `${i.description ? `<p>${esc(i.description)}</p>` : ''}${facts ? `<div class="tbl"><table class="facts"><tbody>${facts}</tbody></table></div>` : ''}`
-      + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
+      + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' || i.kind === 'tiered' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
       // Rig, proxy and formula detail: kept for the reader who checks the number, after the plain sentences.
       + `${i.source && i.source.length ? `<h4>Source</h4>${list(i.source.map((l) => `<li>${esc(l)}</li>`), 'why source')}` : ''}`
       + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
@@ -713,7 +714,7 @@
       case 'close-drill': s.openCell = null; break;
       case 'show-calc': u.showCalc = !u.showCalc; break;
       case 'info': {
-        const kind = known(['input', 'cell', 'variant', 'column', 'transfer', 'evidence', 'scenario'], d.infoKind, 'info kind');
+        const kind = known(['input', 'cell', 'variant', 'column', 'transfer', 'evidence', 'scenario', 'tiered'], d.infoKind, 'info kind');
         u.info = kind === 'input' || kind === 'evidence' || kind === 'scenario' ? { kind, id: d.id } : kind === 'cell' ? { kind, variant: d.variant, operation: d.operation } : { kind, variant: d.variant };
         break;
       }
