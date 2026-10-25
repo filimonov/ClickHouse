@@ -13,10 +13,17 @@ A TTL move of a part from the local hot volume to a cold object-store volume cos
 part on the cold disk, plus one load of the moved part from the cold disk**. The local source part costs no
 object request. Without zero-copy replication every replica moves its own copy.
 
-- **Status:** source prediction, committed before the run.
-- **Binary:** `tmp/bin/26.8/clickhouse`, source `09d0772a842`.
+- **Verdict:** the rule holds exactly on all three variants, plus a once-per-table term
+  (`ttl_move_table_once_requests`): `s3plain` PUT 1 and HEAD 1 for `moving/`, CAS PUT 3 and GET 13 for the table's
+  namespace birth on the pool.
+- **Runs:** `cost-20261025T133717Z` (`move.ttl` on `s3`, `s3plain`, `cas`; `move-replicated.ttl` on `s3`) and
+  `cost-20261025T135003Z` (`move.ttl-holdout` on `cas`); rig commits `f3fea9a2efe` and `455dc9b8f77`, `rig_dirty`
+  false, RustFS 1.0.0-beta.9, two passes per case. An uncited `s3` smoke pass (`cost-20261025T130324Z`) came first.
+- **Binary:** `tmp/bin/26.8/clickhouse`, sha256 `b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668`,
+  source `09d0772a842c5d73cf3ef35b4c8b017d838215a0`.
 - **Cards:** `move` and `move-replicated` in `utils/cas-yardstick/yardstick/cost/cards/move.py`.
-- **Manifests:** `experiments/`; predictions: `predictions/<experiment_id>.<policy>.json`.
+- **Manifests:** `experiments/`; predictions: `predictions/<experiment_id>.<policy>.json`; coefficient:
+  `coefficients.json`; records: `measurements.jsonl` and `raw/`.
 
 ## Move path {#move-path}
 
@@ -55,3 +62,48 @@ Paths are under `src/` at `09d0772a842`.
 | `cas` | 67–89 | 42–54 | 17–27 | insert publish (PUT 7, GET 7 per part, blob branches) + 1 manifest GET per part + 1 marks GET per Wide part; exact per the observed branch population |
 
 `move-replicated.ttl` (`s3`, 2 replicas, 2 Compact parts): `r1` and `r2` each PUT 24, GET 20.
+
+## Results {#results}
+
+Foreground requests of the moving replica, both passes identical. `HEAD`/`PUT`/`GET` are
+`HeadObject`/`PutObject`/`GetObject`.
+
+| Case | Variant | Predicted | Measured | Result |
+|---|---|---|---|---|
+| `move.ttl` | `s3` | PUT 80, GET 50 | PUT 80, GET 50 | exact |
+| `move.ttl` | `s3plain` | PUT 91, GET 50, HEAD 6 | PUT 91, GET 50, HEAD 6 | exact |
+| `move.ttl` | `cas` | publish graph at the observed branches: PUT 85, GET 44–45, HEAD 27 | PUT 88, GET 57, HEAD 27 | missed: namespace birth |
+| `move.ttl-holdout` | `cas` | publish graph + birth term at the observed branches: PUT 70, GET 54, HEAD 16 | PUT 70, GET 54, HEAD 16 | exact |
+| `move-replicated.ttl` | `s3`, `r1` and `r2` | PUT 24, GET 20 each | PUT 24, GET 20 each | exact |
+
+- **Per part.** `s3` and `s3plain` wrote 12 objects per Compact part and 22 per Wide part, the objects of an insert
+  of that part. Each moved part was loaded with 10 GETs (`move_load_gets_per_part`). `s3plain` added 2 directory
+  PUTs and 1 HEAD per part, as on insert.
+- **CAS per part.** 25 fresh blobs and 2 hash hits (`move.ttl`), 16 fresh (`move.ttl-holdout`). Per part 1 manifest
+  PUT, 3 ref transactions, the promote manifest GET and one more manifest GET for the load; a Wide part also
+  read its first marks blob (`cas_move_load_gets_per_part`).
+- **CAS namespace birth.** In `move.ttl` every extra request precedes the first part's publish: `ref_catalog`
+  PUT 2 and GET 8, `_ckpt` PUT 1 and GET 4 (one 404), `_log` GET 1 (404). After it, every ref transaction is the
+  insert's catalog GET, `_log` PUT, `_ckpt` GET and PUT. The table was created on the tiered policy, so the CAS
+  disk saw it first at the move. The hold-out with another part mix predicted the term and landed exactly.
+- **Bytes.** Uploaded body bytes equal the object sizes of the cold layout exactly (`s3`, `s3plain`):
+  29 059 964 B for the five parts. `bytes_on_disk` of the moved parts is 4 505 B less, so the calculator must price
+  the move upload as the part's file bytes. Load GETs read 10 737 B for five parts on `s3`. CAS uploaded
+  29 055 727 B and read 142 096 B, the manifests and ref objects included.
+- **Replicas.** Each replica logged its own `MovePart` events (2 each), neither logged a `DownloadPart` in the
+  window, and the interserver relays carried 0 B: the follower moved its own copy.
+
+## Rule for the calculator {#rule}
+
+Per moved part on each replica: the insert write of that part on the cold disk, plus `move_load_gets_per_part`
+GETs (`s3`, `s3plain`: `part_load_files` + 1 for `ttl.txt`) or `cas_move_load_gets_per_part` (CAS: 1 manifest
+GET, +1 for a Wide part). Once per table and replica: `ttl_move_table_once_requests[variant_id, replication_op]`.
+Bytes uploaded per moved part are the part's file bytes. The local source part costs no object request.
+
+## Limits {#limits}
+
+- One table shape (6 narrow columns), 100 000 and 500 000 rows per part, 2–5 parts per window.
+- No filesystem cache variant, no projection, no partitioned table.
+- The two-replica case ran on `s3` only. A CAS follower's move would hash-hit the leader's blobs; it is not measured.
+- Moves ran within seconds of `SYSTEM START MOVES`. A statistics refresh (`refresh_statistics_interval`, 300 s)
+  reads the moved parts later; the existing statistics refresh terms price it.

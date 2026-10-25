@@ -1,0 +1,78 @@
+[
+ {
+  "id": "ttl_move_table_once_requests",
+  "kind": "table",
+  "dim": "count",
+  "value": {
+   "index": [
+    "variant_id",
+    "replication_op"
+   ],
+   "values": {
+    "s3|PutObject": 0,
+    "s3|GetObject": 0,
+    "s3|HeadObject": 0,
+    "s3plain|PutObject": 1,
+    "s3plain|GetObject": 0,
+    "s3plain|HeadObject": 1,
+    "cas|PutObject": 3,
+    "cas|GetObject": 13,
+    "cas|HeadObject": 0
+   }
+  },
+  "basis": "fitted",
+  "verified_range": {
+   "active_parts": [
+    5,
+    5
+   ]
+  },
+  "tolerance": {
+   "abs": 0,
+   "rel": 0
+  },
+  "evidence": {
+   "kind": "measured",
+   "ref": "docs/superpowers/reports/2026-10-25-storage-cost-ttl-move",
+   "version": "0.1.0",
+   "measurement_ids": [
+    "cost-20261025T133717Z/s3plain/move/ttl/k1",
+    "cost-20261025T133717Z/s3plain/move/ttl/k2",
+    "cost-20261025T133717Z/cas/move/ttl/k1",
+    "cost-20261025T133717Z/cas/move/ttl/k2",
+    "cost-20261025T135003Z/cas/move/ttl-holdout/k1",
+    "cost-20261025T135003Z/cas/move/ttl-holdout/k2"
+   ],
+   "binary_sha256": "b2cd30842534dd8e481e3e18fd54c82a2ab4e978ec0efe0d84f8704880e4f668",
+   "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
+  },
+  "status": "ok",
+  "rule": "requests once per table and replica at the first TTL move onto a cold disk, on top of the insert write and the load of each moved part: s3plain creates <table>/moving/ (PutObject + HeadObject); CAS births the table namespace on the pool (ref_catalog PUT 2 GET 8, _ckpt PUT 1 GET 4 with one 404, _log GET 1, a 404)",
+  "fit": {
+   "method": "measured remainder of move.ttl (5 parts) after the insert write and the per-part load: s3plain source term (Disks/IDisk.cpp:165 creates moving/ through createDirectories), exact in both passes; CAS: every extra request precedes the first part publish in both passes",
+   "residuals": {
+    "cost-20261025T133717Z/s3plain/move/ttl/k1": {
+     "PutObject": 0,
+     "GetObject": 0,
+     "HeadObject": 0
+    },
+    "cost-20261025T133717Z/s3plain/move/ttl/k2": {
+     "PutObject": 0,
+     "GetObject": 0,
+     "HeadObject": 0
+    },
+    "cost-20261025T133717Z/cas/move/ttl/k1": {
+     "PutObject": 0,
+     "GetObject": 0,
+     "HeadObject": 0
+    },
+    "cost-20261025T133717Z/cas/move/ttl/k2": {
+     "PutObject": 0,
+     "GetObject": 0,
+     "HeadObject": 0
+    }
+   },
+   "holdout": "ok, exact: move.ttl-holdout on cas (4 Compact, 1 Wide part; cost-20261025T135003Z, predicted in aed33b5c352): PUT 70, GET 54, HEAD 16 in both passes. The s3plain term has no separate hold-out: it is one source-cited directory"
+  }
+ }
+]

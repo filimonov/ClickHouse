@@ -3196,6 +3196,67 @@
           "status": "run"
         }
       ]
+    },
+    {
+      "name": "move",
+      "family": "lifecycle",
+      "model_variants": [
+        "s3",
+        "s3plain",
+        "cas"
+      ],
+      "cases": [
+        {
+          "case_id": "ttl",
+          "policies": [
+            "s3",
+            "s3plain",
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        },
+        {
+          "case_id": "ttl-holdout",
+          "policies": [
+            "cas"
+          ],
+          "replicas": 1,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
+    },
+    {
+      "name": "move-replicated",
+      "family": "replication",
+      "model_variants": [
+        "s3"
+      ],
+      "cases": [
+        {
+          "case_id": "ttl",
+          "policies": [
+            "s3"
+          ],
+          "replicas": 2,
+          "scale": 1.0,
+          "repeats": 2,
+          "timeout_s": 900,
+          "duration_s": 60,
+          "priority": "P1",
+          "status": "run"
+        }
+      ]
     }
   ],
   "evidence": [
@@ -21379,6 +21440,132 @@
       ],
       "status": "consumed",
       "note": "as s3"
+    },
+    {
+      "coefficient": "ttl_move_table_once_requests",
+      "experiment_id": "move.ttl",
+      "policy": "s3plain",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "11984ad8d77",
+      "measurement_ids": [
+        "cost-20261025T133717Z/s3plain/move/ttl/k1",
+        "cost-20261025T133717Z/s3plain/move/ttl/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "ttl_move_table_once_requests",
+      "experiment_id": "move.ttl",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "fit",
+      "prediction_commit": "6cc255b6593",
+      "measurement_ids": [
+        "cost-20261025T133717Z/cas/move/ttl/k1",
+        "cost-20261025T133717Z/cas/move/ttl/k2"
+      ],
+      "status": "consumed"
+    },
+    {
+      "coefficient": "ttl_move_table_once_requests",
+      "experiment_id": "move.ttl-holdout",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "holdout",
+      "prediction_commit": "aed33b5c352",
+      "measurement_ids": [
+        "cost-20261025T135003Z/cas/move/ttl-holdout/k1",
+        "cost-20261025T135003Z/cas/move/ttl-holdout/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "move_load_gets_per_part",
+      "experiment_id": "move.ttl",
+      "policy": "s3",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "11984ad8d77",
+      "measurement_ids": [
+        "cost-20261025T133717Z/s3/move/ttl/k1",
+        "cost-20261025T133717Z/s3/move/ttl/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "move_load_gets_per_part",
+      "experiment_id": "move.ttl",
+      "policy": "s3plain",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "11984ad8d77",
+      "measurement_ids": [
+        "cost-20261025T133717Z/s3plain/move/ttl/k1",
+        "cost-20261025T133717Z/s3plain/move/ttl/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "move_load_gets_per_part",
+      "experiment_id": "move-replicated.ttl",
+      "policy": "s3",
+      "span": {
+        "active_parts": [
+          2,
+          2
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "6cc255b6593",
+      "measurement_ids": [
+        "cost-20261025T133717Z/s3/move-replicated/ttl/k1",
+        "cost-20261025T133717Z/s3/move-replicated/ttl/k2"
+      ],
+      "status": "done"
+    },
+    {
+      "coefficient": "cas_move_load_gets_per_part",
+      "experiment_id": "move.ttl-holdout",
+      "policy": "cas",
+      "span": {
+        "active_parts": [
+          5,
+          5
+        ]
+      },
+      "role": "validation",
+      "prediction_commit": "aed33b5c352",
+      "measurement_ids": [
+        "cost-20261025T135003Z/cas/move/ttl-holdout/k1",
+        "cost-20261025T135003Z/cas/move/ttl-holdout/k2"
+      ],
+      "status": "done"
     },
     {
       "coefficient": "cas_relink_bytes_per_part",
