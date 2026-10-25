@@ -26,7 +26,7 @@ def load(rel):
 class ManifestsTest(unittest.TestCase):
     def test_manifests_and_predictions_validate(self):
         names = sorted(os.listdir(os.path.join(R, 'experiments')))
-        self.assertEqual(names, ['move-replicated.ttl.json', 'move.ttl.json'])
+        self.assertEqual(names, ['move-replicated.ttl.json', 'move.ttl-holdout.json', 'move.ttl.json'])
         for name in names:
             m = load(f'experiments/{name}')
             self.assertEqual(artifacts.validate_experiment(m), [], name)
@@ -69,6 +69,12 @@ class ArithmeticTest(unittest.TestCase):
         # 5 parts (2 Wide), 16 fresh blobs, 4 hash hits.
         self.assertEqual(cas_graph_bounds(graph, 5, 2, 16, 4),
                          {'HeadObject': [20, 20], 'PutObject': [67, 67], 'GetObject': [46, 47]})
+
+    def test_cas_graph_bounds_with_the_table_birth_term(self):
+        graph = load('predictions/move.ttl-holdout.cas.json')['inputs']['cas_graph']
+        self.assertNotIn('cold_table_once', graph)
+        self.assertEqual(cas_graph_bounds(graph, 5, 1, 10, 1),
+                         {'HeadObject': [11, 11], 'PutObject': [58, 58], 'GetObject': [55, 55]})
 
     def test_by_kind(self):
         reqs = {'t/a': {'PutObject': 12}, 't/b': {'PutObject': 12}, 't/c': {'PutObject': 22}, 'unlisted': {'PutObject': 3}}

@@ -1,0 +1,205 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "move.ttl-holdout",
+  "policy": "cas",
+  "inputs": {
+    "replicas": 1,
+    "compact_parts": 4,
+    "wide_parts": 1,
+    "objects_per_compact_part": 12,
+    "objects_per_wide_part": 22,
+    "load_gets_per_part": 10,
+    "shape": "narrow",
+    "columns": 6,
+    "ttl": true,
+    "exact": true,
+    "cas_graph": {
+      "per_part": {
+        "PutObject": 7,
+        "GetObject": 7
+      },
+      "per_fresh_blob": {
+        "HeadObject": 1,
+        "PutObject": 2
+      },
+      "per_hash_hit": {
+        "HeadObject": 1,
+        "GetObject": 1
+      },
+      "per_moved_part_load": {
+        "GetObject": 1
+      },
+      "per_moved_wide_part_load": {
+        "GetObject": 1
+      },
+      "table_once": {
+        "PutObject": 3,
+        "GetObject": 13
+      }
+    }
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "HeadObject": {
+          "min": 11,
+          "max": 16,
+          "basis": "derived",
+          "reason": "one HEAD per blob, fresh or hash hit"
+        },
+        "PutObject": {
+          "min": 60,
+          "max": 70,
+          "basis": "derived",
+          "reason": "per part publish, body + .meta per fresh blob, namespace birth PUT 3 once"
+        },
+        "GetObject": {
+          "min": 54,
+          "max": 59,
+          "basis": "derived",
+          "reason": "per part publish and clone load, .meta per hash hit, namespace birth GET 13 once"
+        }
+      }
+    },
+    "observations": {
+      "moved_parts": 5
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "each server schedules its own background moves from the TTL of its own parts",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12126
+    },
+    {
+      "claim": "the zero-copy move branch needs allow_remote_fs_zero_copy_replication",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12286
+    },
+    {
+      "claim": "allow_remote_fs_zero_copy_replication is false by default",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    },
+    {
+      "claim": "otherwise the ordinary move: clonePart then swapClonedPart",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 12348
+    },
+    {
+      "claim": "clonePart copies the part with makeCloneOnDisk into moving/",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 281
+    },
+    {
+      "claim": "the clone goes to <table>/moving/<part>/ on the cold disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2929
+    },
+    {
+      "claim": "the clone is loaded back from the cold disk (loadColumnsChecksumsIndexes)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 299
+    },
+    {
+      "claim": "swapClonedPart renames moving/<part> to <part>",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreePartsMover.cpp",
+      "line": 313
+    },
+    {
+      "claim": "CREATE TABLE creates the table directory on every disk of the policy",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 576
+    },
+    {
+      "claim": "load reads columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2535
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2566
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2572
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2627
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2237
+    },
+    {
+      "claim": "one marks file for the index granularity",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1750
+    },
+    {
+      "claim": "primary.cidx (primary_key_lazy_load = 0)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1828
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2304
+    },
+    {
+      "claim": "ttl.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2493
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 2003
+    },
+    {
+      "claim": "a CAS cold disk gets the whole clone through one disk transaction",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 889
+    },
+    {
+      "claim": "committed once per part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp",
+      "line": 905
+    },
+    {
+      "claim": "the clone is published under the moving/<part> ref",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 1490
+    },
+    {
+      "claim": "the swap repoints moving/<part> to <part>: one ref transaction, like the insert rename",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.cpp",
+      "line": 1485
+    },
+    {
+      "claim": "one manifest PUT per part",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 646
+    },
+    {
+      "claim": "promote reads the manifest body, not through the manifest cache",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp",
+      "line": 823
+    },
+    {
+      "claim": "loading the clone reads the manifest once more on a manifest-cache miss",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasManifestReader.cpp",
+      "line": 56
+    }
+  ],
+  "prediction_commit": "PENDING"
+}

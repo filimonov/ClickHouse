@@ -51,8 +51,10 @@ def cas_graph_bounds(graph: dict, parts: int, wide_parts: int, fresh: int, hits:
     for counts, n in terms:
         for op, k in counts.items():
             out[op] = out.get(op, 0) + k * n
+    for op, k in graph.get('table_once', {}).items():
+        out[op] = out.get(op, 0) + k
     bounds = {op: [v, v] for op, v in out.items()}
-    for op, (lo, hi) in graph['cold_table_once'].items():
+    for op, (lo, hi) in graph.get('cold_table_once', {}).items():
         base = bounds.setdefault(op, [0, 0])
         bounds[op] = [base[0] + lo, base[1] + hi]
     return bounds
