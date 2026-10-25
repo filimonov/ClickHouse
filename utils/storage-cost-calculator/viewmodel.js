@@ -255,6 +255,29 @@
     });
     return [...out];
   }
+  // Registry rows the model fixes or derives on an assumption (pinned values and derivations, not the user's own
+  // inputs). A row that prices a non-zero quantity with one rests on that assumption.
+  function assumedRegistryIds(contract) {
+    return new Set(contract.registry.filter((q) => q.kind !== 'input' && q.evidence && q.evidence.kind === 'assumed').map((q) => q.id));
+  }
+  function readsInput(node, ids) {
+    if (!node || typeof node !== 'object') return [];
+    const own = node.kind === 'input' && ids.has(node.id) ? [node.id] : [];
+    return own.concat(...Object.values(node).map((v) => (Array.isArray(v) ? v.flatMap((x) => readsInput(x, ids)) : v && typeof v === 'object' ? readsInput(v, ids) : [])));
+  }
+  function assumedInputsUsed(contract, v, op, c, part) {
+    const f = (contract.formulas[v] || {})[op];
+    const ids = assumedRegistryIds(contract);
+    if (!f || !c || !c.rows) return [];
+    const out = new Set();
+    f.ledger_rows.forEach((fr, i) => {
+      const r = c.rows[i];
+      if (!r || r.state !== 'ok' || !(r.quantity > 0)) return;
+      if ((part === 'transfer' && !isTransferRow(r)) || (part === 'other' && isTransferRow(r))) return;
+      for (const id of readsInput(fr.expr, ids)) out.add(id);
+    });
+    return [...out];
+  }
   // With `split`, the transfer of a cell is shown in the Replica transfer row and is judged there. The pipeline flag is
   // per cell; when its rows say which row was extrapolated, only rows of the shown part count.
   const rowExtrapolated = (r) => !!(r && r.trace && r.trace.extrapolated);
@@ -1121,11 +1144,11 @@
         measured_by: commit ? `Measured on ClickHouse ${commit}.` : null, lines: segs.map((s) => `${s.operation ? `${OPERATION_LABELS[s.operation] || s.operation}: ` : ''}${cite(s.text, commit)}`) };
     }
     const assumed = assumedCoefs(contract);
-    // A Source line that says ASSUMPTION is an assumption the price rests on, so the lead must not say "measured" alone.
-    const lead = (used, extrapolated, source) => {
+    // Structural: the assumed registry rows the priced rows read, plus assumption sentences the Source carries.
+    const lead = (used, extrapolated, source, inputsUsed) => {
       if (vr.state !== 'ok') return stateText(vr.state);
       if (used.length) return 'Priced from a stated assumption.';
-      const n = (source || []).filter((l) => /\bASSUMPTION\b/.test(l)).length;
+      const n = (inputsUsed || []).length + (source || []).filter((l) => /\bASSUMPTION\b/.test(l)).length;
       const more = n === 0 ? '' : n === 1 ? ' and one assumption' : ` and ${n} assumptions`;
       return extrapolated ? `Priced, extrapolated outside the measured range${more}.` : `Priced from measured coefficients${more}.`;
     };
@@ -1147,7 +1170,8 @@
       }
       const ex = vr.state === 'ok' && transferExtrapolated(vr);
       if (ex) lines.push('Some inputs lie outside the range the model was measured at, so this number is extrapolated.');
-      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, ex, source), measured_by: measuredBy, lines, source };
+      const usedInputs = vr.state === 'ok' ? [...new Set(Object.entries(vr.cells || {}).flatMap(([o, c]) => assumedInputsUsed(contract, open.variant, o, c, 'transfer')))] : [];
+      return { kind: 'transfer', id: open.variant, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS.transfer}`, name: null, description: lead(used, ex, source, usedInputs), measured_by: measuredBy, lines, source };
     }
     const op = open.operation;
     const cell = vr.cells[op];
@@ -1175,7 +1199,7 @@
     // The assumption is said above in words; its contract sentence names ids and record names.
     for (const n of cell.notes || []) if (!n.assumption) source.push(cite(sourceNote(contract, n), commit));
     return { kind: 'cell', id: `${open.variant}.${op}`, title: `${variantLabel(open.variant)} · ${OPERATION_LABELS[op] || op}`, name: null,
-      description: lead(used, ex, source), measured_by: measuredBy, lines, source };
+      description: lead(used, ex, source, assumedInputsUsed(contract, open.variant, op, cell, split ? 'other' : 'all')), measured_by: measuredBy, lines, source };
   }
 
   // ---- notes, chart -------------------------------------------------------------------------------

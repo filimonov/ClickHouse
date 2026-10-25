@@ -66,13 +66,18 @@ test('test_gcs_column_dialog_and_infeasible_wording_follow_the_price_list', () =
   assert.match(p.vm.info.lines.join('\n'), /Hyperdisk Balanced baseline per volume/);
 });
 
-test('test_lead_counts_assumption_lines_in_the_source', () => {
-  const info = page('logs', {}, { info: { kind: 'cell', variant: 'cas', operation: 'recovery' } }).vm.info;
-  assert.ok(info.source.some((l) => /\bASSUMPTION\b/.test(l)), JSON.stringify(info.source));
-  assert.equal(info.description, 'Priced from measured coefficients and one assumption.');
-  const plain = page('logs', { topology: 'cross_az' }, { info: { kind: 'cell', variant: 'cas', operation: 'inserts' } }).vm.info;
-  assert.ok(!plain.source.some((l) => /\bASSUMPTION\b/.test(l)));
-  assert.equal(plain.description, 'Priced from measured coefficients.');
+test('test_lead_counts_assumed_rows_the_cell_prices', () => {
+  const lead = (v, op, inputs) => page('logs', inputs || {}, { info: { kind: 'cell', variant: v, operation: op } }).vm.info.description;
+  // Lease prices the pinned cas_cleanup_gets_per_table; GC prices three assumed derivations.
+  assert.equal(lead('cas', 'lease'), 'Priced from measured coefficients and one assumption.');
+  assert.equal(lead('cas', 'gc'), 'Priced from measured coefficients and 3 assumptions.');
+  // Recovery also carries an ASSUMPTION sentence in its Source: it counts with the two assumed rows.
+  const rec = page('logs', {}, { info: { kind: 'cell', variant: 'cas', operation: 'recovery' } }).vm.info;
+  assert.ok(rec.source.some((l) => /\bASSUMPTION\b/.test(l)));
+  assert.equal(rec.description, 'Priced from measured coefficients and 3 assumptions.');
+  // A cell that reads no assumed row keeps the plain lead.
+  const plain = lead('cas', 'inserts', { topology: 'cross_az' });
+  assert.equal(plain, 'Priced from measured coefficients.');
 });
 
 test('test_phone_layout_stretches_panels_and_lets_the_price_select_shrink', () => {
