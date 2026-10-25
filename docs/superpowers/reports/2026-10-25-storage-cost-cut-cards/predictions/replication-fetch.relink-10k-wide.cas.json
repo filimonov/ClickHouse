@@ -1,0 +1,125 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "replication-fetch.relink-10k-wide",
+  "policy": "cas",
+  "inputs": {
+    "parts": 3,
+    "part_rows": 10000,
+    "part_type": "Wide",
+    "coefficient": "cas_relink_bytes_per_part (replication report)",
+    "checked_quantity": "observations.interserver.relay0.from_target (originator to follower), checked offline",
+    "form": {
+      "rule": "per part: Compact a + g x granules + inline bytes; Wide w + inline bytes; inline bytes from a clickhouse local reproduction of the same inserts with the same binary",
+      "compact_a": 2530.9,
+      "compact_g_per_granule": 17.49,
+      "wide_overhead": 3340.5,
+      "fit_residuals_pct": {
+        "insert": 0.023,
+        "insert_3": -0.021,
+        "merge": -0.014,
+        "mutation": 0.042,
+        "insert_1k": 0.005,
+        "insert_3k": 0.02,
+        "insert_10k": -0.052,
+        "insert_wide": 0.032,
+        "insert_30k_wide": -0.033
+      },
+      "parts": [
+        {
+          "rows": 10000,
+          "part_type": "Wide",
+          "bytes_on_disk": 231970,
+          "files": 19,
+          "inline_bytes": 16184
+        },
+        {
+          "rows": 10000,
+          "part_type": "Wide",
+          "bytes_on_disk": 232144,
+          "files": 19,
+          "inline_bytes": 16279
+        },
+        {
+          "rows": 10000,
+          "part_type": "Wide",
+          "bytes_on_disk": 232134,
+          "files": 19,
+          "inline_bytes": 16271
+        }
+      ],
+      "per_part": [
+        19524.5,
+        19619.5,
+        19611.5
+      ],
+      "total": 58755.5,
+      "min": 58167.9,
+      "max": 59343.1,
+      "tolerance": "rel 0.01, as round 1",
+      "fit_records": "replication report insert, insert-3, insert-wide, merge, mutation; validation insert-1k; this report relink-1k, relink-3k, relink-10k, relink-30k-wide (cost-20261025T133848Z)"
+    }
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {
+      "fetched_parts": 3
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "without zero-copy or a relink offer the sender streams the part files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 469
+    },
+    {
+      "claim": "the sender sends every checksummed file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 491
+    },
+    {
+      "claim": "each sent file is read through the disk: one GetObject per object on the sender",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 567
+    },
+    {
+      "claim": "the receiver writes each received file: one PutObject per file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1094
+    },
+    {
+      "claim": "the receiver loads the fetched part from its disk",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 1322
+    },
+    {
+      "claim": "loading reads columns, checksums, index granularity, primary index and row count",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "a fetch writes a DownloadPart row to system.part_log",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 6040
+    },
+    {
+      "claim": "a fetch increments ReplicatedPartFetches",
+      "path": "tmp/src-26.8/src/Storages/StorageReplicatedMergeTree.cpp",
+      "line": 5983
+    },
+    {
+      "claim": "on a content-addressed disk the sender offers a relink: the manifest, not the blobs",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/DataPartsExchange.cpp",
+      "line": 425
+    },
+    {
+      "claim": "the receiver builds the part from shared-pool blob references, stages its own manifest and precommits it",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h",
+      "line": 199
+    }
+  ],
+  "prediction_commit": "pending"
+}

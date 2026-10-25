@@ -1,0 +1,45 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "async-inserts.steady-40hz-c16",
+  "card": "async-inserts",
+  "case_id": "steady-40hz-c16",
+  "policies": [
+    "s3",
+    "cas"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {
+      "async_insert": 1,
+      "wait_for_async_insert": 1,
+      "async_insert_busy_timeout_ms": 200
+    },
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "rows": 100,
+    "inserts": 1000,
+    "insert": "INSERT INTO {table} (k, a, b, c, d) VALUES {values}",
+    "pattern": "steady",
+    "rate_per_s": 40,
+    "concurrency": 16
+  },
+  "scale": 1.0,
+  "repeats": 2,
+  "timeout_s": 900,
+  "description": "Hold-out of the revised inserts_per_async_flush: 1000 inserts of 100 rows scheduled at 40 per second from at most 16 waiting clients, async_insert = 1, wait_for_async_insert = 1, 200 ms busy timeout; natural merges stopped so every flush stays one part."
+}
