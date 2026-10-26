@@ -414,3 +414,59 @@ detach-attach, replacement, fault fetch, cache eviction, gc-scale mounts/ref-log
 | 2026-10-25 20:15 CET | calc10 (D38) done: 50a741b9941 — registry enum `tier_role` {single, hot, cold}; `cold` prices every variant (EBS included) with the TTL move rule as its Inserts cell on the cold inputs (no merges, cold mutations/reads/GC), `hot` = the workload at `hot_tier_days` with a move-out note (free on local disk; reads of the part on object storage, not measured); the summed Tiered block, `logs_tiered` and tiered.test.js removed; new tier_roles.test.js (12). Logs cold tier (23 d, GC 3 600 s): EBS 2 392.00, s3 540.06, s3plain 552.39, CAS 280.30; hot tier (7 d): EBS 728.00, s3 3 160.74, s3plain 6 274.67, CAS 2 582.52. Node 290/291, tools 152, check dev ok. regen9 + rig suite started on 50a741b9941. | regen9 → v9 → report addendum |
 | 2026-10-25 20:27 CET | Watchdog: calc10 closed (50a741b9941); regen9 on it at "generate1=0 sweeps=0 generate2=0 check_final=0 "; rig suite 568 OK on a full export (tmp/umbrella/fix/rig9); no codex/rig/server; no agents. | regen9 → commit → v9 → report addendum |
 | 2026-10-25 20:40 CET | regen9 on 50a741b9941 all green (generate/sweeps/check-final/closure-final 0; Node 291/291; tools 152/152; rig 568/568) → outputs committed bb23d95775d (round 9); artifact v9 published. Hand-off updated. Report addendum (D38 tier roles, D36/D37 rows) next. | report → owner |
+| 2026-10-25 20:57 CET | Watchdog: DELIVERED round 9 at 20:46 (D38 presets, HEAD 20570b11c71, artifact v9, report sent); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 21:27 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 21:57 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 22:27 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 22:57 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 23:27 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-25 23:57 CET | Watchdog: idle after the round 9 delivery (20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 00:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 00:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 01:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 01:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 02:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 02:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 03:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 03:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 04:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 04:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 05:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 05:57 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 06:27 CET | Watchdog: idle after the round 9 delivery (2026-10-25 20:46); no processes, no agents; awaiting the owner. | owner |
+| 2026-10-26 06:57 CET | Watchdog: idle after the round 9 delivery; owner asked (06:4x) which decisions are needed — list of 11 sent (push/PR, U-8, D34/D38, D36, D37, D27, cross-AZ, D5, prices, D1–D38, Tier 2); no processes, no agents. | owner |
+| 2026-10-26 07:27 CET | Watchdog: idle; decision list sent to the owner at 06:4x, no answer yet; no processes, no agents. | owner |
+| 2026-10-26 07:57 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes, no agents. | owner |
+| 2026-10-26 08:27 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes, no agents. | owner |
+| 2026-10-26 08:57 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes, no agents. | owner |
+| 2026-10-26 09:27 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes, no agents. | owner |
+| 2026-10-26 09:57 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 10:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 10:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 11:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 11:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 12:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 12:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 13:26 CET | Watchdog: idle; owner asked why s3plain merges cost more than s3 (answered 13:0x: per-file HeadObject+CopyObject+2 DeleteObject on source removal, CopyObject = $2 782.70 of the $3 602.69 merges cell in Logs); no processes (RustFS only), no agents. | owner |
+| 2026-10-26 13:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 14:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 14:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 15:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 15:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 16:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 16:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 17:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 17:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 18:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 18:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 19:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 19:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 20:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 20:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 21:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 21:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 22:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 22:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 23:26 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-26 23:56 CET | Watchdog: idle; awaiting the owner's answers to the decision list; no processes (RustFS only), no agents. | owner |
+| 2026-10-27 00:05 CET | Watchdog stopped by the owner; cron e3e65ed6 deleted. | owner |
