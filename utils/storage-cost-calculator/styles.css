@@ -151,6 +151,8 @@ thead th { font-size: 13px; color: var(--mute); font-weight: 600; }
 .cell-off { color: var(--mute); }
 
 /* Drill-down */
+.drill-pick { border: 2px dashed var(--line); border-radius: 8px; padding: 24px; text-align: center; }
+.drill-pick.over { border-color: var(--accent); }
 .drill-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .drill-head h2 { margin: 0 auto 0 0; }
 .stages { padding-left: 20px; }

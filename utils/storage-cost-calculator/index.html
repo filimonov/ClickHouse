@@ -40,27 +40,64 @@
 <script src="viewmodel.js"></script>
 <script src="ui.js"></script>
 <script>
-// ?measurement=<url> shows a drill JSON written by tools/drill.mjs instead of the calculator.
-// Under file:// browsers block fetch of local files: put the JSON beside this page and serve the
-// directory with `python3 -m http.server`, or open the page through a local server.
+// ?measurement=<path> shows a drill JSON written by tools/drill.mjs instead of the calculator.
+// Over http the page fetches the path (relative, same origin). Under file:// browsers block fetch of local
+// files, so the page offers a file picker and a drop zone instead; ?measurement= with no path does the same.
 (function () {
-  var m = new URLSearchParams(location.search).get('measurement');
-  // Only a relative path on this origin: the page never fetches a URL a link supplies from elsewhere.
-  if (m && (!/^[A-Za-z0-9._\/-]+$/.test(m) || /^\/\//.test(m) || new URL(m, location.href).origin !== location.origin)) {
-    document.getElementById('drill').textContent = 'Not loaded: ?measurement= takes a relative path on this site, got ' + m;
+  var box = document.getElementById('drill');
+  var params = new URLSearchParams(location.search);
+  if (!params.has('measurement')) {
+    SCC.ui.mount(document, SCC.contract.load(JSON.parse(document.getElementById('contract').textContent)));
     return;
   }
-  if (!m) {
-    SCC.ui.mount(document, SCC.contract.load(JSON.parse(document.getElementById('contract').textContent)));
+  var m = params.get('measurement');
+  function show(text) {
+    var j;
+    try { j = JSON.parse(text); } catch (e) { box.textContent = 'Not a drill JSON: ' + e.message; return; }
+    SCC.ui.renderDrill(box, j);
+  }
+  function readFile(file) {
+    if (!file) return;
+    var r = new FileReader();
+    r.onload = function () { show(r.result); };
+    r.onerror = function () { box.textContent = 'Cannot read ' + file.name; };
+    r.readAsText(file);
+  }
+  function picker(why) {
+    box.innerHTML = '';
+    var zone = document.createElement('div');
+    zone.className = 'drill-pick';
+    var p = document.createElement('p');
+    p.textContent = why + ' Choose the drill JSON' + (m ? ' (' + m + ')' : '') + ' or drop it here.';
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', function () { readFile(input.files[0]); });
+    zone.appendChild(p);
+    zone.appendChild(input);
+    zone.addEventListener('dragover', function (ev) { ev.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', function () { zone.classList.remove('over'); });
+    zone.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      zone.classList.remove('over');
+      readFile(ev.dataTransfer.files[0]);
+    });
+    box.appendChild(zone);
+  }
+  if (!m || location.protocol === 'file:') {
+    picker(m ? 'This page is opened from a file, so it cannot fetch ' + m + '.' : 'No path given.');
+    return;
+  }
+  // Only a relative path on this origin: the page never fetches a URL a link supplies from elsewhere.
+  if (!/^[A-Za-z0-9._\/-]+$/.test(m) || /^\/\//.test(m) || new URL(m, location.href).origin !== location.origin) {
+    box.textContent = 'Not loaded: ?measurement= takes a relative path on this site, got ' + m;
     return;
   }
   fetch(m).then(function (r) {
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  }).then(function (j) {
-    SCC.ui.renderDrill(document.getElementById('drill'), j);
-  }).catch(function (e) {
-    document.getElementById('drill').textContent = 'Cannot load ' + m + ': ' + e.message;
+    return r.text();
+  }).then(show).catch(function (e) {
+    picker('Cannot load ' + m + ': ' + e.message + '.');
   });
 })();
 </script>
