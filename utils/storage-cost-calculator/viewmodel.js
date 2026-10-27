@@ -9,6 +9,8 @@
   const presets = () => root.SCC.presets || require('./presets.js');
   const pipeline = () => root.SCC.pipeline || require('./pipeline.js');
 
+  // The page is served outside the repository (blog, artifact), so report links are absolute.
+  const REPORTS_BASE_URL = 'https://github.com/filimonov/ClickHouse/blob/docs/storage-cost-calculator/docs/superpowers/reports/';
   const VARIANT_LABELS = { ebs: 'EBS', s3: 'S3', s3plain: 'S3 plain rewritable', cas: 'CAS' };
   const OPERATION_LABELS = {
     storage: 'Storage', inserts: 'Inserts', merges: 'Merges', mutations: 'Mutations', deletes: 'Deletes',
@@ -888,7 +890,7 @@
     const by = contract.evidence_by_variant || null;
     return {
       statement: contract.evidence_statement || null, build: measuredBuild(contract),
-      reports: ((contract.manifest || {}).evidence || []).map((e) => ({ name: e.report, href: `../../docs/superpowers/reports/${e.report}/README.md` })),
+      reports: ((contract.manifest || {}).evidence || []).map((e) => ({ name: e.report, href: `${REPORTS_BASE_URL}${e.report}/README.md` })),
       columns: by ? contract.variants.filter((v) => by[v]).map((v) => ({ variant: v, label: variantLabel(v), fit_and_holdout: by[v].fit_and_holdout, fit_only: by[v].fit_only, assumption: by[v].assumption })) : [],
     };
   }

@@ -60,6 +60,6 @@ test('test_evidence_line_and_dialog', () => {
   const out = ui.compute(c, s, { info: { kind: 'evidence', id: 'evidence' } });
   const modal = ui.renderParts(out.vm, out.page).modal;
   assert.match(modal, /Measured on ClickHouse commit 09d0772a842 \(release 26\.8\) against a RustFS S3 store\./);
-  assert.match(modal, /<a href="\.\.\/\.\.\/docs\/superpowers\/reports\/2026-10-24-storage-cost-s3\/README\.md">2026-10-24-storage-cost-s3<\/a>/);
+  assert.match(modal, /<a href="https:\/\/github\.com\/filimonov\/ClickHouse\/blob\/docs\/storage-cost-calculator\/docs\/superpowers\/reports\/2026-10-24-storage-cost-s3\/README\.md" rel="noopener" target="_blank">2026-10-24-storage-cost-s3<\/a>/);
   assert.match(modal, /EBS: 2 cells fit and hold-out, 1 fit only, 3 assumption only/);
 });

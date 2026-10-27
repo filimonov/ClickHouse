@@ -491,7 +491,7 @@
       + `${i.lines && i.lines.length ? `<h4>${i.kind === 'column' || i.kind === 'evidence' ? 'Details' : 'Why'}</h4>${list(i.lines.map((l) => `<li>${esc(l)}</li>`), 'why')}` : ''}`
       // Rig, proxy and formula detail: kept for the reader who checks the number, after the plain sentences.
       + `${i.source && i.source.length ? `<h4>Source</h4>${list(i.source.map((l) => `<li>${esc(l)}</li>`), 'why source')}` : ''}`
-      + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
+      + `${i.links && i.links.length ? `<h4>Reports</h4>${list(i.links.map((l) => `<li><a href="${esc(l.href)}" rel="noopener" target="_blank">${esc(l.text)}</a></li>`), 'reports')}` : ''}${sql}</div>`;
   }
 
   // Pure: view model + page chrome (selections, labels) -> HTML per container.
