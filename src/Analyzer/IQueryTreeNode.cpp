@@ -224,6 +224,9 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             nodes_to_process.emplace_back(node_to_process_child.get(), false);
         }
 
+        if (!compare_options.hash_column_sources)
+            continue;
+
         if (const auto * column_node = node_to_process->as<ColumnNode>())
         {
             if (auto source = column_node->getColumnSourceOrNull())

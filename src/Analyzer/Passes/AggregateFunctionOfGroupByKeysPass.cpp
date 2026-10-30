@@ -36,7 +36,7 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashSet>;
+    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashNoSourcesSet>;
 
     bool collecting_output_nodes = true;
 
@@ -87,7 +87,7 @@ public:
         }
         else
         {
-            QueryTreeNodePtrWithHashSet group_by_keys;
+            QueryTreeNodePtrWithHashNoSourcesSet group_by_keys;
             bool first_grouping_set = true;
             for (auto & group_key : query_node->getGroupBy().getNodes())
             {
@@ -102,7 +102,7 @@ public:
                     }
                     else
                     {
-                        QueryTreeNodePtrWithHashSet common_keys_set;
+                        QueryTreeNodePtrWithHashNoSourcesSet common_keys_set;
                         for (auto & group_elem : list->getNodes())
                         {
                             if (group_by_keys.contains(group_elem))
@@ -241,7 +241,7 @@ private:
         return adaptor->getFunction()->useDefaultImplementationForLowCardinalityColumns();
     }
 
-    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashNoSourcesSet & group_by_keys)
     {
         if (group_by_keys.empty())
             return false;

@@ -128,6 +128,12 @@ public:
         /// Do not compare the cte name or check the is_cte flag for the query node.
         /// Calculate a hash as if is_cte is false and cte_name is empty.
         bool ignore_cte = false;
+        /// Hash the subtree of each column source reached through a ColumnNode (the default).
+        /// With false only the column name and type are hashed, which keeps the hash consistent with
+        /// isEqual (coarser) but avoids walking the whole source subquery for every column reference.
+        /// Use it for lookups within one query where isEqual resolves the collisions; never for a
+        /// hash that is used as an identity on its own (for example a prepared set key).
+        bool hash_column_sources = true;
     };
 
     /** Is tree equal to other tree with node root.
@@ -135,7 +141,7 @@ public:
       * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .hash_column_sources = true }) const;
 
     using Hash = CityHash_v1_0_2::uint128;
     using HashState = SipHash;
@@ -155,7 +161,7 @@ public:
       * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
       * and `PlannerActionsVisitorImpl::visitColumn`).
       */
-    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false }) const;
+    Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .ignore_cte = false, .hash_column_sources = true }) const;
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
