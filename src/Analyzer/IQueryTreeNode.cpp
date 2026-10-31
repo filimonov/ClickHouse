@@ -1,5 +1,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 
 #include <typeinfo>
 #include <unordered_map>
@@ -167,6 +169,35 @@ size_t & getTreeHashWorkCounter()
     return counter;
 }
 
+namespace
+{
+
+bool hashWeakSourceByProjection(const IQueryTreeNode & node, IQueryTreeNode::HashState & hash_state)
+{
+    NamesAndTypes projection_columns;
+    if (const auto * query_node = node.as<QueryNode>())
+        projection_columns = query_node->getProjectionColumns();
+    else if (const auto * union_node = node.as<UnionNode>())
+        projection_columns = union_node->computeProjectionColumns();
+    else
+        return false;
+
+    /// Unresolved subquery: fall back to hashing the body.
+    if (projection_columns.empty())
+        return false;
+
+    hash_state.update(projection_columns.size());
+    for (const auto & column : projection_columns)
+    {
+        hash_state.update(column.name.size());
+        hash_state.update(column.name);
+        column.type->updateHash(hash_state);
+    }
+    return true;
+}
+
+}
+
 IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options) const
 {
     /** Compute tree hash with this node as root.
@@ -213,6 +244,14 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);
+
+        /// A subquery reached only as a column source is hashed by its interface (the projection
+        /// columns), like a table is hashed by its storage id, not by its body. Equal sources have
+        /// equal projections, so isEqual-equal nodes keep equal hashes; different subqueries with
+        /// the same projection collide and are told apart by isEqual. Hashing the body would make
+        /// every lookup of a subquery column cost the size of that subquery.
+        if (is_weak_node && hashWeakSourceByProjection(*node_to_process, hash_state))
+            continue;
 
         hash_state.update(node_to_process->children.size());
 
