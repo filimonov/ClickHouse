@@ -127,6 +127,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool execute_exists_as_scalar_subquery;
+    extern const SettingsBool enable_identifier_resolve_cache;
 }
 
 
@@ -177,6 +178,9 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
     if (!scope.context)
         scope.context = context;
+
+    if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
+        scope.disableIdentifierCachePermanently();
 
     auto node_type = node->getNodeType();
 
@@ -250,6 +254,9 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
 
     if (!scope.context)
         scope.context = context;
+
+    if (!scope.context->getSettingsRef()[Setting::enable_identifier_resolve_cache])
+        scope.disableIdentifierCachePermanently();
 
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
@@ -1244,8 +1251,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     return result_aggregate_function_name;
 }
 
-/// Resolve identifier functions implementation
-
 /** Resolve identifier from scope aliases.
   *
   * Resolve strategy:
@@ -1310,7 +1315,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             identifier_bind_part,
             scope.scope_node->formatASTForErrorMessage());
 
+
     auto node_type = alias_node->getNodeType();
+
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
@@ -1545,8 +1552,10 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
   */
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
-    IdentifierResolveContext identifier_resolve_settings)
+    IdentifierResolveContext identifier_resolve_context)
 {
+    const bool inside_subquery_function = scope.expressions_in_resolve_process_stack.isInsideSubqueryFunction();
+
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -1557,6 +1566,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
+        if (!inside_subquery_function)
+        {
+            auto cached_result = scope.findCachedIdentifier(identifier_lookup, identifier_resolve_context);
+            if (cached_result)
+                return *cached_result;
+        }
+
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
         it = insert_it;
     }
@@ -1588,22 +1604,22 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
-            if (identifier_resolve_settings.allow_to_check_join_tree)
+            if (identifier_resolve_context.allow_to_check_join_tree)
             {
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
 
-            if (identifier_resolve_settings.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
             {
-                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
+                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
             }
         }
         else
         {
-            if (identifier_resolve_settings.allow_to_check_aliases && !already_in_resolve_process)
-                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_settings);
+            if (identifier_resolve_context.allow_to_check_aliases && !already_in_resolve_process)
+                resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
 
-            if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_join_tree)
+            if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_join_tree)
             {
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
             }
@@ -1655,11 +1671,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     /// Try to resolve identifier from parent scopes
     if (!resolve_result.resolved_identifier)
     {
-        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_settings);
+        resolve_result = tryResolveIdentifierInParentScopes(identifier_lookup, scope, identifier_resolve_context);
     }
 
     /// Try to resolve table identifier from database catalog
-    if (!resolve_result.resolved_identifier && identifier_resolve_settings.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
+    if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_database_catalog && identifier_lookup.isTableExpressionLookup())
     {
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
     }
@@ -1668,6 +1684,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
+        if (resolve_result.resolved_identifier && !inside_subquery_function)
+            scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
     }
 
     return resolve_result;
@@ -6002,10 +6020,18 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
+    /// Disable cache during join tree resolution - table expressions aren't fully initialized yet,
+    /// and with join_use_nulls column types change after join resolution.
+    scope.disableIdentifierCache();
+
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
+
+    /// Enable cache after join tree is resolved and all table expressions are registered.
+    /// group_by_use_nulls is handled by not caching nodes in nullable_group_by_keys.
+    scope.enableIdentifierCache();
 
     /// Resolve query node sections.
 
@@ -6022,6 +6048,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
+        // allow_resolve_from_using is disabled during prewhere which changes the identifier resolution behavior.
+        // Just disable cache during prewhere instead of having a separate cache namespace for prewhere.
+        scope.disableIdentifierCache();
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
         /** Expressions in PREWHERE with JOIN should not change their type.
@@ -6035,6 +6064,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         prewhere_node = prewhere_node->clone();
         ReplaceColumnsVisitor replace_visitor(scope.join_columns_with_changed_types, scope.context);
         replace_visitor.visit(prewhere_node);
+
+        scope.enableIdentifierCache();
     }
 
     if (query_node_typed.getWhere())
@@ -6046,6 +6077,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (scope.group_by_use_nulls)
     {
         resolved_expressions.clear();
+        scope.clearIdentifierCache();
     }
 
     if (query_node_typed.hasHaving())
