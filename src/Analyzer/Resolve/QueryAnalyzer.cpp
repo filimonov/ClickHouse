@@ -3548,22 +3548,27 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     if (!function)
     {
-        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
-        /// Function randConstant() would return the same value for the same arguments (in scope).
-        /// But we need to exclude getSetting() function because SETTINGS can change its result for every scope.
+        function = FunctionFactory::instance().tryGet(function_name, scope.context);
 
-        if (function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// A non-deterministic function like `randConstant` returns a different value on every `build`,
+        /// so syntactically-identical calls must share the same built `FunctionBase` to fold to the same
+        /// constant. Deterministic functions never need this, and `getTreeHash` walks the whole argument
+        /// subtree, dominating analysis of deeply nested expressions, so the hash and the cache are
+        /// computed only for non-deterministic functions.
+        /// `getSetting` and `rowNumberInAllBlocks` must NOT be shared: the cache is global across scopes,
+        /// and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        if (function && !function->isDeterministic()
+            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
         {
             auto hash = function_node_ptr->getTreeHash();
 
             function_cache = &functions_cache[hash];
             if (!function_cache->resolver)
-                function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
+                function_cache->resolver = function;
 
             function = function_cache->resolver;
         }
-        else
-            function = FunctionFactory::instance().tryGet(function_name, scope.context);
 
         is_executable_udf = false;
     }
