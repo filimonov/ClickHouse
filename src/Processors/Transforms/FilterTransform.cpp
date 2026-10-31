@@ -175,6 +175,8 @@ FilterTransform::FilterTransform(
     }
 
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
+    if (expression)
+        input_positions = expression->getInputPositions(getInputPort().getHeader());
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
@@ -302,30 +304,26 @@ void FilterTransform::doTransform(Chunk & chunk)
 {
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
-    DataTypes types;
 
+    if (isCancelled())
     {
-        Block block = getInputPort().getHeader().cloneWithColumns(columns);
-        columns.clear();
-
-        if (isCancelled())
-        {
-            stopReading();
-            return;
-        }
-
-        if (expression)
-            expression->execute(block, num_rows_before_filtration, false, false, &getCancellationFlag());
-
-        if (isCancelled())
-        {
-            stopReading();
-            return;
-        }
-
-        columns = block.getColumns();
-        types = block.getDataTypes();
+        stopReading();
+        return;
     }
+
+    /// Run positionally against the fixed input header: building a Block per chunk indexes every
+    /// column name, which dominates for headers with many or very long names.
+    if (expression)
+        columns = expression->executeOnColumns(
+            std::move(columns), getInputPort().getHeader(), input_positions, num_rows_before_filtration, false, &getCancellationFlag());
+
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
+    const DataTypes types = transformed_header.getDataTypes();
 
     size_t num_columns = columns.size();
     ColumnPtr filter_column = columns[filter_column_position];

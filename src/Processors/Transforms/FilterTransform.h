@@ -74,6 +74,8 @@ private:
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
+    /// Input slot -> position in the input header, computed once (see ExpressionActions::executeOnColumns).
+    std::vector<ssize_t> input_positions;
 
     bool are_prepared_sets_initialized = false;
 
