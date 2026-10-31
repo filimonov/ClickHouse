@@ -31,7 +31,46 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<EliminateFunctionVisitor>;
     using Base::Base;
 
-    using GroupByKeysStack = std::vector<QueryTreeNodePtrWithHashSet>;
+    /// GROUP BY keys of one query, hashed on first use: hashing a key that is a column of a subquery
+    /// walks the whole subquery, and most queries have no aggregate this pass can eliminate.
+    struct GroupByKeys
+    {
+        const QueryNode * query_node = nullptr;
+        std::optional<QueryTreeNodePtrWithHashNoSourcesSet> keys;
+
+        const QueryTreeNodePtrWithHashNoSourcesSet & get()
+        {
+            if (!keys)
+                keys.emplace(query_node ? collect(*query_node) : QueryTreeNodePtrWithHashNoSourcesSet{});
+            return *keys;
+        }
+
+        static QueryTreeNodePtrWithHashNoSourcesSet collect(const QueryNode & query_node)
+        {
+            QueryTreeNodePtrWithHashNoSourcesSet group_by_keys;
+            for (const auto & group_key : query_node.getGroupBy().getNodes())
+            {
+                /// For grouping sets case collect only keys that are presented in every set.
+                if (const auto * list = group_key->as<ListNode>())
+                {
+                    QueryTreeNodePtrWithHashNoSourcesSet common_keys_set;
+                    for (const auto & group_elem : list->getNodes())
+                    {
+                        if (group_by_keys.contains(group_elem))
+                            common_keys_set.insert(group_elem);
+                    }
+                    group_by_keys = std::move(common_keys_set);
+                }
+                else
+                {
+                    group_by_keys.insert(group_key);
+                }
+            }
+            return group_by_keys;
+        }
+    };
+
+    using GroupByKeysStack = std::vector<GroupByKeys>;
 
     void enterImpl(QueryTreeNodePtr & node)
     {
@@ -54,26 +93,7 @@ public:
         }
         else
         {
-            QueryTreeNodePtrWithHashSet group_by_keys;
-            for (auto & group_key : query_node->getGroupBy().getNodes())
-            {
-                /// For grouping sets case collect only keys that are presented in every set.
-                if (auto * list = group_key->as<ListNode>())
-                {
-                    QueryTreeNodePtrWithHashSet common_keys_set;
-                    for (auto & group_elem : list->getNodes())
-                    {
-                        if (group_by_keys.contains(group_elem))
-                            common_keys_set.insert(group_elem);
-                    }
-                    group_by_keys = std::move(common_keys_set);
-                }
-                else
-                {
-                    group_by_keys.insert(group_key);
-                }
-            }
-            group_by_keys_stack.push_back(std::move(group_by_keys));
+            group_by_keys_stack.push_back({.query_node = query_node, .keys = {}});
         }
     }
 
@@ -108,9 +128,9 @@ private:
         bool parents_are_only_deterministic = false;
     };
 
-    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
+    bool aggregationCanBeEliminated(QueryTreeNodePtr & node, GroupByKeys & group_by_keys_holder)
     {
-        if (group_by_keys.empty())
+        if (!group_by_keys_holder.query_node)
             return false;
 
         auto * function = node->as<FunctionNode>();
@@ -121,6 +141,10 @@ private:
                 || function->getFunctionName() == "max"
                 || function->getFunctionName() == "any"
                 || function->getFunctionName() == "anyLast"))
+            return false;
+
+        const auto & group_by_keys = group_by_keys_holder.get();
+        if (group_by_keys.empty())
             return false;
 
         std::vector<NodeWithInfo> candidates;

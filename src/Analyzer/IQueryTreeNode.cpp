@@ -238,6 +238,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
 
         hash_state.update(node_to_process->weak_pointers.size());
 
+        /// A column's only weak pointer is its source; skip it when the caller asked for a source-free hash.
+        if (!compare_options.hash_column_sources && node_to_process->getNodeType() == QueryTreeNodeType::COLUMN)
+            continue;
+
         for (const auto & weak_pointer : node_to_process->weak_pointers)
         {
             auto strong_pointer = weak_pointer.lock();
