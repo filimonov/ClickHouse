@@ -24,6 +24,7 @@
 #include <Analyzer/ValidationUtils.h>
 
 #include <ranges>
+#include <unordered_set>
 
 #include <fmt/ranges.h>
 
@@ -39,7 +40,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 struct GroupByKeyComparator
@@ -215,7 +215,8 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
     size_t aggregation_node_index = 0;
     AggredationKeyNodeMap<size_t> aggregation_key_to_index;
 
-    std::vector<QueryTreeNodes> grouping_sets_used_aggregation_keys_list;
+    /// Indexes of aggregation keys used in each grouping set (only for GROUP BY GROUPING SETS)
+    ColumnNumbersList grouping_sets_keys_indexes;
 
     if (query_node_typed.hasGroupBy())
     {
@@ -239,22 +240,17 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
             {
                 auto & grouping_set_keys_list_node_typed = grouping_set_keys_list_node->as<ListNode &>();
 
-                grouping_sets_used_aggregation_keys_list.emplace_back();
-                auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.back();
+                auto & grouping_set_keys_indexes = grouping_sets_keys_indexes.emplace_back();
+                std::unordered_set<size_t> used_indexes_in_set;
 
-                QueryTreeNodePtrWithHashSet used_keys_in_set;
-
+                /// Hash each key once: hashing a key that is a column of a subquery walks the whole subquery.
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    if (used_keys_in_set.contains(grouping_set_key_node))
-                        continue;
-                    used_keys_in_set.insert(grouping_set_key_node);
-                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
-
-                    if (aggregation_key_to_index.contains(grouping_set_key_node))
-                        continue;
-                    aggregation_key_to_index.emplace(grouping_set_key_node, aggregation_node_index);
-                    ++aggregation_node_index;
+                    auto [it, inserted] = aggregation_key_to_index.try_emplace(grouping_set_key_node, aggregation_node_index);
+                    if (inserted)
+                        ++aggregation_node_index;
+                    if (used_indexes_in_set.insert(it->second).second)
+                        grouping_set_keys_indexes.push_back(it->second);
                 }
             }
         }
@@ -262,32 +258,9 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
         {
             for (auto & group_by_key_node : query_node_typed.getGroupBy().getNodes())
             {
-                if (aggregation_key_to_index.contains(group_by_key_node))
-                    continue;
-
-                aggregation_key_to_index.emplace(group_by_key_node, aggregation_node_index);
-                ++aggregation_node_index;
+                if (aggregation_key_to_index.try_emplace(group_by_key_node, aggregation_node_index).second)
+                    ++aggregation_node_index;
             }
-        }
-    }
-
-    /// Indexes of aggregation keys used in each grouping set (only for GROUP BY GROUPING SETS)
-    ColumnNumbersList grouping_sets_keys_indexes;
-
-    for (const auto & grouping_set_used_aggregation_keys : grouping_sets_used_aggregation_keys_list)
-    {
-        grouping_sets_keys_indexes.emplace_back();
-        auto & grouping_set_keys_indexes = grouping_sets_keys_indexes.back();
-
-        for (const auto & used_aggregation_key : grouping_set_used_aggregation_keys)
-        {
-            auto aggregation_node_index_it = aggregation_key_to_index.find(used_aggregation_key);
-            if (aggregation_node_index_it == aggregation_key_to_index.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Aggregation key {} in GROUPING SETS is not found in GROUP BY keys",
-                    used_aggregation_key->formatASTForErrorMessage());
-
-            grouping_set_keys_indexes.push_back(aggregation_node_index_it->second);
         }
     }
 
