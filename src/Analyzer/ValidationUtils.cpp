@@ -10,7 +10,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/traverseQueryTree.h>
 #include <Storages/IStorage.h>
 
 #include <memory>
@@ -488,29 +487,29 @@ void validateTreeSize(const QueryTreeNodePtr & node,
             max_size);
 }
 
-void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery_depth, size_t max_subquery_depth)
+void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquery_depth, size_t max_subquery_depth)
 {
     if (!max_subquery_depth)
         return;
 
-    size_t current_depth = initial_subquery_depth;
-    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
-    nodes_to_process.emplace_back(node, false);
+    /// Explicit DFS; 25.8 has no traverseQueryTree with a leave callback.
+    std::vector<std::pair<const IQueryTreeNode *, size_t>> nodes_to_process;
+    nodes_to_process.emplace_back(node.get(), initial_subquery_depth);
 
-    traverseQueryTree(node, Everything{},
-        [&current_depth, max_subquery_depth](auto & current_node)
-        {
-            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
-                ++current_depth;
-            if (current_depth > max_subquery_depth)
-                throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
-        },
-        [&current_depth](const QueryTreeNodePtr & current_node)
-        {
-            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
-                --current_depth;
-        });
+    while (!nodes_to_process.empty())
+    {
+        auto [current_node, current_depth] = nodes_to_process.back();
+        nodes_to_process.pop_back();
 
+        if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
+            ++current_depth;
+        if (current_depth > max_subquery_depth)
+            throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
+
+        for (const auto & child : current_node->getChildren())
+            if (child)
+                nodes_to_process.emplace_back(child.get(), current_depth);
+    }
 }
 
 void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)

@@ -229,7 +229,6 @@ struct IdentifierResolveContext
             && allow_to_check_parent_scopes
             && allow_to_check_database_catalog
             && allow_to_resolve_subquery_during_identifier_resolution
-            && allow_to_resolve_niladic_functions
             && scope_to_resolve_alias_expression == nullptr;
     }
 
