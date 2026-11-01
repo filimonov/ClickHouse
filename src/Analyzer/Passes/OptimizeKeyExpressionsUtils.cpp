@@ -38,7 +38,7 @@ bool keyArgumentTypesAreAllowed(const ColumnsWithTypeAndName & columns, bool all
 
 }
 
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys)
+bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashNoSourcesSet & keys)
 {
     auto * function = node->as<FunctionNode>();
     if (!function || function->getArguments().getNodes().empty())
@@ -112,7 +112,7 @@ bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNo
 
 void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
 {
-    QueryTreeNodePtrWithHashSet key_set(keys.begin(), keys.end());
+    QueryTreeNodePtrWithHashNoSourcesSet key_set(keys.begin(), keys.end());
 
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());
@@ -126,7 +126,7 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys)
 }
 
 QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep)
+    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashNoSourcesSet * keys_to_keep)
 {
     QueryTreeNodes new_keys;
     new_keys.reserve(keys.size());

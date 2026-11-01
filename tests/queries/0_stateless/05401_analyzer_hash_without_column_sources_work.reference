@@ -1,0 +1,14 @@
+aggregate_of_key	1	1
+correlated_columns	1	1
+duplicate_order_by	1	1
+fuse_functions	1	1
+group_by_function_keys	1	1
+grouping_function	1	1
+interpolate	1	1
+join_use_nulls	1	1
+like_chain	1	1
+limit_by_injective	1	1
+nullable_group_by_keys	1	1
+or_chain_to_in	1	1
+redundant_order_by	1	1
+truncate_order_by	1	1

@@ -48,12 +48,6 @@ using QueryTreeNodeRawPtrWithHash = QueryTreeNodeWithHash<IQueryTreeNode *>;
 using QueryTreeNodeConstRawPtrWithHash = QueryTreeNodeWithHash<const IQueryTreeNode *>;
 
 using QueryTreeNodePtrWithHashSet = std::unordered_set<QueryTreeNodePtrWithHash>;
-
-/// Hashes a column by its name and type only, without its source subtree. For sets of GROUP BY keys
-/// and similar lookups inside one query, where every key of a subquery column would otherwise hash
-/// the whole subquery. Equality is still the full isEqual.
-using QueryTreeNodePtrWithHashNoSources = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ true, /*hash_column_sources*/ false>;
-using QueryTreeNodePtrWithHashNoSourcesSet = std::unordered_set<QueryTreeNodePtrWithHashNoSources>;
 using QueryTreeNodePtrWithHashIgnoreAliasesSet = std::unordered_set<QueryTreeNodePtrWithHashIgnoreAliases>;
 using QueryTreeNodeConstRawPtrWithHashSet = std::unordered_set<QueryTreeNodeConstRawPtrWithHash>;
 
@@ -63,9 +57,35 @@ using QueryTreeNodePtrWithHashMap = std::unordered_map<QueryTreeNodePtrWithHash,
 template <typename Value>
 using QueryTreeNodePtrWithHashIgnoreAliasesMap = std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliases, Value>;
 
+/** Keys hashed without column sources: a column contributes its name and type, not the subtree of
+  * the table expression it comes from. Equality is still the full isEqual, so the containers behave
+  * the same; only the hash is coarser (columns of the same name and type from different sources
+  * collide). Use these for lookups among expressions of one query: GROUP BY, ORDER BY and LIMIT BY
+  * keys, filter atoms, aggregate arguments, correlated columns. With the full hash every lookup of a
+  * subquery column costs the size of that subquery.
+  *
+  * Keep the full hash where the hash stands for the identity of a subtree that may come from another
+  * query or from table metadata: scalar subquery results, CTEs and lambdas in resolution, prepared
+  * sets, query trees sent to shards, constraints and the comparison graph.
+  */
+using QueryTreeNodePtrWithHashNoSources = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ true, /*hash_column_sources*/ false>;
+using QueryTreeNodePtrWithHashIgnoreAliasesNoSources = QueryTreeNodeWithHash<QueryTreeNodePtr, /*compare_aliases*/ false, /*hash_column_sources*/ false>;
+using QueryTreeNodeConstRawPtrWithHashNoSources = QueryTreeNodeWithHash<const IQueryTreeNode *, /*compare_aliases*/ true, /*hash_column_sources*/ false>;
+
+using QueryTreeNodePtrWithHashNoSourcesSet = std::unordered_set<QueryTreeNodePtrWithHashNoSources>;
+using QueryTreeNodePtrWithHashIgnoreAliasesNoSourcesSet = std::unordered_set<QueryTreeNodePtrWithHashIgnoreAliasesNoSources>;
+using QueryTreeNodeConstRawPtrWithHashNoSourcesSet = std::unordered_set<QueryTreeNodeConstRawPtrWithHashNoSources>;
+
+template <typename Value>
+using QueryTreeNodePtrWithHashNoSourcesMap = std::unordered_map<QueryTreeNodePtrWithHashNoSources, Value>;
+
+template <typename Value>
+using QueryTreeNodePtrWithHashIgnoreAliasesNoSourcesMap = std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliasesNoSources, Value>;
+
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
-using ColumnNodePtrWithHash = QueryTreeNodeWithHash<ColumnNodePtr>;
+/// A set of correlated columns of a query. The source of a correlated column is an outer query.
+using ColumnNodePtrWithHash = QueryTreeNodeWithHash<ColumnNodePtr, /*compare_aliases*/ true, /*hash_column_sources*/ false>;
 using ColumnNodePtrWithHashSet = std::unordered_set<ColumnNodePtrWithHash>;
 
 }

@@ -16,13 +16,13 @@ namespace ErrorCodes
 class ReplaceColumnsVisitor : public InDepthQueryTreeVisitor<ReplaceColumnsVisitor>
 {
 public:
-    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
+    explicit ReplaceColumnsVisitor(const QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodePtr> & replacement_map_, const ContextPtr & context_)
         : replacement_map(replacement_map_)
         , context(context_)
     {}
 
     /// Apply replacement transitively, because column may change it's type twice, one to have a supertype and then because of `joun_use_nulls`
-    static QueryTreeNodePtr findTransitiveReplacement(QueryTreeNodePtr node, const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map_)
+    static QueryTreeNodePtr findTransitiveReplacement(QueryTreeNodePtr node, const QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodePtr> & replacement_map_)
     {
         auto it = replacement_map_.find(node);
         QueryTreeNodePtr result_node = nullptr;
@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    const QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> & replacement_map;
+    const QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodePtr> & replacement_map;
     const ContextPtr & context;
 };
 

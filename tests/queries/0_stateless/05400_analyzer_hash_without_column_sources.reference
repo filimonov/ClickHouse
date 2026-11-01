@@ -1,0 +1,93 @@
+grouping sets: grouping() of each key
+0	0	0	1	2
+0	0	1	0	2
+0	10	1	0	2
+0	20	1	0	2
+0	30	1	0	2
+1	0	0	1	2
+2	0	0	1	2
+3	0	0	1	2
+aggregate of a non-key column that collides with a key
+0	0	20
+1	10	30
+2	0	20
+3	10	30
+order by after group by: the second column is a different key
+0	20	1
+0	0	1
+1	30	1
+1	10	1
+2	20	1
+2	0	1
+3	30	1
+3	10	1
+function key of two columns that collide
+0	0	1
+2	2	1
+11	1	1
+13	3	1
+20	0	1
+22	2	1
+31	1	1
+33	3	1
+order by function of a column that collides with an earlier key
+0	20
+0	0
+1	30
+1	10
+2	20
+2	0
+3	30
+3	10
+limit by and order by with colliding keys are not duplicates
+0	0
+0	20
+1	10
+1	30
+2	0
+2	20
+3	10
+3	30
+or chain to in: one IN per column
+0	20
+1	10
+1	30
+2	0
+2	20
+3	10
+like chain: one multiSearchAny per column
+0	20
+1	10
+1	30
+2	20
+3	10
+3	30
+fused sum/count: one sumCount per column
+12	8	120	8	15
+group_by_use_nulls: each key becomes Nullable on its own
+0	\N	Nullable(UInt64)	Nullable(UInt64)	2
+1	\N	Nullable(UInt64)	Nullable(UInt64)	2
+2	\N	Nullable(UInt64)	Nullable(UInt64)	2
+3	\N	Nullable(UInt64)	Nullable(UInt64)	2
+\N	0	Nullable(UInt64)	Nullable(UInt64)	2
+\N	10	Nullable(UInt64)	Nullable(UInt64)	2
+\N	20	Nullable(UInt64)	Nullable(UInt64)	2
+\N	30	Nullable(UInt64)	Nullable(UInt64)	2
+join_use_nulls: the right column becomes Nullable, the left stays
+0	0	UInt64	Nullable(UInt64)
+1	10	UInt64	Nullable(UInt64)
+2	\N	UInt64	Nullable(UInt64)
+3	\N	UInt64	Nullable(UInt64)
+interpolate over a colliding projection column
+0	20
+1	30
+2	130
+3	230
+correlated column that collides with an inner column
+1
+3
+key with a subquery, referenced through its alias in projection and HAVING
+3	0	1
+4	0	1
+5	0	1
+\N	1	4

@@ -493,7 +493,7 @@ void assertNoArrayJoinOutside(const QueryTreeNodePtr & node,
     int exception_code,
     std::string_view exception_place_message)
 {
-    QueryTreeNodePtrWithHashIgnoreAliasesSet ready(ready_columns.begin(), ready_columns.end());
+    QueryTreeNodePtrWithHashIgnoreAliasesNoSourcesSet ready(ready_columns.begin(), ready_columns.end());
     QueryTreeNodes nodes_to_process{node};
     while (!nodes_to_process.empty())
     {

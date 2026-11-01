@@ -78,8 +78,8 @@ static QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
 /// [ (a <> b AND) ] (a IS NULL) AND (b IS NULL)
 static bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs)
 {
-    QueryTreeNodePtrWithHashSet all_arguments;
-    QueryTreeNodePtrWithHashSet is_null_arguments;
+    QueryTreeNodePtrWithHashNoSourcesSet all_arguments;
+    QueryTreeNodePtrWithHashNoSourcesSet is_null_arguments;
 
     for (const auto & node : nodes)
     {
@@ -90,16 +90,16 @@ static bool matchIsNullOfTwoArgs(const QueryTreeNodes & nodes, QueryTreeNodePtr 
         const auto & arguments = func_node->getArguments().getNodes();
         if (func_node->getFunctionName() == "isNull" && arguments.size() == 1)
         {
-            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
-            is_null_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
+            all_arguments.insert(QueryTreeNodePtrWithHashNoSources(arguments[0]));
+            is_null_arguments.insert(QueryTreeNodePtrWithHashNoSources(arguments[0]));
         }
 
         else if (func_node->getFunctionName() == "notEquals" && arguments.size() == 2)
         {
             if (arguments[0]->isEqual(*arguments[1]))
                 return false;
-            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[0]));
-            all_arguments.insert(QueryTreeNodePtrWithHash(arguments[1]));
+            all_arguments.insert(QueryTreeNodePtrWithHashNoSources(arguments[0]));
+            all_arguments.insert(QueryTreeNodePtrWithHashNoSources(arguments[1]));
         }
         else
             return false;
@@ -130,7 +130,7 @@ static bool isBooleanConstant(const QueryTreeNodePtr & node, bool expected_value
 static bool isOnlyConjunctionOfFunctions(
     const QueryTreeNodePtr & node,
     const String & func_name,
-    const QueryTreeNodePtrWithHashSet & allowed_arguments)
+    const QueryTreeNodePtrWithHashNoSourcesSet & allowed_arguments)
 {
     if (isBooleanConstant(node, true))
         return true;
@@ -174,7 +174,7 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
 
-static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
+static void insertIfNotPresentInSet(QueryTreeNodePtrWithHashNoSourcesSet& set, QueryTreeNodes &nodes, QueryTreeNodePtr node)
 {
     const auto [_, inserted] = set.emplace(node);
     if (inserted)
@@ -422,7 +422,7 @@ struct ExpressionFilters
     std::optional<size_t> first_equals_position;
 };
 
-using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<ExpressionFilters>;
+using ComparisonFilterMap = QueryTreeNodePtrWithHashNoSourcesMap<ExpressionFilters>;
 
 static ValueComparisonResult invertComparisonResult(ValueComparisonResult result)
 {
@@ -1042,7 +1042,7 @@ using IndexedNodes = std::vector<IndexedNode>;
 /// Convert surviving notEquals chains to NOT IN when the chain is long enough.
 /// Output is appended to `output` with original indices for deterministic sorting.
 static void convertNotEqualsChainToNotIn(
-    QueryTreeNodePtrWithHashMap<IndexedNodes> & node_to_not_equals_functions,
+    QueryTreeNodePtrWithHashNoSourcesMap<IndexedNodes> & node_to_not_equals_functions,
     IndexedNodes & output,
     const ContextPtr & context)
 {
@@ -1167,11 +1167,11 @@ struct CommonExpressionExtractionResult
 // Result: A or B
 static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressionsInDisjunction(const QueryTreeNodes & disjuncts, const ContextPtr & context)
 {
-    std::vector<QueryTreeNodePtrWithHashSet> disjunct_sets;
+    std::vector<QueryTreeNodePtrWithHashNoSourcesSet> disjunct_sets;
     disjunct_sets.reserve(disjuncts.size());
     for (const auto & disjunct : disjuncts)
     {
-        QueryTreeNodePtrWithHashSet disjunct_set;
+        QueryTreeNodePtrWithHashNoSourcesSet disjunct_set;
 
         auto * disjunct_function = disjunct->as<FunctionNode>();
         if (disjunct_function != nullptr && disjunct_function->getFunctionName() == "and")
@@ -1266,9 +1266,9 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         return {};
 
     bool first_argument = true;
-    QueryTreeNodePtrWithHashSet common_exprs_set;
+    QueryTreeNodePtrWithHashNoSourcesSet common_exprs_set;
     QueryTreeNodes common_exprs;
-    QueryTreeNodePtrWithHashMap<QueryTreeNodePtr> flattened_ands;
+    QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodePtr> flattened_ands;
 
     for (auto & maybe_and_node : or_argument_nodes)
     {
@@ -1298,7 +1298,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
         }
         else
         {
-            QueryTreeNodePtrWithHashSet new_common_exprs_set;
+            QueryTreeNodePtrWithHashNoSourcesSet new_common_exprs_set;
             QueryTreeNodes new_common_exprs;
 
             for (auto & and_argument : and_node->getArguments())
@@ -1320,7 +1320,7 @@ static std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressio
 
     chassert(!common_exprs.empty());
 
-    QueryTreeNodePtrWithHashSet new_or_arguments_set;
+    QueryTreeNodePtrWithHashNoSourcesSet new_or_arguments_set;
     QueryTreeNodes new_or_arguments;
     bool has_completely_extracted_and_expression = false;
 
@@ -1428,7 +1428,7 @@ static void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const Con
     auto * root_node = node->as<FunctionNode>();
     chassert(root_node && root_node->getFunctionName() == "and");
 
-    QueryTreeNodePtrWithHashSet new_top_level_arguments_set;
+    QueryTreeNodePtrWithHashNoSourcesSet new_top_level_arguments_set;
     QueryTreeNodes new_top_level_arguments;
 
     auto insert_possible_new_top_level_arg = [&new_top_level_arguments_set, &new_top_level_arguments](QueryTreeNodePtr node_to_insert)
@@ -1568,7 +1568,7 @@ private:
           * }
           * Then for each equality a = b we can check if we have operand (a IS NULL AND b IS NULL)
           */
-        QueryTreeNodePtrWithHashMap<std::vector<size_t>> is_null_argument_to_indices;
+        QueryTreeNodePtrWithHashNoSourcesMap<std::vector<size_t>> is_null_argument_to_indices;
 
         bool is_anything_changed = false;
 
@@ -1612,9 +1612,9 @@ private:
                 {
                     const auto & equals_arguments = equals_function->as<FunctionNode>()->getArguments().getNodes();
                     /// Expected isNotNull arguments
-                    QueryTreeNodePtrWithHashSet allowed_arguments;
-                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[0]})));
-                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[1]})));
+                    QueryTreeNodePtrWithHashNoSourcesSet allowed_arguments;
+                    allowed_arguments.insert(QueryTreeNodePtrWithHashNoSources(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[0]})));
+                    allowed_arguments.insert(QueryTreeNodePtrWithHashNoSources(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[1]})));
 
                     bool can_be_optimized = true;
                     for (const auto & and_argument : and_arguments)
@@ -1923,8 +1923,8 @@ private:
         const bool enable_pruning = getSettings()[Setting::optimize_redundant_comparisons];
 
         ComparisonFilterMap filter_map;
-        QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
-        QueryTreeNodePtrWithHashMap<IndexedNodes> node_to_not_equals_functions;
+        QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodeConstRawPtrWithHashNoSourcesSet> not_equals_node_to_constants;
+        QueryTreeNodePtrWithHashNoSourcesMap<IndexedNodes> node_to_not_equals_functions;
 
         /// Pass 1: iterate over AND operands, classify each as comparison-with-constant or other.
         IndexedNodes all_operands;
@@ -2240,8 +2240,8 @@ private:
         };
 
         /// Step 1: identify constants, and store comparing pairs in hash
-        QueryTreeNodePtrWithHashSet greater_constants;
-        QueryTreeNodePtrWithHashSet less_constants;
+        QueryTreeNodePtrWithHashNoSourcesSet greater_constants;
+        QueryTreeNodePtrWithHashNoSourcesSet less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
         struct ComparisonEdge
         {
@@ -2252,7 +2252,7 @@ private:
             bool crosses_source;
         };
         using QueryTreeNodeWithEquals = std::vector<ComparisonEdge>;
-        using ComparePairs = QueryTreeNodePtrWithHashMap<QueryTreeNodeWithEquals>;
+        using ComparePairs = QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodeWithEquals>;
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
 
@@ -2268,7 +2268,7 @@ private:
 
         for (const auto & argument : arguments)
         {
-            /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHash
+            /// Building these maps inserts every comparison operand into QueryTreeNodePtrWithHashNoSources
             /// containers, and each insert computes a full getTreeHash. A single very large AND chain
             /// could hash its whole operand set here before any later (DFS) budget check, so honor the
             /// budget while collecting too -- aborting now only forgoes the optimization (nothing has
@@ -2396,9 +2396,9 @@ private:
 
         /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5,
         /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
-        QueryTreeNodePtrWithHashMap<std::vector<ComparisonOrderDomain>> visited;
+        QueryTreeNodePtrWithHashNoSourcesMap<std::vector<ComparisonOrderDomain>> visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
-        QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
+        QueryTreeNodePtrWithHashNoSourcesMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
         /// Conjuncts already present in the AND, used to keep this optimization idempotent: a derived
         /// transitive conjunct is appended only if an equal one is not already there. The identifier
@@ -2407,8 +2407,8 @@ private:
         /// visit and desync from a singly-referenced copy (e.g. a GROUP BY key matched by formatted name).
         /// `indexHint(X)` is not interchangeable with plain `X`: a hint dedupes only hint-destined
         /// derivations, while contradictions and cross-source conjuncts must still materialize.
-        QueryTreeNodePtrWithHashSet existing_plain_conjuncts;
-        QueryTreeNodePtrWithHashSet existing_hint_conjuncts;
+        QueryTreeNodePtrWithHashNoSourcesSet existing_plain_conjuncts;
+        QueryTreeNodePtrWithHashNoSourcesSet existing_hint_conjuncts;
         for (const auto & argument : function_node.getArguments().getNodes())
         {
             /// emplace computes getTreeHash for each conjunct; respect the budget here as well.
@@ -2550,8 +2550,8 @@ private:
 
         QueryTreeNodes or_operands;
 
-        QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_equals_functions;
-        QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> node_to_constants;
+        QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodes> node_to_equals_functions;
+        QueryTreeNodePtrWithHashNoSourcesMap<QueryTreeNodeConstRawPtrWithHashNoSourcesSet> node_to_constants;
 
         for (const auto & argument : function_node.getArguments())
         {

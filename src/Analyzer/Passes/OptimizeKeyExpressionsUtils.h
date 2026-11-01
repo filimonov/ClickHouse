@@ -15,7 +15,7 @@ namespace DB
 /// Returns true if `node` is an ordinary deterministic function computed only from `keys` (every
 /// column it reads is one of the keys). Such a value is the same for all rows in a group, so this
 /// key can be dropped without changing the grouping.
-bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & keys);
+bool isExpressionFunctionOfKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashNoSourcesSet & keys);
 
 /// Removes, in place, every key that is a function of the other keys.
 void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);
@@ -27,6 +27,6 @@ void removeKeysThatAreFunctionsOfOtherKeys(QueryTreeNodes & keys);
 /// is not unwrapped further: `LIMIT BY` runs after aggregation, so it must not be rewritten past a
 /// `GROUP BY` key into columns that no longer exist there.
 QueryTreeNodes unwrapInjectiveFunctionsInKeys(
-    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashSet * keys_to_keep = nullptr);
+    const QueryTreeNodes & keys, bool allow_suspicious_types, const QueryTreeNodePtrWithHashNoSourcesSet * keys_to_keep = nullptr);
 
 }

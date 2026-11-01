@@ -305,7 +305,7 @@ public:
             bool keep_originals = false;  /// Force keeping originals (e.g. a pattern failed to convert)
         };
         std::vector<PerKeyData> per_key_data;
-        QueryTreeNodePtrWithHashMap<size_t> key_to_index;
+        QueryTreeNodePtrWithHashNoSourcesMap<size_t> key_to_index;
 
         for (auto & argument : function_node->getArguments())
         {
