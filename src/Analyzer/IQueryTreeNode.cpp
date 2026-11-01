@@ -4,6 +4,7 @@
 #include <typeinfo>
 #include <unordered_map>
 
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -14,6 +15,11 @@
 #include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
+
+namespace ProfileEvents
+{
+    extern const Event QueryTreeHashNodes;
+}
 
 namespace DB
 {
@@ -235,6 +241,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
     }
 
     getTreeHashWorkCounter() += visited_nodes;
+    ProfileEvents::increment(ProfileEvents::QueryTreeHashNodes, visited_nodes);
     return getSipHash128AsPair(hash_state);
 }
 
