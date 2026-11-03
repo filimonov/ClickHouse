@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-03 23:23'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
@@ -19,6 +19,7 @@ references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPlainObjects.cpp
   - docs/superpowers/cas/2026-10-12-late-request-audit/objects/roots.md
+  - 'https://github.com/Altinity/ClickHouse/pull/2567'
 priority: low
 type: bug
 ordinal: 465000
@@ -48,4 +49,6 @@ Only disk-root paths land in `roots/<srid>/`; the real writer is upstream `IDisk
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-14: PR C's rejoin (CAS-388.3) deletes the previous life's access-probe key. RS4 (a late delete of a successor's probe) remains and is listed in CAS-385.
+
+2026-11-04: the PR #2567 audit (https://github.com/Altinity/ClickHouse/pull/2567#issuecomment-6362597801, Low) found the same ETag ABA from the decommission side: an in-flight drain delete under `roots/<srid>/` (`deleteListedPrefix` in `Tools/CasDecommission.cpp`) removes a rejoined member's object with identical bytes, e.g. its access probe. Pinned by `CASDecommission.InFlightDeleteAfterRejoinHitsOnlyIdenticalRootsBytes`. Kept out of #2567 by owner decision; fix options: refuse the late delete unless the slot still holds the admin's farewell, or an epoch-scoped key (format change).
 <!-- SECTION:NOTES:END -->
