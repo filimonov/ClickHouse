@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26 12:37'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-04 23:30'
 labels:
   - 'area:testing'
   - 'complexity:medium'
@@ -56,4 +56,6 @@ Provenance: open PR #2437 (draft, branch cas/update-existing-backup-tests, base 
 
 <!-- SECTION:NOTES:BEGIN -->
 PR #2437 (draft), branch cas/update-existing-backup-tests, base antalya-26.6.
+
+2026-11-04: https://github.com/Altinity/ClickHouse/pull/2508 (CAS-300) merged with only test_cas_backup_s3_native_copy; the generic backup suites of PR #2437 are still not landed.
 <!-- SECTION:NOTES:END -->

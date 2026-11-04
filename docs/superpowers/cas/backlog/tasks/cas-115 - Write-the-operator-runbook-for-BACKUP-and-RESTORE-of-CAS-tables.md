@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-04 23:30'
 labels:
   - 'area:docs'
   - 'complexity:small'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/operability-and-introspection.md#b198-backup-restore-runbook
 First recorded: 2026-09-26 (4afa7f68ee1, by 'b198-backup-restore-runbook')
 
 PR #2415 (draft), branch cas/backup-native-copy-bug, adds `docs/en/antalya/cas/operations/backup.md` (135 lines) and links it from the CAS index and roadmap. Suite coverage for AC #2 comes from PR #2437 (draft). Both PRs are still open, so the premise 'Basic BACKUP/RESTORE works on CAS' holds only once they merge.
+
+2026-11-04: https://github.com/Altinity/ClickHouse/pull/2508 merged docs/en/antalya/cas/operations/backup.md (BACKUP to S3 on the pool's endpoint, ranged copy, GCS note, what is unsupported). Check AC#1 (clickhouse-backup embedded mode, restore onto a non-CAS policy) and AC#2 (commands copied from a run) against that page before closing.
 <!-- SECTION:NOTES:END -->

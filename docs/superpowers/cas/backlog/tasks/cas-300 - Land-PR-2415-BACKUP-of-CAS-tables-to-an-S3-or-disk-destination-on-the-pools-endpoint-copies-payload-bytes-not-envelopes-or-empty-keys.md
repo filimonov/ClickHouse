@@ -3,11 +3,11 @@ id: CAS-300
 title: >-
   Land PR #2415: BACKUP of CAS tables to an S3 or disk destination on the pool's
   endpoint copies payload bytes, not envelopes or empty keys
-status: In Progress
+status: Done
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26 12:37'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-04 23:30'
 labels:
   - 'area:backend'
   - 'area:formats'
@@ -49,18 +49,18 @@ Provenance: open PR #2415 (draft, branch cas/backup-native-copy-bug, base antaly
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PR #2415 or its replacement is merged into antalya-26.6 with `test_cas_backup_s3_native_copy` green
-- [ ] #2 BACKUP to S3 and to a same-endpoint disk, then RESTORE, round-trips row checksums for a table with inline files and blobs
-- [ ] #3 An empty remote key reaching a server-side copy fails with a named error instead of copying
-- [ ] #4 Hunks outside the CAS directories are graded as fork patches (minimal, motivated, portable) in the PR description
+- [x] #1 PR #2415 or its replacement is merged into antalya-26.6 with `test_cas_backup_s3_native_copy` green
+- [x] #2 BACKUP to S3 and to a same-endpoint disk, then RESTORE, round-trips row checksums for a table with inline files and blobs
+- [x] #3 An empty remote key reaching a server-side copy fails with a named error instead of copying
+- [x] #4 Hunks outside the CAS directories are graded as fork patches (minimal, motivated, portable) in the PR description
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -69,4 +69,6 @@ Provenance: open PR #2415 (draft, branch cas/backup-native-copy-bug, base antaly
 PR #2415 (draft), branch cas/backup-native-copy-bug, base antalya-26.6.
 
 2031-triage CAS-020: the same-endpoint BACKUP half of the audit finding (`getStorageObjects` drops the envelope offset). MOVE half is CAS-254.
+
+2026-11-04: replacement PR https://github.com/Altinity/ClickHouse/pull/2508 merged into antalya-26.8 as 48537ae6f54 (supersedes #2415 and #2494; lane moved from 26.6 to 26.8). Ranged same-store copy through copyS3File / UploadPartCopy for blobs, inline files through buffers, empty remote key refused by name; test_cas_backup_s3_native_copy green; docs/en/antalya/cas/operations/backup.md added.
 <!-- SECTION:NOTES:END -->
