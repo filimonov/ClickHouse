@@ -3,10 +3,10 @@ id: CAS-388
 title: >-
   Member lifecycle: decommission deletes data only, a retired member rejoins
   empty
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-14 17:03'
-updated_date: '2026-11-04 15:00'
+updated_date: '2026-11-04 22:39'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -38,10 +38,10 @@ PR C: pending (rejoin at Pool::open).
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -50,4 +50,6 @@ PR C: pending (rejoin at Pool::open).
 2026-11-04: PR A #2566 merged (af662dc591cf). PR B #2567 at 54feac14267 (fix round for k-morozov's review and the 2026-10-23 audit). PR C is https://github.com/Altinity/ClickHouse/pull/2574; B merged into it locally (734d2bcd885), not pushed. All three PRs now target antalya-26.6.
 
 2026-11-04: PR B #2567 merged as 9b348cf0a4b. Remaining: PR C https://github.com/Altinity/ClickHouse/pull/2574 (needs a rebase onto the merged B).
+
+2026-11-04: PR C https://github.com/Altinity/ClickHouse/pull/2574 merged as 11ab9a4224f. A (af662dc591c), B (9b348cf0a4b) and C are all in antalya-26.6; umbrella closed.
 <!-- SECTION:NOTES:END -->

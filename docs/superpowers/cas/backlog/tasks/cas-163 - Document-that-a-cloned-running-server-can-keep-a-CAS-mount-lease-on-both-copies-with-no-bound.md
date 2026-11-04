@@ -3,10 +3,10 @@ id: CAS-163
 title: >-
   Document that a cloned running server can keep a CAS mount lease on both
   copies with no bound
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-10-15 11:13'
+updated_date: '2026-11-04 22:39'
 labels:
   - 'area:docs'
   - 'area:mounts'
@@ -40,15 +40,15 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#resolved-by-get-clone-overlap ([reso
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `mounts-and-leases.md` states that cloning a running server is unsupported and why the lease does not fence the clone
+- [x] #1 `mounts-and-leases.md` states that cloning a running server is unsupported and why the lease does not fence the clone
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -57,4 +57,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#resolved-by-get-clone-overlap ([reso
 First recorded: 2026-09-01 (19c1b74b903, by 'resolved-by-get-clone-overlap')
 
 2026-10-15: PR C https://github.com/Altinity/ClickHouse/pull/2574 adds mounts-and-leases.md#clone-unsupported (cloning a running server is unsupported; why the lease does not fence the clone).
+
+2026-11-04: PR https://github.com/Altinity/ClickHouse/pull/2574 merged as 11ab9a4224f (antalya-26.6). mounts-and-leases.md#clone-unsupported is on antalya-26.6.
 <!-- SECTION:NOTES:END -->
