@@ -1,9 +1,10 @@
 ---
 id: CAS-423
 title: Log the first failed CAS blob publication attempt below Warning
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-24 12:24'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:write-path'
   - 'origin:review'
@@ -25,15 +26,21 @@ The per-attempt `CasBlobPublishAttempt` WARNING added by https://github.com/Alti
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The first failed publication attempt is logged below Warning; attempt 2 and later and the give-up path stay at Warning
-- [ ] #2 Test `CASBlobPublishTransport.FirstFailedAttemptIsBelowWarning` (or equivalent) pins the level
-- [ ] #3 Stateless cas s3 lanes stop failing on the `Publication of CAS blob ... attempt 1 of 8` line
+- [x] #1 The first failed publication attempt is logged below Warning; attempt 2 and later and the give-up path stay at Warning
+- [x] #2 Test `CASBlobPublishTransport.FirstFailedAttemptIsBelowWarning` (or equivalent) pins the level
+- [x] #3 Stateless cas s3 lanes stop failing on the `Publication of CAS blob ... attempt 1 of 8` line
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-04: merged into antalya-26.6 as aedac0cf3f7 (https://github.com/Altinity/ClickHouse/pull/2594). The 4 reds on its last run were not this line: Grype x2, `Stateless tests (amd_binary, cas storage, parallel)` died on `GroupingAggregatedTransform pushed bucket A twice`, Unit tests (asan_ubsan) unrelated. AC#3: the cas lanes no longer fail on `Publication of CAS blob ... attempt 1 of 8`.
+<!-- SECTION:NOTES:END -->

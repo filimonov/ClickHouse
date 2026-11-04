@@ -3,10 +3,10 @@ id: CAS-271
 title: >-
   Log when `skip_access_check` or a decommission open skips the capability
   probe, and fix the probe's 'no override' text
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -40,16 +40,16 @@ Provenance: BACKLOG/formats-and-storage.md#skip-access-check-no-signal (2031-tri
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A skipped probe logs one line at the default level naming what is unverified (versioning, conditional writes, list-after-write)
-- [ ] #2 The versioning message no longer claims there is no override
+- [x] #1 A skipped probe logs one line at the default level naming what is unverified (versioning, conditional writes, list-after-write)
+- [x] #2 The versioning message no longer claims there is no override
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -60,4 +60,6 @@ First recorded: 2026-08-21 (00bda042d5d, by 'skip-access-check-no-signal')
 2031-triage CAS-029: the `skip_access_check` half. 'Versioning queried only on the GCS dialect; ETag mounts rely on the delete-marker probe' is decided behaviour (2026-09-02), and the post-mount `LOGICAL_ERROR` half is implemented by `654ba3d0aa7` (`CAS_DELETE_MARKER`).
 
 2026-10-14: delivered in PR B https://github.com/Altinity/ClickHouse/pull/2567 (skipped-probe log and probe text).
+
+2026-11-04: merged into antalya-26.6 as 9b348cf0a4b (https://github.com/Altinity/ClickHouse/pull/2567). Reds on the final run were base/infra: regression cas_alter_attach_3 (issue #2343), CASS3CacheLightweightDelete, and the cas s3 stateless lanes on `GroupingAggregatedTransform pushed bucket A twice` (not CAS). Delivered by PR B; closed on its merge.
 <!-- SECTION:NOTES:END -->

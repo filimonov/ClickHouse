@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:write-path'
   - 'area:mounts'
@@ -53,4 +53,6 @@ Fix (no format change): LIST before `openPoolView`, delete the listed keys after
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-14: the fix changed. PR A https://github.com/Altinity/ClickHouse/pull/2566 deletes S3 staging on abort; PR B https://github.com/Altinity/ClickHouse/pull/2567 puts the writer epoch into staging keys and sweeps only older epochs. The 'LIST before claim' text and AC#1 are superseded (rejected in the spec). Multipart abort is CAS-369.1.
+
+2026-11-04: PR B #2567 merged as 9b348cf0a4b (writer epoch in staging keys, sweep only older epochs). What is left here is CAS-369.1 (multipart abort); AC#1 stays superseded.
 <!-- SECTION:NOTES:END -->

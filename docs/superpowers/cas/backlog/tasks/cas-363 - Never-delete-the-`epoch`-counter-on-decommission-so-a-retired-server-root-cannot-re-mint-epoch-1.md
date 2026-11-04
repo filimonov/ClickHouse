@@ -3,10 +3,10 @@ id: CAS-363
 title: >-
   Never delete the `epoch` counter on decommission so a retired server root
   cannot re-mint epoch 1
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:mounts'
   - 'area:tooling'
@@ -40,16 +40,16 @@ Fix (no migration): retire the slot by one `If-Match` write that replaces `epoch
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `CaCasMountCore` splits the decommission tail and adds `EpochNeverReused`; TLC holds with the fix
-- [ ] #2 decommission followed by a victim restart never yields an epoch below the retired one (integration test)
+- [x] #1 `CaCasMountCore` splits the decommission tail and adds `EpochNeverReused`; TLC holds with the fix
+- [x] #2 decommission followed by a victim restart never yields an epoch below the retired one (integration test)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -62,4 +62,6 @@ Wave 2 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md 
 2026-10-13 no-garbage variants (`af23a58b293`, CaEpochAllocCore RESULTS; owner rejected retire+keep-mount: permanent per-srid objects, no srid reuse). Today's tail kept (delete mount, delete epoch, tombstone owner), nonce on. As specified (sample at open) both V1 (store-time base `seconds<<20`) and V2 (pool high-water mark in `_pool_meta`) are red; both need (i) a FRESH read after seeing the counter absent (open-time probe/_pool_meta read is stale), (ii) a mint check: before minting over an absent slot, `claimMount` re-reads `epoch` and mints only if its own allocation bytes are still there. Then `fix_poolhwm_fresh_nz_mc` and `fix_storetime_fresh_nz_slow_mc` are green on all five invariants (EpochNeverReused, NoDangle, SlotNeverRegresses, NoDangleAfterReuse, CounterNeverRegresses); V1 additionally needs a monotone store clock and a counter older than one store second. Residual for both: a zombie create/mint decided before the tail's DELETE that lands after it (only retire closes it). Recommendation: V2 + fresh `_pool_meta` read + mint check + nonce. Cost: tail GET+If-Match PUT of `_pool_meta` before deleting `epoch`; one `_pool_meta` GET on the absent-counter path; one `epoch` GET before a mint over an absent slot. Code: no namespace life survives a counter re-creation (absent branch requires `serverRootSubtreeEmpty`); no small-epoch assumptions. Catch: `admitOrValidate` re-encodes `_pool_meta` with known fields only, so a 26.6.4 node admitting a new hash algorithm drops `hwm` (`sab_poolhwm_oldadmit`) — new build must carry it in `PoolMeta`; 26.6.4 needs a rule (no algorithm admission from old nodes after a decommission) or a reader-generation lockout. Owner decision pending.
 
 2026-10-14: delivered by PR B https://github.com/Altinity/ClickHouse/pull/2567: decommission keeps owner, epoch and mount, so the counter is never deleted and a retired root cannot re-mint epoch 1. The fix text in the description (retire the epoch body; V1/V2 high-water-mark variants in _pool_meta) is superseded. A mint check is also not needed.
+
+2026-11-04: merged into antalya-26.6 as 9b348cf0a4b (https://github.com/Altinity/ClickHouse/pull/2567). Reds on the final run were base/infra: regression cas_alter_attach_3 (issue #2343), CASS3CacheLightweightDelete, and the cas s3 stateless lanes on `GroupingAggregatedTransform pushed bucket A twice` (not CAS). Delivered by PR B; closed on its merge.
 <!-- SECTION:NOTES:END -->

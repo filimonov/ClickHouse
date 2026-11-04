@@ -3,10 +3,10 @@ id: CAS-362
 title: >-
   Make writer-epoch allocation unique when two same-uuid instances race on an
   ambiguous counter write
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:mounts'
   - 'touches:on-s3-format'
@@ -37,17 +37,17 @@ Fix: add a random allocation nonce to the `epoch` body (~15 lines). Old readers 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 two allocators racing with an ambiguous first write never both return the same epoch (gtest)
-- [ ] #2 26.6.4 readers parse the new body (compat test)
-- [ ] #3 spec updated for the frozen format
+- [x] #1 two allocators racing with an ambiguous first write never both return the same epoch (gtest)
+- [x] #2 26.6.4 readers parse the new body (compat test)
+- [x] #3 spec updated for the frozen format
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -58,4 +58,6 @@ Fix: add a random allocation nonce to the `epoch` body (~15 lines). Old readers 
 2026-10-12 model (`008991cc06f`, `CaEpochAllocCore`, base 2a034cdb374): `cur_twin`/`cur_twin_gcs` violate `EpochNeverReused` (ambiguous create, twin writes identical bytes, resolve says Committed); with #2512 the twin cannot write (`cur_twin_dangle` green) but the duplicate allocation stays. `fix_nonce` green (also GCS, restart: 167 M states); `sab_nonce` (resolve compares only the value) red. Format: `decodeServerEpoch` skips unknown keys in 26.6.4 (`JsonObjectReader::skipUnknown`, Tolerant), so a plain nonce field is compatible.
 
 2026-10-14: its two commits ship as the first commits of PR B https://github.com/Altinity/ClickHouse/pull/2567; there is no separate PR.
+
+2026-11-04: merged into antalya-26.6 as 9b348cf0a4b (https://github.com/Altinity/ClickHouse/pull/2567). Reds on the final run were base/infra: regression cas_alter_attach_3 (issue #2343), CASS3CacheLightweightDelete, and the cas s3 stateless lanes on `GroupingAggregatedTransform pushed bucket A twice` (not CAS). Delivered by PR B; closed on its merge.
 <!-- SECTION:NOTES:END -->

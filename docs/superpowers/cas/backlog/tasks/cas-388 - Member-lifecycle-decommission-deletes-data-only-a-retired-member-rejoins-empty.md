@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-14 17:03'
-updated_date: '2026-11-04 00:09'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -48,4 +48,6 @@ PR C: pending (rejoin at Pool::open).
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-04: PR A #2566 merged (af662dc591cf). PR B #2567 at 54feac14267 (fix round for k-morozov's review and the 2026-10-23 audit). PR C is https://github.com/Altinity/ClickHouse/pull/2574; B merged into it locally (734d2bcd885), not pushed. All three PRs now target antalya-26.6.
+
+2026-11-04: PR B #2567 merged as 9b348cf0a4b. Remaining: PR C https://github.com/Altinity/ClickHouse/pull/2574 (needs a rebase onto the merged B).
 <!-- SECTION:NOTES:END -->

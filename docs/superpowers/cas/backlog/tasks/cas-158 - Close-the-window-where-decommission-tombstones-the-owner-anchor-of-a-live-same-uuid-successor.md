@@ -3,10 +3,10 @@ id: CAS-158
 title: >-
   Close the window where decommission tombstones the owner anchor of a live
   same-uuid successor
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-10-15 11:13'
+updated_date: '2026-11-04 15:00'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -40,16 +40,16 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#decommission-toctou-stamps-successor
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A test that restarts the victim inside the window either shows the successor still restartable or fails on the current code
-- [ ] #2 The accepted-residual comment is removed or narrowed to what remains
+- [x] #1 A test that restarts the victim inside the window either shows the successor still restartable or fails on the current code
+- [x] #2 The accepted-residual comment is removed or narrowed to what remains
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
-- [ ] #4 No fallback paths added; failures propagate
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -64,4 +64,6 @@ Epoch-reuse part: CAS-363.
 2026-10-14: closed by PR B https://github.com/Altinity/ClickHouse/pull/2567: the tombstone is written right after the claim, the claim rechecks owner_life, decommission confirms or rolls back, and a verified mark records retirement. Residual: a tombstone stays over a live successor if the tool dies between its tombstone and the rollback. Availability only; documented and tracked in CAS-385.
 
 2026-10-15: closed by PR B https://github.com/Altinity/ClickHouse/pull/2567 (tombstone after claim, owner_life recheck, confirm/rollback, verified mark); residual 'tool dies before rollback' tracked in CAS-385. Done on merge.
+
+2026-11-04: merged into antalya-26.6 as 9b348cf0a4b (https://github.com/Altinity/ClickHouse/pull/2567). Reds on the final run were base/infra: regression cas_alter_attach_3 (issue #2343), CASS3CacheLightweightDelete, and the cas s3 stateless lanes on `GroupingAggregatedTransform pushed bucket A twice` (not CAS). Delivered by PR B; closed on its merge.
 <!-- SECTION:NOTES:END -->
