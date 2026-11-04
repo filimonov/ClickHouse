@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-15 08:43'
-updated_date: '2026-10-15 15:15'
+updated_date: '2026-11-04 00:34'
 labels:
   - 'area:refs'
 dependencies: []
@@ -37,4 +37,6 @@ Reproduction and analysis: tmp/dupcheck/REPORT.md (CAS base fef96d50e69).
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-15: https://github.com/Altinity/ClickHouse/pull/2577 makes the commit error texts honest (durable but not acknowledged / outcome unknown / nothing is durable); it does not fix the duplicate or the dedup loss.
+
+2026-11-04: the #2577 audit (https://github.com/Altinity/ClickHouse/pull/2577, alsugiliazova 2026-10-23, Medium) names the loss case: with non_replicated_deduplication_window > 0, MergeTreeSink::commitPart records the block id before the CAS commit and keeps it when the commit throws, so a client retry is reported as a duplicate and writes nothing, also when nothing was durable. Owner decision: not fixed in #2577; covered by this task (block id written in the same ref-log transaction).
 <!-- SECTION:NOTES:END -->
