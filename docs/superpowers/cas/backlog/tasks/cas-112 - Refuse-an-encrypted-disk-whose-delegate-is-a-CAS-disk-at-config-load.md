@@ -4,7 +4,7 @@ title: Refuse an encrypted disk whose delegate is a CAS disk at config load
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-05 13:28'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -55,4 +55,6 @@ Merged from mounts-and-lifecycle.md #encrypted-over-cas-missing-gate: today the 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `isContentAddressed` is 2026-06-04 (0f24cea5ab2); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-11-05: the loud-failure half landed differently: https://github.com/Altinity/ClickHouse/pull/2773 (antalya-26.8, 95544a2caaf) refuses at the first blob part-file write with NOT_IMPLEMENTED, so an encrypted-over-CAS table can be created and fails on INSERT. The config-load refusal in AC#1 would move the failure to startup; weigh it against CAS-129.1 (support), which would remove both refusals.
 <!-- SECTION:NOTES:END -->

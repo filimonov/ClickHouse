@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 13:00'
+updated_date: '2026-11-05 13:28'
 labels:
   - 'area:gc'
   - 'origin:ci'
@@ -31,7 +32,7 @@ Cherry-pick the seven non-merge commits of PR 2730 onto antalya-26.6 and run `CA
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PR 2730 is merged into antalya-26.8
+- [x] #1 PR 2730 is merged into antalya-26.8
 - [ ] #2 A backport PR lands the same change on antalya-26.6 with the new gtests green
 - [ ] #3 `test_cas_replicated_relink` passes under TSan on antalya-26.6 without the byte-copy fallback in the node2 log
 <!-- AC:END -->
@@ -43,3 +44,9 @@ Cherry-pick the seven non-merge commits of PR 2730 onto antalya-26.6 and run `CA
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-05: PR 2730 merged into antalya-26.8 as 856ca70a4ff (13:24 UTC). Remaining: the antalya-26.6 backport (AC#2, #3).
+<!-- SECTION:NOTES:END -->
