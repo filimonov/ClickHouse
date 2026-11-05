@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-15 08:43'
-updated_date: '2026-10-15 15:15'
+updated_date: '2026-11-05 22:30'
 labels:
   - 'area:refs'
 dependencies: []
@@ -33,4 +33,6 @@ Reproduction and analysis: tmp/dupcheck/REPORT.md (CAS base fef96d50e69).
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-15: https://github.com/Altinity/ClickHouse/pull/2577 makes the commit error texts honest (durable but not acknowledged / outcome unknown / nothing is durable); it does not fix the duplicate or the dedup loss.
+
+2026-11-05: ReplicatedMergeTree branch of the C10 window confirmed by code (review of PR 2577 by k-morozov). MergeTreeData::Transaction::renameParts makes the CAS promote durable before the Keeper multi (ReplicatedMergeTreeSink::commitPart); when the _ckpt publish throws there, the part never reaches Keeper and StorageReplicatedMergeTree::checkParts moves it to detached/ignored_<part> at the next start. So for ReplicatedMergeTree the window ends in a silently detached part, not a duplicate: no block id in Keeper, a client retry is not deduplicated and lands a second copy only if someone ATTACHes the ignored part. For MergeTree the restart-before-cleanup duplicate stands as reproduced. Any fix here must handle both engines; the texts in PR 2577 say the behaviour per engine.
 <!-- SECTION:NOTES:END -->
