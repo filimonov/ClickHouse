@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
+updated_date: '2026-11-05 13:00'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -40,3 +41,9 @@ Approach: run shard 3 locally against the cas-s3-cache disk config with the Test
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-05: on https://github.com/Altinity/ClickHouse/pull/2730 (run 41932962724) both `CASLightweightDelete (3)` and `CASS3CacheLightweightDelete (3)` were cancelled, so the non-cache lane hangs as well; https://github.com/Altinity/ClickHouse/pull/2773 (run 41932902021) ran without the CAS regression lanes.
+<!-- SECTION:NOTES:END -->

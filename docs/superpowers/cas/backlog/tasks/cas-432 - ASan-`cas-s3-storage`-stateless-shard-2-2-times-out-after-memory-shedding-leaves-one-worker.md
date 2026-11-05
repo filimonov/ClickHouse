@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
+updated_date: '2026-11-05 13:00'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -40,3 +41,9 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-05: third and fourth consecutive timeouts of the ASan cas-s3 lane. PR 2730 shard 2/2 (job 126955421110): no memory shedding at all, `--jobs 6`, 6175 of 6930 tests at the 12600 s cut, plus two 600 s `BROKEN` client timeouts (03800_autopr_reuse_index_analysis, 03634_autopr_input_bytes_estimation). PR 2773 shard 1/2 (job 126956051287): `--jobs 8`, shed to 1 worker between 07:53 and 08:03, timed out; shard 2/2 (job 126956051156): no shedding, `--jobs 6`, 4851 of 6930 at the cut. The lane does not fit the budget even without shedding; the batch count or the budget has to change, not only the memory limit.
+<!-- SECTION:NOTES:END -->
