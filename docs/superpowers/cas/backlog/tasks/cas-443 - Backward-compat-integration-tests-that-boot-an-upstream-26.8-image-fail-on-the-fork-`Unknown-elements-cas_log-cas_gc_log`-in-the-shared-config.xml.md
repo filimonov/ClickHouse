@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
+updated_date: '2026-11-06 22:28'
 labels:
   - cas
   - ci
@@ -35,3 +36,9 @@ PR 2805 @8c26e8792eb, jobs `Integration tests (amd_asan_ubsan, targeted)`, `... 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-06: owner decision: skip_check_for_incorrect_settings per test, not globally. Fixed on the PR 2805 branch as ad04f95e441: configs/skip_check_for_incorrect_settings.xml on the two 26.8.26.12 instances. Affected today: this one file (2 cases); the other 29 old-image tests pin tags <= 26.6 or Altinity images. Native run: both nodes now start; test_table_... passed, test_database_... failed on the local MinIO 'XMinioStorageFull' (workstation disk 100% full), not the test. CI of 2805 will confirm.
+<!-- SECTION:NOTES:END -->
