@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 13:00'
-updated_date: '2026-11-06 02:13'
+updated_date: '2026-11-06 08:06'
 labels:
   - 'area:gc'
   - 'origin:ci'
@@ -51,4 +51,6 @@ Cherry-pick the seven non-merge commits of PR 2730 onto antalya-26.6 and run `CA
 2026-11-05: PR 2730 merged into antalya-26.8 as 856ca70a4ff (13:24 UTC). Remaining: the antalya-26.6 backport (AC#2, #3).
 
 2026-11-06: local branch port/antalya-26.6/cas-from-26.8 (worktree wt-266-lifecycle, base 52c95e21002) carries the -m 1 cherry-pick of 856ca70a4ff as e7b45306ba3 (conflicts: CasOrphanManifestSweep.cpp keeps the min_active_build_sequence == max sentinel test and the 26.6 mountRequests admission in sweepNamespace; CasDecommission.cpp comment) plus PR 2773 (encrypted CAS disk refusal) as 300a8c155c7. Release build OK; CAS* gate result in tmp/lanes/REPORT.md of the master worktree.
+
+2026-11-06: PR https://github.com/Altinity/ClickHouse/pull/2806 (head 300a8c155c7, base antalya-26.6) opened with 2730 + 2773; CAS regression job ticked. Related port in the other direction: PR 2805.
 <!-- SECTION:NOTES:END -->
