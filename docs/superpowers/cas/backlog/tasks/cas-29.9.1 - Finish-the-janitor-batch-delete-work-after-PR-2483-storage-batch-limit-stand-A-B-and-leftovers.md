@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-05 15:50'
-updated_date: '2026-10-08 20:37'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -69,4 +69,6 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 2026-10-05: item 1 is draft PR #2484 (branch `fix/antalya-26.6/cas-batch-delete-key-limit`, head 7946c7cb53f). Still open for AC #1: green CI and the failing-first run of the `CASS3BatchDelete` error-name test.
 
 2026-10-08: the distributed-systems audit of PR #2483 found no defect and listed three operational caveats. 1.1 (a lagging `LIST` keeps the pass busy because absent keys of a successful batch count as deleted) is item 4 here; its proposed fix, count only keys this request removed, is not implementable on S3: `DeleteObjects` reports `Deleted` for absent keys too. 2.1 (a leaked key waits for the cursor to lap) is the leak-only design the janitor had before this PR; remembering leaked keys for the next round would need new durable state (format frozen) or leader-local state, rejected for now. 3.1 (phase row `ProfileEvents` miss pool deletes) is CAS-135. Kept from the audit: its wording of the safe window after lost authority, added as an AC above.
+
+2026-11-07 audit: item 1 (batch-delete limit) merged in https://github.com/Altinity/ClickHouse/pull/2484 as 5b7c9f503df (antalya-26.6, 2026-10-07).
 <!-- SECTION:NOTES:END -->

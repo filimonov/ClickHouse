@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-09 05:44'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'area:formats'
@@ -44,7 +44,7 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#server-epoch-zero-and-dead-fence-ide
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Decoding a server-epoch body with zero throws `CORRUPTED_DATA`, covered by a unit test
-- [x] #2 `MountFence` carries no unread fields
+- [ ] #2 `MountFence` carries no unread fields
 <!-- AC:END -->
 
 ## Definition of Done
@@ -63,4 +63,6 @@ First recorded: 2026-08-21 (5e6e8a16e82, by 'server-epoch-zero-and-dead-fence-id
 2026-10-08: `next_writer_epoch = 0` is rejected in https://github.com/Altinity/ClickHouse/pull/2512; the two unread fields are not touched (format frozen).
 
 AC #2: PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c6f42bdaa32) deleted `MountFence::server_uuid`/`writer_epoch` and `fencedIdentity`; `armMountFence` takes the deadline only.
+
+2026-11-07 audit: AC #1 merged in https://github.com/Altinity/ClickHouse/pull/2512 (2a034cdb374). AC #2 unchecked: MountFence still has server_uuid and writer_epoch on antalya-26.6 (ae6e7493aba) and antalya-26.8 (92d84fc434c); the removal is on an unpushed branch.
 <!-- SECTION:NOTES:END -->

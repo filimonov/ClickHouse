@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26 12:37'
-updated_date: '2026-11-04 23:30'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:testing'
   - 'complexity:medium'
@@ -58,4 +58,6 @@ Provenance: open PR #2437 (draft, branch cas/update-existing-backup-tests, base 
 PR #2437 (draft), branch cas/update-existing-backup-tests, base antalya-26.6.
 
 2026-11-04: https://github.com/Altinity/ClickHouse/pull/2508 (CAS-300) merged with only test_cas_backup_s3_native_copy; the generic backup suites of PR #2437 are still not landed.
+
+2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2437 merged as 8b0499c4ace (antalya-26.6, 2026-10-14). Its CAS cases are in all five suites on antalya-26.6 and antalya-26.8 (ported by https://github.com/Altinity/ClickHouse/pull/2540). The 2026-11-04 'not landed' note is wrong. Open: AC #2, lane results not verified.
 <!-- SECTION:NOTES:END -->

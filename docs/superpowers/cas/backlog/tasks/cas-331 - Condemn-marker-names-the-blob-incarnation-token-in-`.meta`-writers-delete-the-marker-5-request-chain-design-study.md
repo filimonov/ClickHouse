@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-30 19:29'
-updated_date: '2026-09-30 20:29'
+updated_date: '2026-11-06 23:12'
 labels:
   - cas
   - gc
@@ -55,4 +55,6 @@ Five requests on the happy path. Open points to settle:
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30 study done: report docs/superpowers/reports/2026-09-30-cas-331-condemn-marker-variants.md. Owner decision: PR1 = minimal fix (G1 + r1 round checks + re-stamp); V1/V2r/V3 and all findings recorded in CAS-329 for the request-cut work.
+
+2026-11-07 audit: the fix merged in https://github.com/Altinity/ClickHouse/pull/2463 as fb5c27f8101 (antalya-26.6, 2026-10-05; CAS-30).
 <!-- SECTION:NOTES:END -->

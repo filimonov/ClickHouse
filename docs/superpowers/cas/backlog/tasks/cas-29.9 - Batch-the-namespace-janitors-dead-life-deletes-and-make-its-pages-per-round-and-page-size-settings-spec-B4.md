@@ -3,10 +3,10 @@ id: CAS-29.9
 title: >-
   Batch the namespace janitor's dead-life deletes and make its pages per round
   and page size settings (spec B4)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-05 15:50'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -74,4 +74,6 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 
 2026-10-05: draft PR #2483 (branch `fix/antalya-26.6/cas-gc-janitor-time-budget`, head a39bccb67de, 19 files, +858/−65) replaces PR #2468. `Gc::runNamespaceJanitor` repeats `NamespaceJanitor::runOnePage` while a page deleted something, under a 20 s soft budget; dead `_log`/`_snap` keys go as write-once batches split evenly across the GC I/O pool; `_ckpt`/`_files` keep the exact-token delete. Local gates on the pushed tree: debug `CAS*` 2569, ASan `CAS*` 2573, `tests/integration/test_cas_janitor_drain` 2/2.
 AC #1 is not met as written: a 1000-key page goes as up to `cas_gc_io_concurrency` requests (16 x 63 keys), not one. AC #2 was replaced by the time budget (no pages-per-round or page-size setting). AC #3 (A/B) is not done. Remaining work is in the subtask created today.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2483 as 29f01ea4340 (antalya-26.6, 2026-10-08). AC #1-#3 are not met as written; the remainder is CAS-29.9.1.
 <!-- SECTION:NOTES:END -->

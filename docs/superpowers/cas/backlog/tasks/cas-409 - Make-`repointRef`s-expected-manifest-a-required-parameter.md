@@ -4,7 +4,7 @@ title: Make `repointRef`'s expected manifest a required parameter
 status: Done
 assignee: []
 created_date: '2026-10-22 06:09'
-updated_date: '2026-10-22 21:23'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -51,6 +51,8 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22 consistency review (finding 3): the `IfMatches` suffix now carries two opposite contracts (`dropRefIfMatches` noexcept/swallowing vs `moveRefIfMatches` throwing `CAS_OWNERSHIP_CONFLICT`); the backend vocabulary is `create`/`replace(key, bytes, seen)` and `expected_value`, nothing uses `IfCurrent`. Rename in this task together with the signature change.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2647 as d8d64d936e2 (antalya-26.8, 2026-10-27).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

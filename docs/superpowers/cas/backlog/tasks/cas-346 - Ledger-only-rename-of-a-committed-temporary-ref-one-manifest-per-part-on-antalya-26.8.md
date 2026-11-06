@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-07 21:05'
-updated_date: '2026-10-23 01:35'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -52,4 +52,6 @@ Oracles: system.cas_log per isolated disk after SYSTEM FLUSH LOGS: one INSERT ->
 Follow-ups filed 2026-10-22: CAS-410 (floor-raise decision/observability), CAS-411 (tests), CAS-412 (relink capability cookie), CAS-413 (dead routing arm); notes added to CAS-13, CAS-14, CAS-83, CAS-176.3, CAS-201, CAS-210, CAS-222, CAS-230, CAS-232.2, CAS-321.9, CAS-347.
 
 Done by Altinity/ClickHouse PR 2647 (feature/antalya-26.8/cas-disk-transactions @ 7d992d82434): a committed ref is renamed by one ref-log Move (G_REF_MOVE, generation 2); one manifest per part; oracles in 05386-05392.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2647 as d8d64d936e2 (antalya-26.8, 2026-10-27).
 <!-- SECTION:NOTES:END -->

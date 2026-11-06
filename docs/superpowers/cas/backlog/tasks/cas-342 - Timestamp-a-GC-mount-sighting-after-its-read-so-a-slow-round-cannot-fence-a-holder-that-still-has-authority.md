@@ -3,10 +3,10 @@ id: CAS-342
 title: >-
   Timestamp a GC mount sighting after its read so a slow round cannot fence a
   holder that still has authority
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-01 19:31'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -83,4 +83,6 @@ Model result (CaMountObserveCore, commit 11a0675f8d3): the defect is reachable i
 2026-10-02: implemented on local branch `fix/antalya-26.6/cas-mount-renewal-no-deadline` (worktree `cas-95-1`, base `41824f955e7`, head `7443ccd3a86`, not pushed, no PR yet). Commits `703b9ab01b0` (`TokenWatch` replaces both hand-written copies) and `38c5ac5fb65` (`computeHeartbeatFloor` takes the clock function and dates every sighting after its read, including the re-decision after a refused fence-out). Tests `CASTokenWatch.CountsFromAfterTheRead`, `CASHeartbeat.GcCountsASightingFromAfterItsRead` (red on the base). The `rebuildBaseline` caller has no test of its own. Gates on the head: `CAS*` unit gate 2604 passed; integration module `test_cas_mount_renewal_retry` 6 passed. No ASan run yet. Two whole-branch reviews found no defect in production code. Spec: `docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md`; plan: `docs/superpowers/plans/2026-10-02-cas-mount-renewal-without-lease-deadline-part1.md`.
 
 2026-10-08: PR https://github.com/Altinity/ClickHouse/pull/2509 is open (GC sighting dated after the read).
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2509 as 2f34581bb72 (antalya-26.6-20261008, 2026-10-08); in antalya-26.6 via https://github.com/Altinity/ClickHouse/pull/2644 (c4e9bc724c5, 2026-10-24).
 <!-- SECTION:NOTES:END -->

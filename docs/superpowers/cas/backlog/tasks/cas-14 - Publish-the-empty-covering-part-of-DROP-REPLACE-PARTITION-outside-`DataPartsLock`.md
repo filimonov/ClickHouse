@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-23 01:35'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -57,4 +57,6 @@ First recorded: 2026-08-21 (b2a38f0b611, by 'covering-part-publish-under-datapar
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): unchanged for the Replicated site: `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, DataPartsLock & lock, create_empty_part)` (`MergeTreeData.cpp:7076`) still calls `commitTransaction` on the empty part under the caller's lock (`:7161`), and `renameParts` then adds a `Move` under the same lock. The plain-`MergeTree` sibling `StorageMergeTree::createEmptyParts` was fixed on the branch (commit right after `createEmptyPart`, `StorageMergeTree.cpp:2751`) because the series had moved its publish under `Transaction::commit(lock)`.
 
 Done by Altinity/ClickHouse PR 2647: StorageMergeTree::createEmptyParts commits the empty part's storage transaction right after creation, before DataPartsLock (05392 and the MOVE PARTITION oracle in 05386 count it). AC #2 is upstream semantics, unchanged.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2647 as d8d64d936e2 (antalya-26.8, 2026-10-27).
 <!-- SECTION:NOTES:END -->

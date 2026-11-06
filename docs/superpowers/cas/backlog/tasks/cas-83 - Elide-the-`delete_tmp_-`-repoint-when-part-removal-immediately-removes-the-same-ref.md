@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -71,4 +71,6 @@ Provenance: BACKLOG/gc.md [PART-REMOVAL-REPOINT] and #drop-path-head-of-line-and
 2026-09-30 PR opened: https://github.com/Altinity/ClickHouse/pull/2452 (base antalya-26.6, head fix/antalya-26.6/cas-part-removal-one-drop-pr = fd7be6776a7). Diff: one 11-line hunk in `DataPartStorageOnDiskBase::remove`, test 05054, two docs files. Comment-only edits in CAS files were dropped at the owner's request (isolated upstream impact). Local gates on the same compiled code: gtest CAS* 2556/0, 49 stateless, 05054 x10. Next: CI on the PR.
 
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): a same-namespace rename of a committed part (`delete_tmp_*` included) is one ref-log `Move` with the manifest unchanged: no manifest PUT, no `_ckpt` write from the republish, one append + the later drop. The elision target on 26.8 is therefore one Move append per removal, not a repoint; re-measure on otel.demo after the 26.8 rollout before sizing the remaining work.
+
+2026-11-07 audit: related merges: https://github.com/Altinity/ClickHouse/pull/2452 (41824f955e7, antalya-26.6, 2026-10-01), https://github.com/Altinity/ClickHouse/pull/2579 (003a998407b) and https://github.com/Altinity/ClickHouse/pull/2647 (d8d64d936e2) on antalya-26.8. Remaining: re-measure after the 26.8 rollout.
 <!-- SECTION:NOTES:END -->

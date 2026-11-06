@@ -1,11 +1,11 @@
 ---
 id: CAS-233
 title: 'Split `CasGc.cpp` into phase units behind equivalence fences, redoing PR #2286'
-status: In Progress
+status: To Do
 assignee:
   - '@k-morozov'
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -57,4 +57,6 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactoring [refactor: CasGc split] and 
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'refactor: CasGc split')
 
 PR #2286 (open), branch cas/separate_phase_during_round, base antalya-26.6, +278/-209 in `CasGc.cpp`/`CasGc.h` only, no equivalence tests yet (AC #1).
+
+2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2286 was closed unmerged on 2026-09-28; no open PR.
 <!-- SECTION:NOTES:END -->

@@ -3,10 +3,10 @@ id: CAS-292
 title: >-
   Keep the mount-lease renewal alive when the server is over its memory limit
   (#2403)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -74,4 +74,6 @@ Covered by the design in docs/superpowers/specs/2026-10-01-cas-mount-renewal-wit
 2026-10-02: implemented on local branch `fix/antalya-26.6/cas-mount-renewal-no-deadline` (worktree `cas-95-1`, base `41824f955e7`, head `7443ccd3a86`, not pushed, no PR yet). Commits `0ec8214d15b` (`LockMemoryExceptionInThread` across the renewal loop) and `817426de55c` (conditional `PUT` on the calling thread, buffer of the body size). Tests `CASMountRuntime.MemoryLimitDoesNotEndTheLeaseThread`, `CASBackend.ConditionalPutRunsOnTheCallingThread`, `CASBackend.ConditionalPutBufferStartsAtTheBodySize`. An unwrapped `std::bad_alloc` stays terminal. Gates on the head: `CAS*` unit gate 2604 passed; integration module `test_cas_mount_renewal_retry` 6 passed. No ASan run yet. Two whole-branch reviews found no defect in production code. Spec: `docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md`; plan: `docs/superpowers/plans/2026-10-02-cas-mount-renewal-without-lease-deadline-part1.md`.
 
 2026-10-08: PR https://github.com/Altinity/ClickHouse/pull/2511 is open (global memory guard on the renewal, PUT on the calling thread).
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2511 as d76b59f9295 (antalya-26.6-20261008, 2026-10-08); in antalya-26.6 via https://github.com/Altinity/ClickHouse/pull/2644 (c4e9bc724c5, 2026-10-24).
 <!-- SECTION:NOTES:END -->

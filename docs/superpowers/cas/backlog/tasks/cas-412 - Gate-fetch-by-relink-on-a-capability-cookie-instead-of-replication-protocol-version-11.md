@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-23 01:44'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:replication'
   - 'complexity:small'
@@ -51,4 +51,6 @@ Provenance: owner-Move series PR body follow-up and umbrella review (compat pers
 
 <!-- SECTION:NOTES:BEGIN -->
 Done on feature/cas-disk-transactions-draft @ 45a60a3f796 (above PR 2647's branch, not pushed): receiver sends client_protocol_version=10 (upstream ceiling) plus cas_capabilities=relink_confirm; the sender offers a relink only on that capability and answers server_protocol_version=min(client,10); constant 11 removed; replication.md gate table updated. Test test_relink_is_selected_by_the_capability_not_the_version: RED on the old binary (v10+capability got no offer), GREEN after; relink module 17/19 (2 failures are 'SYSTEM CAS GC RUN' not parsing in the local container client, unrelated).
+
+2026-11-07 audit: correction: the capability gate (c251a848b8b) merged in https://github.com/Altinity/ClickHouse/pull/2704 as 3ee999a39a6 (antalya-26.8, 2026-11-04), not in PR 2647.
 <!-- SECTION:NOTES:END -->

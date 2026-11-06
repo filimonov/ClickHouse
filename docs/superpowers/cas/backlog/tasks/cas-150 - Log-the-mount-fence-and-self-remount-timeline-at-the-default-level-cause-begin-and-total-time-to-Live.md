@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-28'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -73,4 +73,6 @@ First recorded: 2026-07-28 (1605b049a33, by 'fence-window observability')
 Correction: issue #2421 was closed on 2026-09-26 as not reproducible. Its one reproduced Code 210 was the soak harness (RustFS at Docker's `nofile` 1024 returned `os error 24` on the renewal), not the canary. The msan fence window and audit F28 evidence stand.
 
 2026-10-08: renewal progress columns are in https://github.com/Altinity/ClickHouse/pull/2513; the pause/resume log lines land with 9b (branch `fix/antalya-26.6/cas-operator-budget-contract`, opens after https://github.com/Altinity/ClickHouse/pull/2517 merges).
+
+2026-11-07 audit: renewal progress columns merged in https://github.com/Altinity/ClickHouse/pull/2513 as c147de3f55e (2026-10-15). Pause/resume log lines are still on an unpushed branch.
 <!-- SECTION:NOTES:END -->

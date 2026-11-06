@@ -3,10 +3,10 @@ id: CAS-369
 title: >-
   Snapshot the staging sweep's candidates before the mount claim and delete
   staging on abort
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-04 15:00'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Fix (no format change): LIST before `openPoolView`, delete the listed keys after
 2026-10-14: the fix changed. PR A https://github.com/Altinity/ClickHouse/pull/2566 deletes S3 staging on abort; PR B https://github.com/Altinity/ClickHouse/pull/2567 puts the writer epoch into staging keys and sweeps only older epochs. The 'LIST before claim' text and AC#1 are superseded (rejected in the spec). Multipart abort is CAS-369.1.
 
 2026-11-04: PR B #2567 merged as 9b348cf0a4b (writer epoch in staging keys, sweep only older epochs). What is left here is CAS-369.1 (multipart abort); AC#1 stays superseded.
+
+2026-11-07 audit: delivered by https://github.com/Altinity/ClickHouse/pull/2566 (af662dc591c, 2026-10-19) and https://github.com/Altinity/ClickHouse/pull/2567 (9b348cf0a4b, 2026-11-04). Multipart abort remains in CAS-369.1.
 <!-- SECTION:NOTES:END -->

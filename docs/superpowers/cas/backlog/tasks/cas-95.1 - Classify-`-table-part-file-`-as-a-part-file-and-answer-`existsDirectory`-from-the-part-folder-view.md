@@ -3,10 +3,10 @@ id: CAS-95.1
 title: >-
   Classify `<table>/<part>/<file>` as a part file and answer `existsDirectory`
   from the part-folder view
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 07:54'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -68,4 +68,6 @@ First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
 2026-09-27: pushed and PR opened: https://github.com/Altinity/ClickHouse/pull/2440 (base antalya-26.6, HEAD 58f8458c707 after a signoff rebase of the 8 local commits). Both final reviews (opus, codex gpt-6-astra) clean of Critical/Important; gate CAS* 2536/2536; 05053 5/5. Two parked test-comment nits recorded in the plan ledger.
 
 More evidence (2026-09-30): the CAS-S3 stress lanes fail to start within 60 s with `async_load_databases=false` (CAS-322). In the failing start of `lane-g/tmp/pr2396/stress/server.log` 12,448 of 16,779 S3 requests (74%) are LISTs of `ns/state/<ns>/_files/`. Yardstick card `attach_200` (cold, reference 2026-09-30-647dbf9dfe9): 1005 LISTs for 200 parts, wall 2.24x plain S3.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2440 as e2dd0f5d343 (antalya-26.6, 2026-09-30); closes https://github.com/Altinity/ClickHouse/issues/2439.
 <!-- SECTION:NOTES:END -->

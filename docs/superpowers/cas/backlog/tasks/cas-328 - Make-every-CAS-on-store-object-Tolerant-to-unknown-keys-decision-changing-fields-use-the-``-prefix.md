@@ -3,10 +3,10 @@ id: CAS-328
 title: >-
   Remove `KeyStrictness`: every CAS reader skips unknown keys; decision-changing
   fields use the `!` prefix
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-30 18:02'
-updated_date: '2026-09-30 18:41'
+updated_date: '2026-11-06 23:12'
 labels:
   - cas
   - gc
@@ -46,4 +46,6 @@ Owner decision 2026-09-30: all objects Tolerant unless a very important reason e
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30 PR opened: https://github.com/Altinity/ClickHouse/pull/2455 (base antalya-26.6, head fix/antalya-26.6/cas-drop-key-strictness-pr = a61b9a1a46b, 30 files +285/-199). Five Strict readers, not four (cas_gc_maintenance_state); seven own-throw sites routed through skipUnknown. Local gate CAS* 2564/0; review APPROVE, 4 minors closed. No local ASan run (no ASan build on disk); CI ASan lane covers it. Next: CI on the PR.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2455 as f4bc71adb96 (antalya-26.6, 2026-10-07).
 <!-- SECTION:NOTES:END -->

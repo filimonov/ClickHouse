@@ -3,10 +3,10 @@ id: CAS-298
 title: >-
   Stop the mount-lease renewal from fencing on `external_lease_deadline` while
   most of the confirmed budget remains (#2431)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-10-19 14:08'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -75,4 +75,6 @@ Provenance: GitHub issue #2431 (open, no assignee), reconciled by u17-github-cas
 2026-10-19: #2517 head d410298e2c47 did not compile unit_tests_dbms (CI debug/ASan builds red, test jobs skipped). Fix fix/antalya-26.6/cas-mount-renewal-until-definitive @54d125835906 (local); release CAS* 2646, ASan 2650 on the exact tree (tmp/pr2517ci/GATE.md). Push needs the owner.
 
 2026-10-19: #2517 merged at 54d125835906 (merge 9e540342644). CI triage https://github.com/Altinity/ClickHouse/pull/2517#issuecomment-6269177830: no red from the PR; cas_selects lost-lease form gone, one 210 from port exhaustion; cas_lightweight_delete_4 is upstream lost-DELETE fixed by ClickHouse#124167.
+
+2026-11-07 audit: claim part merged in https://github.com/Altinity/ClickHouse/pull/2512 as 2a034cdb374 (2026-10-12), renewal part in https://github.com/Altinity/ClickHouse/pull/2517 as 9e540342644 (2026-10-19), both antalya-26.6-20261008; in antalya-26.6 via https://github.com/Altinity/ClickHouse/pull/2644 (c4e9bc724c5).
 <!-- SECTION:NOTES:END -->

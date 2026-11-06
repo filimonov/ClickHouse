@@ -1,9 +1,10 @@
 ---
 id: CAS-374
 title: 'Land PR #2516: observers wait the holder''s declared lease, not their own'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'area:gc'
@@ -40,3 +41,9 @@ Lease length is per server. On the base and on the lease-series tip `3b4037ae265
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2516 as 21b71700f05 (antalya-26.6-20261008, 2026-10-16); in antalya-26.6 via https://github.com/Altinity/ClickHouse/pull/2644 (c4e9bc724c5, 2026-10-24).
+<!-- SECTION:NOTES:END -->

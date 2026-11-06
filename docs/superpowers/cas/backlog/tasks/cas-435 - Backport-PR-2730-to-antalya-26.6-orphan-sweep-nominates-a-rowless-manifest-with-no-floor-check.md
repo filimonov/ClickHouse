@@ -3,10 +3,10 @@ id: CAS-435
 title: >-
   Backport PR 2730 to antalya-26.6: orphan sweep nominates a rowless manifest
   with no floor check
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-05 13:00'
-updated_date: '2026-11-06 15:27'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'origin:ci'
@@ -55,4 +55,6 @@ Cherry-pick the seven non-merge commits of PR 2730 onto antalya-26.6 and run `CA
 2026-11-06: PR https://github.com/Altinity/ClickHouse/pull/2806 (head 300a8c155c7, base antalya-26.6) opened with 2730 + 2773; CAS regression job ticked. Related port in the other direction: PR 2805.
 
 CI of PR 2806 @300a8c155c7 (2026-11-06): builds green. Reds: GroupingAggregatedTransform (issue 2795; PR 2802 merged into 26.6 at 10:37 after the run started), python-bottle arm64 image on amd64 runners (test_cas_gcs, relink liveness, glue, sts), test_scheduler_query (docker CPU range on a 12-CPU runner), SQLLogic on an arm64 runner, test_s3_cluster::test_graceful_shutdown (26.6 base). Nothing from the ported 2730/2773. Rerun needed.
+
+2026-11-07 audit: open PR https://github.com/Altinity/ClickHouse/pull/2806 (base antalya-26.6).
 <!-- SECTION:NOTES:END -->

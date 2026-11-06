@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26 12:37'
-updated_date: '2026-11-04 23:30'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:backend'
   - 'area:formats'
@@ -71,4 +71,6 @@ PR #2415 (draft), branch cas/backup-native-copy-bug, base antalya-26.6.
 2031-triage CAS-020: the same-endpoint BACKUP half of the audit finding (`getStorageObjects` drops the envelope offset). MOVE half is CAS-254.
 
 2026-11-04: replacement PR https://github.com/Altinity/ClickHouse/pull/2508 merged into antalya-26.8 as 48537ae6f54 (supersedes #2415 and #2494; lane moved from 26.6 to 26.8). Ranged same-store copy through copyS3File / UploadPartCopy for blobs, inline files through buffers, empty remote key refused by name; test_cas_backup_s3_native_copy green; docs/en/antalya/cas/operations/backup.md added.
+
+2026-11-07 audit: 26.6 lane: https://github.com/Altinity/ClickHouse/pull/2415 merged as f3c650a47a5 (2026-10-06) and https://github.com/Altinity/ClickHouse/pull/2494 as c8acde3be15 (2026-10-07).
 <!-- SECTION:NOTES:END -->

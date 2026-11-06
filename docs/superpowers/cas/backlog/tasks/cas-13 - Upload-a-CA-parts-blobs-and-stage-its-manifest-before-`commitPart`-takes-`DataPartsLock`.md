@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-10-23 01:35'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'complexity:large'
@@ -67,4 +67,6 @@ First recorded: 2026-09-04 (15b16cb7eb6, by 'cas-part-commit-runs-under-parts-lo
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): upstream 26.8 (ClickHouse/ClickHouse#89658) commits the part's storage transaction right after `finalize`, before `DataPartsLock`, and the branch keeps that (no CAS workaround). Measured INSERT `PartsLockHoldMicroseconds` 2557 -> 317 on local object storage. What stays under the lock on a CAS disk: plain `MergeTree` INSERT renames inline (`rename_in_transaction = false`), so one durable `Move` append runs under the lock; Replicated INSERT renames inside the transaction. AC #2 is met for blob/manifest PUTs; whether the Move append under the lock is acceptable needs an S3 measurement (umbrella review concurrency perspective #10).
 
 Superseded by Altinity/ClickHouse PR 2647: every writer commits the part's storage transaction right after finalize, before DataPartsLock (upstream 26.8 shape), and the rename is one owner Move. Measured INSERT PartsLockHoldMicroseconds 2557 -> 317. Crash between commit and rename: test_cas_early_commit_restart. The 'stage before commitPart' design in AC #1 is not needed.
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2647 as d8d64d936e2 (antalya-26.8, 2026-10-27).
 <!-- SECTION:NOTES:END -->

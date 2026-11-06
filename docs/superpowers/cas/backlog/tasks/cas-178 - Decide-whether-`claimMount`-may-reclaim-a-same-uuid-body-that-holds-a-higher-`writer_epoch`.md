@@ -3,10 +3,10 @@ id: CAS-178
 title: >-
   Decide whether `claimMount` may reclaim a same-uuid body that holds a higher
   `writer_epoch`
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:mounts'
   - 'area:ref-ledger'
@@ -66,4 +66,6 @@ First recorded: 2026-07-29 (a4fcc6b3e56, by 'MOUNT-CLAIM-EPOCH-REGRESSION')
 2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/mount.md, docs/superpowers/cas/2026-10-12-late-request-audit/objects/reflog.md R11/R12): reclaiming for a different-but-lower epoch is reachable and harmful (false `SupersededEpoch` certificates; a lower-epoch mount wedges a table its epoch was already sealed in). Answer: never reclaim a higher epoch. Implementation tracked in the epoch-monotone task.
 
 Implementation tracked in CAS-364.
+
+2026-11-07 audit: decision recorded (never reclaim a higher epoch); claim side merged in https://github.com/Altinity/ClickHouse/pull/2512 as 2a034cdb374 (2026-10-12). Certificate side is CAS-364.
 <!-- SECTION:NOTES:END -->

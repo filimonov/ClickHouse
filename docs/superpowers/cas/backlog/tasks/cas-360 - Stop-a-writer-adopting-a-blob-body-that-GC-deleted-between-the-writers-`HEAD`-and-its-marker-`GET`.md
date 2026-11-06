@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-24 12:24'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -80,4 +80,6 @@ Leak fix in the same change: `applyRedeleteOutcome` passes the deleting round - 
 2026-10-12: PR https://github.com/Altinity/ClickHouse/pull/2552 (base antalya-26.6-20261008, head e7535fdd40f): adoption rule, marker-delete bound, docs; CAS* release 2626 / ASan 2630; two-model review approved after one fix round.
 
 2026-10-24: PR https://github.com/Altinity/ClickHouse/pull/2552 merged 2026-10-14 at fef96d50e69 (antalya-26.6-20261008); the fix shipped as fix C (adopt only on a `Clean` marker read after the body `HEAD`) plus the marker-delete bound (`applyRedeleteOutcome` passes round - 1). AC #2 is covered by `CASPartWriteTxnMarkerRace.AbsentMarkerAfterHeadRepublishes` / `PresentBodyWithoutMarkerRepublishesOnce` and `CASUploadDetached.*WithoutMetadata*`. AC #1 and AC #3 describe option A (deferred marker delete), which the 2026-10-12 decision rejected; left unchecked as superseded, not as missing work. `meta_without_body` was already an fsck advisory at the base. DoD #1/#2 per the PR note (CAS* release 2626, ASan 2630); docs: part-lifecycle.md, metrics_and_events.md, blob-protocol.md (e7535fdd40f).
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2552 as fef96d50e69 (antalya-26.6-20261008, 2026-10-14).
 <!-- SECTION:NOTES:END -->

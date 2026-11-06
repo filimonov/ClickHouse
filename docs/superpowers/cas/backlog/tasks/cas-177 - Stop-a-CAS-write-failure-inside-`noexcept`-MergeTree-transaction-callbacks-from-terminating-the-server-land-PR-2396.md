@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-09-30 20:09'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -64,4 +64,6 @@ Provenance: BACKLOG/ref-protocol.md#cas-txn-commit-inside-noexcept-aftercommit. 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30 upstream forward-port opened: https://github.com/ClickHouse/ClickHouse/pull/123134 (branch filimonov/fix/transaction-metadata-write-retry = 246746d8732 over upstream/master cce42c6bde0; one commit, no fork wording). Upstream differences: rollback swallows errors since #117822 (RollbackResult::Failed), so the termination is only in afterCommit there; test renamed 05315; red-first proven by rebuilding without the retry (server terminates via afterCommit). Upstream history: #99494 (catch-all, rejected: lost CSN write blocks log cleanup), #84084 / #92141 (the Append trigger), #115501 open.
+
+2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2396 merged as a782c4c589a (antalya-26.6, 2026-10-05). Stays In Progress for the upstream port https://github.com/ClickHouse/ClickHouse/pull/123134 (open).
 <!-- SECTION:NOTES:END -->

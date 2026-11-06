@@ -3,10 +3,10 @@ id: CAS-30
 title: >-
   Delete a confirmed blob meta only by the etag captured when the delete was
   scheduled
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-01 12:52'
+updated_date: '2026-11-06 23:12'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -61,4 +61,6 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01 14:55: PR https://github.com/Altinity/ClickHouse/pull/2463 opened (base antalya-26.6, head fix/antalya-26.6/cas-gc-stale-meta-delete @c4ed6fc881e). Measurements tmp/cas30/gc-ab/REPORT.md. Follow-ups: CAS-334 (writer rule), CAS-329 (request cuts), CAS-336 (.meta GET event).
+
+2026-11-07 audit: merged in https://github.com/Altinity/ClickHouse/pull/2463 as fb5c27f8101 (antalya-26.6, 2026-10-05). Follow-ups: CAS-334, CAS-329, CAS-336.
 <!-- SECTION:NOTES:END -->
