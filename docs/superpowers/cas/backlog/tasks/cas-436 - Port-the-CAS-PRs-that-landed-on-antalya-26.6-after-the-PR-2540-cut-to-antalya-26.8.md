@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-06 15:38'
+updated_date: '2026-11-06 22:04'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -51,4 +51,6 @@ PR 2540 ported antalya-26.6 CAS as of 2026-10-14 (after PR 2437 plus 2509-2511).
 CI of PR 2805 @a2147e55697 (2026-11-06): builds and unit gate green. Reds: (1) python-bottle mock instances (test_cas_gcs x37, relink liveness, glue, sts) — docker used the arm64 variant of altinityinfra/python-bottle:<hash> on an amd64 runner ('requested image's platform (linux/arm64) does not match the detected host platform'), same on PR 2799; CI infra, rerun needed. (2) test_filesystem_cache x7 — real regression of the ported 2573: CAS-437. (3) 03927 on the cas s3 lane — 170 s per query under randomized settings: CAS-438. (4) base reds: test_export_partition_iceberg, test_custom_s3_disk_remote_url_allow_hosts. Details and evidence: tmp/lanes/REPORT.md.
 
 086efc95363 (CAS-437 fix) added to branch A locally, gate green; waiting for push authorization and for a CI rerun once the python-bottle image cache on the runners is fixed.
+
+2026-11-06: PR 2577 merged into antalya-26.6 as ae6e7493aba and picked onto the PR 2805 branch as 8f5bc113d3c (cherry-pick -m 1 -x; conflict in gtest_cas_ref_wedge_every_attempt.cpp resolved by keeping the 26.8 counter reads without .load()). Not pushed yet. CI of 2805 @8c26e8792eb: cas s3 asan 1/2 red = CAS-442 (05387 hardcoded part name); lightweight_delete_4 cas red = CAS-333/CAS-252 signature (mutation registration race, upstream PR 122934 open); test_custom_s3_disk_remote_url_allow_hosts in 3 integration jobs = CAS-443 (upstream 26.8 image rejects cas_log in config.xml); test_cas_gcs, test_sts, test_datalake_glue_token_forwarding, test_cas_gcs_relink_liveness = mock containers cannot exec /usr/bin/clickhouse (python-bottle image arch, infra, same on 2812 and 2806); 02210 and swarms not CAS (swarms red on both 2805 runs, green on 2577/2812).
 <!-- SECTION:NOTES:END -->
