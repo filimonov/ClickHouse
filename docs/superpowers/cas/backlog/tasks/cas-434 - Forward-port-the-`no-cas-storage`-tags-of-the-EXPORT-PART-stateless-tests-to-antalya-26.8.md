@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 13:00'
+updated_date: '2026-11-06 02:13'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -42,3 +43,9 @@ Either cherry-pick cc73c9b6eea onto antalya-26.8, or decide that EXPORT PART fro
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-06: 26.8 removed the four tags on purpose in 5a1ffb222a5 ("Allow every partition command, EXPORT PART included, on a CAS disk", PR 2647 series), so the tags are not forward-ported with the lane-parity branch; AC#1 needs the wait-budget decision.
+<!-- SECTION:NOTES:END -->
