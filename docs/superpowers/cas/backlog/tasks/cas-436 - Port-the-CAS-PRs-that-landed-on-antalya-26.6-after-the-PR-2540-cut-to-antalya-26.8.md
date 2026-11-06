@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-06 09:57'
+updated_date: '2026-11-06 10:52'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -45,4 +45,6 @@ PR 2540 ported antalya-26.6 CAS as of 2026-10-14 (after PR 2437 plus 2509-2511).
 2026-11-06: open 26.6 PRs checked against branch A: 2570 and 2498 apply clean, 2577 (test .load() reads) and 2801 (include list) one trivial conflict each, drafts 2534/2542 conflict with the GC/sweep code (also on 26.6). Scratch branch port/antalya-26.8/cas-from-26.6-pending @35653f83562 (2570, 2498, 2577, 2801 on top of b8dfb399067) builds; CAS* gate 2913 passed. Not pushed; re-apply after 2805 merges and the source PRs settle.
 
 2026-11-06: PR 2805 CI red on Build (amd_debug) and Build (amd_asan_ubsan): gtest_s3_object_creation_requests.cpp:71 passes a src_offset to copyS3File (26.6 signature; 26.8 has copyS3FileRange) inside DEBUG_OR_SANITIZER_BUILD, invisible to the local release build. Fix a2147e55697 on the branch (pending branch 0bcfad2533c), debug-arm syntax check of all 59 changed TUs green, not pushed yet. Lesson: gate ported tests with -DDEBUG_OR_SANITIZER_BUILD -fsyntax-only before pushing (build/debug_arm_check2.sh).
+
+2026-11-06: a2147e55697 pushed to PR 2805 (fast-forward b8dfb399067..a2147e55697); CI restarted.
 <!-- SECTION:NOTES:END -->
