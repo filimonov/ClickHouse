@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-06 07:39'
+updated_date: '2026-11-06 08:37'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -41,4 +41,6 @@ PR 2540 ported antalya-26.6 CAS as of 2026-10-14 (after PR 2437 plus 2509-2511).
 2026-11-06: port/antalya-26.8/cas-from-26.6 @b8dfb399067 (15 commits: 11 picks + 4 fix-ups 78de57baf9d, 4e5fc3c5348, c7986555568, b8dfb399067) builds in release; CAS* gate 2904 passed, 0 failed, 2 disabled (antalya-26.8-pr-2159/build/test_cas_gate_port_a.log). ASan lane not run locally (disk full). Not pushed.
 
 2026-11-06: PR https://github.com/Altinity/ClickHouse/pull/2805 (head b8dfb399067, base antalya-26.8) opened; CAS regression job ticked, ASan lanes on.
+
+2026-11-06: open 26.6 PRs checked against branch A: 2570 and 2498 apply clean, 2577 (test .load() reads) and 2801 (include list) one trivial conflict each, drafts 2534/2542 conflict with the GC/sweep code (also on 26.6). Scratch branch port/antalya-26.8/cas-from-26.6-pending @35653f83562 (2570, 2498, 2577, 2801 on top of b8dfb399067) builds; CAS* gate 2913 passed. Not pushed; re-apply after 2805 merges and the source PRs settle.
 <!-- SECTION:NOTES:END -->
