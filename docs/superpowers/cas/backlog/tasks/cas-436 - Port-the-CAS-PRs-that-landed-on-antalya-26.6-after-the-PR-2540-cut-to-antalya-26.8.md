@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-06 15:27'
+updated_date: '2026-11-06 15:38'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -49,4 +49,6 @@ PR 2540 ported antalya-26.6 CAS as of 2026-10-14 (after PR 2437 plus 2509-2511).
 2026-11-06: a2147e55697 pushed to PR 2805 (fast-forward b8dfb399067..a2147e55697); CI restarted.
 
 CI of PR 2805 @a2147e55697 (2026-11-06): builds and unit gate green. Reds: (1) python-bottle mock instances (test_cas_gcs x37, relink liveness, glue, sts) — docker used the arm64 variant of altinityinfra/python-bottle:<hash> on an amd64 runner ('requested image's platform (linux/arm64) does not match the detected host platform'), same on PR 2799; CI infra, rerun needed. (2) test_filesystem_cache x7 — real regression of the ported 2573: CAS-437. (3) 03927 on the cas s3 lane — 170 s per query under randomized settings: CAS-438. (4) base reds: test_export_partition_iceberg, test_custom_s3_disk_remote_url_allow_hosts. Details and evidence: tmp/lanes/REPORT.md.
+
+086efc95363 (CAS-437 fix) added to branch A locally, gate green; waiting for push authorization and for a CI rerun once the python-bottle image cache on the runners is fixed.
 <!-- SECTION:NOTES:END -->

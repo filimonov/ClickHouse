@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 15:26'
+updated_date: '2026-11-06 15:38'
 labels:
   - cas
   - ci
@@ -28,3 +29,9 @@ PR 2805 CI (26.8 port of PR 2573, commit db921437e5e): after a restart in test_f
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fix committed on port/antalya-26.8/cas-from-26.6 as 086efc95363 (NOT pushed): static mutex around the probe in IDisk::checkAccess + src/Disks/tests/gtest_disk_access_check.cpp (DiskAccessCheck.ProbesOfDisksOverOneDirectoryDoNotOverlap). TDD: RED max_active=2 before the fix (build/test_access_check_red.log), GREEN after (test_access_check_green.log), 20/20 repeats (test_access_check_repeat.log), gate CAS*: 2904 passed, 0 failed (build/test_cas_gate_access_check.log). Release build only (disk). Open: push to PR 2805; same commit for antalya-26.6 (2573 is merged there since 11-04).
+<!-- SECTION:NOTES:END -->
