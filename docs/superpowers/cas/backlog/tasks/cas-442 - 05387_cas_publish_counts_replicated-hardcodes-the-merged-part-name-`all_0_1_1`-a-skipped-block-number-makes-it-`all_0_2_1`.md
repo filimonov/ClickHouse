@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
+updated_date: '2026-11-06 22:13'
 labels:
   - cas
   - ci
@@ -34,3 +35,9 @@ PR 2805 @8c26e8792eb, job `Stateless tests (amd_asan_ubsan, cas s3 storage, para
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-06: fixed on the PR 2805 branch as 4810e687c92 (system.parts name instead of the literal); 5/5 local runs OK on a standalone 26.8 stand. The antalya-26.6 copy still has the literal.
+<!-- SECTION:NOTES:END -->
