@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-05 13:00'
+updated_date: '2026-11-08 18:33'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -46,4 +46,6 @@ Approach: run shard 3 locally against the cas-s3-cache disk config with the Test
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-05: on https://github.com/Altinity/ClickHouse/pull/2730 (run 41932962724) both `CASLightweightDelete (3)` and `CASS3CacheLightweightDelete (3)` were cancelled, so the non-cache lane hangs as well; https://github.com/Altinity/ClickHouse/pull/2773 (run 41932902021) ran without the CAS regression lanes.
+
+2026-11-08: PR 2812 @bb9bf738a0c: regression job 'CASLightweightDelete (3)' cancelled after 5h05m (18:25-23:30 UTC, run 42251790183).
 <!-- SECTION:NOTES:END -->

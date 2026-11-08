@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:03'
+updated_date: '2026-11-08 18:33'
 labels:
   - ci
   - tests
@@ -32,3 +33,9 @@ Observed 2026-10-01 on PR #2463 (release, x86): the scenario asserts execution_t
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-08: PR 2806 @300a8c155c7 (antalya-26.6, backport of 2730+2773): lightweight_delete3/cas 'delete most of the table' took 49.9 s (MergeTree) and 52.0 s (ReplacingMergeTree) against the 20 s bar; cas-s3-cache variant green. 2.5x over the bar, not a 0.4 s flake: compare with the next 26.6 run before merging 2806.
+<!-- SECTION:NOTES:END -->

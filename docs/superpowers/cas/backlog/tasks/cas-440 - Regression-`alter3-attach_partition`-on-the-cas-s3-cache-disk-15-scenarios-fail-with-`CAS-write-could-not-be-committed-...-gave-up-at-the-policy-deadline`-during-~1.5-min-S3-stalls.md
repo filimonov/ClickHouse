@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
+updated_date: '2026-11-08 18:33'
 labels:
   - cas
   - ci
@@ -36,3 +37,9 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASS3CacheAlter (attach, 3)`
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-08: also on the plain 'cas' disk, not only cas-s3-cache. PR 2805 @ad04f95e441: alter3/attach_partition/cas 2 scenarios, 'gave up at the policy deadline' x10 (pattern #30, CREATE TABLE took 1m20s). PR 2806 @300a8c155c7: alter3/attach_partition/cas 9 scenarios, 'could not be committed' x13. cas-s3-cache was green in both runs. Reports: REFs/<pr>/merge/<sha>/regression/x86_64/with_analyzer/zookeeper/without_thread_fuzzer/alter3/attach_partition/cas/nice-new-fails.log.txt
+<!-- SECTION:NOTES:END -->

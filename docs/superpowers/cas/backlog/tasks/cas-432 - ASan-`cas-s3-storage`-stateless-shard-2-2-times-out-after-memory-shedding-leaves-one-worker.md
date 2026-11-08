@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-05 13:00'
+updated_date: '2026-11-08 18:33'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -46,4 +46,6 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-05: third and fourth consecutive timeouts of the ASan cas-s3 lane. PR 2730 shard 2/2 (job 126955421110): no memory shedding at all, `--jobs 6`, 6175 of 6930 tests at the 12600 s cut, plus two 600 s `BROKEN` client timeouts (03800_autopr_reuse_index_analysis, 03634_autopr_input_bytes_estimation). PR 2773 shard 1/2 (job 126956051287): `--jobs 8`, shed to 1 worker between 07:53 and 08:03, timed out; shard 2/2 (job 126956051156): no shedding, `--jobs 6`, 4851 of 6930 at the cut. The lane does not fit the budget even without shedding; the batch count or the budget has to change, not only the memory limit.
+
+2026-11-08: reproduced on PR 2805 head ad04f95e441: job 'Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)' timed out after 12600 s at test 2412/6933 (job 128213141054, run 42305105469).
 <!-- SECTION:NOTES:END -->
