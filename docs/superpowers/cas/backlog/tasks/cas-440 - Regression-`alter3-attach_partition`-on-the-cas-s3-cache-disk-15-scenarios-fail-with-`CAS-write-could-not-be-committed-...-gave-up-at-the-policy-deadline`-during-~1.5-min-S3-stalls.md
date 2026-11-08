@@ -7,7 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-08 18:33'
+updated_date: '2026-11-08 22:37'
 labels:
   - cas
   - ci
@@ -42,4 +42,8 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASS3CacheAlter (attach, 3)`
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-08: also on the plain 'cas' disk, not only cas-s3-cache. PR 2805 @ad04f95e441: alter3/attach_partition/cas 2 scenarios, 'gave up at the policy deadline' x10 (pattern #30, CREATE TABLE took 1m20s). PR 2806 @300a8c155c7: alter3/attach_partition/cas 9 scenarios, 'could not be committed' x13. cas-s3-cache was green in both runs. Reports: REFs/<pr>/merge/<sha>/regression/x86_64/with_analyzer/zookeeper/without_thread_fuzzer/alter3/attach_partition/cas/nice-new-fails.log.txt
+
+2026-11-08 root cause (three runs: 2805 alter3/cas, 2806 alter3/cas, 2577 alter3/cas-s3-cache; RustFS stdout in _service_logs/minio.log, node clickhouse-server.err.log, raw.log): every 'gave up at the policy deadline after 13 attempt(s)' on 'data/cas/ref_catalog' sits inside a window where RustFS 1.0.3 rejects GETs with 'GetObject rejected: disk-read hard concurrency cap reached' -> HTTP 503 SlowDown. RustFS admission: RUSTFS_OBJECT_MAX_CONCURRENT_DISK_READS (default 64) + degraded lane (default = primary) = 128 permits, a permit is held for the whole body transfer, 5000 ms wait then reject. 2805: 01:39:36-01:40:52 node time, 888 rejections, 387 AWSClient 503 lines; 2806: two windows 10:13-10:14 and 10:22-10:24 UTC; 2577 cache lane: 01:13-01:14. The CAS read policy (Retry::standard, 90 s; attempt envelope 5 s + 2x1 s connect = 7 s -> 13 attempts) is shorter than the 76 s saturation plus the 5 s per-request wait, so the 13th attempt lands before RustFS recovers. Load is not exceptional: ~112k partial-range GET streams per run; the server opens to-EOF ranges, reads ~1 MiB and drops them, which keeps permits busy. The cache lane issues ~40x fewer GETs, hence green more often. Regression env: RUSTFS_SCANNER_ENABLED=false, heal off, MAX_BLOCKING_THREADS=64, DURABILITY_MODE=relaxed. Open: one GC 'zero attempt(s)' event at 02:00:08 (completedRemovingDelete, CasRefCatalog.cpp) with no RustFS trouble, and 4 'NEEDS RECOVERY at committed-frontier publication' lines. Candidate fixes: raise RUSTFS_OBJECT_MAX_CONCURRENT_DISK_READS in the regression compose, or bound CAS reads to the byte range they need so permits are released sooner.
+
+2026-11-08 (2805 node err.log, 246 MB): 25 of the 27 'CAS write could not be committed' lines and all 4 'NEEDS RECOVERY at committed-frontier publication' lines (01:40:45-01:40:56) fall inside the RustFS 503 window 01:39:36-01:40:52. The other 2 (02:00:08, thread 222, GC) are 'CAS ref catalog erase ... gave up at the policy deadline after zero attempt(s)': CasWriteResult.h renders 'zero' when GaveUp::Deadline fires with sent_any=false, and completedRemovingDelete (CasRefCatalog.cpp) freezes ONE Retry::standard bound for the whole erase/resolve loop, so a loop that spent its 90 s on earlier contended iterations refuses the next erase before sending it. No storage error of any kind in the 100 s before 02:00:08 (only SSL client noise), so this event is catalog contention between the three alter-cas nodes, not RustFS; GC retried on the next tick. Trace-level evidence is unavailable: clickhouse-server.log rotated at 02:10:18.
 <!-- SECTION:NOTES:END -->
