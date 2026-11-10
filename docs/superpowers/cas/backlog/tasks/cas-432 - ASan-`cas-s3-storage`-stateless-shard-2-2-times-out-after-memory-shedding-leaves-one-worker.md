@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-10 22:23'
+updated_date: '2026-11-10 22:45'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -56,4 +56,6 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 2026-11-10: fix attempt on PR 2805 @41d4a78eeb9: 2a4b5e72aa2 moves the two 'amd_asan_ubsan, cas s3 storage' shards from AMD_MEDIUM_CPU (16c/32 GiB, cap 27.5 GiB) to AMD_LARGE (16c/64 GiB, cap ~56 GiB), same remedy job_configs.py already applies to the plain ASan parallel lane; yamls regenerated in 41d4a78eeb9. PR excludes for arm/tsan/msan/coverage removed so the tsan/msan cas-s3 shards (still on 32 GiB) run too. Run: https://github.com/Altinity/ClickHouse/actions/runs/42864462634. Expected: no worker shedding, shards 130-170 min; peak RSS ~23 GiB = 40% of cap.
 
 2026-11-10 result of the AMD_LARGE attempt (PR 2805 @41d4a78eeb9, run 42864462634, job logs tmp/lanes/ci/pr2805_logs/joblog_41d4a78_asan_cas_s3_{1,2}_2.log): both shards still hit the 12600 s cut. The runner was 64 GiB (TSAN_OPTIONS memory_limit_mb=41790 vs 20363 on the 32 GiB runner), --jobs 8 as before, and clickhouse-test never shed a worker. Shard 1/2 reached 6889 of 6890 tests at 12272 s of test time (one test short), shard 2/2 reached 6069 of 6933. Throughput per 30 min, shard 1/2: 1325, 1105, 1136, 963, 950, 841, 520; shard 2/2: 1222, 1092, 882, 767, 747, 718, 472. The green run on PR 2799 (32 GiB runner, 138 min) did 1763, 1394, 1281, 1332 with the same 8 workers, i.e. this run is 25% slower from the first full bucket and decays to 40% of that rate by the end without any shedding, so memory shedding was not the only cause: the lane is slower per test over time (ASan runtime growth, see the 2026-11-09 RSS note) and the 2-shard budget has no margin on 26.8. Server log is not captured on timeout. Next cheapest step: 3 shards on AMD_LARGE (as the MSan cas-s3 lane already has 3): 4600 tests per shard at this run's 30-34 tests/min is 135-155 min.
+
+2026-11-10, same run 42864462634, the tsan/msan cas-s3 lanes enabled as a probe (32 GiB runners, no shedding anywhere): tsan 1/2 reached 3127 of 6890 tests and 2/2 5318 of 6933 at the 12600 s cut (--jobs 8, 450-950 tests per 30 min); msan 1/3 reached 1328 of 4660 (--jobs 4, 110-360 tests per 30 min), 2/3 and 3/3 still running at the cut. On antalya-26.6 the same tsan lane finishes in 155-178 min (PR 2801). On 26.8 the tsan lane needs 2-3x the budget and the msan lane about 6x: they cannot be run as full lanes on pull requests; either exclude them again (the PR template flags) or cut them to the upstream-style selected-tests set, as ci/workflows/pull_request.py already does for the plain sanitizer lanes.
 <!-- SECTION:NOTES:END -->
