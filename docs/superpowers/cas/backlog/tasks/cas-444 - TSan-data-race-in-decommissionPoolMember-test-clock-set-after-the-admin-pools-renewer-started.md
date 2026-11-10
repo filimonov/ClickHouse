@@ -3,10 +3,10 @@ id: CAS-444
 title: >-
   TSan data race in decommissionPoolMember: test clock set after the admin
   pool's renewer started
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-10 22:27'
+updated_date: '2026-11-10 22:56'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -36,4 +36,6 @@ Unit tests (tsan) on PR 2805 @41d4a78eeb9 (run 42864462634, job unit_tests_tsan,
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-10: the fix already exists: https://github.com/Altinity/ClickHouse/pull/2801 (k-morozov, antalya-26.6, head 3963b4f40ec, open since 2026-11-05, no review yet, 28 commits behind the base). Its final diff is the same removal of the two post-open setters in Tools/CasDecommission.cpp, plus wiring config.retry_sleep_fn into ref_ledger in openForDecommission (the dropped setCasRetrySleepForTest also covered the ledger) and EXPECT->ASSERT in gtest_cas_gc_teardown_stop. Unit tests (tsan) green there (35 min). Its reds are unrelated: 01171_mv_select_insert_isolation_long and 00974_query_profiler on the tsan cas-s3 shards (rerun passed, flakes), Integration tsan 4/6 (docker pre-pull), tsan 5/6 test_cas_gcs token count (CAS-430), Stress tsan 'Table default.local_cold does not exist' on metadata load (Hybrid table 03646_hybrid_segment_pruning, same on PR 2812, base), CASAlter attach 3 (CAS-440), CASLightweightDelete 3 / CASS3CacheLightweightDelete 3 (CAS-340). Plan: merge 2801 into antalya-26.6, then cherry-pick onto the 26.8 port branch (PR 2805).
+
+2026-11-10: PR 2801 merged into antalya-26.6 as 943249ecbb04daff64e556ef6403b639de7275b5 (22:41 UTC). Remaining: cherry-pick onto the 26.8 port branch (PR 2805); antalya-26.8 still has the post-open setters at Tools/CasDecommission.cpp:168-175 and the code there has diverged (standalone `requests` engine), so it is a hand port, not a plain pick. Review notes for the port: keep the one-line rule in Backend/CasRequests.h ('test setters belong to setup, before any operation runs'), fix the 'replace' wording in Tools/CasDecommission.h:67-70 and the 'never in unit tests' comment at Pool/CasPool.cpp:950-957.
 <!-- SECTION:NOTES:END -->

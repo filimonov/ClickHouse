@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
+updated_date: '2026-11-10 22:56'
 labels:
   - cas
   - ci
@@ -34,3 +35,9 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASLightweightDelete (3)`, s
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-10: PR 2801 @3963b4f40ec: both lanes red on all three `delete_query_N/acceptance delete execution time` scenarios together with the `immediate removal` bar (CAS-340); the two earlier runs of the same PR (@945b634, @083b575, same server code) were green on both. Slow-runner correlation; the per-part S3 cost model is recorded in CAS-340.
+<!-- SECTION:NOTES:END -->
