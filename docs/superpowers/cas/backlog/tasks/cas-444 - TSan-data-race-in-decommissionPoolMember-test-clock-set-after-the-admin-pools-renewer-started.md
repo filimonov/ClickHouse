@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:23'
+updated_date: '2026-11-10 22:27'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -30,3 +31,9 @@ Unit tests (tsan) on PR 2805 @41d4a78eeb9 (run 42864462634, job unit_tests_tsan,
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-10: the fix already exists: https://github.com/Altinity/ClickHouse/pull/2801 (k-morozov, antalya-26.6, head 3963b4f40ec, open since 2026-11-05, no review yet, 28 commits behind the base). Its final diff is the same removal of the two post-open setters in Tools/CasDecommission.cpp, plus wiring config.retry_sleep_fn into ref_ledger in openForDecommission (the dropped setCasRetrySleepForTest also covered the ledger) and EXPECT->ASSERT in gtest_cas_gc_teardown_stop. Unit tests (tsan) green there (35 min). Its reds are unrelated: 01171_mv_select_insert_isolation_long and 00974_query_profiler on the tsan cas-s3 shards (rerun passed, flakes), Integration tsan 4/6 (docker pre-pull), tsan 5/6 test_cas_gcs token count (CAS-430), Stress tsan 'Table default.local_cold does not exist' on metadata load (Hybrid table 03646_hybrid_segment_pruning, same on PR 2812, base), CASAlter attach 3 (CAS-440), CASLightweightDelete 3 / CASS3CacheLightweightDelete 3 (CAS-340). Plan: merge 2801 into antalya-26.6, then cherry-pick onto the 26.8 port branch (PR 2805).
+<!-- SECTION:NOTES:END -->
