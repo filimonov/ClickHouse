@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 23:26'
+updated_date: '2026-11-10 23:50'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -35,3 +36,9 @@ On the cas-s3 stateless lanes `CASRefCleanupObjectsDeleted` stays 0 for the whol
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11 CAUSE CONFIRMED (local 2026-11-09 lane run, antalya-26.8-pr-2159/ci/tmp/var/log/clickhouse-server/clickhouse-server.log, root-owned, read via a read-only docker mount): every GC round that had a cleanup plan logged 'CAS GC ref cleanup stopped before the chunk starting at <first _log key>: catalog observation/life moved' (46 times in the 30 min run, one per round, e.g. 00:06:25.98 in round 2 that started ~00:06:23) and no chunk was ever deleted; no 'retained namespace' warnings, so the recovery triple is valid and the plan is non-empty. The gate is the per-chunk 'authorityHolds' revalidation in Gc::cleanupRefObjects: it re-reads cas/ref_catalog and requires its etag to equal the etag of the round's catalog cut (taken in Gc::listRefPrefix at the start of the round). The catalog is ONE object rewritten by every CAS namespace create/drop, and the stateless lane does that 2.3-3.5 times per second (PR 2794 2/2 query_log: 850-1400 CREATE ... MergeTree and 3300-4900 DROP per 30 min), while the window from the cut to the cleanup is the whole round (seconds). So the licence never holds under any concurrent DDL, the pass stops before its first chunk at DEBUG level, and CASRefCleanupObjectsDeleted stays 0. Snapshots are not the problem: the snapshot_log_count_threshold 256 trigger fires (the leftover data shows 3-6 _snap per long-lived life and ~276 logs per snapshot). Fix direction: the whole-catalog etag is a stricter witness than the licence needs; the per-namespace entry (ns, incarnation, state) plus the GC lease (owner, seq) already identify the life whose write-once _log/_snap keys are being deleted, and both are checked in the same block. Keep the entry/life/lease checks, drop the catalog-etag equality (or compare only this entry), and add a gtest under CAS* where a namespace is created between the cut and the cleanup and the cleanup still deletes the covered logs of an untouched namespace. Review the lifecycle argument first: a dropped-and-recreated namespace changes the entry's incarnation, which the entry comparison catches without the etag.
+<!-- SECTION:NOTES:END -->
