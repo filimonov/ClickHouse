@@ -4,7 +4,7 @@ title: Route GC's completed-removal catalog erase through the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-11 19:20'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -21,7 +21,7 @@ references:
 documentation:
   - docs/superpowers/specs/2026-09-04-cas-hot-key-write-lane-design.md
 parent_task_id: CAS-71
-priority: low
+priority: medium
 type: feature
 ordinal: 95000
 ---
@@ -55,4 +55,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 4. Verified 2026-09
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 4')
+
+2026-11-11 defaults review: the catalog erase outside the lane stops GC completely under steady CREATE/DROP (12 of 13 rounds aborted in run `ddl16`); see the new bug task filed today for the numbers.
 <!-- SECTION:NOTES:END -->
