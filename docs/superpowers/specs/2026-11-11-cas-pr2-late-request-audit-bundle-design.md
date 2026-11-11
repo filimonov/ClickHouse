@@ -520,9 +520,11 @@ one window at the base too, because its exception propagates out of `decide`.
   - `S3ObjectStorage::isBucketVersioningEnabled` uses
     `getSingleAttemptClient(request.attempt_timeout_ms, request.connect_timeout_cap_ms,
     /*disable_adaptive_timeouts=*/ true)`, as `objectCreationClient` does. `clientForRetryProfile` alone would
-    keep adaptive timeouts, whose first attempt has a 200 ms first-byte timeout. A slow answer would become
+    keep adaptive timeouts, whose first attempt waits 500 ms for a `GET` response. A slow answer would become
     "unknown".
   - `CasObjectStorageBackend` passes `controlRequest(0)`.
+  - "Bounded" has the meaning it has for every single-attempt request: the SDK does not retry, and
+    `attempt_timeout_ms` bounds each socket send and receive. It is not a total deadline.
   - `docs/en/antalya/cas/bucket-requirements.md` says the probe is one attempt and what "unknown" means.
 - **Tests.**
 
