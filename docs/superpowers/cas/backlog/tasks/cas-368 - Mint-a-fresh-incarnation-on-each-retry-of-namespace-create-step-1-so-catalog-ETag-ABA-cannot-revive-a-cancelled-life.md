@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-11 11:05'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -52,4 +52,6 @@ Fix (no format change): mint a fresh incarnation on every retry of `createNamesp
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-18: draft prepared on fix/antalya-26.6/cas-368-fresh-incarnation-per-step1-retry @d42febbcc9bf (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/368/.
+
+2026-11-11: CAS-449 is a second scenario for the same change: a lost `PUT` response plus complete, drop and GC erase inside the retry window re-inserts an erased incarnation. The draft @d42febbcc9bf covers it (mint inside `mutate`, entry taken from the landed catalog). Target is now `antalya-26.8` after PR 2805 merges; the diff passes `git apply --check --3way` on 2f89c5db182 and needs a rebuild and the gates there. Owner decision 2026-11-11: no port to `antalya-26.6`. Planned delivery: one commit series in the same pull request as CAS-29.8.
 <!-- SECTION:NOTES:END -->

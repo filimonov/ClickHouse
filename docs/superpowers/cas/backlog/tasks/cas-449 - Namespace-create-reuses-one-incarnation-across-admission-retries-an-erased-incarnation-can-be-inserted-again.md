@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 07:51'
-updated_date: '2026-11-11 07:52'
+updated_date: '2026-11-11 11:05'
 labels:
   - 'area:ref-catalog'
   - 'area:gc'
@@ -40,3 +40,10 @@ ordinal: 552000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11 owner decision: no port of this fix to `antalya-26.6` (narrow window, complex scenario).
+2026-11-11 overlap found: CAS-368 asks for the same code change from another scenario (catalog ETag ABA after a cancelled `Creating` row). Its draft `fix/antalya-26.6/cas-368-fresh-incarnation-per-step1-retry` @d42febbcc9bf (2 commits on 8fefc27bd625, +262/-17, local, not pushed) mints the incarnation inside `mutate` of `createNamespaceStep1` and returns the entry from the landed catalog, which is this task's fix direction and criteria #2 and #3. `git apply --check --3way` of that diff passes on the PR 2805 tree (2f89c5db182); it was built and gated only on the 26.6 base on 2026-10-18. Left for this task: criterion #1, the gtest of the lost-response, complete, drop, erase, retry interleaving. This task was filed without a backlog search for `createNamespaceStep1`; CAS-368 should carry the code, this task the second scenario and its test.
+<!-- SECTION:NOTES:END -->
