@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 23:41'
+updated_date: '2026-11-11 23:55'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -34,3 +35,9 @@ ordinal: 571000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): figures in the description: 201 INSERT/s is the best minute of the direct run, the run average is 173 INSERT/s; the count of 502 answers is about 11000 lines in one server error log, not an exact proxy counter. The inflation of latency and per-log GC cost through the proxy is 10-15 times.
+<!-- SECTION:NOTES:END -->

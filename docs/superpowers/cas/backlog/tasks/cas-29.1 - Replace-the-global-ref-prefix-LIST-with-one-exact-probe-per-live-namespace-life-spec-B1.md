@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-11-11 23:41'
+updated_date: '2026-11-11 23:55'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -75,4 +75,6 @@ First recorded: 2026-07-29 (539584ac324, by 'GC-DEFER-DECISION-LIST-COST')
 2026-10-12, owner: step 3's per-life LIST is not needed for the fold either. Ids are dense from the cursor to `_ckpt.committed_through` within an epoch, and `{E,1}.prev_epoch_seal` gives each older epoch's last id by exact GET (one per epoch crossed). The hint bound of PR 2542 moves to that back-chain (CAS-359 AC #9), so the fold consumes no listing; what still reads `listing.snapshots` is the baseline guard (no cursor, no `_ckpt`) and the rebuild health check, which need their own exact-key source or B2's cleanup listing.
 
 2026-11-12 defaults review: with 2000 tables in the pool `defer_decision` lists every ref-log key each round: 91k keys at round 7, 366k at round 16, 104 s of a 147 s round (`mt1000_base`; the same with budgets 0). A table's logs are deleted only after its snapshot, taken every `snapshot_log_count_threshold` = 256 logs, so the steady listing is up to 256 x tables. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
+
+2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): the 256-keys-per-table plateau was not reached: the listing was still growing by about 50k keys per round at 366k when the 30-minute runs ended, and where the cleanup budget also binds it went past the bound (315k keys for 200 tables in `mt100_base`).
 <!-- SECTION:NOTES:END -->
