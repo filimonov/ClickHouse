@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-01 17:03'
+updated_date: '2026-11-11 08:00'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -61,4 +61,6 @@ Provenance: BACKLOG/replication.md#mutation-registration-race; observed in CI as
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01: occurrence on PR #2463 cas_lightweight_delete_4 (release x86): 'without overlap' scenarios 251 vs 250, 3 vs 0; tmp/ci-2463/rca.md
+
+2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `RegressionTestsAarch64 / CASS3CacheLightweightDelete (4)` failed `/lightweight delete/concurrent delete/MergeTree/random delete entire table`: `concurrent_delete.py:285` read 1 row where it expects 0. Same surplus-row signature as CAS-333; the server log of this run was not read.
 <!-- SECTION:NOTES:END -->

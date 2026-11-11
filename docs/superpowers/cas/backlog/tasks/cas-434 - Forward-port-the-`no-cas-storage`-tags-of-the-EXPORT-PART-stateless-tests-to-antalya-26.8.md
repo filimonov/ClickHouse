@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 13:00'
-updated_date: '2026-11-06 02:13'
+updated_date: '2026-11-11 08:00'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -48,4 +48,6 @@ Either cherry-pick cc73c9b6eea onto antalya-26.8, or decide that EXPORT PART fro
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-06: 26.8 removed the four tags on purpose in 5a1ffb222a5 ("Allow every partition command, EXPORT PART included, on a CAS disk", PR 2647 series), so the tags are not forward-ported with the lane-parity branch; AC#1 needs the wait-budget decision.
+
+2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `03572_export_merge_tree_part_limits_and_table_functions` failed on msan 2/3 (481.59 s, `Waiting for exports to complete (timeout: 60s)`, reference diff) and timed out at 600 s on asan 2/2. The test still carries only `no-fasttest` on the PR head.
 <!-- SECTION:NOTES:END -->

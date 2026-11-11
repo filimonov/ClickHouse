@@ -4,6 +4,7 @@ title: Aarch64 CAS aggregate-functions regression suites fail on p_value snapsho
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:23'
+updated_date: '2026-11-11 08:00'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -27,3 +28,9 @@ RegressionTestsAarch64 / CASAggregateFunctions (1-3) and CASS3CacheAggregateFunc
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): still red. Six jobs: `RegressionTestsAarch64 / CASAggregateFunctions (1)(2)(3)` and `CASS3CacheAggregateFunctions (1)(2)(3)`. Part 2 and part 3 fail 3 leaf scenarios each (`analysisOfVariance`, `studentTTest`, `welchTTest`, merge and finalizeAggregation variants); part 1 has 496 `Fail` lines under the same three functions. First traceback: snapshot `p_value` 0.2519310730478018, actual 0.2519310730478017. Scenario counts equal the previous PR run 42864462634. The base-branch MasterCI run 39839856866 fails the same jobs.
+<!-- SECTION:NOTES:END -->
