@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-11 05:43'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -66,4 +66,6 @@ Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag plan steps 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `cleanupRefObjects` is 2026-07-12 (d372bf410d4); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-11-11 (CAS-447): CI evidence without the step-1 counters: on PR 2794 shard 2/2 CASRefCleanupObjectsDeleted stayed 0 for 3 h while CASRefCheckpointPublished ran ~20k/20 min; the local cas-s3 lane log has 46 'catalog observation/life moved' stops and no other stop reason in 30 min; the lane writes the catalog 2.3-3.5 times/s. Etag-only refusals dominate; step 2 (CAS-29.8) is justified by this data.
 <!-- SECTION:NOTES:END -->
