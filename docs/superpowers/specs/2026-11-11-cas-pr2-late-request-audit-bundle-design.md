@@ -143,9 +143,9 @@ The in-memory fence can say "live" after the durable mount slot moved: another s
 fenced it. The sender then answers `Yes` for a ref it no longer protects, and the receiver relinks to it.
 
 Evidence: `docs/superpowers/models/CaRelinkConfirmCore_RESULTS.md`, section "CAS-365: the mount slot is not
-the fence". Config `CaRelinkConfirmCore_cur_staleyes` violates `ConfirmedRelinkNeverDangles` in 13 states.
-`CaRelinkConfirmCore_fix_a` (one slot `GET` after the snapshot, ETag match, in-flight attempt accepted by its
-write-attempt id) holds. The results recommend fix A.
+the fence". Config `CaRelinkConfirmCore_cur_staleyes` violates `ConfirmedRelinkNeverDangles` with a 13-state
+counterexample. `CaRelinkConfirmCore_fix_a` (one slot `GET` after the snapshot, ETag match, in-flight attempt
+accepted by its write-attempt id) is green over 15,884,787 distinct states. The results recommend fix A.
 
 ### 4.2 Change {#story-b-change}
 
@@ -184,7 +184,8 @@ function in `CA/Pool/CasPool.cpp`:
 
 1. Copy the `MountSlotOwnership` pointer. This happens before the ledger snapshot, so a remount between the
    snapshot and the `GET` is judged against the old mount's ownership and fails.
-2. Ask `CasRefLedger::confirmExactRef`. Any answer other than `Yes` returns at once, with zero I/O.
+2. Ask `CasRefLedger::confirmExactRef`. If the ledger's answer is not `Yes`, return it at once, with zero
+   I/O.
 3. Read the mount slot once: `CasMountRuntime::slotHeldBy(ownership)` admits an operation on
    `mount_requests`, reads `Layout::mountKey(server_root_id)` under `Retry::once` and returns
    `slot && ownership.holds(*slot)`.
@@ -196,8 +197,9 @@ function in `CA/Pool/CasPool.cpp`:
 
 Facts that bound the cost:
 
-- **One `GET` per `Yes`, none otherwise.** `Retry::once` is one request at the CAS engine level. Its duration
-  is bounded by the backend attempt timeout, not by the 90 s window.
+- **One `GET` per ledger `Yes`, none otherwise.** The `GET` can turn that `Yes` into `Unknown`, so an
+  `Unknown` answer costs zero or one request. `Retry::once` is one request at the CAS engine level. Its
+  duration is bounded by the backend attempt timeout, not by the 90 s window.
 - **No ledger mutex is held during the `GET`.** `CasRefLedger::confirmExactRef` releases `ref_queue_mutex`
   and the runtime's `state_mutex` when it returns.
 - **No concurrency cap and no cache.** Each confirm pays its own read.
@@ -213,13 +215,27 @@ Fail-closed cases, all answer `Unknown`:
 | foreign claim, same pair with another attempt, gc-fence, farewell | `holds` is false |
 | own renewal gave up after sending, and its copy lands later | `attemptEnded` cleared the id |
 
-The last row costs the receiver one retry. It is not a safety gap.
+The last row is not a safety gap, and it is not a one-retry cost. A renewal that gives up makes the renewer
+terminal (`MountLeaseRenewerState::RenewalTerminal`) and trips the mount fence. The ledger then answers
+`Unknown` with no `GET`, and confirms stay refused until a remount installs a new renewer. This is the base
+behaviour for a lost mount. Story B does not lengthen it.
+
+**The `GET` and the `holds` check are two steps, and a renewal can commit between them.** The `GET` returns
+the body with ETag E1. The renewal lands E2, calls `landed(E2)` and ends its attempt. `holds` then compares
+E1 with E2 and finds no in-flight id, so the confirm answers `Unknown` on a healthy mount.
+
+- The refusal is safe. It increments `CASRelinkConfirmRefusedSlotMoved`, and the receiver falls back as
+  for any `Unknown`.
+- The window is one request round trip per renewal.
+- The story keeps fix A as modelled and does not add a second read. Test B20 pins the behaviour, the
+  integration runs of [§12](#measurements) measure its rate, and CAS-461 decides on a re-read from that
+  rate.
 
 **Stale "zero I/O" claims are corrected in the same commit as the code** when they sit in a touched product
 file: the declaration and body comments of `CasRefLedger::confirmExactRef`, the comment near
 `confirmLogger`, `CA/Pool/CasPool.h`, `CA/ContentAddressedExchange.h` and
-`CA/ContentAddressedMetadataStorage.{h,cpp}`. The contract after this story: zero I/O for every answer but
-`Yes`; one mount-slot `GET` before a `Yes`.
+`CA/ContentAddressedMetadataStorage.{h,cpp}`. The contract after this story: zero I/O when the
+ledger's answer is not `Yes`; one mount-slot `GET` when it is, after which the answer is `Yes` or `Unknown`.
 
 ### 4.3 Tests {#story-b-tests}
 
@@ -247,11 +263,24 @@ Suite `CASConfirmExactRef` in `src/Disks/tests/gtest_cas_confirm_exact_ref.cpp` 
 | B13 | `OwnRenewInFlightAnswersYes` | no, guards against over-refusal |
 | B14 | `OwnSlotAnswersYesWithOneRead`: exactly one backend request, a `GET` of the mount key | yes, zero requests |
 | B15 | `FailedSlotReadThrowsAndIsCounted` | yes |
+| B16 | `FenceLostAfterTheSnapshotThrowsAndIsCounted`: the hook trips the mount fence; no `GET` is sent; `CASRelinkConfirmRefusedSlotUnreadable` grows by 1 | yes, answers `Yes` |
+| B17 | `LeaseBudgetSpentAfterTheSnapshotThrowsAndIsCounted`: the hook moves the clock past the lease deadline; no `GET` is sent | yes |
+| B18 | `FarewellAfterTheSnapshotAnswersUnknown`: the hook writes a clean-release body with this mount's pair | yes |
+| B19 | `NoRenewerAnswersUnknownWithoutARead`: no renewer is installed when the confirm starts and the ledger says `Yes` | yes |
+| B20 | `RenewalCommittedBetweenGetAndCheckAnswersUnknown`: a backend hook runs one renewal after the `GET` is served; the answer is `Unknown` and `CASRelinkConfirmRefusedSlotMoved` grows by 1 | yes; pins the false refusal of [§4.2](#story-b-change) |
 
 - Existing tests that assert zero requests on a `Yes` are changed to one mount-key `GET`. Tests that assert
   zero requests on other answers stay.
 - B7, B9 and B15 assert the counter they name.
-- `tests/integration/test_cas_gcs_relink_liveness/test.py` adds both new counters to its must-be-zero list.
+- B19: the plan names the product path that leaves no renewer installed (`mount_renewer.reset` in
+  `CA/Pool/CasMountRuntime.cpp`).
+- The existing lost-fence test of this suite loses admission before the snapshot. B16 and B17 lose it after.
+- A late landing of an abandoned renewal has no end-to-end test of its own. The abandoned renewal trips the
+  fence first, so the ledger answers `Unknown` before any `GET`. B5 and B8 cover the slot rule for that
+  body: this mount's pair with an attempt id the ownership does not list.
+- `tests/integration/test_cas_gcs_relink_liveness/test.py` adds `CASRelinkConfirmRefusedSlotUnreadable` to its
+  must-be-zero list. `CASRelinkConfirmRefusedSlotMoved` stays off the list: a renewal that commits between
+  the `GET` and the `holds` check refuses a healthy mount, so zero is not an invariant.
 - `tests/integration/test_cas_replicated_relink/test.py` passes unchanged.
 
 ### 4.4 Not closed by story B {#story-b-residual}
@@ -270,8 +299,22 @@ the catalog row `Live -> Removing` with `CasRefCatalog::beginRemoving`. If that 
 reads the catalog again. If the row still equals the observed `Live` row, it reopens the lane.
 
 The reopen is unsafe when a write was sent and not answered. That request can land after the `catch` read.
-The row is then `Removing` while the table accepts writes again. GC removes the namespace under a table that
-believes it is live.
+The row is then `Removing` while the lane is open and no drop is running.
+
+What follows at the PR1 head, by reading the code:
+
+- **Writes stop at the next append.** A positive append re-reads the catalog, finds the life not `Live`,
+  closes the lane and refuses with "exact catalog life is no longer Live".
+- **The table does not open after a restart.** There is no `Removing -> Live` transition. A retried `DROP`
+  is the only way forward.
+- **An append can commit after the row turned `Removing`.** The lane exists to prevent this: it is closed and
+  drained before `beginRemoving`. After the reopen, an append can pass its `Live` check, and the late write
+  can land before the append commits.
+- **No data is lost silently.** GC deletes a `Removing` life only after the terminal removal record is
+  folded (`CasRefCatalog::deleteCompletedRemoving`), and the failed drop wrote none.
+
+The harm is a table that stops working some time after a `DROP` that reported failure, with nothing that
+links the two.
 
 ### 5.2 Change {#story-c-change}
 
@@ -304,7 +347,8 @@ every exception leave it set.
 
 **The trade.** A drop whose write did not land, but whose outcome was unknown, leaves the table refusing
 writes until `DROP` is retried or the disk is remounted. Before this story the table reopened. The story
-prefers a refused write to a write into a namespace that GC may remove.
+prefers a refusal that starts at once and names its cause to one that starts at a later append with no
+link to the failed `DROP`.
 
 **How the lane reopens.** A remount replaces the runtime (`quiesceRefTablesForRemount`); the new one starts
 open. A retried removal that reaches `Transitioned` or `AlreadyRemoving` finishes the drop. A retried removal
@@ -319,16 +363,21 @@ Suite `CASRefWriterNamespaceRemoval` in `src/Disks/tests/gtest_cas_ref_writer.cp
 
 | Id | Test | Red at the base |
 |---|---|---|
-| C1 | `AmbiguousBeginRemovingKeepsTheWriteLaneClosed`: the catalog write is sent, the answer is lost, the write is held back; the next ref mutation is refused with the "may still land" text; the write then lands | yes, the mutation is admitted |
+| C1 | `AmbiguousBeginRemovingKeepsTheWriteLaneClosed`: the catalog write is sent, the answer is lost, the backend holds the conditional write and applies it on release; the next ref mutation is refused with the "may still land" text; the write then lands and the row is `Removing` | yes, the mutation is admitted |
 | C2 | `FailedRetryAfterAmbiguousBeginRemovingDoesNotReopenTheLane` | yes |
 | C3 | `AmbiguousBeginRemovingSurvivesRefTableEviction` | yes |
 | C4 | `ConcurrentRemovalAttemptsDoNotOverlapAndKeepTheLaneClosed` | yes |
-| C5 | `FencedOutBeginRemovingKeepsTheWriteLaneClosed` | yes |
+| C5 | `RefusedBeginRemovingKeepsTheLaneClosedAfterAdmissionReturns`: `beginRemoving` ends without a transition because the lease budget ran out (`Fence::Admit::NoBudget`); a renewal restores the budget before the `catch` read, which finds the observed `Live` row | yes, the lane reopens |
 | C6 | `EntryChangedBeginRemovingKeepsTheWriteLaneClosed`: the row returns to the observed value before the `catch` read | yes |
 | C7 | `FailureBeforeBeginRemovingReopensTheLane`: the `gc/state` read fails; the next ref mutation is admitted | no, guards unchanged behaviour |
 | C8 | `RemountReopensTheLaneAfterAnAmbiguousBeginRemoving` | no, guards the documented way out |
 
 C1 to C4 come from the draft. C5 to C8 close gaps its review listed.
+
+- C1 needs a backend that delivers the held write later. The draft's backend only throws, so nothing lands;
+  it is replaced.
+- C5 uses a temporary refusal on purpose. A permanently lost fence is not a red schedule: at the base
+  `refuseUnlessAdmitted` already keeps the lane closed in the `catch` block.
 
 ### 5.4 Not closed by story C {#story-c-residual}
 
@@ -347,8 +396,8 @@ C1 to C4 come from the draft. C5 to C8 close gaps its review listed.
 
 `dropNamespaceImpl` gives every read its own `Retry::standard` window. The worst case is the creator-fence
 read. `cancelStalledCreating` calls its predicate inside `casUpdateImpl`'s `decide`, and the predicate calls
-`isCreatorFenceTerminal` with no policy. Each call gets a fresh 90 s window, up to `kMaxCatalogCasAttempts`
-(100) times, while the catalog hot-key lane is held.
+`isCreatorFenceTerminal` with no policy. That nested read gets a fresh 90 s window on every `decide`, so it
+can outlast the window `casUpdateImpl` froze for the update, while the catalog hot-key lane is held.
 
 `resolveNamespaceLife` already does this right: `const Retry policy = op.freeze(Retry::standard());`.
 
@@ -358,8 +407,12 @@ read. `cancelStalledCreating` calls its predicate inside `casUpdateImpl`'s `deci
 - `policy` goes to every read and write that leads to the removal decision: the first `CasRefCatalog::read`,
   `cancelStalledCreating`, the creator-fence read inside its predicate, the second `CasRefCatalog::read`, the
   `gc/state` read and `beginRemoving`.
-- `CasRefCatalog::cancelStalledCreating` and `CasRefCatalog::beginRemoving` gain a `const Retry & policy`
-  parameter that they forward to `casUpdateImpl`. Other callers pass `Retry::standard`.
+- `CasRefCatalog::cancelStalledCreating` and `CasRefCatalog::beginRemoving` gain a trailing parameter
+  `const Retry & policy = Retry::standard()`, as `CasRefCatalog::read` already has. They forward it to
+  `casUpdateImpl`. No existing caller changes: the tests and the GC race fixture keep the default.
+- `beginRemoving` passes the same `policy` to the catalog read in its mismatch branch
+  (`catch (const CatalogEntryMismatchMarker &)`). That read decides between `AlreadyRemoving` and
+  `EntryChanged`, so it is part of the removal decision.
 - **The resolution read in the `catch` block keeps its own standard window.** Its job is to reopen the lane.
   Under an expired policy it would fail at once and leave a healthy table closed.
 - **Local waits count against the window but are not cut short by it.** The drop waits for the lane to drain
@@ -367,8 +420,17 @@ read. `cancelStalledCreating` calls its predicate inside `casUpdateImpl`'s `deci
   up at once, nothing was sent, the resolution read finds the row `Live`, and the lane reopens. The drop ends
   with a retry-later error.
 
-Bound after this story: the object-store work of one drop attempt fits in one standard window plus the
-resolution read's window.
+Bound after this story: the object-store work that leads to the removal decision ends at one deadline, set
+at entry. That work is both catalog reads, the creator-fence read, the `gc/state` read and both catalog
+updates, including the mismatch read inside `beginRemoving`.
+
+Three parts of a drop keep their own budget:
+
+| Part | Budget | Why it stays |
+|---|---|---|
+| the resolution read in the `catch` block | one standard window | see above |
+| recovery (`ensureRefTableRecovered`) | `recovery_retry_budget_ms` | shared with table load; it issues its own requests |
+| the terminal removal append (`appendRefOpsOnRuntime`) | `Retry::standard` for its catalog read and its `create` | it runs after `Removing` is durable; cutting it short leaves a `Removing` row with no terminal record |
 
 ### 6.3 Tests {#story-d-tests}
 
@@ -377,15 +439,23 @@ Pattern: `CASRefCatalogBirthWiring.APerpetuallyChurningCatalogEntryIsPacedAndEnd
 
 | Id | Test | Red at the base |
 |---|---|---|
-| D1 | `CASRefWriterNamespaceRemoval.DropWithAnUnreadableCreatorFenceEndsWithinOneWindow`: a `Creating` row with a foreign creator; every read of the mount key fails retryably; `dropNamespace` throws and virtual time advances by at most one window plus one backoff | yes, several windows |
+| D1 | `CASRefWriterNamespaceRemoval.DropWithASlowCreatorFenceReadEndsAtTheEntryDeadline`: a `Creating` row with a foreign creator; the first catalog read costs 60 virtual seconds; every read of the mount key then fails retryably; `dropNamespace` throws and virtual time from entry is at most one window plus one backoff | yes, 60 s plus a full window |
 | D2 | `CASRefWriterNamespaceRemoval.DropSpendsOneWindowAcrossItsReads`: the first catalog read costs 60 virtual seconds; the `gc/state` read then fails retryably; total virtual time is at most one window plus one backoff | yes, 60 s plus a full window |
 | D3 | `CASRefWriterNamespaceRemoval.AWaitLongerThanTheWindowEndsTheDropAndLeavesTheLaneOpen`: the removal-attempt hook advances the virtual clock past the window; `dropNamespace` throws retry-later; the next ref mutation is admitted | no at the base (the drop succeeds); green after |
 
 D3 documents the new failure mode of [§6.2](#story-d-change) and guards the resolution read's own window.
 
+D1 spends time before the creator-fence read on purpose. A mount read that fails from the start ends after
+one window at the base too, because its exception propagates out of `decide`.
+
 ### 6.4 Not closed by story D {#story-d-residual}
 
-- `dropNamespaceImpl` takes no caller deadline. A deadline from the query is the scope of CAS-71.1.
+- `dropNamespaceImpl` takes no deadline from its caller. "The caller's deadline" in CAS-69 criterion 2 is
+  the window frozen at entry. No task asks for a query deadline on `DROP`. CAS-71.1 is a different change: a
+  clamp deadline on `CasOperation` for reads nested in a lane hold.
+- CAS-69 criterion 1 says "every read it issues". The story meets it for the reads `dropNamespaceImpl`
+  issues itself. Recovery and the terminal append are transitive and keep their own budgets
+  ([§6.2](#story-d-change)).
 
 ## 7. Story E: three small robustness fixes (CAS-373) {#story-e}
 
@@ -482,7 +552,7 @@ Rules:
   shared interface.
 - Commits are signed off and carry the co-author trailer. No amend, no rebase.
 
-## 10. Footprint outside `CA/` {#upstream}
+## 10. Production code outside `CA/` {#upstream}
 
 | File | Change | Why it cannot live in `CA/` |
 |---|---|---|
@@ -495,6 +565,9 @@ Rules:
 - `IObjectStorage.h` already differs from upstream on this branch and already takes `ObjectStorageControlRequest`
   (declared in `src/IO/ObjectStorageRequestProfile.h`) in four methods.
 - No hunk changes behaviour for a disk that is not CAS.
+- Tests and docs outside `CA/` are not in this table. [§9](#commits) lists them per commit: eight gtest files
+  under `src/Disks/tests/` and one integration module. [§14](#documentation) lists the five doc files.
+- Story D changes no caller outside `CA/`: the two new parameters have defaults ([§6.2](#story-d-change)).
 
 ## 11. Gates {#gates}
 
@@ -538,7 +611,11 @@ each module, and on the sender the counters `CASRelinkConfirmRefusedSlotMoved` a
 - P1. Churn tables created in S2 are within 10 % of R2.
 - P2. `DROP TABLE` p50 and p99 in S2 are within 15 % of R2.
 - P3. Ref objects deleted during load and `_log` objects at load end are within 10 % of R2 and R4.
-- P4. Both new counters are 0 in every run and in both integration modules.
+- P4. `CASRelinkConfirmRefusedSlotUnreadable` is 0 in every run and in both integration modules.
+  `CASRelinkConfirmRefusedSlotMoved` is 0 in the standalone runs, which do no relink. In the integration
+  modules it is reported next to the number of confirms. Each refusal is matched to a renewal the sender
+  committed at the same time ([§4.2](#story-b-change)). An unmatched refusal is a finding. The measured rate
+  goes to CAS-461.
 - P5. No "outcome of its Live -> Removing catalog write is unknown" warning appears on local object storage.
 - P6. S2 and S4 have no `CA GC round failed` line that R2 and R4 lack.
 - P7. Wall time of each integration module is within 15 %.
@@ -578,8 +655,8 @@ User docs use plain words: no task ids and no invariant tags.
 | CAS-367 #1: an ambiguous `beginRemoving` never reopens the lane | C1 to C6 |
 | CAS-367 #2: a stuck-`Removing` detector exists | the base: `Gc::reportStuckRemovals` |
 | CAS-367 #3: the format decision is recorded | CAS-454 |
-| CAS-69 #1: one policy frozen at entry | D2 |
-| CAS-69 #2: the drop's object-store work fits one window | D1, D2, D3 |
+| CAS-69 #1: "`dropNamespaceImpl` freezes one policy at entry and every read it issues, including the creator-fence read, uses that policy" | D1, D2; the transitive exceptions are in [§6.4](#story-d-residual) |
+| CAS-69 #2: "A gtest with a slow creator-fence read shows the drop gives up at the caller's deadline, not at a fresh 90 s window" | D1 |
 | CAS-373: each item has a unit test | E1 to E5, the pool meta test |
 
 ## 16. Non-goals and where they go {#non-goals}
@@ -590,7 +667,8 @@ User docs use plain words: no task ids and no invariant tags.
 | Bind the `Live -> Removing` write to the mount generation | CAS-454 |
 | Report whether a catalog write was sent, to narrow story C | CAS-455 |
 | `resolveRef` reports "absent" during the closed-lane window | CAS-183 |
-| A caller deadline for the drop | CAS-71.1 |
+| A query deadline for the drop | none; no task asks for one |
+| A second slot read after a refusal that a concurrent renewal explains | CAS-461 |
 | A cap or cache for the confirm's slot read | none; the owner ruled it out |
 
 ## 17. Risks {#risks}
@@ -599,6 +677,8 @@ User docs use plain words: no task ids and no invariant tags.
   test B14.
 - **A slow mount read turns confirms into `Unknown`.** The receiver falls back as it does for any `Unknown`.
   Check: `CASRelinkConfirmRefusedSlotUnreadable` is documented and P4 holds in the integration modules.
+- **A renewal that races the confirm refuses a healthy mount.** The window is one request round trip per
+  renewal. Check: B20, the attribution in P4, CAS-461.
 - **Story C keeps a healthy table closed.** It needs a sent catalog write with a lost answer. Check: P5, the
   warning text, and `namespaces.md` names both ways out.
 - **Story D fails a drop that used to succeed late.** It needs a drain longer than 90 s. Check: D3 shows the
