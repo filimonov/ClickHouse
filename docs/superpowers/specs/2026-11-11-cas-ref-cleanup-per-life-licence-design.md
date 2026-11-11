@@ -145,8 +145,8 @@ The catalog etag is still read and compared, for the counter in [§6](#observabi
 | Event before a chunk of `X` | Scope | Why |
 |---|---|---|
 | `X`'s row absent, changed by value, or its incarnation resolves to another life | `X` only | `X`'s plan was built from the old row. Other namespaces' licences do not take `X`'s row as input. |
-| `gc/state` absent, or lease owner or seq moved | whole pass | The lease is the one shared licence. A deposed leader stops. |
-| Catalog or `gc/state` read fails | whole pass | No row can be verified. |
+| Lease owner or seq moved | whole pass | The lease is the one shared licence. A deposed leader stops. |
+| Catalog or `gc/state` read fails, or `gc/state` is absent | whole pass | No row or lease can be verified. An absent mandatory `gc/state` is an anomaly, not a handover. |
 | Catalog ambiguous (two rows resolve one incarnation) | whole pass | A corruption signal, not churn. |
 | Per-round budget exhausted | pass returns, as today | |
 | Recovery triple of `X` does not validate | `X` only, as today | |
@@ -213,8 +213,8 @@ New `ProfileEvents` (`src/Common/ProfileEvents.cpp`; names are a call of this sp
 |---|---|---|
 | `CASRefCleanupObjectsPlanned` | a namespace's plan is built | keys in the plan |
 | `CASRefCleanupNamespacesSkipped` | the licence skips a namespace because its row or life changed | namespaces |
-| `CASRefCleanupStoppedLeaseMoved` | the pass stops because `gc/state` is absent or the lease moved | passes |
-| `CASRefCleanupStoppedAuthorityUnverified` | the pass stops because the catalog or `gc/state` read failed, or the catalog is ambiguous | passes |
+| `CASRefCleanupStoppedLeaseMoved` | the pass stops because the lease moved | passes |
+| `CASRefCleanupStoppedAuthorityUnverified` | the pass stops because the catalog or `gc/state` read failed, `gc/state` is absent, or the catalog is ambiguous | passes |
 | `CASRefCleanupChunksUnderCatalogChange` | a chunk is deleted while the catalog etag differs from the fold's cut | chunks |
 
 - `CASRefCleanupObjectsDeleted` keeps its meaning.

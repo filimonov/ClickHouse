@@ -358,8 +358,8 @@ Implementer `ca-impl`. Reviewer `ca-review` (opus): GC safety. Read licence spec
   | catalog read throws | `StopAuthorityUnverified` |
   | catalog incarnation index is ambiguous | `StopAuthorityUnverified` |
   | row absent, or `row != observed_entry`, or the incarnation resolves to another life | `SkipNamespace` |
-  | `gc/state` read throws | `StopAuthorityUnverified` |
-  | `gc/state` absent, or lease owner or sequence differs from `adopted_lease` | `StopLeaseMoved` |
+  | `gc/state` read throws, or `gc/state` is absent | `StopAuthorityUnverified` |
+  | lease owner or sequence differs from `adopted_lease` | `StopLeaseMoved` |
   | otherwise | `Delete` |
 
   The catalog etag no longer decides anything. Chunk loop: `Delete` deletes the chunk; `SkipNamespace` logs
