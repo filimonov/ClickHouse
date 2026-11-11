@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-11 17:18'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -68,4 +68,6 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor ([stale-recover-ref-table-comments
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (967849c785b, by 's3cache-config-comment-stale')
+
+2026-11-11: one more false comment. `CA/Pool/CasRefLedger.h`, comment above `publishCkptContribution`, bullet on `runRecoveryWalkOnce`: "it is the only writer that mints seals, so it is the only writer that can record where the chain now ends". False: the commit path in `CA/Pool/CasRefLedger.cpp` (the contribution built with `.last_epoch_seal = refLogTxnIsEpochSeal(txn) ...`) also contributes an epoch seal's id when the committed transaction is a seal. Truth to state: both the recovery walk and the commit of a seal transaction contribute `last_epoch_seal`. The line predates the ref cleanup bundle branch (`fix/antalya-26.8/cas-ref-cleanup-per-life-licence`), which left it untouched.
 <!-- SECTION:NOTES:END -->
