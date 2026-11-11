@@ -7,7 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-11 21:22'
 labels:
   - cas
   - ci
@@ -49,4 +49,6 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASS3CacheAlter (attach, 3)`
 2026-11-08 (2805 node err.log, 246 MB): 25 of the 27 'CAS write could not be committed' lines and all 4 'NEEDS RECOVERY at committed-frontier publication' lines (01:40:45-01:40:56) fall inside the RustFS 503 window 01:39:36-01:40:52. The other 2 (02:00:08, thread 222, GC) are 'CAS ref catalog erase ... gave up at the policy deadline after zero attempt(s)': CasWriteResult.h renders 'zero' when GaveUp::Deadline fires with sent_any=false, and completedRemovingDelete (CasRefCatalog.cpp) freezes ONE Retry::standard bound for the whole erase/resolve loop, so a loop that spent its 90 s on earlier contended iterations refuses the next erase before sending it. No storage error of any kind in the 100 s before 02:00:08 (only SSL client noise), so this event is catalog contention between the three alter-cas nodes, not RustFS; GC retried on the next tick. Trace-level evidence is unavailable: clickhouse-server.log rotated at 02:10:18.
 
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `RegressionTestsAarch64 / CASS3CacheAlter (attach, 3)` failed 2 leaf scenarios of 3427. One `INSERT` got `CAS _ckpt for namespace ...: gave up at the policy deadline after zero attempt(s)` at 03:03:39 job time (one such line in the job log); the other scenario prints only `AssertionError`. The job was green on the previous run of the PR (42864462634). RustFS log not checked for this run.
+
+2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). Aarch64 `cas_s3_cache_alter_attach_3`: 19 leaf scenarios failed (2 in run 42921139681), all under `/alter/attach partition/part 3/`, same error: `Code: 210 ... CAS write could not be committed (read of 'data/cas/ref_catalog': gave up at the policy deadline after 14 attempt(s))`. Job wall time 2 h 17 min.
 <!-- SECTION:NOTES:END -->

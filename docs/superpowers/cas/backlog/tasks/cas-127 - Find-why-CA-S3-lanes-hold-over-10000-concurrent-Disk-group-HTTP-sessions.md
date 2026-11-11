@@ -4,7 +4,7 @@ title: 'Find why CA-S3 lanes hold over 10,000 concurrent Disk-group HTTP session
 status: To Do
 assignee: []
 created_date: '2026-07-27'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-11 21:22'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/operability-and-introspection.md#ca-s3-disk-session-pressure
 First recorded: 2026-07-27 (1258b8c2a30, by 'CA-s3 Disk session pressure')
 
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `Too many active sessions in group Disk` warnings: asan 2/2 2 lines, tsan 1/2 9, tsan 2/2 8 (counts 8000-13800), none on msan, arm_binary or asan 1/2. All FAIL rows on the asan 2/2 and tsan shards are `having stderror` with this warning, clustered after about 3 h of the run.
+
+2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). The `ConnectionGroup: Too many active sessions in group Disk` warning fails 16 stateless tests in this run: 1 on ASan 2/2 (`00084_external_aggregation`, count 9100), 4 on TSan 1/2, 10 on TSan 2/2 (counts up to 19000), 1 on arm_binary (`04093_lazy_final_combined_filtering`). It is the largest single cause of stateless FAILs on the cas-s3 lanes.
 <!-- SECTION:NOTES:END -->

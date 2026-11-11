@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 10:15'
+updated_date: '2026-11-11 21:29'
 labels:
   - 'area:ci'
   - 'area:testing'
@@ -44,6 +45,8 @@ dependencies:
   - CAS-438
   - CAS-442
   - CAS-444
+  - CAS-464
+  - CAS-465
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2805'
 priority: high
@@ -143,4 +146,6 @@ Open decisions
 - Three shards for the ASan cas-s3 lane.
 - Fix option for CAS-434.
 - Restore the PR template's default exclusions (Aarch64, TSan, MSan, Coverage) on CAS PRs; PR 2805 runs with none ticked.
+
+2026-11-11 21:25Z: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). 15 failed jobs (22 in run 42921139681). No longer failed: six Aarch64 aggregate-functions jobs, Grype scan, ASan cas-s3 1/2, Aarch64 lightweight_delete_4. By cause: CAS-127 session warning fails 16 stateless tests (ASan 2/2, TSan 1/2, TSan 2/2, arm_binary); job timeout on MSan 1/3, 2/3, 3/3 and TSan 2/2 (CAS-447, CAS-223); CAS-443 allow_hosts tests (integration 7/8 and targeted; the fix is not on the branch); CAS-440 alter_attach_3 (19 leaf scenarios); CAS-431 release lightweight_delete_3 cancelled after 5 h 05 min; CAS-252 release lightweight_delete_4 (2 scenarios); glue test and 3 swarms scenarios also fail on the base branch. New: CAS-464 (04078 on TSan), CAS-465 (fourth swarms scenario on release). ASan 2/2 and TSan 1/2 finished all tests this time (10651 s for ASan 2/2).
 <!-- SECTION:NOTES:END -->
