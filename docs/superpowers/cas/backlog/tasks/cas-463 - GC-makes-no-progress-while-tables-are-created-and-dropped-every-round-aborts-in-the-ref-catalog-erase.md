@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 19:20'
+updated_date: '2026-11-11 19:47'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -45,3 +46,29 @@ Options: route the erase through the hot-key lane (CAS-71.4); or make the erase 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11, single-server measurement (PR 2805 @ `2f89c5db182` and the ref cleanup bundle @ `be74be9fa7b`, local object storage, 15 min of `CREATE`/`INSERT`/`DROP` churn, `cas_gc_interval_sec` 20).
+
+Why one lost race becomes an 80 s abort. `completedRemovingDelete` (`Pool/CasRefCatalog.cpp:495-556` at `2f89c5db182`) retries a conflicted erase with a stale ETag:
+- The loop sends `op.replace` with `catalog_snapshot.etag`, then re-reads the catalog (`catalog_snapshot = read(...)`, line 528).
+- On `Conflict` it sleeps `Retry::backoff(attempt + 1)` (line 556): full jitter over 200 ms, 400 ms, ... capped at 5 s.
+- The next iteration sends the erase with the ETag read before the sleep. Churn writes the catalog about 100 times per second, so that ETag is stale and the erase conflicts again.
+- The policy is frozen once (`op.freeze(Retry::standard())`, 90 s). About 35 conflicts in a row use it up, and the next `op.replace` refuses with `gave up at the policy deadline after zero attempt(s)`.
+A normal drain erases about 600 rows per round at 0.7 ms each and rarely loses the first race. The GC thread logs nothing during the stall.
+
+Effect on foreground queries (run `R2b_after_churn`):
+- Three aborted rounds (80.9 s, 81.9 s, 84.5 s), all `pre_fold_ref_drain`, all `Code: 210 ... CAS ref catalog erase`.
+- The catalog keeps the `Removing` rows of the aborted round: `evidence_rows` 2961 and 4937 after two of the aborts, 527-625 in a normal round.
+- The drain after an abort erases them in one pass: 4.4 s for 2961 rows and 11.0 s for 4937 rows. `CREATE` and `DROP` stall for the same 4.6 s and 11 s.
+- CPU per `CREATE` rises from 6.1 ms to 14-26 ms and memory per `CREATE` from 2.6 MiB to 5-9.5 MiB while the catalog is large. Both return to 6.1 ms and 2.7 MiB after the drain.
+- Churn throughput for the run is 10 % below the base run without aborts.
+
+Frequency in this setup: 1 of 73 rounds at the base (two runs), 5 of 67 with the bundle (two runs). The aborts cluster, the sample does not separate the two builds, and the bundle does not touch this loop.
+
+Candidate minimal fix, next to the options above: re-read the catalog after the pause, before the next `op.replace`, so the retry sends a current ETag. It does not remove the contention with foreground writes; routing the erase through the hot-key lane does.
+
+Evidence: `tmp/prbundle/measure/runs/{R1b_before_churn,R2b_after_churn}/{gc_all_phases.tsv,cpu_by_minute.tsv,slow_queries.tsv,query_by_minute.tsv}` in the master worktree; give-up lines at `runs/R2b_after_churn/state/server.log:743513`, `:1256388`, `:1426023`.
+<!-- SECTION:NOTES:END -->
