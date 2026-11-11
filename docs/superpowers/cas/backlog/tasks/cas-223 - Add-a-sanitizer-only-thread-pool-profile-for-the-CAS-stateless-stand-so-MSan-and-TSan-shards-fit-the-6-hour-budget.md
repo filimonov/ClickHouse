@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-11-11 08:00'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:ci'
   - 'complexity:small'
@@ -16,6 +16,7 @@ labels:
   - 'origin:issue'
   - 'confidence:contested'
   - 'theme:parity'
+  - 'theme:ci-stabilization'
 milestone: m-8
 dependencies: []
 references:

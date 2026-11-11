@@ -4,7 +4,7 @@ title: 'Find why CA-S3 lanes hold over 10,000 concurrent Disk-group HTTP session
 status: To Do
 assignee: []
 created_date: '2026-07-27'
-updated_date: '2026-11-11 08:00'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -13,6 +13,7 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - 'theme:ci-stabilization'
 dependencies: []
 references:
   - src/Common/HTTPConnectionPool.cpp

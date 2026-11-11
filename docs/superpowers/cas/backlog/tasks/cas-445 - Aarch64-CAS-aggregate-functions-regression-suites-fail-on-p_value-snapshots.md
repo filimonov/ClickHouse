@@ -4,11 +4,12 @@ title: Aarch64 CAS aggregate-functions regression suites fail on p_value snapsho
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-11 08:00'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: medium
 type: bug

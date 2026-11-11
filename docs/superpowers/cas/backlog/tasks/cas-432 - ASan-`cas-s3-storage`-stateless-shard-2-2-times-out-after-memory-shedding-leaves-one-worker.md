@@ -6,11 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-11 09:59'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: high
 type: bug

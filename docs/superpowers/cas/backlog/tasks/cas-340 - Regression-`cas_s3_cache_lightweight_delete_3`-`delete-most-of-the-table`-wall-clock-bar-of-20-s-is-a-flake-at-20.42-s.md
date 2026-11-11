@@ -6,12 +6,13 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:03'
-updated_date: '2026-11-10 22:56'
+updated_date: '2026-11-11 10:16'
 labels:
   - ci
   - tests
   - 'area:write-path'
   - 'area:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: medium
 ordinal: 433000

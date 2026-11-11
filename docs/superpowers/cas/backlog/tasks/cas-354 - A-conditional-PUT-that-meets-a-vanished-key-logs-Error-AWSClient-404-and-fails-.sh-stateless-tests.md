@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:backend'
   - 'area:tests'
@@ -14,6 +14,7 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: medium
 type: bug

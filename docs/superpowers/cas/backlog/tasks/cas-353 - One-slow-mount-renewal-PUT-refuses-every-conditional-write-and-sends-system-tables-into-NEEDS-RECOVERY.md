@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:lease'
   - 'area:ux'
@@ -13,6 +14,7 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: high
 type: bug

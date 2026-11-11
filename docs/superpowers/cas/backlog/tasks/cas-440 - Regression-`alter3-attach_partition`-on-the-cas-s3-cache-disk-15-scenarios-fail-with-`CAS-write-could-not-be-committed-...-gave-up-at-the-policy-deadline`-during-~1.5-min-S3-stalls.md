@@ -7,11 +7,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 08:00'
+updated_date: '2026-11-11 10:16'
 labels:
   - cas
   - ci
   - regression
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: medium
 type: bug

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:testing'
   - 'area:ci'
@@ -14,6 +14,7 @@ labels:
   - 'risk:low'
   - 'confidence:plausible'
   - 'needs:repro'
+  - 'theme:ci-stabilization'
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2300'

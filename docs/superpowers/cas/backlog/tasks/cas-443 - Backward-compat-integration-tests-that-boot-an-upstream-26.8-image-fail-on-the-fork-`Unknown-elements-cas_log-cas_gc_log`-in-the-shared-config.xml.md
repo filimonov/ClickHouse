@@ -6,11 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 09:59'
+updated_date: '2026-11-11 10:16'
 labels:
   - cas
   - ci
   - integration
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: high
 type: bug

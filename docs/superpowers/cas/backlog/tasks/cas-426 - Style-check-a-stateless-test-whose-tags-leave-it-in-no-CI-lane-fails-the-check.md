@@ -6,12 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-03 22:08'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:ci'
   - 'area:testing'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: medium
 type: chore

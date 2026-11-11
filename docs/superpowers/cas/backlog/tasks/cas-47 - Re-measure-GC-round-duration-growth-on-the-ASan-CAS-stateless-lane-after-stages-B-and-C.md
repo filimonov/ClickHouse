@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:gc'
   - 'area:ci'
@@ -15,6 +15,7 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:issue'
+  - 'theme:ci-stabilization'
 milestone: m-1
 dependencies:
   - CAS-29.1

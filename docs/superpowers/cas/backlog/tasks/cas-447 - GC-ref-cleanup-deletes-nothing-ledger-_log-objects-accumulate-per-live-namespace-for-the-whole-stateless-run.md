@@ -6,11 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 23:26'
-updated_date: '2026-11-11 07:52'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: high
 ordinal: 550000

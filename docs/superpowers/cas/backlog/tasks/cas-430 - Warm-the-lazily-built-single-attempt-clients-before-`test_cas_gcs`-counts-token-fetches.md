@@ -6,10 +6,12 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 16:13'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:tests'
   - 'area:gcs'
   - 'origin:ci'
+  - 'theme:ci-stabilization'
 dependencies: []
 ordinal: 533000
 ---

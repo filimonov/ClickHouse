@@ -6,11 +6,12 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-11 10:16'
 labels:
   - cas
   - ci
   - bug
+  - 'theme:ci-stabilization'
 dependencies: []
 priority: high
 ordinal: 540000

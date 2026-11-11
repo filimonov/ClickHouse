@@ -6,13 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 08:00'
+updated_date: '2026-11-11 10:16'
 labels:
   - 'area:upstream'
   - 'complexity:small'
   - 'risk:medium'
   - 'touches:upstream-code'
   - 'confidence:solid'
+  - 'theme:ci-stabilization'
 milestone: m-5
 dependencies: []
 references:
