@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-06 22:28'
+updated_date: '2026-11-11 09:59'
 labels:
   - cas
   - ci
@@ -41,4 +41,6 @@ PR 2805 @8c26e8792eb, jobs `Integration tests (amd_asan_ubsan, targeted)`, `... 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-06: owner decision: skip_check_for_incorrect_settings per test, not globally. Fixed on the PR 2805 branch as ad04f95e441: configs/skip_check_for_incorrect_settings.xml on the two 26.8.26.12 instances. Affected today: this one file (2 cases); the other 29 old-image tests pin tags <= 26.6 or Altinity images. Native run: both nodes now start; test_table_... passed, test_database_... failed on the local MinIO 'XMinioStorageFull' (workstation disk 100% full), not the test. CI of 2805 will confirm.
+
+2026-11-11: `ad04f95e441` (`skip_check_for_incorrect_settings` for `test_custom_s3_disk_remote_url_allow_hosts`) is no longer in https://github.com/Altinity/ClickHouse/pull/2805: the branch history was rewritten without it, new head `2f89c5db182`. The commit is kept on the local branch `backup/pr2805-before-history-rewrite-20261111`; it needs its own pull request against antalya-26.8. The test stays red on the 2805 head until then.
 <!-- SECTION:NOTES:END -->
