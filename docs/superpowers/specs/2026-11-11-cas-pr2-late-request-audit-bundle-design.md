@@ -337,7 +337,7 @@ Two flags on the ref-table runtime, both guarded by `ref_queue_mutex`:
 | Flag | Set | Cleared | Effect |
 |---|---|---|---|
 | `removal_attempt_active` | by a removal attempt after `ensureRefTableRecovered`, once no other attempt holds it | scope guard at the end of the attempt | removal attempts on one namespace do not overlap |
-| `removal_write_may_land` | in the `catch` block when the write outcome is unknown | never; the runtime is replaced on remount or removed with the namespace | the `catch` block does not reopen the lane; `enforceRefTableCacheBudget` does not evict the runtime |
+| `removal_write_may_land` | in the `catch` block when the write outcome is unknown and the resolve read does not show `Removing` | never on this runtime; a remount replaces the runtime, and `invalidateRemovedCatalogLife` drops it when GC erases the row | the `catch` block does not reopen the lane; `enforceRefTableCacheBudget` does not evict the runtime |
 
 **When the outcome is unknown.** A local `removal_write_outcome_unknown` is set right before
 `beginRemoving` is called. Only `Transitioned` and `AlreadyRemoving` clear it. `EntryChanged`, `FencedOut` and
@@ -368,6 +368,11 @@ link to the failed `DROP`.
 **How the lane reopens.** A remount replaces the runtime (`quiesceRefTablesForRemount`); the new one starts
 open. A retried removal that reaches `Transitioned` or `AlreadyRemoving` finishes the drop. A retried removal
 that fails leaves the lane closed.
+
+**An unknown outcome that the resolve read settles.** The `catch` block reads the row once. `Removing` under
+the same life means the write landed: the removal continues and the flag stays clear, so the runtime is not
+pinned in the ref table cache and no refusal claims a write may still land. Any other result of that read
+leaves the outcome unresolved and sets the flag.
 
 Test hook: `setRemovalAttemptHookForTest` on `Pool` and `CasRefLedger`, called once per attempt that closed
 and drained the lane, before the attempt's catalog read. An attempt that returns earlier (the stream already
