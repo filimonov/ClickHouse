@@ -222,6 +222,11 @@ Port decisions, where the base differs from the draft's base:
 - The wedge tests run the successor and ref cleanup from a `before_create` hook, between admission and the
   landing of the create.
 - Three existing `CASRefCheckpoint` fixtures seal epoch 1 above the contribution (`ID_1_3`), as in the draft.
+- **Port adaptation.** On this base `ProfileEvents::global_counters[event]` returns a `UInt64`
+  (`src/Common/ProfileEvents.h:123`). The eight `.load()` calls in the draft's wedge tests are removed
+  before the red run.
+- `PublishRefusesAFrontierAboveItsEpochSeal` and `PublishRefusesAFrontierTwoEpochsBehind` are red at the base
+  through a `CORRUPTED_DATA` exception in the test body (`CA/Pool/CasRefCkpt.cpp:49`). That counts as red.
 - The exact count of red tests is recorded from the red run on this base. The draft's count on its own base
   was 13.
 
@@ -294,7 +299,7 @@ change as this document to say: one pull request, stories as commit series, base
 | 6 | B | Refuse a `_ckpt` frontier that a later writer epoch moved past | `CasRefCkpt.*`, `CasRefLedger.*`, `CasRefCkptFormat.h`, `ProfileEvents.cpp`, `metrics_and_events.md`, three gtest files | the fix; tests of [§4.3](#story-b-tests) |
 | 7 | C | Revalidate `_ckpt` before `fsck` reports an absent tail log as a broken chain | `CasFsck.cpp`, `gtest_cas_fsck.cpp` | the fix; F1, F2 |
 | 8 | D | License ref cleanup per life instead of by the whole catalog | `CasGc.cpp`, `gtest_cas_ref_gc.cpp` | the licence and the refusal scope; key assertions of groups A, B, G; comment fix |
-| 9 | D | Count why a ref cleanup pass stopped | `CasGc.cpp`, `ProfileEvents.cpp`, `metrics_and_events.md`, `gtest_cas_ref_gc.cpp`, GC log tests if they list phase metrics | counters and phase metrics; group C and the counter assertion of G2 |
+| 9 | D | Count why a ref cleanup pass stopped | `CasGc.cpp`, `CasGc.h`, `ProfileEvents.cpp`, `metrics_and_events.md`, `gtest_cas_ref_gc.cpp` | counters and phase metrics; group C and the counter assertion of G2 |
 | 10 | D | Document the per-life ref cleanup licence | `docs/en/antalya/cas/architecture/garbage-collection.md` | docs only |
 
 Rules:
@@ -308,8 +313,9 @@ Rules:
   hunks are applied.
 - **A red run compiles.** Where a test names a symbol that its product change introduces (the two
   `CkptPublishOutcome` values and `CASRefCheckpointFrontierRefused` in commit 6, the new `Authority` values
-  and counters in commits 8 and 9), the red tree carries the bare declaration and nothing that uses it. A
-  compile failure is not red evidence.
+  and counters in commits 8 and 9), the red tree carries the bare declaration and nothing that uses it. For a
+  `ProfileEvent` that is its `M(...)` registration in `ProfileEvents.cpp` with no increment. A new `Authority`
+  value comes with its fixture behaviour, because it is test code. A compile failure is not red evidence.
 - **Mutation checks** (F2 and the group G guards of the licence spec §8.4) are run uncommitted. Their logs go
   to the same directory.
 - **`LOGICAL_ERROR` expectations** are death tests under `DEBUG_OR_SANITIZER_BUILD`.
