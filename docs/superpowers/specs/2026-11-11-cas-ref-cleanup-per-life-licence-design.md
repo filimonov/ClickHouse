@@ -323,6 +323,11 @@ is not committed.
 
 G1, G2 and B1 need `A` to sort before `B`: the pass walks namespaces in name order.
 
+G1's mutation is caught only by the counter assertions of [§8.5](#tests-counters) (C3 plus
+`CASRefCleanupNamespacesSkipped` = 0). With the lease stop scoped to one namespace, every later namespace
+re-reads the moved lease and is skipped too, so the kept and deleted keys are the same. Observed at the
+licence commit: the mutation left G1 green on key presence and `deleteCount` alone.
+
 G2 injects the alias from the race backend, not from the post-hot-scan hook. The namespace janitor re-reads
 the catalog before cleanup and throws on ambiguity, so a hook-placed alias would pass with cleanup's own check
 removed.
@@ -335,7 +340,7 @@ Written red before the counters exist; asserted inside the tests above.
 |---|---|---|
 | C1 | `CASRefCleanupChunksUnderCatalogChange` = 2 (chunk size 1), `CASRefCleanupNamespacesSkipped` = 0 | A1 |
 | C2 | `CASRefCleanupNamespacesSkipped` = 1 | B1, B2 |
-| C3 | `CASRefCleanupStoppedLeaseMoved` = 1 | G1 |
+| C3 | `CASRefCleanupStoppedLeaseMoved` = 1, `CASRefCleanupNamespacesSkipped` = 0 | G1 |
 | C4 | `CASRefCleanupStoppedAuthorityUnverified` = 1 | G2 |
 | C5 | `CASRefCleanupObjectsPlanned` = 4, `CASRefCleanupObjectsDeleted` = 3 | B1 |
 | C6 | phase row `ref_object_cleanup` carries the six new metrics with the same values | B1 |
