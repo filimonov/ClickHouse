@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-11 10:37'
+updated_date: '2026-11-11 11:30'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -19,7 +19,6 @@ labels:
 milestone: m-1
 dependencies:
   - CAS-29.7
-  - CAS-29.6
   - CAS-449
 references:
   - >-
@@ -80,4 +79,6 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-079')
 
 2026-11-11 spec review round 4 (codex gpt-6-astra, high, read-only; log tmp/cas298/spec_review_r4.log): VERDICT NO MAJOR, no findings. Trajectory by round: 3 MAJOR + 1 MINOR, 0, 1 MAJOR + 1 MINOR, 0. Round 4 confirms: the CAS-449 interleaving is reachable and nothing excludes it; minting the incarnation inside the inserting mutation removes the production reuse path; a row seen `Live` in a fold cut is erased only by the pre-fold drain of a later GC invocation, after that invocation's `++lease.seq`, so an equal-by-value returning row cannot pass the lease term; exposure under incarnation reuse is at most the one already licensed chunk for the old and the new licence alike; mixed-version rollout order of the spec stands. Unverified by the reviewer: a runtime reproduction of CAS-449.
 Scratch TLC experiment (not committed, tmp/cas298/erase_epoch): `Erase` gated on a later round (`phase = idle` or `leaseMoved`) plus invariant 'the named life is intact unless some delete ran after the lease moved'. With incarnation reuse on: gated erase is green for the new licence (271605 states), the old licence (138946) and the lease term alone (291547); ungated erase violates it for the new and the old licence; dropping the lease term violates `DeposedLeaderDeletesAtMostOneChunk`. Reading: the committed model's `Erase` is more permissive than the code, and the reuse counterexample of `sab_reuseincarnation` needs an erase inside the cleaner's own round, which the code does not do. Open proposal for the owner, not applied to the spec: state the erase-epoch happens-before in section 5.4, gate `Erase` in the model, and reclassify CAS-449 from prerequisite to independent defect.
+
+2026-11-11 owner decision: the dependency on CAS-29.6 is removed. The spec (docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md, Non-goals) states the licence change does not depend on cleanup listing its own range. Delivery: one pull request on top of PR 2805 with one commit series per story: CAS-368 + CAS-449, CAS-366, CAS-448, CAS-29.8 + CAS-29.7.
 <!-- SECTION:NOTES:END -->
