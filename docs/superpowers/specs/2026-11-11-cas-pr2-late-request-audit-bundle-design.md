@@ -257,7 +257,7 @@ Suite `CASMountSlotOwnership` in `src/Disks/tests/gtest_cas_mount.cpp` (commit 2
 | B2 | `HoldsTheInFlightAttemptBody` | yes |
 | B3 | `DoesNotHoldAForeignUuidOrEpoch` | no, guards the stub's opposite |
 | B4 | `DoesNotHoldAGcFencedOrFarewelledBody` | no |
-| B5 | `DoesNotHoldTheAttemptBodyAfterTheAttemptEnded` | no |
+| B5 | `DoesNotHoldTheAttemptBodyAfterTheAttemptEnded` | yes: it asserts `holds` is true before `attemptEnded`, which the stub fails |
 | B6 | `RenewerRecordsItsStartAndEveryCommittedRenewal`: a real `MountLeaseRenewer` over the in-memory backend; `holds` is true for the slot after `start` and after each renewal | yes |
 
 Suite `CASConfirmExactRef` in `src/Disks/tests/gtest_cas_confirm_exact_ref.cpp` (commit 3):
@@ -355,9 +355,10 @@ every exception leave it set.
 
 - A warning when the flag is set: ``CAS namespace '{}': the outcome of its Live -> Removing catalog write is
   unknown; writes stay refused until a retried removal completes or the disk is remounted``.
-- The two refusals of positive ref mutations (`"CAS namespace '{}' is Removing: positive ref mutation
+- The three refusals of positive ref mutations (`"CAS namespace '{}' is Removing: positive ref mutation
   admission is closed while ..."`) say "a removal write may still land" instead of "is Removing" when the
-  flag is set. The row can still be `Live` in that state.
+  flag is set. The row can still be `Live` in that state. `namespaceLife` is the first refusal a public
+  mutation reaches; the other two are in `appendRefOpsOnRuntime`.
 
 **The trade.** A drop whose write did not land, but whose outcome was unknown, leaves the table refusing
 writes until `DROP` is retried or the disk is remounted. Before this story the table reopened. The story
@@ -368,8 +369,9 @@ link to the failed `DROP`.
 open. A retried removal that reaches `Transitioned` or `AlreadyRemoving` finishes the drop. A retried removal
 that fails leaves the lane closed.
 
-Test hook: `setRemovalAttemptHookForTest` on `Pool` and `CasRefLedger`, called once per attempt after the
-attempt flag is taken.
+Test hook: `setRemovalAttemptHookForTest` on `Pool` and `CasRefLedger`, called once per attempt that closed
+and drained the lane, before the attempt's catalog read. An attempt that returns earlier (the stream already
+holds its terminal transaction) does not call it.
 
 ### 5.3 Tests {#story-c-tests}
 
