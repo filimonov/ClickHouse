@@ -14,7 +14,8 @@ doc_type: 'reference'
 - Amends: `docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md`, section B3.
 - Code facts are at `3fa3a01203b` (head of PR [#2805](https://github.com/Altinity/ClickHouse/pull/2805)).
   `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
-- Not part of PR #2805. Work starts after #2805 merges into `antalya-26.8`.
+- Not part of PR #2805. Delivered as story D of one pull request on top of #2805's head; stories, commit
+  order, gates and measurements are in `docs/superpowers/specs/2026-11-11-cas-pr1-ref-cleanup-bundle-design.md`.
 
 ## 1. Decision {#decision}
 
@@ -32,7 +33,7 @@ doc_type: 'reference'
   target only. The life, the cursor, the checkpoint and the listing still come from the fold.
 - **Four stop-reason counters and a planned counter are added** ([§6](#observability)). This closes CAS-29.7.
 - **`fsck` gets the `_ckpt` revalidation on its tail walk** (CAS-448, [§7](#fsck-tail-walk)), as a separate
-  change that lands first.
+  commit that precedes the licence commit.
 - **No existing TLA+ model changes** ([§9](#tla-impact)). A new model of the licence,
   `CaRefCleanupLicenceCore`, is written and checked. Its result: dropping the whole-catalog condition removes
   no data protection.
@@ -241,7 +242,7 @@ namespace is skipped, not that cleanup stopped.
   records `Unchecked` when its etag moved.
 - **Change:** an absent tail id gets the same revalidation. `_ckpt` changed, absent or unreadable: `Unchecked`.
   `_ckpt` unchanged: chain-broken, as today.
-- It is correct without the licence change, so it lands first, as its own pull request.
+- It is correct without the licence change, so its commit precedes the licence commit in the same pull request.
 - It must be in every release that contains the licence change.
 
 ## 8. Tests {#tests}
@@ -428,15 +429,16 @@ fold's in-memory cut.
 
 | Step | Content | Base | Depends on |
 |---|---|---|---|
-| 0 | CAS-449: one incarnation per inserting admission attempt, with its gtest | `antalya-26.8` after #2805 merges | nothing |
-| 1 | CAS-448: `fsck` tail walk, tests F1 and F2 | `antalya-26.8` after #2805 merges | nothing |
+| 0 | CAS-449 with CAS-368: one incarnation per inserting admission attempt, with its gtests | head of #2805 | nothing |
+| 1 | CAS-448: `fsck` tail walk, tests F1 and F2 | head of #2805 | nothing |
 | 2 | `CaRefCleanupLicenceCore` model and its result note ([§9](#tla-impact)); written and run on 2026-11-11 | docs branch | nothing |
-| 3 | CAS-29.8 with CAS-29.7: licence, refusal scope, counters, tests A, B, G, C, user docs | `antalya-26.8` after #2805 merges | step 0 merged; step 1 merged or in the same release |
+| 3 | CAS-29.8 with CAS-29.7: licence, refusal scope, counters, tests A, B, G, C, user docs | head of #2805 | steps 0 and 1 earlier in the same commit series |
 
-- One pull request per step, each targeting `antalya-26.8`. None goes into #2805.
+- Steps 0, 1 and 3 are commit series of one pull request based on the head of #2805. It also carries CAS-366
+  between steps 0 and 1. None of it goes into #2805. Layout: `docs/superpowers/specs/2026-11-11-cas-pr1-ref-cleanup-bundle-design.md`, §8.
 - No backport to `antalya-26.6` (owner decision, 2026-11-11). The condition exists there since `a840c03b425` and stays.
-- Gates on the exact pushed tree: `CAS*` gtests through `utils/cas-gate`, the ASan lane for the touched
-  suites, the lane check of [§8.6](#tests-lane) for step 3.
+- Gates on the exact pushed tree: `unit_tests_dbms --gtest_filter='CAS*'` in a release and an ASan build (the
+  26.8 tree has no `utils/cas-gate`), the lane check of [§8.6](#tests-lane) for step 3.
 - Pull request bodies tick the CAS regression job.
 - Compatibility: no format change. A mixed-version pool is safe: every version already deletes the same keys
   whenever the catalog is still. Downgrade restores the old refusal and nothing else.
@@ -480,8 +482,8 @@ so equality pins the leader and the seal.
   change does not bear on it.
 - No product code and no test of this spec was run. The model suite ran ([§9](#tla-impact)). The lane check
   is the first measurement.
-- Incarnation reuse across admission retries (CAS-449) is open in the code this spec builds on. Step 3 does
-  not start before step 0 merges.
+- Incarnation reuse across admission retries (CAS-449) is open in the code this spec builds on. Step 0's
+  commits precede step 3's in the pull request.
 
 **Calls made in this spec** (not decided by the owner; strike any of them):
 
@@ -492,7 +494,7 @@ so equality pins the leader and the seal.
 | K3 | Two pass-stop counters, not one | A moved lease is routine on deposition; an unverifiable or ambiguous catalog is an alert |
 | K4 | No setting to restore the old condition | It would be a fallback path with no user |
 | K5 | The fresh catalog read stays per chunk, as today | It bounds work on a changed row to one chunk ([§5.4](#why-row-and-life)). It is not needed for data safety. Cost: one catalog `GET` per chunk, not measured |
-| K6 | CAS-448 is its own pull request and lands first | It is correct on its own and removes the one false verdict before cleanup becomes frequent |
+| K6 | CAS-448 is its own commit and precedes the licence commit | It is correct on its own and removes the one false verdict before cleanup becomes frequent |
 | K7 | An erased own row is a namespace skip, not a pass stop | Its keys are dead-life debris for the janitor; other namespaces are unaffected |
 
 ## 14. Decisions for the owner {#owner-decisions}
