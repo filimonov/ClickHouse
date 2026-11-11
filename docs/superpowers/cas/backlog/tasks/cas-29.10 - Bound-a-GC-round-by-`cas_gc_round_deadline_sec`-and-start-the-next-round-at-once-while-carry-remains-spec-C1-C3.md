@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-11-11 23:41'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -75,4 +75,6 @@ Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure (classes A, C) and #
 First recorded: 2026-08-04 (9c1f6e8a741, by 'gc-budgets-need-a-deadline')
 
 2026-10-13: CAS-358 adds the fold's owned-set seed walk (spec §4.3) as a cut family: check remaining() before each life's seed, discard a cut seed whole, keep max_seed_ops as the per-round ceiling.
+
+2026-11-12 defaults review: evidence for the deadline as the only bound that works at overload: with the count budgets at 0 and 81 INSERT/s into one table, rounds were 40, 133, 319, 244 (aborted: LIST of cas/manifests/ gave up at the 90 s window) and 1129 s (`gcD_H_i60_b0`); with the budgets, 29, 98, 177, 342 s and growing (`gcD_H_i60`). Neither keeps up; a long round also delays the dead-member fence, which runs at round start. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->

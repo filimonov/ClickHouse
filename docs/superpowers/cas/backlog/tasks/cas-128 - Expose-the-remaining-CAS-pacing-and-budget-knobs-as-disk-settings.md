@@ -4,7 +4,7 @@ title: Expose the remaining CAS pacing and budget knobs as disk settings
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-11 23:41'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -59,4 +59,6 @@ Provenance: BACKLOG/operability-and-introspection.md#pool-pacing-knobs-no-config
 First recorded: 2026-08-21 (2583e3427aa, by 'pool-pacing-knobs-no-config-surface')
 
 2026-10-08: 9b is ready locally (branch `fix/antalya-26.6/cas-operator-budget-contract`): one `CasLeaseThresholds` value drives admission, the mount line and `system.cas_mounts`; synonym `cas_mount_lease_ms`; derivation printed at mount. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
+
+2026-11-12 defaults review: `snapshot_log_count_threshold` (256) now has a measured pool-wide effect: it sets the number of ref-log keys every GC round lists per table (see the CAS-29.1 note of today). Expose it; do not change the value before CAS-29.1. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->

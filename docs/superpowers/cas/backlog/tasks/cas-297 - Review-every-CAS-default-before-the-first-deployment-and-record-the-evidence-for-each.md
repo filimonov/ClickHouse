@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 13:00'
+updated_date: '2026-11-11 23:41'
 labels:
   - 'area:mounts'
   - 'area:gc'
@@ -72,4 +72,6 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 Identifier trace: the earliest docs mention of `mount_lease_ttl_ms` is 2026-07-02 (cacba14492b); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 
 2026-11-11 defaults review: the per-setting table exists (32 disk settings, the server pool setting, timing and GC constants), from 66 stand runs and otel.demo data. Proposed: `cas_mount_lease_ttl_ms` 30000 -> 120000 with the renew period kept at 10000; `cas_gc_round_graduation_budget`, `cas_gc_round_redelete_budget`, `cas_gc_round_ref_cleanup_budget` 5000 -> 0; everything else kept with a reason each. Not settled by evidence: `cas_part_folder_cache_bytes` (0.5 MiB of 64 MiB used on otel.demo at 89 % hits; wait for CAS-22) and `cas_manifest_decode_cache_bytes` (full, no hit counters; CAS-452). AC #1 is met by the report; AC #2 and #3 need the owner's decision and a code branch. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
+
+2026-11-12 defaults review: v2 of the report after direct (no proxy) reruns and the many-tables and table-churn scenarios the owner added (107 runs in all). Five default changes proposed: `cas_mount_lease_ttl_ms` 120000 and the four count budgets (graduation, redelete, ref_cleanup, outcome_entry) to 0; 27 settings kept with a reason each. Stand artefact found and stated in the report: the Python fault proxy caps throughput at about 17 INSERT/s and inflated every latency and GC-cost figure of the first version; fault results (error counts, lease behaviour) are not affected. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
