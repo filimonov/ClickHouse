@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-11 06:48'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -21,8 +21,8 @@ dependencies:
   - CAS-29.7
   - CAS-29.6
 references:
-  - CA/Gc/CasGc.cpp
-  - docs/superpowers/cas/2031-triage.md#cas-079
+  - >-
+    docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md
 documentation:
   - >-
     docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md#b3-cleanup-licence
@@ -52,7 +52,7 @@ Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag (plan step 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A written adjudication answers whether the fold seal or this life's coverage depends on the rest of the cut, reviewed to no MAJOR
+- [x] #1 A written adjudication answers whether the fold seal or this life's coverage depends on the rest of the cut, reviewed to no MAJOR
 - [ ] #2 A CREATE of an unrelated table between fold and cleanup no longer refuses the pass
 - [ ] #3 A changed row or life of the cleaned namespace refuses that namespace only; a moved `gc/state` owner or seq refuses everything
 - [ ] #4 On the ca-s3 lane, refusals whose row and life were unchanged are zero
@@ -72,4 +72,6 @@ Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag (plan step 
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-079')
 
 2031-triage CAS-079: label added; the audit ranks CAS-079 #3 in 'Where to start'.
+
+2026-11-11 adjudication done (AC #1): docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md, code read at 3fa3a01203b (antalya-26.8-pr-2159). ca-arch verdict, then codex gpt-6-astra review: round 1 not sound (0 CRITICAL, 4 MAJOR overclaims: reader safety under a stale `_ckpt`, durable-only eligibility, reader inventory, a non-discriminating alias test), round 2 sound with tightenings (0 CRITICAL, 0 MAJOR, 3 MINOR, applied). Neither round found a data-loss interleaving against the relaxation. Verdict: drop condition 1 (whole-catalog etag) from `authorityHolds`; keep row equality, `life_index.resolve` + `throwIfAmbiguous`, and `gc/state` lease owner + seq. A row or life mismatch skips that namespace and the pass continues; lease moved, `gc/state` absent, catalog read failure or an ambiguous index stop the pass. Keep the fold's cut as the reference observation: resolving the life from a fresh cut is unsafe before B2 because `folded.ref_tables` is keyed by name and ids restart per life. So this change does NOT depend on CAS-29.6; the description's 'fresh catalog cut at phase start' is permitted only as a comparison target. The description's 'Rejected: relaxing the etag check directly' is superseded by this adjudication: the etag term adds no protection beyond conditions 2-4 because no reader of a life's `_log`/`_snap` takes another namespace's row as input. Tests: retarget `CatalogTokenMoveBeforeFirstChunkRefusesEveryRefObjectDelete` and `CatalogTokenMoveBetweenChunksAllowsFirstAndRefusesSecondDelete`; 8 new tests listed in the report (the aliasing test must inject during a cleanup chunk, not from the post-hot-scan hook, or the fold's orphan sweep throws first). Not claimed: safety of a reader holding an older `_ckpt`. That race is independent of the catalog and exists today; it becomes routine once cleanup runs. Its one wrong outcome is the fsck tail walk (CAS-448). Measurement gate ('proceed only if etag-only refusals dominate'): CAS-447 shows 0 deletes in 3 h on PR 2794 shard 2/2 and 46/46 stopped passes locally; CAS-29.7 counters land with the code change. No code written yet.
 <!-- SECTION:NOTES:END -->

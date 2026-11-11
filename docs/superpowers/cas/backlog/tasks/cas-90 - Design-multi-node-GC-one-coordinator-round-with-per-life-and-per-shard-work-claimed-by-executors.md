@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-11 06:48'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -62,4 +62,6 @@ Provenance: BACKLOG/gc.md [distributed gc_shards>1 parallel GC] (u01's pointer b
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'distributed gc_shards>1 parallel GC')
+
+2026-11-11 from the CAS-29.8 adjudication (docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md, Q3): the per-chunk cleanup licence is evaluable from durable state once the executor is handed the round's (`lease.owner`, `lease.seq`). Round eligibility is not: `suppress_destructive` (anomalies, carried holds, incomplete frontier) is computed in memory by the fold and is not in `CasFoldSeal`. The coordinator must issue cleanup work only for eligible rounds or carry the flag in the claim. Ordering: cleanup of a life runs after the round's `gc/state` CAS and after every pre-CAS protection walk that starts at the parent cursor.
 <!-- SECTION:NOTES:END -->
