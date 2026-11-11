@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-11 13:00'
 labels:
   - 'area:lease'
   - 'area:ux'
@@ -46,3 +46,9 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 1); PR https://github.c
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11 defaults review: reproduced on the stand: every PUT delayed 6 s for 60 s gives 58 INSERT errors from 16 s at 30/10 (`def_slowput6`) and none at 120/40 or 120/10 (`l120_slowput6`, `rec_slowput6`); a 3 s delay gives none at 30/10. The 4 s slack is the cause; a 120 s lease with a 10 s renew period makes the slack 94 s. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
+<!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:47'
+updated_date: '2026-11-11 13:00'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -77,4 +77,6 @@ Ruled out: the 09-21 `url()` access change, S3 errors (upload error rate ~0.03%)
 Stand mitigation until this ships: set `cas_gc_round_ref_cleanup_budget`, `cas_gc_round_graduation_budget` and `cas_gc_round_redelete_budget` to 0 or ~100000 in the disk config and restart, since pool config is read at mount. Expect several long catch-up rounds before the LIST shrinks.
 CAS-29.6 AC#4 asks for `objects_deleted` and `objects_pending` on the `ref_object_cleanup` phase row; the source also asks for `budget_exhausted`, which only `namespaces_planned` exists beside today (`CA/Gc/CasGc.cpp:1186`).
 Source: utils/ca-soak/scenarios/BACKLOG.md:3510 (uncommitted). Related owners: CAS-29.10 (deadline), CAS-29.1 (per-life probe instead of the LIST), CAS-1.3 (`pending_reclaim` is process-local and resets on restart; the 520k from the log is the durable figure).
+
+2026-11-11 defaults review: stand reproduction of a budget-bound backlog: at a 900 s interval the graduation budget passed exactly 5000 per round at a moderate load (`gcM_i900`: 10000 of 24204 condemned) and at a heavy one (`gcH_i900`: 5000 of 38276, 0 deleted, 109584 unreachable objects after 76 min); with the three budgets at 0 the same round graduated 15174 and took 1201 s instead of 1085 s (`gcH_i900_b0`). At the default 60 s interval and 9 INSERT/s the last round redeleted 4040, one fifth under the cap (`gcH_i60_long`). Recommendation: default the three budgets to 0 now, without waiting for CAS-29.10. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->

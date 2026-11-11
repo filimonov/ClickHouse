@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-11 13:00'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -65,4 +65,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#mount-lease-budget-derived-timeout; 
 First recorded: 2026-09-26 (43b3a043935, by 'mount-lease-budget-derived-timeout')
 
 2026-10-08: 9b (branch `fix/antalya-26.6/cas-operator-budget-contract`) prints the derivation at mount; the connect-cap clamp is not in it. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
+
+2026-11-11 defaults review: a larger attempt timeout makes outages worse through the reserve: 10 s instead of 5 s at 120/40 moved the first INSERT error from 84 s to 77 s and raised the count from 39 to 51 (`l120_att10_hang90`); 3 s at 30/10 changed nothing visible (`def_att3_hang30`). otel.demo: 14.7M PUTs in 7 days, max 3.1 s, none over 5 s. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->

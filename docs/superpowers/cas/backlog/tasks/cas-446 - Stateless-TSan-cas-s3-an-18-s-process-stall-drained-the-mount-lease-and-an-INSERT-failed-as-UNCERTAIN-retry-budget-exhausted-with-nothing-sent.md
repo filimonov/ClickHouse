@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:56'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-11 13:00'
 labels:
   - 'area:write-path'
   - 'area:mounts'
@@ -54,3 +54,9 @@ Two defects and one open question:
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-11 defaults review: process-stall runs (`docker pause` of both servers): at 30/10 a 20 s stall costs 4 INSERT and 1 SELECT errors at wake-up; at 120/10 stalls of 20 s and 45 s cost none and 90 s costs 0-1. So the lease default closes the 18 s CI case; the misleading UNCERTAIN text (AC #1) stays. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
+<!-- SECTION:NOTES:END -->

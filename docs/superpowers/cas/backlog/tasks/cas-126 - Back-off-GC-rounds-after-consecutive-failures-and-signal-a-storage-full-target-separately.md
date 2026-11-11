@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-11 13:00'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -58,4 +58,6 @@ Provenance: BACKLOG/operability-and-introspection.md#disk-error-audit-followups-
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `interval` is 2026-06-02 (019f825a59a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-11-11 defaults review: in every 60-120 s outage run one round failed (Aborted) and the next succeeded unaided; at a 60 s interval the plain retry is harmless. Backoff matters only once rounds run back to back (CAS-29.10). Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
