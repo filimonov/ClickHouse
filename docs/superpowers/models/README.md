@@ -138,6 +138,7 @@ exact-delete authorization.
 | `CaRefPreFoldDrainCore.tla` | two-GC-actor ordering plus its two-row serial-rescan companion: opaque life id separate from lifecycle state, adopted-parent proof, conclusive identity-exact catalog drain, completed hot LIST, ONE fresh authoritative cut, life-id ref-plan intake, then fold/`REBUILD`/`DEFER`; red-controls consequential stale-cut omission, absent-listed debris deferral, predecessor-proof deletion of successor `Removing`, stale row and stale token independently; witness adopts successor `Removing` while an old request conflicts and predecessor bytes remain LIST-visible; damaged-state `REBUILD` restores authority without deleting catalog rows | CURRENT (amended 2026-08-01; sole owner of cross-object removal order, post-LIST cut provenance, identity-exact admission/deletion and inert-debris classification) | `run_prefold_drain.sh` |
 | `CaRefFoldClampRecoveryCore.tla` | recoverable fold clamp plus neutral orphan nomination adopted before exact delete | CURRENT (Task 8A extension 2026-08-02) | `run_foldclamp.sh` |
 | `CaRefNsCleanupStaleLeaderCore.tla` | perpetual janitor: a LIST page captures an exact physical life id, and a delayed delete never re-derives its target from a reborn logical name | CURRENT (re-scoped 2026-08-01; gates the ref-chain implementation) | `run_nscleanup_staleleader.sh` |
+| `CaRefCleanupLicenceCore.tla` | per-chunk licence of covered ref-log and snapshot cleanup: data safety rests on the plan bounds, fold-time keys and never-reused incarnations; the lease term and the row comparison bound stale work to one licensed chunk; the whole-catalog etag term adds no safety and stops cleanup after any catalog write | CURRENT (added 2026-11-11; gates the CAS-29.8 licence change) | `run_refcleanuplicence.sh` |
 | `CaNamespaceJanitorCursorCore.tla` | perpetual janitor cursor liveness: a suppressed DEFER page retains its cursor, so alternating DEFER/fold rounds cannot phase-lock a dead page out of authorized cleanup | CURRENT (Step 8 scheduling gate) | `run_namespace_janitor_cursor.sh` |
 | `CaRefWriterCleanupCore.tla` | writer ownership lifecycle plus unresolved-grant duty queue and retirement guard | CURRENT (Task 8A extension 2026-08-02) | `run_refwcleanup.sh` |
 | `CaRelinkConfirmCore.tla` | publish-then-confirm relink: gate 1 (exact-`ManifestRef` equality, ref-scoped mutation refusal (the mutation's `MutationScope`), poison, mount fence) and the publish-before-confirm order, each proven load-bearing — **plus the finding that the theorem is violable independently of the protocol under an honest fold cursor** | CURRENT (gates unlanded Part B; `_main` is CONDITIONAL on `LIST` completeness) | `run_relinkconfirm.sh` |
@@ -362,6 +363,15 @@ ordered scan and cleanup deletes only what it observed durable. The migration is
   capture are independently load-bearing: `_sab_noincarnation` and `_sab_rederive` each delete live
   successor data. Pre-fold catalog ordering is out of scope here and belongs to
   `CaRefPreFoldDrainCore`; local catalog deletion proof belongs to `CaRefCatalogCore`.
+- **`CaRefCleanupLicenceCore.tla`** — the per-chunk licence of `Gc::cleanupRefObjects` (covered ref logs
+  and snapshots of a named life). One name, several lives, `Check` and `Delete` as separate steps.
+  `NamedLifeIntact` holds with the row, life and lease terms and also with no term (`_datafloor`); it
+  breaks when the delete resolves the name again (`_sab_rederive`) or when an incarnation is reused, with
+  or without the whole-catalog etag term (`_sab_reuseincarnation`, `_old_reuseincarnation`). The lease
+  term and the row comparison each bound stale work to the chunk already licensed (`_sab_nolease`,
+  `_sab_norow`). The whole-catalog term never licenses a chunk after a catalog write
+  (`_old_churnblocked`); the per-life licence does (`_witness_churnprogress`). An ambiguous catalog and
+  the refusal scope are out of scope. Results: `CaRefCleanupLicenceCore_RESULTS.md`.
 - **`CaRefWriterCleanupCore.tla`** — the writer-side ownership lifecycle for one table: a build
   precommits (owns its precommit record), promote atomically removes the precommit and installs
   the committed owner, gated on the current epoch; failed builds are cleaned in the order

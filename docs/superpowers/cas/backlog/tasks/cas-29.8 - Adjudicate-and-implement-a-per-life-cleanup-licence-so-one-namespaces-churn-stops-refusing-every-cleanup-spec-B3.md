@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-11 06:48'
+updated_date: '2026-11-11 07:52'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -20,6 +20,7 @@ milestone: m-1
 dependencies:
   - CAS-29.7
   - CAS-29.6
+  - CAS-449
 references:
   - >-
     docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md
@@ -74,4 +75,6 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-079')
 2031-triage CAS-079: label added; the audit ranks CAS-079 #3 in 'Where to start'.
 
 2026-11-11 adjudication done (AC #1): docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md, code read at 3fa3a01203b (antalya-26.8-pr-2159). ca-arch verdict, then codex gpt-6-astra review: round 1 not sound (0 CRITICAL, 4 MAJOR overclaims: reader safety under a stale `_ckpt`, durable-only eligibility, reader inventory, a non-discriminating alias test), round 2 sound with tightenings (0 CRITICAL, 0 MAJOR, 3 MINOR, applied). Neither round found a data-loss interleaving against the relaxation. Verdict: drop condition 1 (whole-catalog etag) from `authorityHolds`; keep row equality, `life_index.resolve` + `throwIfAmbiguous`, and `gc/state` lease owner + seq. A row or life mismatch skips that namespace and the pass continues; lease moved, `gc/state` absent, catalog read failure or an ambiguous index stop the pass. Keep the fold's cut as the reference observation: resolving the life from a fresh cut is unsafe before B2 because `folded.ref_tables` is keyed by name and ids restart per life. So this change does NOT depend on CAS-29.6; the description's 'fresh catalog cut at phase start' is permitted only as a comparison target. The description's 'Rejected: relaxing the etag check directly' is superseded by this adjudication: the etag term adds no protection beyond conditions 2-4 because no reader of a life's `_log`/`_snap` takes another namespace's row as input. Tests: retarget `CatalogTokenMoveBeforeFirstChunkRefusesEveryRefObjectDelete` and `CatalogTokenMoveBetweenChunksAllowsFirstAndRefusesSecondDelete`; 8 new tests listed in the report (the aliasing test must inject during a cleanup chunk, not from the post-hot-scan hook, or the fold's orphan sweep throws first). Not claimed: safety of a reader holding an older `_ckpt`. That race is independent of the catalog and exists today; it becomes routine once cleanup runs. Its one wrong outcome is the fsck tail walk (CAS-448). Measurement gate ('proceed only if etag-only refusals dominate'): CAS-447 shows 0 deletes in 3 h on PR 2794 shard 2/2 and 46/46 stopped passes locally; CAS-29.7 counters land with the code change. No code written yet.
+
+2026-11-11 spec: docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md (draft, not approved by the owner). Model: docs/superpowers/models/CaRefCleanupLicenceCore.tla, results in CaRefCleanupLicenceCore_RESULTS.md (12 configurations, all expectations met, TLC -workers 1). No existing model changes. Owner decisions 2026-11-11: implementation starts after PR 2805 merges into antalya-26.8 and is not part of it; no backport to antalya-26.6; the TLA+ model is added. Spec review (codex, 3 rounds): round 3 ended with 1 MAJOR, the incarnation-freshness premise is not guaranteed across admission retries of createNamespace. Folded into the spec as a stated gap and tracked as CAS-449, which is delivery step 0 and a prerequisite of the licence change. The corrected text has not had a fresh review round.
 <!-- SECTION:NOTES:END -->

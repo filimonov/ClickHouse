@@ -121,6 +121,8 @@ Design hypothesis, to be adjudicated and not assumed: the cleanup takes its own 
 
 Order, as the backlog prescribes and this spec keeps: (0) estimate from run-8 data; (1) one local run with the stop reason split into ProfileEvents (`etag only, row and life unchanged` / `row or life changed` / `gc/state absent or moved`) plus the planned-but-undeleted count per round; (2) if etag-only dominates, ca-arch adjudication with the code and the author's "same complete observation" comment, then codex review capped at three rounds; (3) code. Relaxing the etag comparison directly is not allowed at any step.
 
+**Amended 2026-11-11.** Step 2 is done: `docs/superpowers/reports/2026-11-11-cas-29.8-ref-cleanup-licence-adjudication.md`. Its verdict replaces two statements above. The cleanup does not take a fresh catalog cut as its reference: the fold's cut stays the reference and a fresh read is a comparison target only, because the plan is keyed by name until B2. The whole-catalog etag comparison is dropped directly; the row, life and lease conditions stay. The change does not depend on B2. Design: `docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md`.
+
 ### B4. Dead-life debris belongs to the janitor {#b4-janitor}
 
 The janitor already LISTs `namespaceRootPrefix()` itself, one page per round, and removes dead-life objects one HEAD + one exact `remove` at a time. Two changes, both from the janitor brainstorm's revised order:

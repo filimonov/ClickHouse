@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 05:43'
+updated_date: '2026-11-11 07:52'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,4 +68,6 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 Identifier trace: the earliest docs mention of `cleanupRefObjects` is 2026-07-12 (d372bf410d4); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 
 2026-11-11 (CAS-447): CI evidence without the step-1 counters: on PR 2794 shard 2/2 CASRefCleanupObjectsDeleted stayed 0 for 3 h while CASRefCheckpointPublished ran ~20k/20 min; the local cas-s3 lane log has 46 'catalog observation/life moved' stops and no other stop reason in 30 min; the lane writes the catalog 2.3-3.5 times/s. Etag-only refusals dominate; step 2 (CAS-29.8) is justified by this data.
+
+2026-11-11 spec: docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md (draft, not approved by the owner). Model: docs/superpowers/models/CaRefCleanupLicenceCore.tla, results in CaRefCleanupLicenceCore_RESULTS.md (12 configurations, all expectations met, TLC -workers 1). No existing model changes. Owner decisions 2026-11-11: implementation starts after PR 2805 merges into antalya-26.8 and is not part of it; no backport to antalya-26.6; the TLA+ model is added. Spec review (codex, 3 rounds): round 3 ended with 1 MAJOR, the incarnation-freshness premise is not guaranteed across admission retries of createNamespace. Folded into the spec as a stated gap and tracked as CAS-449, which is delivery step 0 and a prerequisite of the licence change. The corrected text has not had a fresh review round.
 <!-- SECTION:NOTES:END -->
