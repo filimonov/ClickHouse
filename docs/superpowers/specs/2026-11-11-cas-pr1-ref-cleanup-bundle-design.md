@@ -131,11 +131,13 @@ S8 drives the CAS-449 interleaving:
    returns or throws, so after a landed write and before the settle read.
 2. The test arms `injectAmbiguousLandedWrite(catalog_key)` and calls `createA`.
 3. `after_write`, acting as `other`: reads the catalog; takes the `Creating` row of `a` (incarnation `I1`);
-   calls `completeCreation` and `beginRemoving` on it; erases the row with `casUpdate`. The `casUpdate`
-   stands for the fold-authorized `deleteCompletedRemoving`, which needs a fold seal with cleanup evidence.
-   Step 1 reads only the catalog body, so the stand-in is exact for the code under test.
+   calls `completeCreation` and `beginRemoving` on it; erases the row with `deleteCompletedRemoving`.
+   The fold seal with cleanup evidence for `I1` is built as in
+   `CASRefCatalog.AStaleHintCreateNamespaceStep1AdmitsANewIncarnation` (`gtest_cas_ref_catalog.cpp:2255`).
+   `casUpdate` cannot erase a row: `identityPreserving` rejects a changed row count.
 4. Expect: `createA` succeeds; the final row of `a` is `Live` with an incarnation other than `I1`;
-   `step1Incarnations` are pairwise distinct; `_ckpt` exists under the second life.
+   `step1Incarnations` are pairwise distinct; `_ckpt` exists under the key of the second incarnation.
+   The sibling already wrote the `_ckpt` of `I1`, so the assertion names the second life's key.
 
 At the base the retry inserts `I1` again and expectation 4 fails.
 
@@ -180,8 +182,8 @@ conflicts with the base only in `CA/Pool/CasRefLedger.cpp`, where PR 2577 rework
 | `f.writer_epoch < d.committed_through.writer_epoch`, and `f` is not below a durable seal of its own epoch | `Superseded` |
 | otherwise | no refusal |
 
-- **`CkptPublishOutcome` gains two values** (`CA/Pool/CasRefCkpt.h`): `SuccessorSeal` (conclusive; no write
-  was sent) and `Superseded` (unresolved; callers handle it like `FencedOut`).
+- **`CkptPublishOutcome` gains two values** (`CA/Pool/CasRefCkpt.h`): `SuccessorSeal` (conclusive: the
+  contribution is not in history, and no further write follows the refusal) and `Superseded` (unresolved; callers handle it like `FencedOut`).
 - **`ckptContributionRecorded(outcome)`** is true only for `Published` and `IdenticalSkip`. Callers that
   only need "did my contribution become durable" use it: two sites in `runRecoveryWalkOnce`, the birth
   contribution in `commitRefChunk`, `tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl`, and step 2 of
@@ -190,17 +192,20 @@ conflicts with the base only in `CA/Pool/CasRefLedger.cpp`, where PR 2577 rework
   does. `Superseded` behaves like `FencedOut`: `StillWedged`, a retry-later error, `requireRecovery`.
 - **`commitRefChunk`**, after frontier publication: `SuccessorSeal` rejects the append
   (`CASRefAppendSealRejected`, lane `Closed`, `INVALID_STATE`), exactly as the existing
-  `Occupant::SuccessorSeal` arm (`:3895`). `Superseded` calls `requireRecovery` and fails as durable but
-  unconfirmed.
+  `Occupant::SuccessorSeal` arm (`:3895`). `Superseded` calls `requireRecovery` and fails the waiters with
+  an unknown outcome.
 - **New `ProfileEvent` `CASRefCheckpointFrontierRefused`**, incremented in `publishCkptContribution` for both
   new outcomes. One row in `docs/en/antalya/metrics_and_events.md`.
 
 Port decisions, where the base differs from the draft's base:
 
-- **Messages use the PR 2577 form.** `resolveWedgeOnce` on `Superseded`: "... wedged txn {}-{} is durable but
-  was not acknowledged (a later epoch moved past it before checkpoint-frontier publication; the lane needs
-  recovery): {`durable_unconfirmed_tail`}". `commitRefChunk` on `Superseded`:
-  `fail_durable_unconfirmed({ErrorCodes::NETWORK_ERROR, "a later epoch moved past it before the frontier was published"})`.
+- **Messages use the PR 2577 form, and `Superseded` never promises installation.** `Superseded` cannot
+  tell whether the transaction entered history, so its messages use the unknown-outcome helpers, not the
+  durable-unconfirmed ones (those say "the next ref-log recovery installs it").
+  `resolveWedgeOnce` on `Superseded`: "... wedged txn {}-{} is durable but was not acknowledged (a later
+  epoch moved past it before checkpoint-frontier publication; the lane needs recovery):
+  {`outcome_unknown_tail`}". `commitRefChunk` on `Superseded`:
+  `complete_error(chunk_survivors, outcome_unknown(ErrorCodes::NETWORK_ERROR, "a later epoch moved past it before the frontier was published"))`.
 - **The `SuccessorSeal` lane-closing arm exists once.** A preceding commit moves the body of the existing
   arm into a local lambda in `commitRefChunk`. The fix commit calls it from the new arm.
 - **A frontier two or more epochs behind is `Superseded`,** not `CORRUPTED_DATA` (draft decision, kept).
@@ -255,7 +260,9 @@ Tests, `src/Disks/tests/gtest_cas_fsck.cpp`, suite `CASFsckAuthority` (licence s
 ## 6. Story D: per-life ref cleanup licence and counters (CAS-29.8, CAS-29.7) {#story-d}
 
 Built exactly as the licence spec says: §5 (behaviour), §6 (observability), §8.2 to §8.5 (test groups A, B,
-G, C), §10 (documentation). Summary for orientation only:
+G, C), §10 (documentation). One split across commits: every assertion on a new counter or phase metric
+lands with the counters ([§8](#commits), commit 9), including the `CASRefCleanupStoppedAuthorityUnverified`
+assertion that the licence spec states inside G2. Summary for orientation only:
 
 - `authorityHolds` in `Gc::cleanupRefObjects` (`CA/Gc/CasGc.cpp:3942`) drops the whole-catalog etag term.
 - A row or life mismatch skips that namespace and its remaining chunks. The pass continues.
@@ -286,8 +293,8 @@ change as this document to say: one pull request, stories as commit series, base
 | 5 | B | Ask `ckptContributionRecorded` where a caller only needs durability | `CasRefCkpt.h`, `CasRefLedger.cpp`, `CasRefCatalog.cpp` | none: with three outcomes it equals `!= FencedOut` |
 | 6 | B | Refuse a `_ckpt` frontier that a later writer epoch moved past | `CasRefCkpt.*`, `CasRefLedger.*`, `CasRefCkptFormat.h`, `ProfileEvents.cpp`, `metrics_and_events.md`, three gtest files | the fix; tests of [§4.3](#story-b-tests) |
 | 7 | C | Revalidate `_ckpt` before `fsck` reports an absent tail log as a broken chain | `CasFsck.cpp`, `gtest_cas_fsck.cpp` | the fix; F1, F2 |
-| 8 | D | License ref cleanup per life instead of by the whole catalog | `CasGc.cpp`, `gtest_cas_ref_gc.cpp` | the licence and the refusal scope; groups A, B, G; comment fix |
-| 9 | D | Count why a ref cleanup pass stopped | `CasGc.cpp`, `ProfileEvents.cpp`, `metrics_and_events.md`, `gtest_cas_ref_gc.cpp`, GC log tests if they list phase metrics | counters and phase metrics; group C |
+| 8 | D | License ref cleanup per life instead of by the whole catalog | `CasGc.cpp`, `gtest_cas_ref_gc.cpp` | the licence and the refusal scope; key assertions of groups A, B, G; comment fix |
+| 9 | D | Count why a ref cleanup pass stopped | `CasGc.cpp`, `ProfileEvents.cpp`, `metrics_and_events.md`, `gtest_cas_ref_gc.cpp`, GC log tests if they list phase metrics | counters and phase metrics; group C and the counter assertion of G2 |
 | 10 | D | Document the per-life ref cleanup licence | `docs/en/antalya/cas/architecture/garbage-collection.md` | docs only |
 
 Rules:
@@ -299,6 +306,10 @@ Rules:
   that is green before its product change is either a guard (listed as such above) or a defect in the test.
 - **S8 red evidence** is taken on the tree of commit 1 plus the test fixtures, before commit 2's product
   hunks are applied.
+- **A red run compiles.** Where a test names a symbol that its product change introduces (the two
+  `CkptPublishOutcome` values and `CASRefCheckpointFrontierRefused` in commit 6, the new `Authority` values
+  and counters in commits 8 and 9), the red tree carries the bare declaration and nothing that uses it. A
+  compile failure is not red evidence.
 - **Mutation checks** (F2 and the group G guards of the licence spec §8.4) are run uncommitted. Their logs go
   to the same directory.
 - **`LOGICAL_ERROR` expectations** are death tests under `DEBUG_OR_SANITIZER_BUILD`.
@@ -351,8 +362,8 @@ R3 and R4 are the control: without churn the catalog is still and the old licenc
 Sampled every 60 s and at the end of each part:
 
 - `CASRefCleanupObjectsDeleted` and, in R2 and R4, the five new counters (`system.events`).
-- Largest and total count of `_log` objects per live namespace (files under `ns/stream/<life>/_log/` in the
-  pool directory).
+- Largest and total count of `_log` objects per live namespace (files under
+  `<pool_prefix>/cas/ns/stream/<incarnation>/_log/` in the object storage directory; `CA/Formats/CasLayout.h:151`).
 - `system.cas_gc_log`: round `duration_ms` (median, p95) and the `ref_object_cleanup` phase row
   (`phase_duration_microseconds`, `phase_metrics`).
 - Count of "catalog observation/life moved" lines in the server log.
@@ -396,7 +407,7 @@ results, the scripts' paths and the raw sample files.
 
 | Criterion | Met by |
 |---|---|
-| CAS-368 #1: a retried step 1 never re-sends identical catalog bytes | S1, S2, S4 |
+| CAS-368 #1: a retried step 1 never re-sends identical catalog bytes | S1, S2, S4, for every retry after an attempt that may have landed. The reissue after a credential refresh (`CasRequests.cpp:1063`) keeps its bytes: the rejected attempt is proven unapplied |
 | CAS-368 #2: model with a catalog value and a late apply | not in scope ([§14](#non-goals)) |
 | CAS-449 #1: a gtest drives the interleaving | S8 |
 | CAS-449 #2: no retry re-inserts an incarnation an earlier attempt wrote | S1, S2, S4, S8 |
@@ -440,7 +451,6 @@ results, the scripts' paths and the raw sample files.
 ## 16. Left to the builder {#builder}
 
 - The exact shape of `after_write` in `CatalogWriteRecorder`.
-- Whether S8 erases the row with `casUpdate` or with `deleteCompletedRemoving`, if a seal fixture is at hand.
 - The name and placement of the lane-close lambda in `commitRefChunk`.
 - The wording of log lines not quoted in this document or in the licence spec.
 - Everything the licence spec §15 leaves open.
