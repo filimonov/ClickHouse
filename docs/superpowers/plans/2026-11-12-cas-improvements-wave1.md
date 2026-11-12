@@ -44,7 +44,9 @@ plan and the spec resolves to the spec).
   - the helpers and gate scripts write their locks, logs and markers under `$M/tmp` and `$P`;
   - briefs, reports and saved logs go to `$P/wave1/`;
   - the integration gate of Task 13 creates and removes its own containers;
-  - the controller commits the measurement report of Task 15 in `M` by exact path.
+  - the controller commits the measurement report of Task 15 in `M` by exact path;
+  - in Task 15 the controller edits `$P/measure/run.sh`, creates `$P/measure/w1_collect.sh`, copies the head
+    binary to `$P/bin/`, and the runs write their output and server state under `$P/measure/runs/<label>/`.
 - **No destructive commands.** Never run `git clean`, `git reset --hard`, `git checkout -- <file>`, `git stash`,
   `git rebase`, `git commit --amend`, `git push`, `git apply --3way`, `git apply --index`. Never delete a build
   directory. Never `kill` or `pkill` by pattern; a hung test binary is stopped by its exact PID.
@@ -132,7 +134,7 @@ Release `CAS*`, base 3005 at `fa1b89d1529`. A different number is a deviation th
 1. **The admission guard and the locks.** A `ColdAdmission` destroyed while `ref_queue_mutex` or a runtime
    `state_mutex` is held self-deadlocks, and a guard from before a remount must not release a slot created after
    it. Owner: Task 2; tests B-4 (every early exit) and case 2 of B-3 (a second admission of the same name
-   started after the remount keeps its slot when the older guard is released).
+   captured after the remount keeps its slot when the older guard is released; red by the epoch mutation).
 2. **The erase give-up path.** After C1 a perpetual conflict must still end at the window deadline with
    `NETWORK_ERROR` and a message naming the deadline, in fewer than 100 attempts, and a pause that crosses the
    deadline must not be followed by another erase write. Owner: Task 3; pin
@@ -273,29 +275,32 @@ Task 2 together. Read spec §4 and `$P/wave1/facts/A-2570.md` lines 85-127.
     the first).
   - B-3 `…ColdAdmissionInFlightKeepsTheRecordAndReleasesIt` (`ParkedAdmissionBackend`). Case 1: while parked,
     slot count 1 and the retirement is recorded; after release the admission is refused and the count is 0.
-    Case 2 (remount): park an admission, call `quiesceRefTablesForRemount`, start a second admission of the same
-    name and park it, release the first; the first is refused and the slot count is still 1 (the slot of the
-    second admission); after the second is released the count is 0.
+    Case 2 (remount) is written in step 4, after the guard exists.
   - B-4 `…AbortedColdAdmissionsReleaseTheirInFlightCount` (pin; cases: reader on an absent row; reader on a
     `Removing` row; writer whose runtime is resident; `namespaceStillLogicallyPresent` on an absent row;
     `dropNamespaceImpl` on a missing row and on an `expected_incarnation` mismatch; an admission whose catalog
     read throws; each ends with the slot count it started with).
   - B-5 `…ColdAdmissionOfAPredecessorIsRefusedAfterItsSuccessorIsEvicted` (pin of the refusal;
     `ParkedAdmissionBackend`, `ref_table_cache_bytes = 1`). Its slot-count line comes in step 5.
-- [ ] **Step 2:** Run `bt.sh t2_red 'CASNsFileIncarnation*'`. Expected red: B-1 with 50, B-2 with 1, B-3 with a
-  slot count of 1 after the refused admission. B-4 and B-5 pass. Copy to `$P/wave1/logs/red_B1.log` and to
+- [ ] **Step 2:** Run `bt.sh t2_red 'CASNsFileIncarnation*'`. Expected red: B-1 with 50, B-2 with 1, case 1 of
+  B-3 with a slot count of 1 after the refused admission. B-4 and B-5 pass. Copy to `$P/wave1/logs/red_B1.log` and to
   `pin_B1_B-4_B-5.log`.
 - [ ] **Step 3:** Implement the guard, the epoch and the rules above.
-- [ ] **Step 4:** If case 2 of B-3 cannot park two admissions through the pool, drive the second one through a
-  ledger-level test seam and name the seam in the report. The assertion stays: a guard of an older epoch
-  releases nothing of a slot created after the remount.
+- [ ] **Step 4:** Add case 2 of B-3 (remount). `ParkedAdmissionBackend` parks one admission only, so the second
+  one goes through a ledger-level test seam that captures a cold admission of a name and returns its guard
+  without a catalog read or a runtime; name the seam in the report. Sequence: park an admission through the
+  pool; call `quiesceRefTablesForRemount`; capture a second admission of the same name through the seam (slot
+  count 1); release the parked one: it is refused and the slot count is still 1; destroy the second guard: the
+  count is 0. The assertion: a guard of an older epoch releases nothing of a slot created after the remount.
 - [ ] **Step 5:** Add to B-5 the final slot count 1 (the slot of the other namespace). Update A-3: rename to
   `RetirementWithASuccessorResidentIsRecorded`, slot count 1 after the eviction (the slot of `other`). Update
   A-8: slot count 1 on the `owner` pool after the join.
 - [ ] **Step 6:** Run `bt.sh t2_green 'CASNsFileIncarnation*:CASCatalogLifecycleReconciler*'`; all pass.
-- [ ] **Step 7:** Mutation (`t2_mut`): the guard's destructor does not erase the slot. B-4 must fail on its
-  absent-row and throwing-read cases. (B-1 and case 1 of B-3 release their slot inside
-  `acquireRefTableRuntime` or keep a runtime, so they do not see this mutation.)
+- [ ] **Step 7:** Two mutation runs. `t2_mut`: the guard's destructor does not erase the slot; B-4 must fail on
+  its absent-row and throwing-read cases. (B-1 and case 1 of B-3 release their slot inside
+  `acquireRefTableRuntime` or keep a runtime, so they do not see this mutation.) `t2_mut_epoch`: the guard's
+  release ignores the epoch; case 2 of B-3 must fail with a slot count of 0 after the older guard is released.
+  This run is the red evidence of case 2; copy it to `$P/wave1/logs/red_B1_B-3_case2.log`.
 - [ ] **Step 8:** List in the report every place a `ColdAdmission` is destroyed and which locks are held there.
 - [ ] **Step 9:** Run `bt.sh t2_gate 'CAS*'`; expected 3018.
 - [ ] **Step 10:** Commit. Subject: `Keep a retirement record only while a cold admission is in flight`.
@@ -765,11 +770,12 @@ stateless scripts build nothing; `asan.sh` builds without that lock, so it runs 
 - [ ] **Step 5:** Stateless `_cas_` tests: `$P/gates/stateless_all.sh w1_all`; expected 59 ok (58 at the base
   plus H-4), 0 failed.
 - [ ] **Step 6:** Integration, one module per run, log `$WT/build/integration_w1_<module>.log`:
-  `python3 -m ci.praktika run "integration" --test "<module>"` for `test_cas_shared_pool`,
+  `python3 -m ci.praktika run "integration" --test "<module>" --path "$WT/build/programs/clickhouse"` for
+  `test_cas_shared_pool`,
   `test_cas_drop_pool_member`, `test_cas_gc_sharded`, `test_cas_early_commit_restart`,
   `test_backward_compatibility`. All pass. Each log starts with a `BUILD_MARKER` line written before the run:
-  head, the resolved path of the binary the job uses (`readlink -f ci/tmp/clickhouse`) and its mtime; that
-  binary is the one `release.sh w1` built. The runs create their own containers and touch no other.
+  head, the path passed as `--path` and its mtime; that binary is the one `release.sh w1` built. Without
+  `--path` the job prefers `ci/tmp/clickhouse`, which may be stale. The runs create their own containers and touch no other.
 - [ ] **Step 7:** Style: `$P/gates/style.sh w1 fa1b89d1529`; `STYLE_DONE hits=0`.
 - [ ] **Step 8:** Record every result with its log path in the ledger. A red gate is root-caused and fixed by a
   fresh implementer; the gates that the fix can affect run again.
@@ -799,18 +805,25 @@ Spec §15. Report: `docs/superpowers/reports/2026-11-12-cas-improvements-wave1-m
 - [ ] **Step 2:** Pin the head binary: copy `$WT/build/programs/clickhouse` (built by `release.sh w1`) to
   `$P/bin/clickhouse-w1-<work head>`. The base binary is `$P/bin/clickhouse-pr2-fa1b89d1529`. Run, one server
   at a time, each under `flock $P/build.lock`, from `$P/measure`:
-  `./run.sh W1_base_churn <base binary> 1 900 120 19781`, `./run.sh W1_head_churn <head binary> 1 900 120 19781`,
+  `W1=1 ./run.sh W1_base_churn <base binary> 1 900 120 19781`,
+  `W1=1 ./run.sh W1_head_churn <head binary> 1 900 120 19781`,
   then the same pair with churn `0` and labels `W1_base_nochurn`, `W1_head_nochurn`. The labels are new;
   `run.sh` refuses an existing output directory. Ports 19781-19785 are outside the reserved set.
+  Before the first run the controller adds to `run.sh`, behind `W1=1` so older labels stay reproducible:
+  - `w1_age.tsv`: `last_success_age_seconds` of `system.cas_mounts`, queried once right after the server start
+    and once before the stop;
+  - `w1_samples.tsv`: in every sample, the time, the phase and `pending_reclaim` of `system.cas_mounts`;
+  - `events_w1.tsv`: the final values of `InsertQuery`, `InsertedRows`, `Merge`, `MergedRows` of `system.events`.
+  Both columns exist on the base binary. A failed query writes its error text to the file and the run goes on.
   Collect per run, into `runs/<label>/w1_predictions.tsv`, with a script `$P/measure/w1_collect.sh <label>` that
   the controller writes in this step:
-  - M-1: rows of `system.parts` and merges finished (`parts_final.txt`, `events_final.tsv`), churn tables;
+  - M-1: `InsertedRows` and `MergedRows` per second of the load phase (`events_w1.tsv`), active parts and rows
+    (`parts_final.txt`), churn tables (`churn*.count`);
   - M-2: `grep -a -c 'CA GC round failed' state/server.log`;
   - M-3: the count of `Information` round lines in `state/server.log` against the Finish rows of
     `system.cas_gc_log` by outcome (`postq.sh` restarts the server on the saved state for the query);
-  - M-4: the reclaim backlog of the last idle sample;
-  - M-5: `last_success_age_seconds` of `system.cas_mounts`, queried once right after the server start and once
-    before the stop. `run.sh` gets these two queries behind `W1=1`, so older labels stay reproducible.
+  - M-4: `pending_reclaim` of the last idle row of `w1_samples.tsv`;
+  - M-5: the two rows of `w1_age.tsv`.
 - [ ] **Step 3:** Fill the report: one table per prediction, base against head, with the run logs' paths. A
   failed prediction is a finding: root cause, then a fix or a task.
 - [ ] **Step 4:** Commit the report on `cas-gc-rebuild` in `M` by exact path.
@@ -822,17 +835,24 @@ Spec §15. Report: `docs/superpowers/reports/2026-11-12-cas-improvements-wave1-m
   review; then the affected gates of Task 13 run again.
 - [ ] **Step 2:** Freeze the mapping first, in `$P/wave1/clean-map.md`: one row per source commit of
   `be74be9fa7b..<work head>` with the clean commit it goes into. Rules:
-  - the late-request audit bundle (`be74be9fa7b..fa1b89d1529`) comes first, one clean commit per story of its
-    spec; its ancillary test fixes (`50dbaee3a69`, `f1bdb36d374`) fold into the clean commit of the story whose
-    test they fix;
+  - the late-request audit bundle (`be74be9fa7b..fa1b89d1529`) comes first: one clean commit per row of the
+    commit table in §9 of `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`, in
+    that order, with the subject of the row; every other commit of the range folds into the row whose lines it
+    changes;
+  - the fixes of tests that predate the bundle form one test-only commit placed before row 1, subject
+    `Make the snapshot publish in-flight gate test independent of publisher backoff`: `50dbaee3a69` whole and
+    the `awaitBlockEntered` hunks of `f1bdb36d374`. The `kMaxBackoffDrawMs` comment hunk of `f1bdb36d374` goes
+    to row 6;
   - then the commits of this plan in the order of the pass-count table, each one commit with its subject
     verbatim;
   - a fix round folds into the clean commit of the story its finding names; a fix that spans two stories is
-    split by hunk, and a hunk in a shared file follows the story that introduced the lines it changes
-    (`git blame` on the work head).
+    split by hunk, and a hunk in a shared file follows the commit that introduced the lines it changes
+    (`git blame <fix commit>^ -- <file>`, the lines before the fix). The map lists the hunks of every split
+    source commit.
 - [ ] **Step 3:** Build the series as a new branch over `d8cbdfae3ec`, one clean commit at a time, never
-  amending. For each: apply its source commits with `git cherry-pick -n`, then compare `git write-tree` with
-  the trees gated during execution. An equal tree takes the recorded pass count. Any other tree is built and
+  amending. For each: apply its whole source commits with `git cherry-pick -n`; a source commit that the map
+  splits is never cherry-picked, its mapped hunks are applied from a patch file saved under `$P/wave1/clean/`.
+  Then compare `git write-tree` with the trees gated during execution. An equal tree takes the recorded pass count. Any other tree is built and
   passes `CAS*` through `bt.sh` on the uncommitted tree before the commit is created, and that count goes into
   the message. I1 and I2 keep their author. Every commit has `Signed-off-by` and
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
