@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 10:35'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -67,4 +67,6 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681), `cas s3 storage` stateless lanes, job timeout 12600 s. asan 1/2 passed in 2:27 (6890/6890). asan 2/2 timed out at 5921/6933 with no clickhouse-test shedding lines; tests per 30 min 998/1035/1016/836/734/712/582. tsan 1/2 and 2/2 timed out at 6847/6890 and 6932/6933, no shedding. msan 1/3, 2/3, 3/3 timed out at 2026/4660, 1835/4640, 1706/4575 after clickhouse-test shed from 6 workers to 1 (CAS-223). arm_binary finished 13770/13770 in 2:17, but tests per 30 min fell 5254/5160/2963, then 393 in the last 17 min, and `00037_uniq_state_merge1` (303 s) and `00162_mmap_compression_none` (449.7 s) failed with `TOO_SLOW` on `test.hits`. So the in-run slowdown also shows on a lane without a sanitizer and without shedding. No sanitizer report, `Logical error` or `Server died` in any of the eight jobs. Runner type is not in the job logs.
 
 2026-11-11: the LARGE-runner change for the ASan cas-s3 shards (`2a4b5e72aa2`, yaml regeneration `41d4a78eeb9`) is no longer in https://github.com/Altinity/ClickHouse/pull/2805: the branch history was rewritten without it, new head `2f89c5db182`. The PR is limited to the antalya-26.6 forward-port. The two commits are kept on the local branch `backup/pr2805-before-history-rewrite-20261111`; they need their own pull request against antalya-26.8. Expect ASan cas-s3 1/2 to time out again on the 2805 head until then (it passed in 2 h 27 min on the LARGE runner in run 42921139681).
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The runner change (2a4b5e72aa2, regenerated workflows 41d4a78eeb9) was dropped from the PR and is not on antalya-26.8; it needs its own PR. The commits are on the local branch backup/pr2805-before-history-rewrite-20261111.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 10:35'
 labels:
   - cas
   - ci
@@ -41,4 +41,6 @@ PR 2805 @8c26e8792eb, job `Stateless tests (amd_asan_ubsan, cas s3 storage, para
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-06: fixed on the PR 2805 branch as 4810e687c92 (system.parts name instead of the literal); 5/5 local runs OK on a standalone 26.8 stand. The antalya-26.6 copy still has the literal.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 10:35'
 labels:
   - cas
   - ci
@@ -41,4 +41,6 @@ Fix committed on port/antalya-26.8/cas-from-26.6 as 086efc95363 (NOT pushed): st
 2026-11-06: PR 2812 CI @bb9bf738a0c: unit tests, cas lanes, stress cas lanes green. Reds: integration 3/8, 7/8, 8/8 = mock containers cannot exec /usr/bin/clickhouse (python-bottle image arch, infra); Stress test (amd_asan_ubsan) = Hybrid engine cannot re-attach a table whose engine args use currentDatabase() after restart, Altinity issue 1993, not CAS.
 
 2026-11-07 audit: open PR https://github.com/Altinity/ClickHouse/pull/2812 (antalya-26.6); 26.8 fix rides on https://github.com/Altinity/ClickHouse/pull/2805.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
 <!-- SECTION:NOTES:END -->

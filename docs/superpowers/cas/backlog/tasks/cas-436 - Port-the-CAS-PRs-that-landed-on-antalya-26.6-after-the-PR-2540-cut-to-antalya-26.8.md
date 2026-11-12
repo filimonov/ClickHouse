@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-12 10:35'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -57,4 +57,6 @@ CI of PR 2805 @a2147e55697 (2026-11-06): builds and unit gate green. Reds: (1) p
 2026-11-06: CAS* gate on the 2805 branch after the 2577 pick (8f5bc113d3c): 2905 passed, 0 failed, 2 disabled (build/test_cas_gate_2577_pick.log). Branch head 4810e687c92 (05387 fix), unpushed.
 
 2026-11-07 audit: open PR https://github.com/Altinity/ClickHouse/pull/2805 (base antalya-26.8).
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The eleven PRs and PR 2577 are on antalya-26.8. Still open: PR 2570 is not merged into antalya-26.6 yet, so its port waits; the ASan cas-s3 2/2 shard is red on the merged head (CAS-432).
 <!-- SECTION:NOTES:END -->

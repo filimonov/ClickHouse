@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 21:22'
+updated_date: '2026-11-12 10:35'
 labels:
   - cas
   - ci
@@ -46,4 +46,6 @@ PR 2805 @8c26e8792eb, jobs `Integration tests (amd_asan_ubsan, targeted)`, `... 
 2026-11-11: `ad04f95e441` (`skip_check_for_incorrect_settings` for `test_custom_s3_disk_remote_url_allow_hosts`) is no longer in https://github.com/Altinity/ClickHouse/pull/2805: the branch history was rewritten without it, new head `2f89c5db182`. The commit is kept on the local branch `backup/pr2805-before-history-rewrite-20261111`; it needs its own pull request against antalya-26.8. The test stays red on the 2805 head until then.
 
 2026-11-11 21:25Z: confirmed on CI run 42999688750: both `allow_hosts` tests fail on integration 7/8 and on the targeted job with the same `UNKNOWN_ELEMENT_IN_CONFIG`; the head tree has no `configs/skip_check_for_incorrect_settings.xml`.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix ad04f95e441 was dropped from the PR and is not on antalya-26.8; it needs its own PR. The commit is on the local branch backup/pr2805-before-history-rewrite-20261111.
 <!-- SECTION:NOTES:END -->

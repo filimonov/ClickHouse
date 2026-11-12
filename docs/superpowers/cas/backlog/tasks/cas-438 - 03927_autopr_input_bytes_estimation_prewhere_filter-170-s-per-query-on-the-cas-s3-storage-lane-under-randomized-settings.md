@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 10:35'
 labels:
   - cas
   - ci
@@ -33,4 +33,6 @@ PR 2805 @a2147e55697, Stateless tests (amd_binary, cas s3 storage, parallel): ti
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-06: fix on PR 2805 @8c26e8792eb (branch A): no-random-settings on 03800 and 03927, commit message links PR 2013 and the 2805 cas-lane job.log. Branch A also merged altinity/antalya-26.8 (0a4515c9f63, PR 2646). 2812 content already on the branch as 086efc95363, nothing to cherry-pick. 00165/00139/00038/00446 tags from PR 2013 deliberately not ported: no recorded reason for them.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
 <!-- SECTION:NOTES:END -->

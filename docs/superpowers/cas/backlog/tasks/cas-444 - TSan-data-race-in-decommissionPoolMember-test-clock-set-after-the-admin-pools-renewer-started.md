@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 10:35'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -41,4 +41,6 @@ Unit tests (tsan) on PR 2805 @41d4a78eeb9 (run 42864462634, job unit_tests_tsan,
 2026-11-10: PR 2801 merged into antalya-26.6 as 943249ecbb04daff64e556ef6403b639de7275b5 (22:41 UTC). Remaining: cherry-pick onto the 26.8 port branch (PR 2805); antalya-26.8 still has the post-open setters at Tools/CasDecommission.cpp:168-175 and the code there has diverged (standalone `requests` engine), so it is a hand port, not a plain pick. Review notes for the port: keep the one-line rule in Backend/CasRequests.h ('test setters belong to setup, before any operation runs'), fix the 'replace' wording in Tools/CasDecommission.h:67-70 and the 'never in unit tests' comment at Pool/CasPool.cpp:950-957.
 
 2026-11-11: the antalya-26.8 port is on PR https://github.com/Altinity/ClickHouse/pull/2805 as c840f70b133 (pick of 943249ecbb0) plus the review follow-up 2f89c5db182; ASan `CAS*` gate 2909 passed. Close after PR 2805 merges. Umbrella: CAS-450.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
 <!-- SECTION:NOTES:END -->
