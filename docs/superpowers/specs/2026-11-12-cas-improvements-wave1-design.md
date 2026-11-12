@@ -160,9 +160,12 @@ All tests come from the series. Red runs are taken against `fa1b89d1529` with on
 
 - A-1 to A-4 are green at A1 because the post-drain loops of `fa1b89d1529` still bump the count. A-3 also
   needs the conditional slot erase, which is why A1 carries it.
-- The seven existing call sites of `reconcile` in `T/gtest_cas_gc_frontier_gate.cpp` pass a no-op second
-  argument. The five test callers of `deleteCompletedRemovingAtSnapshot` in `T/gtest_cas_ref_catalog.cpp`
-  compile unchanged.
+- `T/gtest_cas_gc_frontier_gate.cpp` has five call sites of `reconcile` (`:2978`, `:3004`, `:3041`, `:3071`,
+  `:3102`). Four pass a no-op second argument. The fifth, in `RetriesFromTheMandatoryConflictResolutionCut`,
+  passes a counting callback and asserts one announcement for the life across its erase attempts, as the
+  series does (`dca5e45ce32`, `:3134-3142`); A2 keeps that assertion.
+- The five test callers of `deleteCompletedRemovingAtSnapshot` in `T/gtest_cas_ref_catalog.cpp` compile
+  unchanged.
 - Parked-thread tests use the bounded waits of the series (`dca5e45ce32`): a test fails, it does not hang.
 
 ### 3.4 Not closed by story A {#story-a-not-closed}
@@ -289,8 +292,10 @@ write:
   request deadline to the attempt cap, which
   `CASRefCatalogRemoval.PerpetualConflictGivesUpWithinOneWindowNotAtTheAttemptCap` forbids.
 - A non-`Conflict` outcome pauses nowhere, as before: it is terminal for the call.
-- A conflicted attempt whose pause and resolution read both complete sends one write and one read, as
-  before. The attempt that meets the deadline may end in its pause or in its read
+- A conflicted attempt whose pause and catalog read both complete makes one `replace` call and one explicit
+  catalog read (`CA/Pool/CasRefCatalog.cpp:556-559`), as before. `replace` settles a refused precondition
+  with a resolution read of its own (`CA/Backend/CasRequests.cpp:1096-1118`); that request is not moved.
+  The attempt that meets the deadline may end in its pause or in its catalog read
   ([§21](#left-to-builder)).
 - The comment block at `:518-523` and the pause comment at `:582-585` are rewritten to match.
 - Docs: `D/architecture/garbage-collection.md` (drain section, `:162-182`) states the order of pause and
@@ -314,10 +319,12 @@ write:
 | # | Commit | Test | File, fixture | Red before |
 |---|---|---|---|---|
 | C-1 | C1 | `CASRefCatalogRemoval.AWriterLandingDuringEveryBackoffCannotStarveTheErase` | `T/gtest_cas_ref_catalog.cpp`; `WriteCountingBackend`, `FakeClock` with `sleepFn` wrapped to commit one external catalog write per pause | the loop runs to the 90 s fake deadline and throws code 210 |
-| C-2 | C1 | `CASRefCatalogRemoval.AConflictedEraseSendsTheNextWriteFromAReadTakenAfterThePause` | same file; `WriteCountingBackend::journalFor`, `refuseNextWrite` | journal order is read, pause, write; expected write, pause, read, write |
+| C-2 | C1 | `CASRefCatalogRemoval.AConflictedEraseSendsTheNextWriteFromAReadTakenAfterThePause` | same file; `WriteCountingBackend::journalFor`, `refuseNextWrite` | the catalog read precedes the pause; expected `replace`, pause, catalog read, `replace` |
 | C-3 | C2 | `CASGCFrontierGate.AnAbortedDrainReportsTheRowsItErased` | `T/gtest_cas_gc_frontier_gate.cpp`; `DrainRaceBackend`, two eligible rows, the second erase refused on every attempt | the phase record has no `deleted` key; expected `deleted = 1` |
 
 - C-1 green: outcome `Deleted` on the second erase write, exactly one pause.
+- C-2 asserts the relative order of the pause and the explicit catalog read. The resolution read inside
+  `replace` stays in the journal, so the test does not pin an exact four-event journal.
 - C-1 and C-2 refuse the first erase write with `refuseNextWrite`, as
   `CASRefCatalogRemoval.AConflictingEraseBacksOffBeforeItsRetry` (`T/gtest_cas_ref_catalog.cpp:1466`) does.
 - Pins that must stay green unchanged:
@@ -401,7 +408,8 @@ writes 104 s after the last renewal, was 14 s (`TTL - write reserve`,
 
 ### 6.4 Not closed by story D {#story-d-not-closed}
 
-- CAS-353 AC #1 for a renewal `PUT` slower than 94 s. The request window bounds a `PUT` well below that.
+- CAS-353 AC #1 for a renewal `PUT` slower than 94 s. Background renewal retries with
+  `Retry::untilDefinitive` (`CA/Pool/CasMountRuntime.cpp:637-640`), so no request window bounds it.
 - CAS-405.3 AC #2, the stand rerun at the new default.
 - A renew period other than 10 s. At 120/40 the same 90 s hang gives 39 errors, at 120/20 it gives 2.
 
@@ -431,6 +439,8 @@ write for 94 s after a due renewal, so the window is the tighter bound. In the s
 - Every `CasRequests` gets the value from the budget of its pool: `mount_requests`, `lease_requests`,
   `gc_requests` (`CA/Pool/CasPool.cpp:191-222`), the bootstrap planes (`:425`, `:1016`) and the
   decommission planes (`CA/Tools/CasDecommission.cpp:495`, `:520`).
+- `CasOperation::freeze` (`CA/Backend/CasRequests.cpp:458-464`) adds the plane default when the policy
+  window is empty. The frozen policy deadline stays independent of the lease bound, as today.
 
 **E2. Setting and new default.**
 
@@ -444,8 +454,12 @@ write for 94 s after a due renewal, so the window is the tighter bound. In the s
   validation, so a check against the window would refuse them.
 - Why 120000: it exceeds the 90 s hang of the study plus one envelope (7000) plus one more attempt's
   timeout (5000).
-- Docs: a row in `D/configuration.md` near `:111-112`; `D/architecture/blob-protocol.md:78`. They state that
-  a failing request now gives up after 120 s, and the relation to the recovery budget (CAS-405.6 AC #3).
+- Docs: a row in `D/configuration.md` near `:111-112`; `D/architecture/blob-protocol.md:76-78`. They state
+  that a failing request now gives up after 120 s, and the relation to the recovery budget
+  (CAS-405.6 AC #3).
+- The other statements of a fixed ninety-second policy change to "the configured request window
+  (`cas_request_window_ms`, default 120 s)": `D/operations/troubleshooting.md:20`, `:98`;
+  `D/operations/debugging.md:163`; `D/architecture/garbage-collection.md:109`.
 
 ### 7.3 Tests {#story-e-tests}
 
@@ -459,8 +473,18 @@ write for 94 s after a due renewal, so the window is the tighter bound. In the s
   `untilLeaseSafe` uses the plane window when it is the tighter bound.
 - E-2 cases: default 120000; a window equal to the envelope is refused by `validateCasRequestBudget`; the
   default `CasRequestBudget` carries a recovery budget of 240000.
-- Existing tests updated in E1 for the new `bind` signature and the optional field:
-  `T/gtest_cas_requests.cpp:142-144`, `:634`; `T/gtest_cas_ref_catalog.cpp:1144`, `:2562`.
+- Existing tests updated in E1 for the new `bind` signature: `T/gtest_cas_requests.cpp:142-144`, `:613`,
+  `:634`. They pass 90000 as the default window, so their literal expectations hold in E1 and E2.
+- Existing tests that do arithmetic on `Retry::standard().window_ms` no longer compile with the optional
+  field. E1 switches them to `kDefaultRequestWindowMs`, the window of the default plane they run on:
+  `T/gtest_cas_ref_catalog.cpp:1144`, `:2562`; `T/gtest_cas_ref_writer.cpp:4606`, `:4653`.
+- `makeRequests` (`T/gtest_cas_requests.cpp:82-84`) passes a plane window of 90000 explicitly from E1 on.
+  `CASRetry.AFrozenPolicyIsOneDeadlineAndTheLeaseStillWins` (`:155-166`) and the other tests of that file
+  keep their `start + 90'000` expectations when E2 moves the default.
+- E2 moves the window of every default plane from 90 s to 120 s. Known literal bounds on such planes are
+  inequalities that hold at both values: `T/gtest_cas_ref_catalog.cpp:1796` and
+  `T/gtest_cas_part_write.cpp:2813`. A test that the `CAS*` gate shows red at E2 for a hard-coded 90 s is
+  rewritten in terms of `kDefaultRequestWindowMs` in E2.
 - Tests that set `recovery_retry_budget_ms` explicitly stay unchanged: `T/gtest_cas_ref_recovery_cas_walk.cpp`,
   `T/gtest_cas_ref_wedge_every_attempt.cpp`, `T/gtest_cas_ref_writer.cpp`.
 - The derive at the storage layer has no unit seam. The stateless CAS lanes exercise it; the docs state the
@@ -476,9 +500,11 @@ write for 94 s after a due renewal, so the window is the tighter bound. In the s
 
 ### 8.1 Problem {#story-f-problem}
 
-Five per-round budgets default to 5000 entries. On a store with a backlog a round stops at the cap and
-carries the rest to the next round. The backlog drains at 5000 entries per round per budget, however fast the
-round is. Study runs, unreachable objects left in the pool, with the three work budgets (graduation,
+Five per-round budgets default to 5000 entries. For the three work budgets (graduation, redelete, ref
+cleanup) a round on a store with a backlog stops at the cap and carries the rest to the next round. The
+backlog drains at 5000 entries per round per budget, however fast the round is. The other two do not carry
+over: the outcome-entry cap drops audit rows (`CA/Gc/CasGc.cpp:620-626`), and a capped handoff is left to
+`fsck` (`:1387-1393`). Study runs, unreachable objects left in the pool, with the three work budgets (graduation,
 redelete, ref cleanup) at 5000 and at 0:
 
 | Run pair | Budgets 5000 | Budgets 0 |
@@ -673,7 +699,8 @@ Four independent commits. Each has its own problem, change and test.
 
 - Every text ends with "the caller re-stages with a fresh ManifestId".
 - No pause age in the text. The pool warning "writes are paused since {} ms ago"
-  (`CA/Pool/CasMountRuntime.cpp:211`) fires at the same moment and carries it.
+  (`CA/Pool/CasMountRuntime.cpp:211`) carries it. That warning is emitted on renewal write attempts
+  (`:501-504`), not by the manifest staging path, so it can come later than the refusal.
 - `orThrow` (`CA/Backend/CasWriteResult.h:113-129`) is not touched. The six cases follow its split.
 
 ### 10.5 Tests {#story-h-tests}
@@ -685,7 +712,7 @@ Four independent commits. Each has its own problem, change and test.
 | H-3 | H2 | `CASGCHealth.ReflectsLeadershipAndPendingReclaim`, extended | `T/gtest_cas_gc_log.cpp:719-746` | pin of `ever_succeeded` before and after the first round |
 | H-4 | H2 | stateless test `cas_mounts_gc_success_age_null`, created with `add-test` | shape of `05010_cas_mounts_gc_health.sh`; inline disk with a long `cas_gc_interval_sec` | the column is 0, expected `NULL` |
 | H-5 | H3 | `CASRefSnapshotPublishOrdering.LaneStateNamesCoverEveryState` | `T/gtest_cas_ref_snapshot_publish_ordering.cpp` | the helper does not exist |
-| H-6 | H4 | `CASPartWriteTxn.StageManifestNotSentUnderDrainedLeaseSaysNotSent` | `T/gtest_cas_part_write.cpp`; a pool opened with `PoolConfig::boot_ms_fn` on a test clock (as at `:2299`), moved until less than the write reserve of the lease remains | the text says "UNCERTAIN" |
+| H-6 | H4 | `CASPartWriteTxn.StageManifestNotSentUnderDrainedLeaseSaysNotSent` | `T/gtest_cas_part_write.cpp`; a pool opened with `PoolConfig::boot_ms_fn` on a test clock (as at `:2299`), moved until the lease has at most its 2000 ms safety margin left and has not expired; the in-memory backend reserves 0 ms per attempt, so only the margin refuses in `admit` (`CA/Pool/CasMountRuntime.cpp:156-168`) | the text says "UNCERTAIN" |
 | H-7 | H4 | `CASPartWriteTxn.StageManifestSentThenGaveUpSaysUncertain` | same file; a double shaped like `AmbiguousMetaWriteBackend` (`:870`) that loses the answer of every write to `layout().manifestKey(id)`; `useVirtualMountRequestClock` (`:90-104`) | the text has no attempt count |
 
 - H-1: the captured line carries the same `round`, `outcome`, `duration_ms` and `deleted` as the Finish row
@@ -890,7 +917,7 @@ No model changes in this wave.
 | C2 | `S/cas_gc_log.md` |
 | D1 | `D/configuration.md`, `D/architecture/mounts-and-leases.md`, `D/architecture/garbage-collection.md`, `D/operations/migration.md`, `D/operations/troubleshooting.md` |
 | D2 | `D/architecture/mounts-and-leases.md` |
-| E2 | `D/configuration.md`, `D/architecture/blob-protocol.md` |
+| E2 | `D/configuration.md`, `D/architecture/blob-protocol.md`, `D/architecture/garbage-collection.md`, `D/operations/troubleshooting.md`, `D/operations/debugging.md` |
 | F1 | `D/configuration.md`, `D/architecture/garbage-collection.md` |
 | H1 | `D/operations/monitoring.md` |
 | H2 | `S/cas_mounts.md`, `D/operations/monitoring.md`, `D/operations/debugging.md`, `D/architecture/mounts-and-leases.md`, `D/operations/troubleshooting.md` |
