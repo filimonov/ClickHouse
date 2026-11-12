@@ -10,7 +10,7 @@ doc_type: 'reference'
 # CAS: five late-request audit fixes in one pull request — design {#cas-pr2-late-request-audit-bundle}
 
 - Date: 2026-11-11. Status: draft, not approved.
-- Tasks: CAS-364, CAS-365, CAS-367, CAS-69, CAS-373. Residual tasks: CAS-453, CAS-454, CAS-455, CAS-461, CAS-462,
+- Tasks: CAS-364, CAS-365, CAS-367, CAS-69, CAS-373, CAS-455. Residual tasks: CAS-453, CAS-454, CAS-461, CAS-462,
   CAS-183, CAS-71.1.
 - Base: the final head of `fix/antalya-26.8/cas-ref-cleanup-per-life-licence` ("PR1", specified in
   `docs/superpowers/specs/2026-11-11-cas-pr1-ref-cleanup-bundle-design.md`). PR1 sits on `2f89c5db182`, head
@@ -337,16 +337,20 @@ Two flags on the ref-table runtime, both guarded by `ref_queue_mutex`:
 | Flag | Set | Cleared | Effect |
 |---|---|---|---|
 | `removal_attempt_active` | by a removal attempt after `ensureRefTableRecovered`, once no other attempt holds it | scope guard at the end of the attempt | removal attempts on one namespace do not overlap |
-| `removal_write_may_land` | in the `catch` block when the write outcome is unknown and the resolve read does not show `Removing` | never on this runtime; a remount replaces the runtime, and `invalidateRemovedCatalogLife` drops it when GC erases the row | the `catch` block does not reopen the lane; `enforceRefTableCacheBudget` does not evict the runtime |
+| `removal_write_may_land` | in the `catch` block when a `Live -> Removing` attempt was sent, its outcome is unknown and the resolve read does not show `Removing` | by a later attempt on the same runtime that proves the row `Removing`; the lane then stays closed as `Removing`. Otherwise never on this runtime: a remount replaces the runtime, and `invalidateRemovedCatalogLife` drops it when GC erases the row | the `catch` block does not reopen the lane; `enforceRefTableCacheBudget` does not evict the runtime |
 
-**When the outcome is unknown.** A local `removal_write_outcome_unknown` is set right before
-`beginRemoving` is called. Only `Transitioned` and `AlreadyRemoving` clear it. `EntryChanged`, `FencedOut` and
-every exception leave it set.
+**When the outcome is unknown.** A local `removal_write_outcome_unknown` is set by the request observer of the
+removal operation (`RequestObserver::on_write_attempt`). The engine calls it on the caller's thread before it
+sends each write attempt, and `beginRemoving` is the only write through that operation. `Transitioned` and
+`AlreadyRemoving` clear the local. `EntryChanged`, `FencedOut` and every exception leave it as the observer
+set it.
 
-- This is stricter than the draft, which clears it on `EntryChanged`. `casUpdateImpl` does not report whether
-  it sent anything, so a refusal from the first `decide` cannot be told from one that follows an unanswered
-  attempt. The difference matters only if the row returns to the observed value between the read inside
-  `beginRemoving` and the `catch` read. Narrowing it needs the engine to report "sent". Placement: CAS-455.
+- A `beginRemoving` that fails before any attempt is sent leaves the local clear: a failed or timed-out
+  catalog read, a refusal from the first `decide`, a window spent before the first send. Nothing can land.
+  The `catch` block then reopens the lane on the same terms as a failure before `beginRemoving`: a fresh
+  exact `Live` row, an admitted operation, and no earlier attempt that left `removal_write_may_land`.
+- Once one attempt is sent, only `Transitioned` and `AlreadyRemoving` clear the local. `EntryChanged` or
+  `FencedOut` after a sent attempt keep the lane closed: the sent write can still land.
 - Failures before `beginRemoving` is entered keep today's behaviour: the first catalog read, the
   row-disappeared and life-mismatch branches and the `gc/state` read. Nothing was sent, so a fresh exact
   `Live` row reopens the lane.
@@ -372,7 +376,9 @@ that fails leaves the lane closed.
 **An unknown outcome that the resolve read settles.** The `catch` block reads the row once. `Removing` under
 the same life means the write landed: the removal continues and the flag stays clear, so the runtime is not
 pinned in the ref table cache and no refusal claims a write may still land. Any other result of that read
-leaves the outcome unresolved and sets the flag.
+leaves the outcome unresolved and sets the flag. A later attempt on the same runtime that proves the row
+`Removing` (`Transitioned`, `AlreadyRemoving`, or its own resolve read) clears the flag: the runtime is
+evictable again and refusals name `Removing`.
 
 Test hook: `setRemovalAttemptHookForTest` on `Pool` and `CasRefLedger`, called once per attempt that closed
 and drained the lane, before the attempt's catalog read. An attempt that returns earlier (the stream already
@@ -388,16 +394,17 @@ Suite `CASRefWriterNamespaceRemoval` in `src/Disks/tests/gtest_cas_ref_writer.cp
 | C2 | `FailedRetryAfterAmbiguousBeginRemovingDoesNotReopenTheLane` | yes |
 | C3 | `AmbiguousBeginRemovingSurvivesRefTableEviction` | yes |
 | C4 | `ConcurrentRemovalAttemptsDoNotOverlapAndKeepTheLaneClosed` | yes |
-| C5 | `RefusedBeginRemovingKeepsTheLaneClosedAfterAdmissionReturns`: `beginRemoving` ends without a transition because the lease budget ran out (`Fence::Admit::NoBudget`); a renewal restores the budget before the `catch` read, which finds the observed `Live` row | yes, the lane reopens |
-| C6 | `EntryChangedBeginRemovingKeepsTheWriteLaneClosed`: the row returns to the observed value before the `catch` read | yes |
+| C5 | `RefusedBeginRemovingBeforeAnySendReopensTheLane`, `EntryChangedBeforeAnySendReopensTheLane`, `ReadFailureInsideBeginRemovingReopensTheLane`: `beginRemoving` fails with nothing sent (no lease budget at the first gate, a changed row at the first `decide`, a failing catalog read); the `catch` read finds the observed `Live` row and the lane reopens | no at the base; red when the local is set before the call |
+| C6 | `LeaseGoneAfterASentAttemptKeepsTheLaneClosed`, `EntryChangedAfterASentAttemptKeepsTheLaneClosed`, `FencedOutAfterASentAttemptKeepsTheLaneClosed`: one attempt is sent and held; the call then ends without a transition (the engine gives up at the lease deadline; the row changes and returns to the observed value before the `catch` read; the admission check inside `beginRemoving` fails and the lease budget returns before the `catch` read); the lane stays closed | not run at the base; green with the local set before the call, they guard the sent case against the narrowing |
 | C7 | `FailureBeforeBeginRemovingReopensTheLane`: the `gc/state` read fails; the next ref mutation is admitted | no, guards unchanged behaviour |
 | C8 | `RemountReopensTheLaneAfterAnAmbiguousBeginRemoving` | no, guards the documented way out |
+| C9 | `ResolveReadProvingRemovingLeavesNoUnresolvedWrite`, `RetryProvingRemovingClearsTheUnresolvedWrite`: a row proven `Removing`, by the resolve read or by a later attempt, leaves no unresolved write: the runtime is evictable and a refusal names `Removing` | not applicable; the flag does not exist at the base |
 
-C1 to C4 come from the draft. C5 to C8 close gaps its review listed.
+C1 to C4 come from the draft. C5 to C9 close gaps its reviews listed.
 
 - C1 needs a backend that delivers the held write later. The draft's backend only throws, so nothing lands;
   it is replaced.
-- C5 uses a temporary refusal on purpose. A permanently lost fence is not a red schedule: at the base
+- C6 uses a temporary loss of the lease budget on purpose. A permanently lost fence is not a red schedule:
   `refuseUnlessAdmitted` already keeps the lane closed in the `catch` block.
 
 ### 5.4 Not closed by story C {#story-c-residual}
@@ -574,8 +581,8 @@ Rules:
 - **A red run compiles.** New symbols get a bare declaration or a stub first. A compile failure is not red
   evidence.
 - **Mutation checks run uncommitted** and under a memory cap. Each story names at least one: A, drop the
-  epoch comparison; B, skip the `holds` check; C, clear the flag on `FencedOut`; D, pass no policy to the
-  creator-fence read; E, drop the `!op.admitted()` condition.
+  epoch comparison; B, skip the `holds` check; C, clear the local on `FencedOut`, and clear it on
+  `EntryChanged`; D, pass no policy to the creator-fence read; E, drop the `!op.admitted()` condition.
 - **`LOGICAL_ERROR` expectations are death tests** under `DEBUG_OR_SANITIZER_BUILD`.
 - **Commit 9 is prepared as a diff and reviewed by a second model before it is committed.** It touches a
   shared interface.
@@ -685,7 +692,8 @@ User docs use plain words: no task ids and no invariant tags.
 | CAS-364 #2: `SupersededEpoch` requires a strictly greater epoch | A1, A2 |
 | CAS-365 #1: the model fails without the slot read and holds with it | the model gate |
 | CAS-365 #2: confirm refuses after a foreign claim while the local fence says live | B7 |
-| CAS-367 #1: an ambiguous `beginRemoving` never reopens the lane | C1 to C6 |
+| CAS-367 #1: an ambiguous `beginRemoving` never reopens the lane | C1 to C4, C6 |
+| CAS-455 #1: a `beginRemoving` that fails before any write is sent reopens the lane; one that sent a write keeps it closed | C5, C6 |
 | CAS-367 #2: a stuck-`Removing` detector exists | the base: `Gc::reportStuckRemovals` |
 | CAS-367 #3: the format decision is recorded | CAS-454 |
 | CAS-69 #1: "`dropNamespaceImpl` freezes one policy at entry and every read it issues, including the creator-fence read, uses that policy" | D1, D2; the direct exception (the resolution read) and the transitive ones are in [§6.4](#story-d-residual) |
@@ -698,7 +706,6 @@ User docs use plain words: no task ids and no invariant tags.
 |---|---|
 | Name the slot's epoch in the creator-fence refusal | CAS-453 |
 | Bind the `Live -> Removing` write to the mount generation | CAS-454 |
-| Report whether a catalog write was sent, to narrow story C | CAS-455 |
 | `resolveRef` reports "absent" during the closed-lane window | CAS-183 |
 | A query deadline for the drop | none; no task asks for one |
 | A deadline for the drop's local waits | CAS-462 |
@@ -714,10 +721,9 @@ User docs use plain words: no task ids and no invariant tags.
 - **A renewal that races the confirm refuses a healthy mount.** The window runs from the served `GET` to
   the `holds` check and has no fixed bound ([§4.2](#story-b-change)). Check: B20, the rate reported under
   P4, CAS-461.
-- **Story C keeps a healthy table closed.** It needs a `beginRemoving` that ends without a known outcome: a
-  sent catalog write with a lost answer, a refusal for lack of lease budget (C5), or a row that changed and
-  changed back (C6). Check: P5, the
-  warning text, and `namespaces.md` names both ways out.
+- **Story C keeps a healthy table closed.** It needs a `beginRemoving` that sent a catalog write and ended
+  without a known outcome: a lost answer, or a refusal or a changed row after the send (C6). A failure with
+  nothing sent reopens the lane (C5). Check: P5, the warning text, and `namespaces.md` names both ways out.
 - **Story D fails a drop that used to succeed late.** It needs a drain longer than 90 s. Check: D3 shows the
   lane reopens and the error is retry-later.
 - **Story C and PR 2517.** If an expired lease becomes a pause instead of a remount, "until remount" means
