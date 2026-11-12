@@ -38,8 +38,13 @@ plan and the spec resolves to the spec).
 
 ### Binding rules {#binding-rules}
 
-- **Worktree.** Modify files only under `WT`. Never touch another worktree, a docker container, or anything on
-  ports 9010, 9181, 11121, 18123, 18124, 18474, 19000, 19681-19684. Prefix every command with `cd $WT &&`.
+- **Worktree.** Modify files only under `WT`. Never touch another worktree, a docker container that existed
+  before the run, or anything on ports 9010, 9181, 11121, 18123, 18124, 18474, 19000, 19681-19684. Prefix every
+  command with `cd $WT &&`. Exceptions, and only these:
+  - the helpers and gate scripts write their locks, logs and markers under `$M/tmp` and `$P`;
+  - briefs, reports and saved logs go to `$P/wave1/`;
+  - the integration gate of Task 13 creates and removes its own containers;
+  - the controller commits the measurement report of Task 15 in `M` by exact path.
 - **No destructive commands.** Never run `git clean`, `git reset --hard`, `git checkout -- <file>`, `git stash`,
   `git rebase`, `git commit --amend`, `git push`, `git apply --3way`, `git apply --index`. Never delete a build
   directory. Never `kill` or `pkill` by pattern; a hung test binary is stopped by its exact PID.
@@ -54,13 +59,20 @@ plan and the spec resolves to the spec).
 
   Run the wait in the foreground with a 600000 ms timeout and repeat it until the marker exists. Use a new `<tag>`
   per run: `t<task>_<commit>_red`, `_green`, `_gate`. A test log counts only if `build/build_<tag>.log` ends with
-  `NINJA_EXIT=0` and names the current head.
+  `NINJA_EXIT=0` and names the current head. Every helper and gate script writes a `BUILD_MARKER` line as the
+  first line of its test log: head, binary path and mtime, and the ninja exit code where the script built the
+  binary (`stateless.sh` builds nothing and prints the code `st.sh` hands it, or `not-built-here`). A log
+  without that line, or with a non-zero `NINJA_EXIT` in it, is not evidence; a saved copy keeps the line.
+  `bt.sh` takes an optional third argument with extra gtest flags and honours `BT_TIMEOUT=<seconds>`.
 - **Gate filter** is exactly `CAS*`. The pass count is the `PASSED` number of the gtest summary.
 - **Red first.** Write the test before the product change and run it. The red run must fail on an assertion, not
   on a compile error: when a test needs a new signature or accessor, add it first with the old behaviour. Copy the
   red log to `$P/wave1/logs/red_<commit>_<test id>.log`. A test the plan marks "pin" is green before and after;
   its log is saved as `pin_<commit>_<test id>.log`.
-- **Mutation check.** After green, one run with the semantic change disabled must turn the commit's tests red:
+- **Mutation check**, in every task that has a mutation step. After green, one run with the semantic change
+  disabled must turn the commit's tests red. Commits D1, D2, E2, F1, G1, H2 and H3 have no mutation step: each
+  changes a default, a constant, a log field or a text, and its red run on the tree without the change is that
+  experiment.
 
   ```bash
   cd $WT && nohup $P/wave1/bin/mut.sh <tag> <file relative to WT> $WT/tmp/mut_<tag>.<basename> '<gtest_filter>' > /dev/null 2>&1 &
@@ -119,7 +131,8 @@ Release `CAS*`, base 3005 at `fa1b89d1529`. A different number is a deviation th
 
 1. **The admission guard and the locks.** A `ColdAdmission` destroyed while `ref_queue_mutex` or a runtime
    `state_mutex` is held self-deadlocks, and a guard from before a remount must not release a slot created after
-   it. Owner: Task 2; tests B-4 (every early exit) and a remount case added to B-3.
+   it. Owner: Task 2; tests B-4 (every early exit) and case 2 of B-3 (a second admission of the same name
+   started after the remount keeps its slot when the older guard is released).
 2. **The erase give-up path.** After C1 a perpetual conflict must still end at the window deadline with
    `NETWORK_ERROR` and a message naming the deadline, in fewer than 100 attempts, and a pause that crosses the
    deadline must not be followed by another erase write. Owner: Task 3; pin
@@ -142,7 +155,9 @@ Release `CAS*`, base 3005 at `fa1b89d1529`. A different number is a deviation th
 - [ ] **Step 1:** `$P/wave1/bin/bt.sh` and `mut.sh` exist, pass `bash -n`, take `$M/tmp/ninja.lock` then
   `$P/build.lock`, and write mutation logs to `$P/wave1/logs/`. Add `st.sh <tag> '<test names>'`: builds
   `clickhouse` under both locks, then runs `ONLY='<test names>' $P/gates/stateless.sh <tag>`; marker
-  `build/st_<tag>.marker`, last line `ST_DONE=<rc>`.
+  `build/st_<tag>.marker`, last line `ST_DONE=<rc>`. `bt.sh`, `mut.sh`, `$P/gates/stateless.sh`,
+  `$P/gates/release.sh` and `$P/gates/asan.sh` write the `BUILD_MARKER` line first in their test log. `bt.sh`
+  accepts extra gtest flags as its third argument and `BT_TIMEOUT`.
 - [ ] **Step 2:** `cd $WT && git status --short` is empty and `git rev-parse --short HEAD` is `fa1b89d1529`.
 - [ ] **Step 3:** Record the base and the baseline 3005 in the ledger, with the pre-flight conflict table.
 
@@ -250,27 +265,37 @@ Task 2 together. Read spec §4 and `$P/wave1/facts/A-2570.md` lines 85-127.
   - Two captures by one call chain count as two.
   - `refNameRetirements` stays as the body of `refNameRetirementsForTest`.
 
-- [ ] **Step 1:** Add `refNameSlotCountForTest` on the ledger and the pool. Write B-1
-  `CASNsFileIncarnation.RetirementRecordsDoNotAccumulateAcrossCreateDropCycles` (`openPoolForTest`,
-  `gc_fold_max_defer_rounds = 0`, `runRegularRoundReclaiming`, 50 create-drop cycles; expects slot count 0) and
-  B-2 `…RemoteLeaderRetirementsLeaveNoRecordWithoutAnAdmission` (two pools, the second leads GC; expects 0 on
-  the first).
-- [ ] **Step 2:** Run `bt.sh t2_red 'CASNsFileIncarnation*'`. Expected red: B-1 with 50, B-2 with 1. Copy to
-  `$P/wave1/logs/red_B1.log`.
+- [ ] **Step 1:** Add `refNameSlotCountForTest` on the ledger and the pool. Write the five tests before any
+  other product change:
+  - B-1 `CASNsFileIncarnation.RetirementRecordsDoNotAccumulateAcrossCreateDropCycles` (`openPoolForTest`,
+    `gc_fold_max_defer_rounds = 0`, `runRegularRoundReclaiming`, 50 create-drop cycles; expects slot count 0).
+  - B-2 `…RemoteLeaderRetirementsLeaveNoRecordWithoutAnAdmission` (two pools, the second leads GC; expects 0 on
+    the first).
+  - B-3 `…ColdAdmissionInFlightKeepsTheRecordAndReleasesIt` (`ParkedAdmissionBackend`). Case 1: while parked,
+    slot count 1 and the retirement is recorded; after release the admission is refused and the count is 0.
+    Case 2 (remount): park an admission, call `quiesceRefTablesForRemount`, start a second admission of the same
+    name and park it, release the first; the first is refused and the slot count is still 1 (the slot of the
+    second admission); after the second is released the count is 0.
+  - B-4 `…AbortedColdAdmissionsReleaseTheirInFlightCount` (pin; cases: reader on an absent row; reader on a
+    `Removing` row; writer whose runtime is resident; `namespaceStillLogicallyPresent` on an absent row;
+    `dropNamespaceImpl` on a missing row and on an `expected_incarnation` mismatch; an admission whose catalog
+    read throws; each ends with the slot count it started with).
+  - B-5 `…ColdAdmissionOfAPredecessorIsRefusedAfterItsSuccessorIsEvicted` (pin of the refusal;
+    `ParkedAdmissionBackend`, `ref_table_cache_bytes = 1`). Its slot-count line comes in step 5.
+- [ ] **Step 2:** Run `bt.sh t2_red 'CASNsFileIncarnation*'`. Expected red: B-1 with 50, B-2 with 1, B-3 with a
+  slot count of 1 after the refused admission. B-4 and B-5 pass. Copy to `$P/wave1/logs/red_B1.log` and to
+  `pin_B1_B-4_B-5.log`.
 - [ ] **Step 3:** Implement the guard, the epoch and the rules above.
-- [ ] **Step 4:** Write B-3 `…ColdAdmissionInFlightKeepsTheRecordAndReleasesIt` (`ParkedAdmissionBackend`: while
-  parked, slot count 1 and the retirement is recorded; after release the admission is refused and the count is
-  0; a second case parks an admission, calls `quiesceRefTablesForRemount`, releases it, and expects a refusal
-  and no slot left by the old guard), B-4 `…AbortedColdAdmissionsReleaseTheirInFlightCount` (pin; cases: reader
-  on an absent row; reader on a `Removing` row; writer whose runtime is resident;
-  `namespaceStillLogicallyPresent` on an absent row; `dropNamespaceImpl` on a missing row and on an
-  `expected_incarnation` mismatch; an admission whose catalog read throws; each ends with the slot count it
-  started with), B-5 `…ColdAdmissionOfAPredecessorIsRefusedAfterItsSuccessorIsEvicted` (pin;
-  `ParkedAdmissionBackend`, `ref_table_cache_bytes = 1`; final slot count 1, the slot of the other namespace).
-- [ ] **Step 5:** Update A-3: rename to `RetirementWithASuccessorResidentIsRecorded`, slot count 1 after the
-  eviction (the slot of `other`). Update A-8: slot count 1 on the `owner` pool after the join.
+- [ ] **Step 4:** If case 2 of B-3 cannot park two admissions through the pool, drive the second one through a
+  ledger-level test seam and name the seam in the report. The assertion stays: a guard of an older epoch
+  releases nothing of a slot created after the remount.
+- [ ] **Step 5:** Add to B-5 the final slot count 1 (the slot of the other namespace). Update A-3: rename to
+  `RetirementWithASuccessorResidentIsRecorded`, slot count 1 after the eviction (the slot of `other`). Update
+  A-8: slot count 1 on the `owner` pool after the join.
 - [ ] **Step 6:** Run `bt.sh t2_green 'CASNsFileIncarnation*:CASCatalogLifecycleReconciler*'`; all pass.
-- [ ] **Step 7:** Mutation (`t2_mut`): the guard's destructor does not erase the slot. B-1 or B-3 must fail.
+- [ ] **Step 7:** Mutation (`t2_mut`): the guard's destructor does not erase the slot. B-4 must fail on its
+  absent-row and throwing-read cases. (B-1 and case 1 of B-3 release their slot inside
+  `acquireRefTableRuntime` or keep a runtime, so they do not see this mutation.)
 - [ ] **Step 8:** List in the report every place a `ColdAdmission` is destroyed and which locks are held there.
 - [ ] **Step 9:** Run `bt.sh t2_gate 'CAS*'`; expected 3018.
 - [ ] **Step 10:** Commit. Subject: `Keep a retirement record only while a cold admission is in flight`.
@@ -328,7 +353,8 @@ Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`. Read spec §5
 - [ ] **Step 1:** Write C-3 `CASGCFrontierGate.AnAbortedDrainReportsTheRowsItErased` (`DrainRaceBackend`, two
   eligible rows, the second erase refused on every attempt; expects the round to throw and the phase record to
   carry `deleted = 1`).
-- [ ] **Step 2:** Run `bt.sh t4_red 'CASGCFrontierGate*'`. Expected red: `deleted` is 0. Copy to
+- [ ] **Step 2:** Run `bt.sh t4_red 'CASGCFrontierGate*'`. Expected red: the phase record has no `deleted` key.
+  Copy to
   `$P/wave1/logs/red_C2.log`.
 - [ ] **Step 3:** Implement. Update `S/cas_gc_log.md`.
 - [ ] **Step 4:** Run `bt.sh t4_green 'CASGCFrontierGate*:CASGCLog*:CASCatalogLifecycleReconciler*'`; all pass.
@@ -379,7 +405,7 @@ Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`. Read spec §6
 - [ ] **Step 2:** Run `bt.sh t5_d1_red 'CASContentAddressedSettings*'`. Expected red: TTL is 30000. Copy to
   `$P/wave1/logs/red_D1.log`.
 - [ ] **Step 3:** Change the default, the two comments, the four configs and the docs (spec §6.2 lists the lines).
-- [ ] **Step 4:** Run `bt.sh t5_d1_gate 'CAS*'`; expected 3022. No mutation run: the red run is that experiment.
+- [ ] **Step 4:** Run `bt.sh t5_d1_gate 'CAS*'`; expected 3022.
 - [ ] **Step 5:** Commit D1. Subject: `Default the CAS mount lease to 120 s`.
 - [ ] **Step 6:** Write D-2 `CASRequestBudget.BudgetLogLineNamesReserveAndSlack` next to
   `EnvelopeIsValidatedNotTheBareAttempt`, with the `Poco::StreamChannel` capture of `T/gtest_cas_pool.cpp:2378-2427`:
@@ -412,8 +438,13 @@ Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`. Read spec §7
   Retry::bind(now_ms, uint64_t default_window_ms);          /// required; no overload without it
   inline constexpr uint64_t kDefaultRequestWindowMs = 90000;   /// CasRequestBudget.h; E2 makes it 120000
   uint64_t CasRequestBudget::request_window_ms = kDefaultRequestWindowMs;
-  CasRequests::CasRequests(..., uint64_t default_window_ms);   /// plus private bindPolicy(const Retry &)
+  CasRequests::CasRequests(..., uint64_t default_window_ms = kDefaultRequestWindowMs);   /// appended last
   ```
+
+  `CasRequests` also gets a private `bindPolicy(const Retry &)`. The constructor parameter has a default because
+  more than 50 test call sites build a plane on a bare backend; they keep compiling and run on the default window.
+  The seven production sites listed below pass the value of their pool's budget explicitly. The reviewer checks
+  by `grep` that no file under `CA/` builds a `CasRequests` without the argument.
 
   `standard`, `once` and the default argument of `untilLeaseSafe` leave the window empty. `within(ms)` and
   `untilDefinitive` keep explicit values. `bindPolicy` replaces the 14 `policy.bind(owner.now_ms())` calls in
@@ -426,16 +457,23 @@ Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`. Read spec §7
   throws `BAD_ARGUMENTS` when the window is not larger than one attempt envelope; `recovery_retry_budget_ms` is
   set to `2 × request_window_ms` at the same copy site and its struct default becomes 240000, with no validation.
 
-- [ ] **Step 1:** Add the E1 signatures with the old behaviour: `bind` and `CasRequests` take the default window
-  but an empty policy window still resolves to the literal 90000. Update the callers and the tests that no
-  longer compile: `T/gtest_cas_requests.cpp` (`makeRequests` and the three direct `bind` callers pass 90000),
+- [ ] **Step 1:** Add the E1 signatures with the old behaviour: the budget field `request_window_ms`, `bind` and
+  `CasRequests` taking the default window, and the seven production planes passing the budget value; an empty
+  policy window still resolves to the literal 90000. Update the callers and the tests that no
+  longer compile: `T/gtest_cas_requests.cpp` (`makeRequests` and every direct `bind` call pass 90000),
   `T/gtest_cas_ref_catalog.cpp` and `T/gtest_cas_ref_writer.cpp` (arithmetic on `Retry::standard().window_ms`
   switches to `kDefaultRequestWindowMs`).
 - [ ] **Step 2:** Write E-1 `CASRequests.StandardPolicyUsesThePlaneRequestWindow` (plane window 7000,
   `FakeClock`): `standard` gives up at 7000 ms; `once` sends one attempt; `within(1000)` keeps 1000;
   `untilLeaseSafe` uses the plane window when it is tighter than the lease bound.
-- [ ] **Step 3:** Run `bt.sh t6_e1_red 'CASRequests*:CASRetry*'`. Expected red: E-1 gives up at 90000. Copy to
-  `$P/wave1/logs/red_E1.log`.
+  Write E-3 `CASPartWriteTxn.AGiveUpHonoursTheConfiguredRequestWindow` now as well (pool budget window 8000;
+  shape of `AGiveUpReportsHowManyAttemptsItSent`; the give-up comes at the first deadline check past 8 s of fake
+  time). It lands in commit E2, but only this tree can show it red.
+- [ ] **Step 3:** Run `bt.sh t6_e1_red 'CASRequests*:CASRetry*:CASPartWriteTxn*'`. Expected red: E-1 gives up at
+  90000; E-3 gives up after 90 s of fake time. Copy to `$P/wave1/logs/red_E1.log` and `red_E2_E-3.log`. Then
+  take E-3 out of the tree until step 9:
+  `git diff -- src/Disks/tests/gtest_cas_part_write.cpp > $P/wave1/logs/e3_test.patch`, then
+  `git apply -R $P/wave1/logs/e3_test.patch`; `git diff --stat` no longer lists that file.
 - [ ] **Step 4:** Make an empty window resolve to the plane default.
 - [ ] **Step 5:** List in the report every caller of `Retry::bind` and of the `CasRequests` constructor
   (`grep -rn` output, untruncated) with the window each one passes.
@@ -445,12 +483,11 @@ Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`. Read spec §7
 - [ ] **Step 8:** Commit E1. Subject: `Make the CAS request window a default of the request plane`.
 - [ ] **Step 9:** Add the setting with default 90000 and the copy into the budget, without validation. Write E-2
   `CASContentAddressedSettings.RequestWindowDefaultAndValidation` (default 120000; a window equal to the
-  envelope is refused with `BAD_ARGUMENTS`; a default `CasRequestBudget` has a recovery budget of 240000) and
-  E-3 `CASPartWriteTxn.AGiveUpHonoursTheConfiguredRequestWindow` (pool window 8000; shape of
-  `AGiveUpReportsHowManyAttemptsItSent`; the give-up comes at the first deadline check past 8 s of fake time).
+  envelope is refused with `BAD_ARGUMENTS`; a default `CasRequestBudget` has a recovery budget of 240000).
+  Put E-3 back: `git apply $P/wave1/logs/e3_test.patch`.
 - [ ] **Step 10:** Run `bt.sh t6_e2_red 'CASContentAddressedSettings*:CASPartWriteTxn*'`. Expected red: E-2 on all
-  three assertions. E-3 may already pass on the E1 tree; then save it as a pin and say so. Copy to
-  `$P/wave1/logs/red_E2.log`.
+  three assertions. E-3 passes here, because E1 made the plane honour the pool window; its red evidence is
+  `red_E2_E-3.log` of step 3. Copy to `$P/wave1/logs/red_E2.log`.
 - [ ] **Step 11:** Set both defaults to 120000, add the validation and the recovery-budget rule, update the docs
   (spec §7.2 lists the lines; every "ninety seconds" becomes "the configured request window
   (`cas_request_window_ms`, default 120 s)"; the docs state the old value 90 s and the recovery-budget relation).
@@ -697,23 +734,28 @@ No C++ changes: no build, and the commit messages carry the check that was run i
 
 ### Task 12: Sibling check of the snapshot-threshold tests (no commit expected) {#task-12}
 
-Implementer `ca-impl` (sonnet, medium). No reviewer unless a commit is made. Read spec §11 (CAS-466).
+Implementer `ca-impl` (sonnet, medium). Reviewer `ca-review-lite`, who checks the report against the seven
+tests and the repeat log, and the diff when a commit is made. Read spec §11 (CAS-466).
 
 - [ ] **Step 1:** Read `git show 50dbaee3a69` and `git show f1bdb36d374` to learn the wait that hung.
 - [ ] **Step 2:** Read the seven tests that set `snapshot_log_count_threshold = 0`: two in
   `T/gtest_cas_detached_work.cpp`, two in `T/gtest_cas_ref_snapshot_publish_ordering.cpp`, one in
   `T/gtest_cas_ref_chunked_flush.cpp`, two in `T/gtest_cas_ref_writer.cpp`. For each, say whether it can wait
   on the same condition and why.
-- [ ] **Step 3:** Run the seven tests 30 times with the already built binary:
-  `build/src/unit_tests_dbms --gtest_filter='<seven names>' --gtest_repeat=30 > $P/wave1/logs/i5_repeat.log 2>&1`
-  under `timeout 1500`. A timeout or a failure is a finding.
+- [ ] **Step 3:** Run the seven tests 30 times through the helper:
+  `BT_TIMEOUT=1500 $P/wave1/bin/bt.sh t12_repeat '<seven names>' '--gtest_repeat=30'`. Copy
+  `build/test_t12_repeat.log` to `$P/wave1/logs/i5_repeat.log`. A timeout (`GTEST_EXIT=124`) or a failure is a
+  finding.
 - [ ] **Step 4:** Write the result per test to `$P/wave1/reports/task12.md`. Only if a sibling has the defect:
   fix the test, run `bt.sh t12_gate 'CAS*'` (expected 3034) and commit with a subject that names the test.
 
 ### Task 13: Gates on the work head (controller) {#task-13}
 
 Run from spec §14 on the head of the work branch, with a clean tracked tree. Every gate script runs under
-`flock $M/tmp/ninja.lock` in addition to its own lock. Logs go to the paths the scripts print.
+`flock $M/tmp/ninja.lock`. `release.sh` and `fast.sh` take `$P/build.lock` themselves around ninja; the
+stateless scripts build nothing; `asan.sh` builds without that lock, so it runs as
+`flock $M/tmp/ninja.lock flock $P/build.lock $P/gates/asan.sh w1`. Never wrap a script that takes
+`$P/build.lock` itself in a second `flock` of that file. Logs go to the paths the scripts print.
 
 - [ ] **Step 1:** Release `CAS*`: `$P/gates/release.sh w1`; expected 3034 passed, 0 failed.
 - [ ] **Step 2:** `bt.sh w1_iter 'ObjectStorageIteratorAsync*'`; all pass.
@@ -725,7 +767,9 @@ Run from spec §14 on the head of the work branch, with a clean tracked tree. Ev
 - [ ] **Step 6:** Integration, one module per run, log `$WT/build/integration_w1_<module>.log`:
   `python3 -m ci.praktika run "integration" --test "<module>"` for `test_cas_shared_pool`,
   `test_cas_drop_pool_member`, `test_cas_gc_sharded`, `test_cas_early_commit_restart`,
-  `test_backward_compatibility`. All pass.
+  `test_backward_compatibility`. All pass. Each log starts with a `BUILD_MARKER` line written before the run:
+  head, the resolved path of the binary the job uses (`readlink -f ci/tmp/clickhouse`) and its mtime; that
+  binary is the one `release.sh w1` built. The runs create their own containers and touch no other.
 - [ ] **Step 7:** Style: `$P/gates/style.sh w1 fa1b89d1529`; `STYLE_DONE hits=0`.
 - [ ] **Step 8:** Record every result with its log path in the ledger. A red gate is root-caused and fixed by a
   fresh implementer; the gates that the fix can affect run again.
@@ -752,9 +796,21 @@ Spec §15. Report: `docs/superpowers/reports/2026-11-12-cas-improvements-wave1-m
   `Information` round line per Finish row of `system.cas_gc_log` with outcome `Success`, `Aborted`, `Failed`
   or `Stopped`, and none for other outcomes; M-4 reclaim backlog 0 at the end of the idle phase on base and
   head; M-5 `system.cas_mounts.last_success_age_seconds` is `NULL` before the first round and a number after.
-- [ ] **Step 2:** Run the setup of the PR2 measurements (`$P/measure/before_runs.sh`, `after_runs.sh`,
-  `logstats.py`, `mdtable.py`) on `fa1b89d1529` and on the work head. Its ports must not collide with the
-  reserved ones.
+- [ ] **Step 2:** Pin the head binary: copy `$WT/build/programs/clickhouse` (built by `release.sh w1`) to
+  `$P/bin/clickhouse-w1-<work head>`. The base binary is `$P/bin/clickhouse-pr2-fa1b89d1529`. Run, one server
+  at a time, each under `flock $P/build.lock`, from `$P/measure`:
+  `./run.sh W1_base_churn <base binary> 1 900 120 19781`, `./run.sh W1_head_churn <head binary> 1 900 120 19781`,
+  then the same pair with churn `0` and labels `W1_base_nochurn`, `W1_head_nochurn`. The labels are new;
+  `run.sh` refuses an existing output directory. Ports 19781-19785 are outside the reserved set.
+  Collect per run, into `runs/<label>/w1_predictions.tsv`, with a script `$P/measure/w1_collect.sh <label>` that
+  the controller writes in this step:
+  - M-1: rows of `system.parts` and merges finished (`parts_final.txt`, `events_final.tsv`), churn tables;
+  - M-2: `grep -a -c 'CA GC round failed' state/server.log`;
+  - M-3: the count of `Information` round lines in `state/server.log` against the Finish rows of
+    `system.cas_gc_log` by outcome (`postq.sh` restarts the server on the saved state for the query);
+  - M-4: the reclaim backlog of the last idle sample;
+  - M-5: `last_success_age_seconds` of `system.cas_mounts`, queried once right after the server start and once
+    before the stop. `run.sh` gets these two queries behind `W1=1`, so older labels stay reproducible.
 - [ ] **Step 3:** Fill the report: one table per prediction, base against head, with the run logs' paths. A
   failed prediction is a finding: root cause, then a fix or a task.
 - [ ] **Step 4:** Commit the report on `cas-gc-rebuild` in `M` by exact path.
@@ -764,13 +820,24 @@ Spec §15. Report: `docs/superpowers/reports/2026-11-12-cas-improvements-wave1-m
 - [ ] **Step 1:** Wait for CI run 43248330323 of PR 2831 on `d8cbdfae3ec`. Every red gets a root cause or a
   tracked task. A fix that belongs to this wave lands on the work branch through a fresh implementer and a
   review; then the affected gates of Task 13 run again.
-- [ ] **Step 2:** Build the clean series as a new branch over `d8cbdfae3ec`: first the commits of the
-  late-request audit bundle, then the commits of this plan in the order of the pass-count table, each one
-  commit with its subject verbatim. Fix rounds are folded into the commit that owns the code. I1 and I2 keep
-  their author. Every commit has `Signed-off-by` and `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
-- [ ] **Step 3:** Tree identity: `git rev-parse <clean head>^{tree}` equals `git rev-parse <work head>^{tree}`.
-- [ ] **Step 4:** Every clean commit whose tree was not gated during execution is built and passes `CAS*`
-  (`bt.sh` on a detached checkout in `WT`). The pass count goes into its message.
+- [ ] **Step 2:** Freeze the mapping first, in `$P/wave1/clean-map.md`: one row per source commit of
+  `be74be9fa7b..<work head>` with the clean commit it goes into. Rules:
+  - the late-request audit bundle (`be74be9fa7b..fa1b89d1529`) comes first, one clean commit per story of its
+    spec; its ancillary test fixes (`50dbaee3a69`, `f1bdb36d374`) fold into the clean commit of the story whose
+    test they fix;
+  - then the commits of this plan in the order of the pass-count table, each one commit with its subject
+    verbatim;
+  - a fix round folds into the clean commit of the story its finding names; a fix that spans two stories is
+    split by hunk, and a hunk in a shared file follows the story that introduced the lines it changes
+    (`git blame` on the work head).
+- [ ] **Step 3:** Build the series as a new branch over `d8cbdfae3ec`, one clean commit at a time, never
+  amending. For each: apply its source commits with `git cherry-pick -n`, then compare `git write-tree` with
+  the trees gated during execution. An equal tree takes the recorded pass count. Any other tree is built and
+  passes `CAS*` through `bt.sh` on the uncommitted tree before the commit is created, and that count goes into
+  the message. I1 and I2 keep their author. Every commit has `Signed-off-by` and
+  `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
+- [ ] **Step 4:** Tree identity: `git rev-parse <clean head>^{tree}` equals `git rev-parse <work head>^{tree}`.
+  Record the per-commit tree hashes and counts in the ledger.
 - [ ] **Step 5:** The gates of Task 13 hold for the clean head because its tree is the gated tree; record the
   tree hash next to each gate result in the ledger.
 - [ ] **Step 6:** Fast-forward `fix/antalya-26.8/cas-improvements-bundle` to the clean head and push it to
