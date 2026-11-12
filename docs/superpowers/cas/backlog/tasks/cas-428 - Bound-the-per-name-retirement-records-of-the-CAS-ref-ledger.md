@@ -4,6 +4,7 @@ title: Bound the per-name retirement records of the CAS ref ledger
 status: To Do
 assignee: []
 created_date: '2026-11-04 02:01'
+updated_date: '2026-11-12 15:43'
 labels:
   - 'area:refs'
   - 'complexity:small'
@@ -33,3 +34,16 @@ PR https://github.com/Altinity/ClickHouse/pull/2570 keeps a ref-name slot with a
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-12 sizing, read on PR 2570 head `dca5e45ce32` (no stand run; the defaults study measured `41d4a78eeb9`, which lacks PR 2570).
+- A namespace name holds the table UUID (`srv1/<table_uuid>`), so every `CREATE TABLE` makes a new name. Record count = tables dropped since the last mount, not distinct SQL names.
+- Before PR 2570 the slot is erased on invalidation and on eviction (`ref_name_slots.erase` in `invalidateRemovedCatalogLife` and `enforceRefTableCacheBudget` on `d8cbdfae3ec`). The growth is new with PR 2570.
+- The walk is on the cold-admission path: `ensureRefTableRecovered` ends with `enforceRefTableCacheBudget`, which walks all of `ref_name_slots` under `ref_queue_mutex` once per newly materialized table (twice when over budget). `reconcileCatalogCut` and `wedgedRefLaneCount` walk it too.
+- Standalone model, `std::map<std::string, {shared_ptr, uint64_t}>` with UUID-shaped keys, clang 21 -O2 (`master/tmp/cas428/walk_bench.cpp`): one walk takes 0.16 ms at 10k records, 2.3 ms at 100k, 104 ms at 1M, 574 ms at 5M. About 150 bytes per record.
+- Churn rate measured by the defaults study: 9.4 `CREATE`/`DROP` cycles/s (`ddl4`, 16926 cycles in 30 min). At that rate: 100k records in 3 h, 1M in 30 h. At 1M each `CREATE` holds `ref_queue_mutex` for ~0.1 s.
+- CI stateless runs stay under ~10k records, so CI does not show it.
+- Sketch: count in-flight cold admissions in the slot; bump `retirements` only on an existing slot (`find`, not `operator[]`); erase the slot when `current` is null and no cold admission is in flight. An admission that starts after the retirement reads the catalog after it, which is the case the current code already trusts (`retirements_seen` equals the current count).
+<!-- SECTION:NOTES:END -->
