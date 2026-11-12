@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-12 05:00'
 labels:
   - 'area:ref-ledger'
   - 'area:gc'
@@ -55,4 +55,6 @@ Fix (no format change): in `publishCkpt`, refuse a non-seal contribution whose `
 2026-10-13 model (`0db22603534`, CaRefTableSnapshotLogCore RESULTS, new epoch slice): `cur_lateappend` violates `INV_ACKED_REACHABLE` (22 states) when the lease check fails; green with T1. Candidate A (refuse a non-seal contribution whose committed_through equals the durable `last_epoch_seal`) is NOT enough: with a third epoch whose seal is the frontier, `mergeCommittedThrough` accepts the zombie's lower-epoch record by numeric comparison (`fix_a_3ep` red). Recommended A2 in `publishCkpt` `decide`: (1) contribution ct == durable `last_epoch_seal` → `SuccessorSeal` (conclusive); (2) contribution epoch below the durable ct epoch → accept only if the durable seal is in the contribution's epoch and strictly above it, else new outcome `Superseded` (not acked, not rejected; handled like `FencedOut`). Green with 3 epochs (358 k states) and keeps adopted stragglers acknowledged. Optional B3: GC keeps the newest object of the epoch just below the frontier (one object per table). No format change, no extra requests; ~90 lines (`CasRefCkpt.{h,cpp}`, `commitRefChunk`, `resolveWedgeOnce`, recovery sites). Failing-first: `CASRefCkpt.PublishRefusesNonSealAtDurableSeal`, `CASRefCkpt.PublishRefusesLowerEpochPastLaterSeal`, a ledger late-append test (needs a pause point between gate and send). Supersedes the description's candidate A.
 
 2026-10-18: draft prepared on fix/antalya-26.6/cas-366-superseded-ckpt-contribution @2d2182b3b19c (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/366/.
+
+Implemented 2026-11-11 on branch `fix/antalya-26.8/cas-ref-cleanup-per-life-licence` at `be74be9fa7b` (worktree `cas-pr1`, 39 commits over `2f89c5db182`). Not pushed, pull request not opened. Design: `docs/superpowers/specs/2026-11-11-cas-pr1-ref-cleanup-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr1-ref-cleanup-bundle-measurements.md`. Story B: `d9b31225949`, `412f0c56334`, `c909f68e3e8`.
 <!-- SECTION:NOTES:END -->

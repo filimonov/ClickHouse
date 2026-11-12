@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-12 05:00'
 labels:
   - 'area:replication'
   - 'area:mounts'
@@ -57,4 +57,6 @@ Same-pair twin fix: CAS-364.
 2026-10-14: drop the 'epoch reuse (C9)' vector: epochs no longer repeat across lives for upgraded servers (decommission keeps the counter, PR B).
 
 2026-10-18: draft prepared on fix/antalya-26.6/cas-365-confirm-reads-mount-slot @cfc79da94a9a (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/365/.
+
+Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle` at `fa1b89d1529` (worktree `cas-pr1`, 40 commits over `be74be9fa7b`). Not pushed, pull request not opened. Gates on that head: release `CAS*` 3005, ASan/UBSan 3009, Fast-test compile, stateless 58 of 58. Design: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`. Story B: `01e6f7c645d`, `bf8612e3c4c`, `2da4d8c1244`, `a2fe919c1ec`; review fix `821dfb1400a`. Refusal rate: see CAS-461.
 <!-- SECTION:NOTES:END -->

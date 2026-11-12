@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-12 05:00'
 labels:
   - 'area:ref-ledger'
   - 'complexity:trivial'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 0. Verified 2026-09
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 0')
+
+Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle` at `fa1b89d1529` (worktree `cas-pr1`, 40 commits over `be74be9fa7b`). Not pushed, pull request not opened. Gates on that head: release `CAS*` 3005, ASan/UBSan 3009, Fast-test compile, stateless 58 of 58. Design: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`. Story D: `5905e35e911`.
 <!-- SECTION:NOTES:END -->
