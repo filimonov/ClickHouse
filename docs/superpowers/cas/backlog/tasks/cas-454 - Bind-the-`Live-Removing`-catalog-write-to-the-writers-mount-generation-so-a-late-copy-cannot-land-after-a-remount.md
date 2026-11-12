@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 16:16'
+updated_date: '2026-11-12 01:08'
 labels:
   - 'area:ref-ledger'
   - 'complexity:large'
@@ -41,3 +42,9 @@ Provenance: tmp/noclock/drafts/prep/367/REVIEW.md (needs verification).
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-12: the final review of the late-request bundle (branch `fix/antalya-26.8/cas-late-request-audit-bundle`) raised the gap this task owns three times. After that branch a lane closes only when a `Live -> Removing` write was really sent, and the two ways out are a retried `DROP` that completes or a remount. Nothing bounds how long the sent write can stay in flight relative to the remount (`Retry::standard`, not lease-bound), so a copy that lands after the remount still stops the table at a later append. `docs/en/antalya/cas/architecture/namespaces.md` states this residual. The reviewers also asked for a time bound or a background resolver for the closed lane; both were declined because a wait cannot prove that the write will not land. Binding the write to the mount generation is the fix that removes both the residual and the need for the closed lane to outlive the mount.
+<!-- SECTION:NOTES:END -->

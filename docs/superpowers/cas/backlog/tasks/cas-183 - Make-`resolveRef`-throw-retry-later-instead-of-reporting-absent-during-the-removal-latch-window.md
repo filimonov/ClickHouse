@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-12 01:08'
 labels:
   - 'area:ref-ledger'
   - 'area:read-path'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/ref-protocol.md#lane-residuals-2031-cas-017 residual 1. Veri
 First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
 
 2031-triage CAS-017: residual 1 (read path answers absent instead of retry-later while `dropNamespace` holds the admission latch).
+
+2026-11-12: the late-request bundle (branch `fix/antalya-26.8/cas-late-request-audit-bundle`) makes this window longer. A `DROP` whose `Live -> Removing` write was sent and not answered now leaves the lane closed until a retried `DROP` completes or the disk remounts, not only for the length of the drop. The final review of that branch notes that reads on that server see the table as absent for that whole time (`acquireReadableRefTableRuntime` returns no runtime while the lane is closed). A retry-later answer from `resolveRef` matters more with that change.
 <!-- SECTION:NOTES:END -->
