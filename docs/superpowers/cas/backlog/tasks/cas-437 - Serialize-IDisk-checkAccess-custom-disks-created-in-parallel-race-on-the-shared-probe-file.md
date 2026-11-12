@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-12 11:20'
 labels:
   - cas
   - ci
@@ -43,4 +43,6 @@ Fix committed on port/antalya-26.8/cas-from-26.6 as 086efc95363 (NOT pushed): st
 2026-11-07 audit: open PR https://github.com/Altinity/ClickHouse/pull/2812 (antalya-26.6); 26.8 fix rides on https://github.com/Altinity/ClickHouse/pull/2805.
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
+
+2026-11-12: review of PR 2805 (mkmkme, non-blocking): 086efc95363 on antalya-26.8 is byte-identical to the head of https://github.com/Altinity/ClickHouse/pull/2812 (bb9bf738a0c, still open, review required). If the review of 2812 changes the fix, antalya-26.8 needs the same change as a follow-up PR. Check on merge of 2812: `git diff bb9bf738a0c <merged head> -- src/Disks/IDisk.cpp src/Disks/tests/gtest_disk_access_check.cpp` must be empty, otherwise port the delta.
 <!-- SECTION:NOTES:END -->

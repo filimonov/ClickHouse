@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-12 11:20'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -43,4 +43,6 @@ Unit tests (tsan) on PR 2805 @41d4a78eeb9 (run 42864462634, job unit_tests_tsan,
 2026-11-11: the antalya-26.8 port is on PR https://github.com/Altinity/ClickHouse/pull/2805 as c840f70b133 (pick of 943249ecbb0) plus the review follow-up 2f89c5db182; ASan `CAS*` gate 2909 passed. Close after PR 2805 merges. Umbrella: CAS-450.
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
+
+2026-11-12: review of PR 2805 (mkmkme, https://github.com/Altinity/ClickHouse/pull/2805#pullrequestreview-5872933325, 2026-11-12T10:36Z, non-blocking): 2f89c5db182 exists only on antalya-26.8. antalya-26.6 (943249ecbb0) still has the adapter lambda in `openForDecommission` and the stale comments in CasRequests.h, CasPool.cpp, CasPool.h, Tools/CasDecommission.h. Open: pick 2f89c5db182 onto antalya-26.6 as its own PR (4 files, +23 -19, comments plus one setter reuse, no behaviour change). Do not close this task before that PR merges or is rejected with a reason.
 <!-- SECTION:NOTES:END -->
