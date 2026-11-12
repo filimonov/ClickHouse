@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 19:20'
-updated_date: '2026-11-11 23:55'
+updated_date: '2026-11-12 16:55'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -75,4 +75,6 @@ Evidence: `tmp/prbundle/measure/runs/{R1b_before_churn,R2b_after_churn}/{gc_all_
 2026-11-12 defaults review: threshold: at about one CREATE+DROP cycle per second for the pool every GC round succeeds (`ddl16_hold30`: 1920 cycles in 30 min, 20 of 20 rounds); at about nine per second (`ddl4`: 16926 cycles) 12 of 13 rounds abort, the same as at 16 threads; budgets 0 change nothing (`ddl16_b0`). CREATE/DROP throughput itself is bound by the `cas/ref_catalog` object: 4 threads per node 16926 cycles, 16 threads 18567, median CREATE 0.18 s against 1.09 s. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): the stall threshold lies between 1.1 and 9.4 create/drop cycles per second for the pool; no run in between. That one object (`cas/ref_catalog`) limits CREATE/DROP throughput is the likely explanation, not a proven one: no run varied catalog contention alone.
+
+2026-11-12, wave 1 of the 26.8 improvements bundle (spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 5, PR https://github.com/Altinity/ClickHouse/pull/2831). The wave takes the minimal fix: the pause of a conflicted erase moves before the admission check and the resolution read (same growing backoff), and the `deleted` phase metric is filled when the drain throws (AC #3). AC #2 is not in the wave: a fold that runs with a `Removing` row left behind contradicts `DrainBeforeDecision` of `CaRefPreFoldDrainCore.tla`; it moved to CAS-463.1 (model configuration first). AC #1 is a stand criterion and is re-measured after the wave.
 <!-- SECTION:NOTES:END -->

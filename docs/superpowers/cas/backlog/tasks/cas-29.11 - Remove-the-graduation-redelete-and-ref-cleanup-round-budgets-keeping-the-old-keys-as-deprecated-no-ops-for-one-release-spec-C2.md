@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 23:55'
+updated_date: '2026-11-12 16:55'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -83,4 +83,6 @@ Source: utils/ca-soak/scenarios/BACKLOG.md:3510 (uncommitted). Related owners: C
 2026-11-12 defaults review: direct (no proxy) reproduction. 11 INSERT/s into one table, 300 s interval, default budgets (`gcD_M_i300`): rounds 17, 25, 38, 51, 129, 88, 117 s, graduation at exactly 5000 three rounds running, 152k ref keys listed, 25240 unreachable objects; three budgets 0 (`gcD_M_i300_b0`): rounds flat at about 45 s, 12226 unreachable. 2000 tables at 60 s: 74277 against 20372 unreachable (`mt1000_base`, `mt1000_b0`). At 60 s the `ref_cleanup` budget allows about 76 logs/s (11 INSERT/s here), the lowest ceiling. `cas_gc_round_outcome_entry_budget` 5000 makes `objects_deleted` stop at 5000 per round while fsck shows 4x more reclaimed: default it to 0 with the other three. Caveat: above GC capacity (62-81 INSERT/s here) budgets 0 do not help and a round ran 1129 s (`gcD_H_i60_b0`); that needs CAS-29.10. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): three caveats. The 1000-table pair (74277 against 20372 unreachable) is one run each and `mt1000_base` also ran the restart test before fsck; by share it is 82 % against 37 %. Above GC capacity budgets make no difference at equal load (`gcH_i900` against `gcH_i900_b0`: 109584 against 107309 unreachable) and do not bound a round either (1445 s with them in `gcD_H_i300`). No run had `cas_gc_round_outcome_entry_budget` at 0 on a busy round; that part of the proposal rests on the code.
+
+2026-11-12, owner picked the reduced form for wave 1 of the 26.8 bundle (spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 8): the five round budgets default to 0 (unbounded), the keys stay and keep working. AC #1 (remove the keys and warn) is superseded: nothing is removed, so there is nothing to warn about.
 <!-- SECTION:NOTES:END -->

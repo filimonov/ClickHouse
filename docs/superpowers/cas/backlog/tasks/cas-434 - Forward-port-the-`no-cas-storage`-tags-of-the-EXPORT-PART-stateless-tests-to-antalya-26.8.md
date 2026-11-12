@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 13:00'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-12 16:55'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -71,4 +71,6 @@ Exported data was complete whenever the exports finished.
 Local discriminator (ASan binary of `ad04f95e441`, this test alone on an idle machine, `python3 -m ci.praktika run ... --test 03572_export_merge_tree_part_limits_and_table_functions`): `Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)` OK in 36.61 s; `Stateless tests (amd_asan_ubsan, distributed plan, parallel, 2/2)` (`--workflow MasterCI`) OK in 45.58 s. EXPORT PART from a CAS part is not slower than from a plain part under ASan. The 600 s in CI comes from the loaded cas-s3 sanitizer lane (CAS-432); the hot component inside `OPTIMIZE FINAL` there is not identified, the timed-out jobs uploaded no server logs.
 
 Options: (a) extend the `tests/broken_tests.yaml` entry to msan and asan, as the base branch already does for tsan; (b) raise the `wait_for_exports` budget (does not cover the `OPTIMIZE FINAL` receive timeout); (c) shrink the 2 x 4194304-row input. Re-adding `no-cas-storage` would hide a supported path that passes on every non-sanitizer CAS lane.
+
+2026-11-12. The tag forward-port named by this task is stale: `5a1ffb222a5` removed `no-cas-storage` from the test on purpose. Real cause: on loaded sanitizer cas-s3 lanes the test exceeds its 60 s `wait_for_exports` poll or the 300 s receive timeout of `OPTIMIZE FINAL` (ASan 2 of 2 `BROKEN` at 600 s, MSan 2 of 3 `FAIL` at 482 s). Wave 1 of the 26.8 bundle (spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 11, commit I3) extends the `tests/broken_tests.yaml` rule to `tsan`, `msan`, `asan` and drops the `message` filter, since a run that dies at `OPTIMIZE` never prints `timeout: 60s`.
 <!-- SECTION:NOTES:END -->

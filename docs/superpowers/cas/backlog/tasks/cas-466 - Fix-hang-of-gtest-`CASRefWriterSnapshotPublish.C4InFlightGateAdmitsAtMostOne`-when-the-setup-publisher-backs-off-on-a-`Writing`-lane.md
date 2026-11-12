@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 21:46'
+updated_date: '2026-11-12 16:55'
 labels:
   - ci
   - 'area:tests'
@@ -58,4 +59,6 @@ Same shape to check: the other six `awaitBlockEntered` callers in `gtest_cas_ref
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11: found while gating the namespace-drop retry-policy commit of the late-request bundle (worktree cas-pr1, base e06224820c0). The hung process had 35 sleeping threads and 25 s of CPU after 7 minutes. Related: CAS-148. A test-only fix is queued for the fix wave of that branch (tmp/prbundle/pr2/fixwave/batch.md).
+
+2026-11-12. The hang is fixed at `fa1b89d1529` by `50dbaee3a69` and `f1bdb36d374` (both in `gtest_cas_ref_writer.cpp`). Left for wave 1 of the 26.8 bundle: AC #4, the check of the sibling tests that set `snapshot_log_count_threshold = 0` (two in `gtest_cas_detached_work.cpp`, two in `gtest_cas_ref_snapshot_publish_ordering.cpp`, one in `gtest_cas_ref_chunked_flush.cpp`, two in `gtest_cas_ref_writer.cpp`).
 <!-- SECTION:NOTES:END -->

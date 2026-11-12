@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-12 11:51'
+updated_date: '2026-11-12 16:55'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -75,4 +75,6 @@ Identifier trace: the earliest docs mention of `CasBlobInDegree` is 2026-07-01 (
 - The model `docs/superpowers/models/CaGcCondemnMarkerGate.tla` was extended for it (c9c4fa54bf0, e44bbef587e) but deletes body and meta atomically, so it cannot see the CAS-30 schedule.
 
 2026-10-12 noclock audit: `marker_confirmed` is never read by released builds and `delete_pending` is always written with it (26.6.4 included), so `(delete_pending=1, marker_confirmed=0)` is an unused combination; keep this in mind before giving the bit a new meaning.
+
+2026-11-12, checked at `fa1b89d1529` (antalya-26.8 with both bundles). The premise does not hold: `settleEntry` (`Gc/CasBlobInDegree.cpp:561-581`) checks the graduation budget BEFORE the gate, so a refused row is carried without a marker read, and a confirmed marker graduates in the same call. The state 'confirmed, then budget exhausted' cannot occur. The gate (`Gc/CasGc.cpp:2253-2275`) reads the marker at every graduation and no code reads `marker_confirmed` for a decision (pin: `CASThreeCursorMerge.MarkerConfirmedBitDoesNotSkipTheGate`). A persisted bit would save no GET; making the gate read it reverses section 5.5 of `docs/superpowers/specs/2026-09-30-cas-gc-meta-delete-names-its-condemnation-design.md` and depends on CAS-30. Dropped from wave 1 of the 26.8 bundle. Correction of the 2026-10-12 note: `v26.6.2.20001` and `v26.6.4.20001` DO read the bit (`if (e.marker_confirmed || ...)` in `settleEntry`) and skip the marker read; the 26.6.8 tags and later do not. Owner decision open: supersede the task, or keep it blocked on CAS-30.
 <!-- SECTION:NOTES:END -->
