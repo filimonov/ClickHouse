@@ -4,6 +4,7 @@ title: Decide on a second mount-slot read when a renewal races the relink confir
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:33'
+updated_date: '2026-11-12 04:59'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
@@ -37,3 +38,9 @@ Decide from the measured rate whether the confirm should read the slot a second 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Measured 2026-11-12 on `fa1b89d1529` (branch `fix/antalya-26.8/cas-late-request-audit-bundle`): `CASRelinkConfirmRefusedSlotMoved` is 0 of 21 confirms in `test_cas_replicated_relink` and 0 of 160 in `test_cas_gcs_relink_liveness`. `CASRelinkConfirmRefusedSlotUnreadable` is 0 in both. Mount renewals ran at the cadence the modules configure. A load built to make renewals overlap confirms was not run, so acceptance #1 has a first data point and stays open. Report: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`, section Relink integration modules.
+<!-- SECTION:NOTES:END -->
