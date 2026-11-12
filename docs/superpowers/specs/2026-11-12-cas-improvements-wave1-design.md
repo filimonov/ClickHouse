@@ -80,7 +80,9 @@ the row of `L`. `CasRefLedger::invalidateRemovedCatalogLife` then finds no resid
 The admission publishes a runtime for a life that no longer exists:
 
 - a reader serves the ref table of a removed namespace;
-- a writer appends to a life whose objects GC deletes.
+- a writer of a namespace file writes into a life whose objects GC deletes (`CA/Pool/CasPool.cpp:1304-1307`,
+  `CA/Pool/CasPlainObjects.cpp:44-47`). A ref-log append is not exposed: the late-request audit re-reads the
+  catalog life before it (`CA/Pool/CasRefLedger.cpp:3489-3515`).
 
 Three more gaps on the same path at `fa1b89d1529`:
 
@@ -98,8 +100,8 @@ in ten files: `CA/Gc/CasGc.cpp`, `CA/Gc/CatalogLifecycleReconciler.{cpp,h}`, `CA
 
 **A1. Retirement count and admission check.**
 
-- `struct RefNameSlot { RefTableRuntimePtr current; uint64_t retirements = 0; }`. The map `ref_name_slots`
-  is keyed by namespace name and guarded by `ref_queue_mutex`.
+- `struct RefNameSlot { std::shared_ptr<RefTableRuntime> current; uint64_t retirements = 0; }`. The map
+  `ref_name_slots` is keyed by namespace name and guarded by `ref_queue_mutex`.
 - `invalidateRemovedCatalogLife` increments `retirements` of the name before it looks for a runtime.
 - `uint64_t refNameRetirements(const RootNamespace &) const` reads the count. Five admission sites capture it
   before their catalog read:
@@ -119,6 +121,12 @@ in ten files: `CA/Gc/CasGc.cpp`, `CA/Gc/CatalogLifecycleReconciler.{cpp,h}`, `CA
   observation". Both are retryable. The retry reads the catalog again.
 - `refuseTerminalLife` makes `namespaceLife` refuse a recovered life whose removal is terminal.
 - Test accessors: `refNameRetirementsForTest` on the ledger and the pool.
+- The eviction loop erases a name slot only when its `retirements` is zero (`06ac915bf49`). A slot with a
+  count and no `current` outlives the eviction of its runtime.
+- Four existing test accessors of `CA/Pool/CasRefLedger.h` read `current`. They return an empty result for
+  a slot without one.
+- Two existing reader refusals, for a detached runtime and for a changed catalog row, move from
+  `throwCasWriteRetryLater` to `throwCasTransientUnavailable`, like the new `Read` refusal (`d7135ea0330`).
 
 **A2. Announce the retirement before the erase.**
 
@@ -133,7 +141,7 @@ in ten files: `CA/Gc/CasGc.cpp`, `CA/Gc/CatalogLifecycleReconciler.{cpp,h}`, `CA
 **A3. Record the retirement at eviction.**
 
 - The eviction of a runtime with `removal_admission_closed` or an applied removal increments `retirements`
-  of its name. The slot is erased only when its count is zero.
+  of its name. The conditional slot erase is already in A1.
 
 ### 3.3 Tests {#story-a-tests}
 
@@ -150,7 +158,8 @@ All tests come from the series. Red runs are taken against `fa1b89d1529` with on
 | A-7 | A2 | `CASNsFileIncarnation.ColdReaderIsRefusedWhenReleasedRightAfterTheDrainErasesItsRow` | `ParkedAdmissionBackend`, `ParkedReader` | the reader gets a runtime |
 | A-8 | A3 | `CASNsFileIncarnation.ColdAdmissionIsRefusedWhenARemoteLeaderRetiredTheLifeAndTheRuntimeWasEvicted` | `ParkedAdmissionBackend`, `ref_table_cache_bytes = 1` | the admission gets a runtime |
 
-- A-1 to A-4 are green at A1 because the post-drain loops of `fa1b89d1529` still bump the count.
+- A-1 to A-4 are green at A1 because the post-drain loops of `fa1b89d1529` still bump the count. A-3 also
+  needs the conditional slot erase, which is why A1 carries it.
 - The seven existing call sites of `reconcile` in `T/gtest_cas_gc_frontier_gate.cpp` pass a no-op second
   argument. The five test callers of `deleteCompletedRemovingAtSnapshot` in `T/gtest_cas_ref_catalog.cpp`
   compile unchanged.
@@ -280,7 +289,9 @@ write:
   request deadline to the attempt cap, which
   `CASRefCatalogRemoval.PerpetualConflictGivesUpWithinOneWindowNotAtTheAttemptCap` forbids.
 - A non-`Conflict` outcome pauses nowhere, as before: it is terminal for the call.
-- The request count per attempt does not change: one write and one read.
+- A conflicted attempt whose pause and resolution read both complete sends one write and one read, as
+  before. The attempt that meets the deadline may end in its pause or in its read
+  ([§21](#left-to-builder)).
 - The comment block at `:518-523` and the pause comment at `:582-585` are rewritten to match.
 - Docs: `D/architecture/garbage-collection.md` (drain section, `:162-182`) states the order of pause and
   read.
@@ -289,8 +300,10 @@ write:
 `CA/Gc/CatalogLifecycleReconciler.{h,cpp}`.
 
 - The reconciler counts completed erases in a place the caller can read after an exception.
-- `Gc::runRegularRound` and `Gc::rebuildBaseline` set the `deleted` metric from that count on every exit of
-  the phase scope. `GcPhaseTimer` already emits its record from the destructor.
+- `Gc::runRegularRound` sets the `deleted` metric from that count on every exit of the phase scope.
+  `GcPhaseTimer` emits its record from the destructor, so the metric is set before the timer is destroyed.
+- `Gc::rebuildBaseline` runs the drain outside a phase scope (`CA/Gc/CasGc.cpp:4637-4646`) and reports no
+  metric. It does not change.
 - The mechanism is left to the builder ([§21](#left-to-builder)). No new exception type and no change to
   what the drain throws.
 - Docs: `docs/en/operations/system-tables/cas_gc_log.md` (`:75`) says that `deleted` is filled for an
@@ -316,8 +329,8 @@ write:
 
 - **A drain that still loses every race aborts the round** (CAS-463 AC #2). A non-aborting outcome lets the
   fold run with a `Removing` row left behind. That contradicts `DrainBeforeDecision` in
-  `docs/superpowers/models/CaRefPreFoldDrainCore.tla`. It needs a model configuration first and gets its own
-  task ([§19](#non-goals)).
+  `docs/superpowers/models/CaRefPreFoldDrainCore.tla`. It needs a model configuration first. CAS-463.1
+  carries it ([§19](#non-goals)).
 - **Stand criterion** (CAS-463 AC #1, ddl16 rounds succeed) is not a unit test. C-1 is its stand-in.
 - No `ProfileEvent` counts erase attempts. None is added.
 
@@ -341,9 +354,10 @@ attempt envelope is 7000 ms and the safety margin 2000 ms, so the write reserve 
 
 - `CA/ContentAddressedSettings.cpp:77`: `mount_lease_ttl_ms` 30000 → 120000. The renew period stays 10000.
   The slack becomes 94000 ms.
-- `PoolConfig` (`CA/Pool/CasPool.h:225-226`) and `CasMountRuntime` (`CA/Pool/CasMountRuntime.h:70-71`) keep
-  30000/10000. Their comments say that these are the values of a pool opened without disk settings, which is
-  how unit tests open one.
+- `PoolConfig` (`CA/Pool/CasPool.h:225-226`) and `MountConfig` (`CA/Pool/CasMountRuntime.h:70-71`) keep
+  30000/10000. D1 rewrites both comments: these are the values of a pool opened without disk settings,
+  which is how unit tests open one, and a disk defaults to 120000/10000. The claim "ttl/3 by default" at
+  `CA/Pool/CasPool.h:224-226` goes away: it is false at 120000/10000.
 - Integration tests that kill a server and wait out its lease set a short lease in their own configs:
   `test_cas_shared_pool`, `test_cas_drop_pool_member`, `test_cas_gc_sharded`, `test_cas_early_commit_restart`.
   Values: the ones the tests ran with before, 30000/10000. Stateless CAS lanes keep the new default.
@@ -359,6 +373,11 @@ Costs of the longer lease, measured in the study:
 | Restart wait of a server that died without releasing its mount | 43.0 s | 138.1 s |
 | GC fence of a dead mount | 102.6 s | 223.9 s |
 | `system.cas_mounts` shows `expired` after (`ttl / 2` skew margin) | 45 s | 180 s |
+
+Two more effects follow from the code and were not measured. A server whose renewals stop pauses its own
+writes 104 s after the last renewal, was 14 s (`TTL - write reserve`,
+`CA/Pool/CasMountRuntime.cpp:172-194`). Its `mayMutate` turns false after 120 s, was 30 s (`:98-101`,
+`:603-609`). The docs of D1 state both.
 
 `cas_unsafe_remount_no_delay` still skips the restart wait.
 
@@ -434,7 +453,7 @@ write for 94 s after a due renewal, so the window is the tighter bound. In the s
 |---|---|---|---|---|
 | E-1 | E1 | `CASRequests.StandardPolicyUsesThePlaneRequestWindow` | `T/gtest_cas_requests.cpp`; a `CasRequests` with plane window 7000, `FakeClock` | does not compile: no plane window exists |
 | E-2 | E2 | `CASContentAddressedSettings.RequestWindowDefaultAndValidation` | `T/gtest_cas_settings.cpp` | the setting does not exist |
-| E-3 | E2 | `CASPartWriteTxn.AGiveUpHonoursTheConfiguredRequestWindow` | `T/gtest_cas_part_write.cpp`; pool with window 5000, shape of `AGiveUpReportsHowManyAttemptsItSent` (`:898-917`) | gives up after 90 s of fake time, expected 5 s |
+| E-3 | E2 | `CASPartWriteTxn.AGiveUpHonoursTheConfiguredRequestWindow` | `T/gtest_cas_part_write.cpp`; pool with window 8000, above the 7000 ms attempt envelope that `Pool::open` validates; shape of `AGiveUpReportsHowManyAttemptsItSent` (`:898-917`) | gives up after 90 s of fake time, expected at the first deadline check past 8 s |
 
 - E-1 cases: `standard` gives up at 7000 ms; `once` sends one attempt; `within(1000)` keeps 1000;
   `untilLeaseSafe` uses the plane window when it is the tighter bound.
@@ -511,7 +530,7 @@ Where GC has capacity the caps leave two to four times the backlog. Above capaci
 ### 9.1 Problem {#story-g-problem}
 
 `ObjectStorageBackend::listUnder` (`CA/Backend/CasObjectStorageBackend.cpp:1064-1163`) pays three
-`ListObjectsV2` requests for a full page of 1000 keys:
+`ListObjectsV2` requests for a full page of 1000 keys on the native async path, which S3 uses:
 
 1. the batch that holds the page (S3 caps `MaxKeys` at 1000);
 2. a second batch for the one sentinel key that proves the prefix continues (`:1155-1159`);
@@ -548,6 +567,9 @@ and the janitor list with pages of 1000 keys, so two of three list requests of a
 - `ObjectStorageBackend::listUnder` sets `prefetch_next_page = false` on the request it hands to `iterate`
   (`CA/Backend/CasObjectStorageBackend.cpp:1061`). Other CAS requests do not list.
 - Cost after G2: one request per page. A 10000-key prefix costs 11 requests (CAS-29.13 AC #1).
+- These counts are for the native path. The emulated path
+  (`CA/Backend/CasObjectStorageBackend.cpp:1076-1114`) has no prefetch. By code reading it pays 10 requests
+  for 10000 keys at pages of 1000 and 11 at pages of 999, before and after G2.
 - Other async iterators (Azure) ignore the flag and keep prefetching.
 
 ### 9.3 Tests {#story-g-tests}
@@ -559,6 +581,7 @@ and the janitor list with pages of 1000 keys, so two of three list requests of a
 | G-3 | G2 | `ObjectStorageIteratorAsync.WithoutPrefetchTheNextBatchIsFetchedOnDemand` | `src/Disks/DiskObjectStorage/ObjectStorages/tests/gtest_object_storage_iterator_async.cpp`; `ScriptedIteratorAsync` (`:27`) | the flag does not exist |
 | G-4 | G2 | `ObjectStorageIteratorAsync.AnEmptyPageWithoutPrefetchStillFollowsTheToken` | same | the flag does not exist |
 
+- G-1 and G-2 run on the native path: the fixture is the S3 client against a local HTTP server.
 - The fake server answers `IsTruncated = true` exactly when keys remain. The counts 28 and 21 follow from
   that contract: nine full pages at three requests plus one, and ten full pages at two plus one. The builder
   records the measured numbers. The bound of 11 is the acceptance criterion and does not move.
@@ -578,7 +601,6 @@ and the janitor list with pages of 1000 keys, so two of three list requests of a
 
 - CAS-29.13 AC #2, the stand ratio of `S3ListObjects` per list page.
 - The 9.3 requests per page seen on otel.demo. The RustFS runs do not explain it.
-- If the consult refuses lever A, G2 is dropped. The bound stays at 21 and AC #1 is recorded as not met.
 - The three measurement commits of branch `cas/gc-request-cuts` (`39964755af4`, `27436f2ae8c`,
   `f11659299ef`) are not taken. Their `LOG_TRACE` counter is process-wide and wrong under concurrency.
 
@@ -601,7 +623,9 @@ Four independent commits. Each has its own problem, change and test.
 - **Fields**: `round`, `outcome`, `trigger`, `duration_ms`, `deleted` (`objects_deleted`), `condemned`
   (`entries_condemned`) and `error_code` come from the `GcRoundLogRecord` being emitted
   (`CA/Gc/CasGcScheduler.h:21-85`). `keys_listed` is not in the record: the phase sink of `runRoundLogged`
-  sums the phase metric `ref_keys_listed` into a local.
+  keeps the metric `ref_keys_listed` of the phase `defer_decision` in a local. The phase `fold_ref_group`
+  reports the same listing again (`CA/Gc/CasGc.cpp:935`, `:2094`) and is not added. A round that ends
+  before `defer_decision` logs 0.
 - **Docs.** `D/operations/monitoring.md`: the line, its fields and the matching `system.cas_gc_log` columns.
 
 ### 10.2 H2: `NULL` success age before the first success (CAS-1.1) {#story-h2}
@@ -657,12 +681,12 @@ Four independent commits. Each has its own problem, change and test.
 | # | Commit | Test | File, fixture | Red before |
 |---|---|---|---|---|
 | H-1 | H1 | `CASGCLog.FinishLogLineMatchesCasGcLogRow` | `T/gtest_cas_gc_log.cpp`; fixture of `EmitsStartFinishWithCounts` (`:90`), `Poco::StreamChannel` capture as in `T/gtest_cas_pool.cpp:2378-2427` | no such line |
-| H-2 | H1 | `CASGCLog.AnAbortedRoundLogsExactlyOneFinishLine` | same file; fixture of `AbortedFinishOnThrowingRound` (`:279`) | no such line |
+| H-2 | H1 | `CASGCLog.AnAbortedRoundLogsExactlyOneFinishLine` | same file; fixture of `TransientThrowIsClassifiedAborted` (`:333`) | no such line |
 | H-3 | H2 | `CASGCHealth.ReflectsLeadershipAndPendingReclaim`, extended | `T/gtest_cas_gc_log.cpp:719-746` | pin of `ever_succeeded` before and after the first round |
 | H-4 | H2 | stateless test `cas_mounts_gc_success_age_null`, created with `add-test` | shape of `05010_cas_mounts_gc_health.sh`; inline disk with a long `cas_gc_interval_sec` | the column is 0, expected `NULL` |
 | H-5 | H3 | `CASRefSnapshotPublishOrdering.LaneStateNamesCoverEveryState` | `T/gtest_cas_ref_snapshot_publish_ordering.cpp` | the helper does not exist |
-| H-6 | H4 | `CASPartWriteTxn.StageManifestNotSentUnderDrainedLeaseSaysNotSent` | `T/gtest_cas_part_write.cpp`; `openPool`, `useVirtualMountRequestClock` (`:90-104`) | the text says "UNCERTAIN" |
-| H-7 | H4 | `CASPartWriteTxn.StageManifestSentThenGaveUpSaysUncertain` | same file; `AmbiguousMetaWriteBackend` (`:870`) | the text has no attempt count |
+| H-6 | H4 | `CASPartWriteTxn.StageManifestNotSentUnderDrainedLeaseSaysNotSent` | `T/gtest_cas_part_write.cpp`; a pool opened with `PoolConfig::boot_ms_fn` on a test clock (as at `:2299`), moved until less than the write reserve of the lease remains | the text says "UNCERTAIN" |
+| H-7 | H4 | `CASPartWriteTxn.StageManifestSentThenGaveUpSaysUncertain` | same file; a double shaped like `AmbiguousMetaWriteBackend` (`:870`) that loses the answer of every write to `layout().manifestKey(id)`; `useVirtualMountRequestClock` (`:90-104`) | the text has no attempt count |
 
 - H-1: the captured line carries the same `round`, `outcome`, `duration_ms` and `deleted` as the Finish row
   the sink received. Exactly one line per Finish row with outcome `Success`. The fixture of
@@ -674,13 +698,18 @@ Four independent commits. Each has its own problem, change and test.
 - H-5: six states, six distinct non-empty names. The level split has no unit seam and is reviewed by
   reading.
 - H-6 asserts "was not sent" and the absence of "UNCERTAIN". Both H4 tests assert code `NETWORK_ERROR`.
+- H-6 moves the boot clock of the mount runtime: `useVirtualMountRequestClock` moves only the request
+  clock and does not reach the lease fence (`CA/Pool/CasMountRuntime.cpp:156-168`).
+- H-7 faults the manifest key: `AmbiguousMetaWriteBackend` faults only `.meta` keys, and `stageManifest`
+  writes `layout().manifestKey(id)` (`CA/Pool/CasPartWriteTxn.cpp:660-670`).
 
 ### 10.6 Not closed by story H {#story-h-not-closed}
 
 - CAS-446 AC #2 is a decision, not code: CAS-405.3 closes the client-visible failure of a short stall. At
   120/10 the study's 20 s and 45 s process stalls cost no errors. The task note records it.
-- CAS-446 AC #1 names the decommission tombstone write. It already reports by `sent_any`
-  (`CA/Tools/CasDecommission.cpp:95-106`).
+- CAS-446 AC #1 also names the decommission tombstone write and a pause age in the text. The decommission
+  text reports by `sent_any` only (`CA/Tools/CasDecommission.cpp:96-106`) and does not change. No give-up
+  text carries the pause age ([§10.4](#story-h4)). The criterion is partly met.
 
 ## 11. Story I: CI fixes {#story-i}
 
@@ -689,9 +718,9 @@ No product code. One commit per row.
 | Commit | Task | Change | Check |
 |---|---|---|---|
 | I1 | CAS-443 | Take `ad04f95e441`: new `tests/integration/test_backward_compatibility/configs/skip_check_for_incorrect_settings.xml`, two lines in `test_custom_s3_disk_remote_url_allow_hosts.py` | `xmllint --noout`, `python3 -m py_compile`, the module run |
-| I2 | CAS-432 | Take `2a4b5e72aa2`: `ci/defs/altinity_jobs.py:85-93` moves the two ASan cas-s3 stateless shards from `RunnerLabels.AMD_MEDIUM_CPU` to `RunnerLabels.AMD_LARGE`; workflows regenerated with `python3 -m ci.praktika yaml` | `git diff --stat .github/workflows` shows only the runner label |
+| I2 | CAS-432 | Take `2a4b5e72aa2`: `ci/defs/altinity_jobs.py:85-93` moves the two ASan cas-s3 stateless shards from `RunnerLabels.AMD_MEDIUM_CPU` to `RunnerLabels.AMD_LARGE`; workflows regenerated with `python3 -m ci.praktika yaml` | `git diff -- .github/workflows` holds six `runs-on` changes in three workflows and nothing else; `--stat` confirms the footprint |
 | I3 | CAS-434 | `tests/broken_tests.yaml:151-155`: the rule of `03572_export_merge_tree_part_limits_and_table_functions` gets `check_types: [tsan, msan, asan]` and loses its `message` filter | the file loads as YAML |
-| I4 | CAS-85, CAS-321.2 | `ci/jobs/scripts/clickhouse_proc.py`: `dump_system_tables` (`TABLES`, `:1353-1363`) adds `cas_gc_log` and `cas_log` when a server config has `<metadata_type>cas</metadata_type>` | `python3 -m py_compile`; the CAS lanes of PR 2831 attach both tables |
+| I4 | CAS-85, CAS-321.2 | `ci/jobs/scripts/clickhouse_proc.py`: `dump_system_tables` (`TABLES`, `:1353-1363`) adds `cas_gc_log` and `cas_log` when a server config has `<metadata_type>cas</metadata_type>` | `python3 -m py_compile`; a failed CAS lane of PR 2831 attaches both tables |
 | (I5) | CAS-466 | Test-only fix, if the sibling check finds one | `CAS*` gate |
 
 - **CAS-434.** On loaded sanitizer cas-s3 lanes the test exceeds its 60 s `wait_for_exports` poll or the
@@ -700,7 +729,11 @@ No product code. One commit per row.
   it. The `reason` names the lane load and these times. The task asked to forward-port the
   `no-cas-storage` tag; `5a1ffb222a5` removed that tag on purpose, so the tag does not come back.
 - **CAS-85, CAS-321.2.** The marker keeps non-CAS lanes unchanged: they do not have the two tables, and a
-  dump of a missing table would turn a green job red.
+  failed dump of a listed table adds a failing `Scraping system tables` result
+  (`ci/jobs/scripts/clickhouse_proc.py:1438-1450`, `:1517-1519`). The dump runs only when a test run
+  completes and fails (`ci/jobs/functional_tests.py:1487-1516`). A job timeout removes the container before
+  any dump (`ci/praktika/runner.py:481-482`), so a timed-out or cancelled shard still attaches nothing. If
+  no CAS lane of PR 2831 fails, the artifact check stays open in the task.
 - **CAS-466.** The hang is fixed at `fa1b89d1529` by `50dbaee3a69` and `f1bdb36d374`. Left is AC #4: check
   the sibling tests that set `snapshot_log_count_threshold = 0` for the same wait: two in
   `T/gtest_cas_detached_work.cpp`, two in `T/gtest_cas_ref_snapshot_publish_ordering.cpp`, one in
@@ -761,7 +794,7 @@ Rules of the series:
 | `src/Storages/System/StorageSystemContentAddressedMounts.cpp` | H2 | CAS system table | no |
 | `ci/jobs/scripts/clickhouse_proc.py` | I4 | two tables behind a config marker | yes |
 
-**Consult question for the spec review: lever A.** The sketch of the shared change in `nextBatch`:
+**Lever A: the shared change.** The sketch of `nextBatch`:
 
 ```cpp
 while (true)
@@ -778,9 +811,16 @@ while (true)
 - With the flag off, a consumer that stops after one batch leaves no request in flight, so the destructor's
   `deactivate` has nothing to wait for.
 - The catch block and `has_next_batch` handling do not change.
-- Questions: is the lazy path correct for `getCurrentBatchAndScheduleNext` and for the empty-page loop; is a
-  request field the right carrier, or should `iterate` get a parameter; is there a smaller change.
-- A refusal drops G2 and nothing else ([§9.4](#story-g-not-closed)).
+- Scheduling on an invalid future replaces the invariant of the `chassert`. No batch is listed twice and no
+  invalid future is waited on: `deactivate` waits only for scheduled work
+  (`ObjectStorageIteratorAsync.cpp:24-34`), and `~S3IteratorAsync` calls it first
+  (`S3ObjectStorage.cpp:221-226`).
+- The carrier is the request field. The request overload of `S3ObjectStorage::iterate`
+  (`S3ObjectStorage.cpp:505-517`) passes it to the iterator.
+- Rejected: a parameter on every `iterate` overload (a wider interface change); destroying the iterator
+  early (its destructor still waits for the prefetch); calling the S3 client from `CA/` (it bypasses the
+  object storage layer).
+- G-3 and G-4 cover the lazy path, the default path and the empty-page loop.
 
 Everything else in the wave is inside `CA/`, `T/`, `D/`, `tests/` or `ci/`.
 
@@ -829,12 +869,16 @@ Predictions, written before the runs:
 
 No model changes in this wave.
 
-- Stories A and B change how a server forgets a retired life in memory. The TLA+ models describe the
-  catalog and the store, not the runtime cache.
+- Stories A and B change how a server forgets a retired life in memory. `CaRefLaneCore` models runtime
+  identities, a logical-name slot, cache markers, rebirth and delayed invalidation
+  (`docs/superpowers/models/CaRefLaneCore.tla:41-48`, `:84-110`, `:604-699`). It does not model the race of
+  a cold admission with a retirement (story A) or the lifetime of a retirement record (story B). The tests
+  of [§3.3](#story-a-tests) and [§4.3](#story-b-tests) are the evidence for both.
 - Story C keeps the barrier that `docs/superpowers/models/CaRefPreFoldDrainCore.tla` checks as
   `DrainBeforeDecision`: a drain that cannot finish still aborts the round. The non-aborting outcome needs a
-  model configuration first ([§19](#non-goals)).
-- Stories D, E and F change constants that the models take as parameters.
+  model configuration first: CAS-463.1 ([§19](#non-goals)).
+- Stories D and E change timing values that the models take as parameters. Story F changes an operational
+  bound that no model describes.
 
 ## 17. Documentation {#documentation}
 
@@ -864,7 +908,7 @@ No model changes in this wave.
 | PR 2570 | a cold admission of a retired life is refused | A-1 to A-8 |
 | CAS-428 | #1 retirement records are bounded | B-1 to B-5 |
 | CAS-463 | #1 ddl16 rounds succeed | C-1 stands in; stand rerun not in wave |
-| CAS-463 | #2 a contended erase does not abort the fold | not in wave ([§19](#non-goals)) |
+| CAS-463 | #2 a contended erase does not abort the fold | not in wave: CAS-463.1 ([§19](#non-goals)) |
 | CAS-463 | #3 the round row shows erases done | C-3 |
 | CAS-405.3 | #1 defaults and docs | D-1, docs of D1 |
 | CAS-405.3 | #2 stand rerun | not in wave |
@@ -879,24 +923,28 @@ No model changes in this wave.
 | CAS-29.13 | #1 at most 11 requests for 10000 keys | G-2 |
 | CAS-29.13 | #2 stand ratio | not in wave |
 | CAS-29.13 | #3 probe and fallback guarantees | the pins of [§9.3](#story-g-tests) |
-| CAS-29.14 | #1, #2 | H-1, H-2 |
+| CAS-29.14 | #1 one line per finished or aborted round | narrowed: H-1, H-2 for `Success`, `Aborted`, `Failed` and `Stopped`; no line for `NotALeader` and `Deferred` ([§10.1](#story-h1)) |
+| CAS-29.14 | #2 a test matches the line to `cas_gc_log` | H-1 |
 | CAS-1.1 | #1 to #3 | H-3, H-4, docs of H2 |
 | CAS-148 | #1, #2 | H-5, review of the level split |
-| CAS-446 | #1 | H-6, H-7 |
+| CAS-446 | #1 give-up text from its fields | partly: `stageManifest` by H-6, H-7; the decommission text and the pause age do not change ([§10.6](#story-h-not-closed)) |
 | CAS-446 | #2 | decision recorded in the task ([§10.6](#story-h-not-closed)) |
 | CAS-443 | #1, #2 | I1, CI of PR 2831 |
-| CAS-432 | #1 to #3 | I2, CI of PR 2831 |
+| CAS-432 | #1 two consecutive green pull-request runs | open: I2 lands the runner change; the two runs come after the push |
+| CAS-432 | #2 peak server memory recorded | not in wave |
+| CAS-432 | #3 a batch or limit change rides with its measurement | not triggered: I2 changes the runner only |
 | CAS-434 | #1 | I3, CI of PR 2831 |
-| CAS-85 | #1, #2 | I4, CI of PR 2831 |
-| CAS-321.2 | #1 | I4 |
+| CAS-85 | #1 a CAS lane's artifacts hold `cas_gc_log` | partly: I4, for a run that completes and fails; a green run dumps no system table |
+| CAS-85 | #2 non-CAS lanes unaffected | I4: the config marker |
+| CAS-321.2 | #1 dumps of a failed or cancelled shard | partly: I4 for a shard that completes and fails; a timed-out or cancelled shard and the catalog-size timeline stay open |
 | CAS-466 | #1 to #3 | already at `fa1b89d1529` |
 | CAS-466 | #4 sibling check | note in the task, I5 if needed |
 
 ## 19. Non-goals {#non-goals}
 
 - **CAS-29.3.** Its premise is false at `fa1b89d1529`. The task gets a note and no code.
-- **CAS-463 AC #2**, the non-aborting drain outcome. It removes the barrier of `DrainBeforeDecision`. A new
-  task carries it with a model configuration and a TLC run.
+- **CAS-463 AC #2**, the non-aborting drain outcome. It removes the barrier of `DrainBeforeDecision`.
+  CAS-463.1 carries it with a model configuration and a TLC run.
 - **CAS-321.3.**
 - **CAS-29.1 and CAS-29.6.** Second wave, same pull request.
 - **CAS-29.10** (round deadline), **CAS-405.1**, **CAS-405.2**, **CAS-382**, **CAS-22**, **CAS-452**,
@@ -917,7 +965,7 @@ No model changes in this wave.
 | The first GC round after upgrade on a backlogged pool is long and delays the dead-member fence | F | documented; a cap by key; the round deadline is CAS-29.10 |
 | Unbounded graduation scales `HEAD` and `DELETE` load with the cohort | F | study: a 900 s interval graduated 15174 objects in one round of 1201 s |
 | `gc_round_outcome_entry_budget` and `gc_round_handoff_prefix_wholesale_budget` at 0 have no run | F | code reading only; a cap by key |
-| The erase still loses to a writer that lands between its read and its write | C | the round aborts as today; follow-up task |
+| The erase still loses to a writer that lands between its read and its write | C | the round aborts as today; CAS-463.1 |
 | `acquireMutableRefTableRuntime` takes `ref_queue_mutex` one more time per call | B | two map lookups; measured by M-1 |
 | A consumer of the async iterator relies on the prefetch | G | opt-in flag, default on; only `listUnder` turns it off |
 | A page of 999 keys adds list pages: 0.1 % more pages | G | one request per page instead of three |
