@@ -145,7 +145,9 @@ in ten files: `CA/Gc/CasGc.cpp`, `CA/Gc/CatalogLifecycleReconciler.{cpp,h}`, `CA
 
 ### 3.3 Tests {#story-a-tests}
 
-All tests come from the series. Red runs are taken against `fa1b89d1529` with only the test files applied.
+All tests come from the series. The test files do not compile against `fa1b89d1529`: they call the
+two-argument `reconcile` and the retirement accessor. A red run is taken on the commit's tree with its
+semantic change disabled and its new signatures and test accessors kept. The log names what was disabled.
 
 | # | Commit | Test | Fixture | Red before |
 |---|---|---|---|---|
@@ -239,11 +241,13 @@ All in `T/gtest_cas_ns_file_incarnation.cpp`, in this order.
   `namespaceStillLogicallyPresent` on an absent row; `dropNamespaceImpl` on a missing row and on an
   `expected_incarnation` mismatch; an admission that throws from its catalog read.
 - B-5: an admission of predecessor `L1` parks after its catalog read. The table is dropped, GC erases `L1`,
-  successor `L2` is published and then evicted. The released admission is refused. The slot count is 0.
+  successor `L2` is published and then evicted by a publish to another namespace. The released admission
+  is refused. The slot count is 1: the slot of that other namespace, whose runtime is resident.
 - A-3 is renamed to `RetirementWithASuccessorResidentIsRecorded`. Its tail asserted that eviction keeps a
-  slot with a recorded retirement. It now asserts that the slot is gone after the eviction. B-5 keeps the
-  behaviour that the tail stood for.
-- A-8 gets one more assertion after the join: the slot count is 0.
+  slot with a recorded retirement. It now asserts that the slot count is 1 after the eviction: the slot of
+  `other`. B-5 keeps the behaviour that the tail stood for.
+- A-8 gets one more assertion after the join: the slot count of the `owner` pool is 1. `other` stays
+  resident there, because eviction skips the namespace just recovered (`CA/Pool/CasRefLedger.cpp:1781-1784`).
 - The `CASNsFileIncarnation` suite runs under TSan-style interleavings only through its parked fixtures. The
   ASan gate covers the guard's lifetime.
 
@@ -602,14 +606,15 @@ and the janitor list with pages of 1000 keys, so two of three list requests of a
 
 | # | Commit | Test | File, fixture | Red before |
 |---|---|---|---|---|
-| G-1 | G1 | `CASBackend.AListWalkOfTenThousandKeysStaysWithinItsRequestBound` | `T/gtest_cas_s3_single_attempt_client.cpp`; the local HTTP server of that file (`:~532`) extended to page a synthetic key list by `continuation-token` and `start-after`, to cap `MaxKeys` at 1000 and to count requests | 28 requests, bound is 21 |
+| G-1 | G1 | `CASBackend.AListWalkOfTenThousandKeysStaysWithinItsRequestBound` | `T/gtest_cas_s3_single_attempt_client.cpp`; the local HTTP server of that file (`:~532`) extended to page a synthetic key list by `continuation-token` and `start-after`, to cap `MaxKeys` at 1000 and to count requests | 27 requests, bound is 21 |
 | G-2 | G2 | same test, bound tightened to 11 | same | 21 requests |
 | G-3 | G2 | `ObjectStorageIteratorAsync.WithoutPrefetchTheNextBatchIsFetchedOnDemand` | `src/Disks/DiskObjectStorage/ObjectStorages/tests/gtest_object_storage_iterator_async.cpp`; `ScriptedIteratorAsync` (`:27`) | the flag does not exist |
 | G-4 | G2 | `ObjectStorageIteratorAsync.AnEmptyPageWithoutPrefetchStillFollowsTheToken` | same | the flag does not exist |
 
 - G-1 and G-2 run on the native path: the fixture is the S3 client against a local HTTP server.
-- The fake server answers `IsTruncated = true` exactly when keys remain. The counts 28 and 21 follow from
-  that contract: nine full pages at three requests plus one, and ten full pages at two plus one. The builder
+- The fake server answers `IsTruncated = true` exactly when keys remain. The counts 27 and 21 follow from
+  that contract. Before G1: eight pages at three requests, the ninth at two because its second batch is the
+  last, and the tenth at one. After G1: ten full pages at two requests plus one. The builder
   records the measured numbers. The bound of 11 is the acceptance criterion and does not move.
 - G-1 also checks the walk itself: 10000 keys, each once, in order.
 - G-3: after the first batch is read, the scripted source has served one batch. It serves the second only
