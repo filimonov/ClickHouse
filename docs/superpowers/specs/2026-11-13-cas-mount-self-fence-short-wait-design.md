@@ -150,7 +150,7 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 | F22 | Two forced exits run before the disks are shut down: after `shutdown_wait_unfinished` with connections, refresh tasks or background queries left, and from the introspection servers' stop inside `ContextSharedPart::shutdown`. `shutdown_wait_unfinished` is 120 s by default, 60 s in the CI config. Without `shutdown_wait_unfinished_queries` the queries are killed before the wait. `safeExit` calls `_exit` | `programs/server/Server.cpp:3981-4018`, `:3636-3672`; `src/Interpreters/Context.cpp:1006-1019`, `:1097`, `:1172`; `src/Core/ServerSettings.cpp:125-126`; `tests/config/config.d/wait_remaining_connections.xml:2-3`; `base/base/safeExit.cpp:13-38` |
 | F23 | Generic code already reaches CAS storages through `Context::getDisksMap` and `ContentAddressedMetadataStorage::tryFromDisk`. `getDisksMap` takes `storage_policies_mutex` without a timeout; a custom disk is published under the same mutex. `Server.cpp` already includes a CAS header and calls `DB::Cas` functions | `src/Interpreters/Context.cpp:7696-7705`, `:7613-7620`; `CA/ContentAddressedMetadataStorage.cpp:349-364`; `src/Interpreters/ServerAsynchronousMetrics.cpp:396-405`; `Server.cpp:116`, `:1722`, `:2013` |
 | F24 | A normal shutdown arms the pool with `beginTeardown` before it stops the GC scheduler and drains | `ContentAddressedMetadataStorage.cpp:954-970`, `:1014-1034` |
-| F25 | `forgetDisk` trips the fence, joins the workers, then trips again, because a remount in flight can re-arm the fence before the join. It runs under the storage's `lifecycle_mutex`, as FSCK and GC stop and start do | `CasPool.cpp:1254-1277`; `ContentAddressedMetadataStorage.cpp:1060`, `:1109`; `CA/ContentAddressedMetadataStorage.h:713-724` |
+| F25 | `Pool::forgetDisk` trips the fence, joins the workers, then trips again, because a remount in flight can re-arm the fence before the join. It then writes through the renewer and resets it. It is the only lifecycle operation that touches the mount workers or the renewer: outside the mount itself and the pool's destructor, nothing else calls `stopBackgroundWorkers`, `finishTeardown` or `renewerReset`. A GC stop or start only joins or starts the GC scheduler's threads; an FSCK only reads. All three hold the storage's `lifecycle_mutex`, FSCK for its whole scan | `CasPool.cpp:1225-1304`, `:1108`, `:1137`, `:870`; `CasMountRuntime.cpp:1230-1247`; `ContentAddressedMetadataStorage.cpp:1060`, `:1109-1132`, `:1139-1177`, `:1183-1193` |
 | F26 | Every backend entry point takes a `TransportAccess`, which only `CasRequests::withTransportAccess` can construct. The mutating backend calls are made in four engine functions: `writeLoop` (`write`), `removeUnder` (`remove`; `removeCurrent` reaches the store only through it), `removeManyWriteOnce`, `publish`. No count of calls in flight exists | `CA/Backend/CasTransportAccess.h:7-22`; `CasRequests.h:246-253`; `CasRequests.cpp:941`, `:996`, `:580-585`, `:634-646`, `:775-780` |
 | F27 | After a reclaim nothing waits. The prior state selects a log line through an exhaustive `switch` | `CasPool.cpp:898-920` |
 | F28 | A blob publication runs its whole transfer inside the backend call: a streamed upload or a same-store copy | `CasObjectStorageBackend.cpp:889-962` |
@@ -194,7 +194,7 @@ margin is the time such a request is given. It is not a proof that the store has
 
 For one pool:
 
-0. Take the storage's `lifecycle_mutex` without blocking. If it is held, skip the pool.
+0. Take the pool's FORGET exclusion without blocking. If a `SYSTEM CAS FORGET` holds it, skip the pool.
 1. Arm the GC plane: `Pool::beginTeardown`.
 2. Request the workers' stop: set `workers_stop_requested` and the `Stopping` driver state, without a join.
 3. Trip the mount fence: `tripFenceWithoutOperationalLoss`.
@@ -209,11 +209,17 @@ Steps 4, 6 and 7 can block. None of them is timed. The caller bounds them from o
 
 Why each step:
 
-- Step 0: `lifecycle_mutex` is the existing exclusion against `SYSTEM CAS FORGET`, which joins the same
-  worker threads and drives the same renewer (F25). Two joins of one thread object are undefined. The same
-  mutex is held by an FSCK for its whole scan and by a GC stop or start. Those do not touch the mount
-  workers, but one non-blocking take skips the pool during them as well. That costs the full wait and
-  nothing else.
+- Step 0: `SYSTEM CAS FORGET` joins the same worker threads and drives the same renewer (F25). Two joins of
+  one thread object are undefined. The exclusion is one new mutex in `Pool`: `forgetDisk` holds it for its
+  whole run, the hook takes it with `try_lock` and keeps it. About 5 lines. A pool skipped for a FORGET gets
+  the full wait.
+  - Not `lifecycle_mutex`. An FSCK holds that one for its whole scan, and a long FSCK can be the very query
+    that outlives the shutdown wait and forces the exit. Skipping the pool then would lose the marker in the
+    case the feature is for. An FSCK and a GC stop or start touch neither the mount workers nor the renewer
+    (F25), so the hook does not exclude them. After step 1 an FSCK's next request is refused, as any other
+    request on the GC plane.
+  - The pool's destructor also joins the workers, but it cannot run here: the hook's thread holds a
+    reference to the pool.
 - Step 1 lets step 4 end. A remount in flight sends its requests on the GC plane and may sit in the 131 s
   observation loop (`CasPool.cpp:1574-1586`). After `beginTeardown` its next request is refused. It also
   answers what the forced path does with the GC plane: it is armed, new GC requests are refused, the GC
@@ -253,8 +259,8 @@ programs/server/Server.cpp, before safeExit at :4018 and at :3671
      -> Context::getDisksMap                                           existing
      -> ContentAddressedMetadataStorage::tryFromDisk                   existing
      one detached thread per writable CAS pool:
-     -> ContentAddressedMetadataStorage::declareMountFenceBeforeExit   new; step 0, then the pool pointer
-        -> Pool::declareMountFenceBeforeExit                           new; steps 1 to 7
+     -> ContentAddressedMetadataStorage::declareMountFenceBeforeExit   new; takes the pool pointer
+        -> Pool::declareMountFenceBeforeExit                           new; steps 0 to 7
            -> CasMountRuntime::declareHolderFenced                     new
               -> MountLeaseRenewer::declareHolderFenced                new; the marker write
 ```
@@ -419,7 +425,7 @@ and without a private key would block this design. None was found.
 | Case | Slot afterwards | Successor waits |
 |---|---|---|
 | The process dies, or the 16 s cap ends it, before the marker is sent | Last renewal body | Full |
-| The pool's lifecycle mutex is held | Last renewal body | Full |
+| A `SYSTEM CAS FORGET` of the pool is in progress | Whatever FORGET leaves: a farewell, or the last renewal body | Instant after a farewell, else full |
 | A worker does not stop, or the count does not reach zero, before the cap | Last renewal body | Full |
 | The renewer is not `Active` after the join | Last renewal body, or an unclear renewal | Full |
 | The marker write is refused by the store | Unchanged | Full |
@@ -450,7 +456,7 @@ the query threads that forced the exit are still there.
 | `scheduleRemount` from a foreign-interference report | No-op once `workers_stop_requested` is set (F10) |
 | A late renewal commit calling `publishRenewedDeadline` | It moves the deadline only; the fence refuses on `lost` first (F5, F11). The renewal worker is joined before the marker |
 | A renewal or a farewell after the marker | The renewer is `Released`: both throw `LOGICAL_ERROR` on a non-`Active` renewer |
-| A lifecycle command on the same pool | Excluded by the lifecycle mutex while the pool's thread runs. A thread that finished has released it, up to 16 s before the exit. A FORGET or a GC start then is harmless: the workers are already stopped, the renewer is `Released` so the teardown writes nothing, and the GC plane is armed |
+| A `SYSTEM CAS FORGET` on the same pool | Excluded by the FORGET exclusion while the pool's thread runs. A thread that finished has released it, up to 16 s before the exit. A FORGET that starts then is harmless: the workers are already stopped, the renewer is `Released` so the teardown writes nothing, and the GC plane is armed. A GC start then meets the armed GC plane |
 | A new `Pool` for the same slot in the same process | It is a successor like any other: a fresh epoch, the marker branch, a conditional claim. The old pool stays fenced |
 
 ### 3.8 Other consumers of the slot {#other-consumers}
@@ -492,7 +498,7 @@ Recommendation: no change.
 | Surface | Change |
 |---|---|
 | `MountPriorState`, mount events, `system.cas_mounts`, profile events, settings | None |
-| Holder log, `CasPool`, Information | "CAS mount lease of '{}' under writer_epoch {}: the write fence is up, no write is in flight, and the slot says so (settle {} ms); the next mount of this server waits that long instead of the lease". When nothing is written, one line with the reason: lifecycle work in progress, renewer not active, token changed, write unclear |
+| Holder log, `CasPool`, Information | "CAS mount lease of '{}' under writer_epoch {}: the write fence is up, no write is in flight, and the slot says so (settle {} ms); the next mount of this server waits that long instead of the lease". When nothing is written, one line with the reason: a FORGET in progress, renewer not active, token changed, write unclear |
 | Successor log, `CasMountLease`, Information | For a marked body: "... the previous incarnation raised its write fence before it stopped; waiting ~{} ms for requests the store may still apply", in place of the "token-stability observation" line. The existing line after the reclaim stays (`CasPool.cpp:913-916`) |
 
 On the forced path a pool thread can be cut off before its log line. Then the slot itself is the record.
@@ -588,7 +594,7 @@ New gtests:
 | `CASPoolShutdown` | No marker when a renewal is unclear | Renewer `RenewalTerminal` after the join: no request sent |
 | `CASPoolShutdown` | Marker write refused, token changed, unclear | No second write in any of the three; an unclear write that landed is in the slot and is reclaimed after the short threshold |
 | `CASPoolShutdown` | No write after the marker | A renewal or a `release` on that renewer: death test |
-| `CASPoolShutdown` | Lifecycle work in progress | With the lifecycle mutex held the pool is skipped and nothing is joined |
+| `CASPoolShutdown` | FORGET in progress | With the FORGET exclusion held the pool is skipped and nothing is joined. With only `lifecycle_mutex` held, as during an FSCK, the marker is written |
 | `CASPoolShutdown` | Hard cap | With a short cap passed in: a pool whose worker never stops, and separately a disk map whose mutex is held: the entry function returns at the cap in both; in the first the other pool's marker is in its slot. The stuck thread is released before the fixture ends |
 | `CASPoolRemount` | Fence stays down | After the marker: `scheduleRemount` is a no-op; a renewal commit that publishes a deadline does not admit a write; a remount that re-armed before the join is tripped again and the count is read after that |
 | `CASFenceTerminal`, `CASMountSlotOwnership`, `CASHeartbeatFloor` | Marked body | Not terminal; not held; counted live and fenced only after the full threshold |
@@ -867,7 +873,8 @@ Model, `M/CaMountObserveCore.tla`:
   error.
 - Sabotage rows, each must go red: `nowStamp` taken after the sighting (double count); no margin with
   truncated stamps; a stamp error beyond clause 1 and a store rate beyond clause 2 (two environment rows,
-  like the existing drift row); for a marked slot, the credit counted from the renewal body that preceded the marker.
+  like the existing drift row); for a marked slot, the credit counted from the renewal body that preceded
+  the marker.
 
 New gtests:
 
@@ -929,7 +936,7 @@ write. "Today" is on the 5 s poll grid; the other columns are exact.
 | Clean stop, any restart | 0 s | 0 s | 0 s |
 | Controlled stop with unfinished queries (forced exit), marker written, restart in place, `d` about 5 s | 135 s | 21.8 s | 20.8 s |
 | The same, then a node reboot, `d >= 25.8 s` | 135 s | 21.8 s | 0 s |
-| Forced exit, no marker: a write still in flight at the 16 s cap, lifecycle work in progress, an unclear renewal | 135 s | 131 s | 131 s for `d <= 4 s`; `135 s - d` for `4 s < d < 135 s`; 0 s from `d = 135 s` |
+| Forced exit, no marker: a write still in flight at the 16 s cap, a FORGET in progress, an unclear renewal | 135 s | 131 s | 131 s for `d <= 4 s`; `135 s - d` for `4 s < d < 135 s`; 0 s from `d = 135 s` |
 | `SIGKILL` or OOM kill, restart at once on the same running kernel, `d` up to 10 s | 135 s | 131 s | 125 s to 131 s |
 | The same, restarted by `systemd` after `RestartSec=30`, `d` 30 s to 40 s | 135 s | 131 s | 95 s to 105 s |
 | Power loss or kernel failure, node back after 90 s, `d` 90 s to 100 s | 135 s | 131 s | 35 s to 45 s |
@@ -950,7 +957,7 @@ write. "Today" is on the 5 s poll grid; the other columns are exact.
 
 | Part | Product code | Tests | Docs | Model |
 |---|---|---|---|---|
-| A | about 240 lines: format field 15; renewer marker write 40; stop request and runtime entry 25; counter, guard, three guard sites, the two fences, the wait 35; pool steps 1 to 7 30; storage entry with the lifecycle lock 15; free function with the coordinator, detached pool threads, shared state and the cap 55; `Server.cpp` 5; threshold branch, exact sleep, logs 20 | 700 to 1100 lines of gtests for about 24 tests, one integration test | 3 pages, about 50 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 120 lines and 9 configs |
+| A | about 240 lines: format field 15; renewer marker write 40; stop request and runtime entry 25; counter, guard, three guard sites, the two fences, the wait 35; pool steps 0 to 7 with the FORGET exclusion 35; storage entry 10; free function with the coordinator, detached pool threads, shared state and the cap 55; `Server.cpp` 5; threshold branch, exact sleep, logs 20 | 700 to 1100 lines of gtests for about 24 tests, one integration test | 3 pages, about 50 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 120 lines and 9 configs |
 | B | none | none | none | none |
 | C | about 65 lines: `Raw` and `Object` field 6; backend reads 10; `MountClaimResult` and `claimMount` 8; epoch read and credit in the loop, log 25; setting and its plumbing 15 | 300 to 450 lines: about 9 gtests, a settable stamp in the in-memory backend (15 lines of test support), one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` with the two clauses of the contract | A third clock in `CaMountObserveCore`: about 60 lines and 6 configs |
 
@@ -973,7 +980,7 @@ Decided, and where the design reflects it:
 | A new `system.cas_mounts` state, a new prior state, new event branches | No. Two log lines ([§3.10](#surface)) |
 | `Server.cpp:3671` | Hooked, with the same call |
 | The forced-exit hook's time | A hard cap of 16 s from the hook's entry, enforced by the calling thread; discovery included ([§3.3](#writers)) |
-| The lifecycle exclusion of step 0 | One non-blocking take of `lifecycle_mutex`. It also skips a pool during an FSCK or a GC stop or start ([§3.2](#holder-steps)) |
+| The exclusion of step 0 | Only `SYSTEM CAS FORGET` is excluded, by its own mutex in `Pool`. An FSCK and a GC stop or start are not: they touch neither the mount workers nor the renewer ([§3.2](#holder-steps)) |
 | Blob publication and the count | Not counted ([§3.5](#bound)) |
 | The memory ordering of the count | Two `seq_cst` fences in new code ([§3.5](#bound)) |
 | Part B | Rejected ([§7](#part-b)) |
