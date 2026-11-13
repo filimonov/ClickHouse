@@ -61,9 +61,9 @@ doc_type: 'reference'
 **Part C. The successor credits the slot's age on the store's clock: sound under conditions on the store's
 clock.**
 
-- Rule: `wait = threshold - age`, never below zero. `age` is the `Last-Modified` of the epoch object this
-  mount just wrote minus the `Last-Modified` of the slot body, less a 4 s margin. Both stamps come from the
-  store. No on-store change, no local state, no generic file, one extra read per mount.
+- Rule: `wait = threshold - age`, never below one poll step. `age` is the `Last-Modified` of the epoch
+  object this mount just wrote minus the `Last-Modified` of the slot body, less a 4 s margin. Both stamps
+  come from the store. No on-store change, no local state, no generic file, one extra read per mount.
 - Why it is safe: a holder counts its lease from the start of the renewal attempt, and the store stamps the
   body later. The age is at most what the holder itself has counted ([§8.4](#c-safety)).
 - It is the only part that helps after a node reboot, a power loss, or a move to another node without a
@@ -77,15 +77,16 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 | Stop of the previous process | Today | A | B | C | Best |
 |---|---|---|---|---|---|
 | Clean stop, farewell written | 0 s | 0 s | 0 s | 0 s | 0 s |
-| Forced exit (`Will shutdown forcefully`), restart in place | 135 s | 25 s | 25 s | 130 s | A+C: 21 s |
-| Forced exit, then a node reboot | 135 s | 25 s | 135 s | `135 s - d` | A+C: 0 s |
+| Forced exit (`Will shutdown forcefully`), restart in place | 135 s | 25 s | 25 s | 130 s | A: 25 s |
+| Forced exit, then a node reboot | 135 s | 25 s | 135 s | `135 s - d` | A+C: 5 s |
 | `SIGKILL` or OOM kill, restart on the same running kernel | 135 s | 135 s | 25 s | `135 s - d` | B+C: `29 s - d` |
-| Power loss, another node, any downtime above 135 s | 135 s | 135 s | 135 s | 0 s | C |
+| Power loss, another node, any downtime above 135 s | 135 s | 135 s | 135 s | 5 s | C |
 | Successor runs a build without these parts | 135 s | 135 s | 135 s | 135 s | 135 s |
 | Slot fenced by GC before the restart | 0 s | 0 s | 0 s | 0 s | 0 s |
 
-Without Part C the loop looks at the slot every `poll` = 5 s, so a wait ends at the first multiple of 5 s at
-or above the threshold: 21.8 s becomes 25 s. Part C makes the loop sleep only the remaining time.
+The loop looks at the slot every `poll` = 5 s and sleeps once before its second look. So every wait ends at
+the first multiple of 5 s at or above the remaining time, and is at least 5 s: 21.8 s becomes 25 s, and a
+full credit under Part C still costs 5 s. No part changes that.
 
 ### 1.1 Failure asymmetry {#asymmetry}
 
@@ -234,7 +235,7 @@ nothing.
 |---|---|---|
 | Lanes drained, renewer `Active`, lease has room | farewell | farewell, unchanged |
 | Lanes not drained (wedged or still writing), or writer cleanup duties pending; renewer `Active` | nothing | steps 2, 4, 5: marker |
-| Lanes drained, renewer `Active`, writes paused ("too little time left for the farewell") | nothing | marker. Safe: the marker needs no lease room. Changes a behaviour a test pins, see [§11](#open). The pause must be read before the trip: `writesPausedSinceBootMs` answers "not paused" once `lost` is set (`CasMountRuntime.cpp:185-188`) |
+| Lanes drained, renewer `Active`, writes paused ("too little time left for the farewell") | nothing | nothing, unchanged. A marker would be safe there, because it needs no lease room, but the branch is left as it is |
 | Renewer not `Active` (a sent renewal is unclear, or the renewer is terminal) | nothing | nothing |
 | Farewell withheld by a decommission admin (F26) | nothing | nothing. The admin wants the victim's restart delayed by the full threshold |
 | `Pool` opened for decommission | farewell or nothing | never a marker |
@@ -262,7 +263,7 @@ programs/server/Server.cpp, before safeExit at :4018
 - Read-only disks, disks still being created, and decommission admin pools are skipped. They get the full
   wait.
 - Order across pools: steps 1 and 2 for every pool first, then steps 3 to 5 pool by pool. One deadline for
-  the whole hook: one write reserve (16 s by default) from its start. A pool whose turn comes after the
+  the whole hook: 16 s from its start. A pool whose turn comes after the
   deadline is skipped with one `Warning`. Every skipped pool gets the full wait.
 - The function catches everything. An exception from one pool is logged and does not stop the exit.
 - Not covered: the second `SIGTERM` (`src/Common/SignalHandlers.cpp:501`), `SYSTEM KILL`
@@ -530,7 +531,7 @@ Existing tests that change:
 | Test | Today | New |
 |---|---|---|
 | `CASPoolShutdown.UnresolvedWedgeSkipsFarewell` (`T/gtest_cas_pool.cpp:2525`) | No farewell; the slot is a plain live body | No farewell; the body carries the field |
-| `CASMountRuntime.ACleanShutdownDuringAPauseLeavesTheSlotForObservation` (`T/gtest_cas_pool.cpp:4770`) | Slot unchanged | Marker, if the paused branch is kept ([§11](#open)) |
+| `CASMountRuntime.ACleanShutdownDuringAPauseLeavesTheSlotForObservation` (`T/gtest_cas_pool.cpp:4770`) | Slot unchanged | Unchanged: the paused branch writes no marker |
 | `CASForget.ForgetCleanFarewellGatedOnDrain` (`T/gtest_cas_forget.cpp:319`) | Wedged arm: no farewell | Wedged arm: no farewell, marker |
 | `CASRefWriterStalePrecommitSweep.BoundedBatchesAndInterruptionResumeAcrossMounts` (`T/gtest_cas_ref_writer.cpp:3502`, comment at `:3594`) | Third mount is `UncleanObserved` and "pays ~36.5 s" on a fake clock | Third mount is `HolderFenced`. Stays green on the fake clock (inferred, not run); the comment changes |
 
@@ -699,10 +700,10 @@ remaining = threshold - min(credit, threshold)
   Part B threshold. The credit does not depend on which.
 - The loop starts its own clock at the first sighting, as today, and reclaims when `remaining` has passed on
   that clock with the token unchanged.
-- The claim stays conditional on the token. With `remaining = 0` the loop does not sleep: it makes the
-  conditional claim at once, which reads the slot a second time and requires the same token.
-- The loop sleeps `min(poll, remaining)` instead of a whole `poll`. Otherwise a credit of the full threshold
-  would still cost 5 s. This also turns today's 135 s into 131 s.
+- The claim stays conditional on the token.
+- The loop keeps its timing: it sleeps a whole `poll` between looks. So the wait is the first multiple of
+  `poll` at or above `remaining`, and at least one `poll`: a credit of the full threshold still costs 5 s.
+  The claim then reads the slot a second time and requires the same token.
 - A new token restarts the observation, as today. Its stamp is later than `LM_now`, so its credit is 0.
 - The log keeps the existing line with the threshold and adds one line with the credit and the remaining
   wait. A test that matches the existing line stays green
@@ -714,9 +715,9 @@ Defaults, `margin = 4000 ms`, `d` = store time between the two stamps:
 
 | Threshold | Wait |
 |---|---|
-| Full lease, 131000 ms | `max(0, 135 s - d)` |
-| Part A marker, 21800 ms | `max(0, 25.8 s - d)` |
-| Part B match, 24950 ms | `max(0, 29 s - d)` |
+| Full lease, 131000 ms | `135 s - d`, rounded up to 5 s, at least 5 s |
+| Part A marker, 21800 ms | `25.8 s - d`, rounded up to 5 s, at least 5 s |
+| Part B match, 24950 ms | `29 s - d`, rounded up to 5 s, at least 5 s |
 
 `d` starts at the last renewal, not at the stop. A killed server's last renewal is up to one renewal period
 (10 s) older than the kill.
@@ -876,7 +877,7 @@ New gtests:
 |---|---|---|
 | `CASObjectStorageBackend` | Stamp pass-through | Native read returns the storage's `last_modified`; emulated read returns the file time; unknown and 0 are unset |
 | `CASMountAwaitExpiry` | Credit shortens the wait | Fake clocks: reclaim at `threshold - credit`, not earlier |
-| `CASMountAwaitExpiry` | Full credit claims without a sleep, still conditionally | No sleep call; a token that changes between the two reads restarts the observation with no credit |
+| `CASMountAwaitExpiry` | Full credit claims at the second look, still conditionally | Exactly one `poll` sleep; a token that changes between the two reads restarts the observation with no credit |
 | `CASMountAwaitExpiry` | Margin | A credit at or below the margin is 0 |
 | `CASMountAwaitExpiry` | Bad stamps | Unknown, zero, negative: full wait |
 | `CASMountAwaitExpiry` | Cross-checks | Each one alone removes the credit |
@@ -885,8 +886,8 @@ New gtests:
 | `CASPoolRemount` | Order | The stamp is read after the epoch allocation and before the first slot read, once per attempt |
 
 One integration test on the S3 stand: kill the server, wait longer than the threshold, start; assert the
-credit line, no sleep, listening within seconds. Second half: start at once after the kill; assert a credit
-of at most one renewal period and the remaining wait.
+credit line, one poll step of wait, listening within 15 s. Second half: start at once after the kill; assert
+a credit of at most one renewal period and the remaining wait.
 
 Predictions:
 
@@ -894,7 +895,7 @@ Predictions:
 |---|---|---|
 | P4 | On the S3 stands in use, the `Last-Modified` of a fresh slot body is within 1 s of the body's `started_at_ms` | It is earlier, or off by more than the margin: S1 or S2 does not hold there |
 | P5 | With the holder alive and renewing, the credit never exceeds one renewal period plus one envelope | A larger credit is logged |
-| P6 | After a kill and 140 s of downtime, the start logs a credit of the full threshold and claims on its second read | It sleeps, or waits the threshold |
+| P6 | After a kill and 140 s of downtime, the start logs a credit of the full threshold and claims on its second read, one poll step later | It waits longer than one poll step |
 
 ### 8.8 Verdict {#c-verdict}
 
@@ -924,18 +925,18 @@ reads another part's state.
 Target case: a restart of the server on the same node, possibly together with a reboot of the node.
 
 Waits at default settings on S3. `d` is the store time from the last slot write to the successor's epoch
-write. "A+C" and "B+C" are the part plus the credit.
+write. "A+C" and "B+C" are the part plus the credit. Every wait is on the 5 s poll grid.
 
 | Case | Today | A | B | C | Best combination |
 |---|---|---|---|---|---|
 | Clean stop, any restart | 0 s | 0 s | 0 s | 0 s | 0 s |
-| Controlled stop with unfinished queries (forced exit), restart in place, `d` about 5 s | 135 s | 25 s | 25 s | 130 s | A+C: about 21 s |
-| The same, then a node reboot, `d` above 26 s | 135 s | 25 s | 135 s | `135 s - d` | A+C: 0 s |
-| `SIGKILL` or OOM kill, restart at once on the same running kernel, `d` up to 10 s | 135 s | 135 s | 25 s | 125 s to 135 s | B+C: 19 s to 29 s |
-| The same, restarted by `systemd` after `RestartSec=30` (`packages/clickhouse-server.service:19`), `d` 30 s to 40 s | 135 s | 135 s | 25 s | 95 s to 105 s | B+C: 0 s |
+| Controlled stop with unfinished queries (forced exit), restart in place, `d` about 5 s | 135 s | 25 s | 25 s | 130 s | A: 25 s. The 5 s of credit is lost in the poll grid |
+| The same, then a node reboot, `d` above 26 s | 135 s | 25 s | 135 s | `135 s - d` | A+C: 5 s |
+| `SIGKILL` or OOM kill, restart at once on the same running kernel, `d` up to 10 s | 135 s | 135 s | 25 s | 125 s to 135 s | B+C: 20 s to 30 s |
+| The same, restarted by `systemd` after `RestartSec=30` (`packages/clickhouse-server.service:19`), `d` 30 s to 40 s | 135 s | 135 s | 25 s | 95 s to 105 s | B+C: 5 s |
 | Power loss or kernel failure, node back after 90 s | 135 s | 135 s | 135 s: the boot id changed | 35 s to 45 s | C |
-| Any downtime above 135 s | 135 s | 135 s | 135 s | 0 s | C |
-| Pod moved to another node, old node partitioned; eviction takes minutes | 135 s | 135 s | 135 s | 0 s | C |
+| Any downtime above 135 s | 135 s | 135 s | 135 s | 5 s | C |
+| Pod moved to another node, old node partitioned; eviction takes minutes | 135 s | 135 s | 135 s | 5 s | C |
 | VM cloned from a disk image, original alive and renewing | refused | refused | refused: other boot id | refused: the stamp is at most 10 s old | — |
 
 - **The moved pod is safe under C** because the credit is the old holder's own lease running out. It
@@ -957,17 +958,17 @@ it, less the credit.
   decommission, rejoin, pool recreation, creator takeover, and it releases the GC floor with
   `min_active_build_sequence = UINT64_MAX` (`CasServerRoot.cpp:1024`, `:1373-1378`, `:1472`, `:1570-1571`).
   So the uniform rule can only mean: the farewell body also carries `holder_fenced_settle_ms`, and a
-  same-uuid successor waits `25.8 s - d` before it reclaims a farewell.
+  same-uuid successor waits `25.8 s - d`, on the poll grid, before it reclaims a farewell.
 - **Cost.** A clean stop followed by a node reboot, a pod reschedule or an image pull: `d` exceeds 26 s,
-  the wait is 0. A clean restart in place (`systemctl restart`, a config change, a package upgrade): `d` is
-  a few seconds, the wait is 16 s to 24 s where it is 0 s today.
+  the wait is one poll step, 5 s. A clean restart in place (`systemctl restart`, a config change, a package
+  upgrade): `d` is a few seconds, the wait is 20 s or 25 s. Both are 0 s today.
 - **Gain.** Today a clean stop gives requests outside the ref lanes no time at all: one that ended at the
   client unresolved a second before the stop can land after the successor started. Under the uniform rule
   it gets the same bound as after a forced exit. It is a smaller chance, not a guarantee
   ([§3.9](#farewell)).
 - **Recommendation: no.** The restart in place is the most frequent clean restart and the target case. The
-  uniform rule makes exactly that case slower by about 20 s, and near-zero cost holds only when the restart
-  itself takes longer than the bound. If the late form of R3 and R4 after a clean stop is later judged worth
+  uniform rule makes exactly that case slower by 20 s to 25 s. Even when the restart itself takes longer than
+  the bound, the cost is 5 s, not zero. If the late form of R3 and R4 after a clean stop is later judged worth
   it, this is the form to build: a farewell with the field, no other change.
 
 ## 10. Size {#size}
@@ -976,7 +977,7 @@ it, less the credit.
 |---|---|---|---|---|
 | A | about 240 lines: format field 15; renewer marker write 45; runtime and teardown decision 40; pool steps 1 to 5 40; storage entry and free function 40; `Server.cpp` 4; threshold, prior state, logs 35; `listMounts` and the `switch` 10; events 10 | about 500 lines of gtests, one integration test | 6 pages, about 80 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 100 lines and 8 configs |
 | B | about 250 lines: file codec 90; boot id 15; renewer hook 30; config plumbing and application type 40; threshold, prior state, logs 50; file lifecycle 25 | about 400 lines | 3 pages | A new holder-side record in `CaMountObserveCore` |
-| C | about 110 lines: `Raw` and `Object` field 6; backend reads 10; in-memory backend stamp 15; `MountClaimResult` and `claimMount` 8; epoch stamp helper and four call sites 25; credit, cross-checks, sleep, logs in the loop 45 | about 250 lines of gtests, one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` | A third clock in `CaMountObserveCore`: about 60 lines and 4 configs |
+| C | about 110 lines: `Raw` and `Object` field 6; backend reads 10; in-memory backend stamp 15; `MountClaimResult` and `claimMount` 8; epoch stamp helper and four call sites 25; credit, cross-checks, logs in the loop 45 | about 250 lines of gtests, one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` | A third clock in `CaMountObserveCore`: about 60 lines and 4 configs |
 
 Estimates from reading the code, not from a prototype.
 
@@ -990,26 +991,24 @@ Most important first.
    The test configs already skip the wait with `cas_unsafe_remount_no_delay`. Is the production restart
    after an OOM kill worth Part B and its rules A1 to A4? Part C alone leaves that case at `135 s - d`:
    about 100 s after the 30 s `RestartSec` of the packaged unit.
-2. **The forced exit takes longer.** The hook joins two threads and sends one request per pool. Healthy
-   store: tens of milliseconds. Unreachable store: up to one envelope for a join plus the 16 s deadline.
-   A supervisor that sends `SIGKILL` meanwhile only loses the marker. Acceptable?
-3. **One envelope or two in the declared bound.** One mutating request in flight needs one envelope. The
-   second envelope and the margin cover the gap between the fence check and the wire. With one envelope:
-   `9000 + 450 + 5000 = 14450 ms`, 15 s on the grid, and a gap budget of 2 s. Recommended: two.
-4. **The cadence term.** `+ poll` is the margin of the lease threshold against clock drift. For the marker
-   the declared bound already holds a 2 s margin and a spare envelope. Dropping it saves 5 s: 16.8 s, 20 s
-   on the grid. Recommended: keep it; one function, one model shape.
-5. **The poll grid.** The loop sleeps whole polls, so 21.8 s becomes 25 s (and 131 s becomes 135 s). Sleeping
-   `min(poll, remaining)` changes the lease case too. Not included in Part A; Part C includes it.
-6. **The paused-writes branch.** Writing the marker where the farewell has no lease room is safe, but it
-   replaces "the slot is left for observation", which a test pins. Keep it, or leave that branch alone?
-7. **An unclear renewal.** With a renewal sent and unresolved, no marker is written, by the farewell's rule.
-   The store's conditional write would keep a marker safe there too: both name the same token, so only one
-   can land. Not included: it needs the renewer to write from a non-`Active` state, and that state means the
-   store is failing.
-8. **`system.cas_mounts.state = 'holder_fenced'`.** A new value in a user-visible column. Alternative: show
-   `live` and `expired` as old builds do.
-9. **The other forced exit.** `Server.cpp:3671` (introspection servers) was not traced. Hook it too?
+2. **Decided: the forced-exit hook has one overall deadline of 16 s.** The hook joins two threads and
+   sends one request per pool. Healthy store: tens of milliseconds. Unreachable store: up to one envelope
+   for a join, then the deadline. A supervisor that sends `SIGKILL` meanwhile only loses the marker.
+3. **Decided: two envelopes in the declared bound.** One mutating request in flight needs one envelope. The
+   second envelope and the margin cover the gap between the fence check and the wire. One envelope would
+   give `9000 + 450 + 5000 = 14450 ms`, 15 s on the grid, and a gap budget of 2 s.
+4. **Decided: the `+ poll` term stays.** It is the margin of the lease threshold against clock drift. One
+   function, one model shape. Dropping it would save 5 s.
+5. **Decided: the poll grid stays.** The loop sleeps whole polls, so 21.8 s becomes 25 s and 131 s becomes
+   135 s. No part changes the loop's timing. For Part C this means a floor of 5 s, see item 15.
+6. **Decided: the paused-writes branch is unchanged.** No marker where the farewell has no lease room. The
+   slot is left for observation, as the existing test pins.
+7. **Decided: no marker after an unclear renewal.** With a renewal sent and unresolved, no marker is
+   written, by the farewell's rule. The store's conditional write would keep a marker safe there too: both
+   name the same token, so only one can land. It would need the renewer to write from a non-`Active`
+   state, and that state means the store is failing.
+8. **Decided: `system.cas_mounts` shows `state = 'holder_fenced'`.** A new value in a user-visible column.
+9. **Decided: `Server.cpp:3671` is not hooked.** The exit of the introspection servers keeps the full wait.
 10. **Part C: trust in the store's clock.** Part C makes part of the wait depend on a third clock. On by
     default for every S3-compatible store, or only after P4 of [§8.7](#c-model-tests) was measured on the
     self-hosted clusters in use?
@@ -1024,6 +1023,10 @@ Most important first.
     Allow the credit there, as proposed, or restrict it to native mode?
 14. **Part C for the GC leader.** The fence threshold of `computeHeartbeatFloor` could take the same credit
     and fence a dead member sooner. Not included.
+15. **Part C: the 5 s floor.** With the poll grid kept, a full credit still waits one poll step, and every
+    wait rounds up to 5 s. Claiming at once when nothing remains, and sleeping only the remainder, would
+    make the target case about 0 s. It changes the loop's timing for the lease case too (135 s becomes
+    131 s), so it is not included.
 
 ## 12. Limits of what is established {#limits}
 
