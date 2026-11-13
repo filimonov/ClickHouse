@@ -43,8 +43,9 @@ doc_type: 'reference'
   token. Defaults: 21800 ms against 131000 ms.
 - The settle time covers only what the client cannot observe: a request whose call has returned without an
   answer and which the store may still apply.
-- If the count does not reach zero, a worker does not stop, or anything else is not done within 16 s, no
-  field is written and the successor waits the full lease.
+- If the count does not reach zero, a worker does not stop, or anything else is not done within 16 s of
+  the hook's entry, no field is written and the successor waits the full lease. The server's exit is never
+  delayed by more than those 16 s.
 - The field is not `gc_fenced`. A reader that does not know the field skips it and waits the full lease.
 - The wait loop sleeps only the time still left, so a wait equals its threshold: 131 s for the lease, not
   135 s.
@@ -63,9 +64,10 @@ dead ([§7](#part-b)). A restart after `SIGKILL` or an OOM kill keeps the lease 
 - Why it is safe under its contract: a holder counts its lease from the start of the renewal attempt, and
   the store creates the stamp later. The age is at most what the holder itself has counted
   ([§8.4](#c-safety)).
-- The contract is on the store's clock: the difference of two `Last-Modified` stamps may exceed the true
-  elapsed time by at most 2 s. No store documents such a bound, so the operator accepts it with one disk
-  setting.
+- The contract is on the store's clock and has two clauses: the difference of two `Last-Modified` stamps
+  exceeds the true elapsed time by at most 2 s, and the store's clock runs at most 5 % faster than any
+  holder's `CLOCK_BOOTTIME`. No store documents either, so the operator accepts them with one disk
+  setting. `local` object storage is allowed under the same setting.
 - It is the only part that helps after a power loss, or a move to another node without a controlled stop.
   It does little for a restart seconds after a kill.
 
@@ -76,7 +78,7 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 |---|---|---|---|
 | Clean stop, farewell written | 0 s | 0 s | 0 s |
 | Forced exit, marker written, restart in place (`d` about 5 s) | 135 s | 21.8 s | 20.8 s |
-| Forced exit, marker written, then a node reboot | 135 s | 21.8 s | 0 s |
+| Forced exit, marker written, then a node reboot, `d >= 25.8 s` | 135 s | 21.8 s | 0 s |
 | `SIGKILL` or OOM kill, restart after 30 s | 135 s | 131 s | 95 s to 105 s |
 | Power loss, another node, any downtime above 135 s | 135 s | 131 s | 0 s |
 | Successor runs a build without these parts | 135 s | 135 s | 135 s |
@@ -97,7 +99,7 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 |---|---|---|
 | A | Sound | A fence nothing re-arms after the last trip, an observed zero of mutating calls after that trip, a marker conditional on the last token ([§3.5](#bound), [§3.7](#no-rearm)). Residual: a request the store applies after the client's call has returned. The full wait has the same residual |
 | B | Rejected | Three counterexamples in which the record matches while the predecessor lives ([§7](#part-b)) |
-| C | Sound under a contract the operator accepts | One property of the store's stamps that no store documents ([§8.5](#c-assumptions)). Off by default |
+| C | Sound under a contract the operator accepts | Two properties of the store's clock that no store documents: the error of a stamp difference and the clock's rate ([§8.5](#c-assumptions)). Off by default |
 
 ## 2. Context {#context}
 
@@ -132,7 +134,7 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 | F6 | `tripFenceWithoutOperationalLoss` sets `lost` with `memory_order_release` and bumps the generation. It changes no lifecycle and schedules no remount | `CasMountRuntime.cpp:131-135` |
 | F7 | `lost` is cleared in one place, `armMountFence`. It has two callers: the first arm of a new `Pool`, and `Pool::tryRemountOnce` | `CasMountRuntime.cpp:236`; `CasPool.cpp:966`, `:1679` |
 | F8 | `Pool::tryRemountOnce` is reachable only as the `remount_attempt` callback of the remount worker | `CasPool.cpp:271`; `CasMountRuntime.cpp:895` |
-| F9 | `stopBackgroundWorkers` sets `workers_stop_requested`, joins both workers with untimed joins, and never clears the flag. Only `startBackgroundWorkers` clears it, and only a new mount calls that | `CasMountRuntime.cpp:936-965`, `:701`; `CasPool.cpp:979-980` |
+| F9 | `stopBackgroundWorkers` sets `workers_stop_requested`, joins both workers with untimed joins, and never clears the flag. A thread object of the global pool that is destroyed neither joined nor detached aborts the process. Only `startBackgroundWorkers` clears it, and only a new mount calls that | `CasMountRuntime.cpp:936-965`, `:701`; `CasPool.cpp:979-980`; `src/Common/ThreadPool.h:395-419` |
 | F10 | `scheduleRemount` does nothing once `workers_stop_requested` is set | `CasMountRuntime.cpp:1173-1185` |
 | F11 | A committed renewal publishes a new deadline. It does not touch `lost` | `CasMountRuntime.cpp:362-363`, `:603-612` |
 | F12 | A renewal that ends terminal while the driver is `Stopping` trips the fence without a remount. One that ends terminal while the driver is `WorkerIdle` calls `tripMountLost` and requests a remount | `CasMountRuntime.cpp:371-391` |
@@ -146,10 +148,10 @@ from the last slot write to the successor's start. The full table is in [§9](#c
 | F20 | Three places copy a decoded slot body and encode it again: the GC fence, the fence of a refused own claim, and the rejoin of a retired owner. A field the decoder does not know is lost there; a field the struct holds is kept | `CA/Formats/CasServerRootFormats.h:85-91`; `CasServerRoot.cpp:1365`, `:1403`; `:1135-1138`; `:658-667` |
 | F21 | The GC leader fences a slot after it watched one token for `L + L / 20 + period` | `CasServerRoot.cpp:1380-1403` |
 | F22 | Two forced exits run before the disks are shut down: after `shutdown_wait_unfinished` with connections, refresh tasks or background queries left, and from the introspection servers' stop inside `ContextSharedPart::shutdown`. `shutdown_wait_unfinished` is 120 s by default, 60 s in the CI config. Without `shutdown_wait_unfinished_queries` the queries are killed before the wait. `safeExit` calls `_exit` | `programs/server/Server.cpp:3981-4018`, `:3636-3672`; `src/Interpreters/Context.cpp:1006-1019`, `:1097`, `:1172`; `src/Core/ServerSettings.cpp:125-126`; `tests/config/config.d/wait_remaining_connections.xml:2-3`; `base/base/safeExit.cpp:13-38` |
-| F23 | Generic code already reaches CAS storages through `Context::getDisksMap` and `ContentAddressedMetadataStorage::tryFromDisk`. `Server.cpp` already includes a CAS header and calls `DB::Cas` functions | `src/Interpreters/Context.cpp:7696-7705`; `CA/ContentAddressedMetadataStorage.cpp:349-364`; `src/Interpreters/ServerAsynchronousMetrics.cpp:396-405`; `Server.cpp:116`, `:1722`, `:2013` |
+| F23 | Generic code already reaches CAS storages through `Context::getDisksMap` and `ContentAddressedMetadataStorage::tryFromDisk`. `getDisksMap` takes `storage_policies_mutex` without a timeout; a custom disk is published under the same mutex. `Server.cpp` already includes a CAS header and calls `DB::Cas` functions | `src/Interpreters/Context.cpp:7696-7705`, `:7613-7620`; `CA/ContentAddressedMetadataStorage.cpp:349-364`; `src/Interpreters/ServerAsynchronousMetrics.cpp:396-405`; `Server.cpp:116`, `:1722`, `:2013` |
 | F24 | A normal shutdown arms the pool with `beginTeardown` before it stops the GC scheduler and drains | `ContentAddressedMetadataStorage.cpp:954-970`, `:1014-1034` |
 | F25 | `forgetDisk` trips the fence, joins the workers, then trips again, because a remount in flight can re-arm the fence before the join. It runs under the storage's `lifecycle_mutex`, as FSCK and GC stop and start do | `CasPool.cpp:1254-1277`; `ContentAddressedMetadataStorage.cpp:1060`, `:1109`; `CA/ContentAddressedMetadataStorage.h:713-724` |
-| F26 | Every backend entry point takes a `TransportAccess`, which only `CasRequests::withTransportAccess` can construct. The mutating entry points are called from four engine functions: `writeLoop` (`write`), `removeUnder` (`remove`), `removeManyWriteOnce`, `publish`. No count of calls in flight exists | `CA/Backend/CasTransportAccess.h:7-22`; `CasRequests.h:246-253`; `CasRequests.cpp:941`, `:996`, `:580-585`, `:634-646`, `:775-780` |
+| F26 | Every backend entry point takes a `TransportAccess`, which only `CasRequests::withTransportAccess` can construct. The mutating backend calls are made in four engine functions: `writeLoop` (`write`), `removeUnder` (`remove`; `removeCurrent` reaches the store only through it), `removeManyWriteOnce`, `publish`. No count of calls in flight exists | `CA/Backend/CasTransportAccess.h:7-22`; `CasRequests.h:246-253`; `CasRequests.cpp:941`, `:996`, `:580-585`, `:634-646`, `:775-780` |
 | F27 | After a reclaim nothing waits. The prior state selects a log line through an exhaustive `switch` | `CasPool.cpp:898-920` |
 | F28 | A blob publication runs its whole transfer inside the backend call: a streamed upload or a same-store copy | `CasObjectStorageBackend.cpp:889-962` |
 
@@ -207,9 +209,11 @@ Steps 4, 6 and 7 can block. None of them is timed. The caller bounds them from o
 
 Why each step:
 
-- Step 0: a `SYSTEM CAS FORGET`, an FSCK or a GC stop or start in progress holds that mutex and may be
-  joining the same worker threads (F25). Two joins of one thread object are undefined. A skipped pool gets
-  the full wait.
+- Step 0: `lifecycle_mutex` is the existing exclusion against `SYSTEM CAS FORGET`, which joins the same
+  worker threads and drives the same renewer (F25). Two joins of one thread object are undefined. The same
+  mutex is held by an FSCK for its whole scan and by a GC stop or start. Those do not touch the mount
+  workers, but one non-blocking take skips the pool during them as well. That costs the full wait and
+  nothing else.
 - Step 1 lets step 4 end. A remount in flight sends its requests on the GC plane and may sit in the 131 s
   observation loop (`CasPool.cpp:1574-1586`). After `beginTeardown` its next request is refused. It also
   answers what the forced path does with the GC plane: it is armed, new GC requests are refused, the GC
@@ -219,7 +223,8 @@ Why each step:
   `RenewalTerminal`, a remount is requested, and no marker is written (F18, F12). With several pools the
   window between one pool's trip and its join is long enough for that.
 - Step 4 is the farewell's own answer to a renewal in flight (F17). After the join the renewal is committed,
-  never sent, or unclear. Only the unclear one leaves the renewer not `Active`, and then nothing is written.
+  never sent, unclear, or refused by a slot that moved (a GC fence, a successor). The last two leave the
+  renewer not `Active`, and then nothing is written.
 - Step 5: a remount that was past its last GC-plane request at step 3 can have re-armed the fence, under a
   new epoch and a new renewer (F25). After the join it cannot run again. The marker then goes through the
   renewer the remount installed.
@@ -243,22 +248,37 @@ Only the server's forced exit. The hook:
 ```text
 programs/server/Server.cpp, before safeExit at :4018 and at :3671
   -> DB::Cas::declareMountFencesBeforeForcedExit(global_context)      new free function, noexcept
+     takes the deadline, starts one detached coordinator thread, waits for completion until the deadline
+     coordinator thread:
      -> Context::getDisksMap                                           existing
      -> ContentAddressedMetadataStorage::tryFromDisk                   existing
-     one thread per writable CAS pool:
+     one detached thread per writable CAS pool:
      -> ContentAddressedMetadataStorage::declareMountFenceBeforeExit   new; step 0, then the pool pointer
         -> Pool::declareMountFenceBeforeExit                           new; steps 1 to 7
            -> CasMountRuntime::declareHolderFenced                     new
               -> MountLeaseRenewer::declareHolderFenced                new; the marker write
-     the calling thread waits until every pool thread has finished, at most 16 s, then returns
 ```
 
-- **Hard cap.** The calling thread waits on a completion count with a 16 s timeout and then returns to
-  `safeExit`, which ends the process with `_exit`. A pool thread still in a join, in the wait for zero or
-  in the marker write is cut off there. Cut off before the marker was sent: no marker, full wait. Cut off
-  during the marker write: an unclear marker, which [§3.6](#cases) allows because steps 5 and 6 came first.
-- **One thread per pool**, so a pool that blocks does not take the others' markers with it. A pool whose
-  thread cannot be started is skipped.
+- **Hard cap.** The calling thread takes a deadline of 16 s at the hook's entry, starts the coordinator, and
+  does one thing: a timed wait for completion against that deadline. Then it returns to `safeExit`, which
+  ends the process with `_exit`. Nothing the calling thread does can block longer.
+- **Discovery is under the cap too.** `getDisksMap` takes a mutex without a timeout (F23), so it runs in the
+  coordinator, not in the calling thread. A coordinator stuck there means no marker for any pool.
+- **Threads.** The coordinator and the pool threads are `ThreadFromGlobalPool`, detached at once, as
+  `Pool::tryDispatchDetached` does (`CasPool.cpp:1165-1168`). A thread object of that type aborts the
+  process if it is destroyed neither joined nor detached (F9), and a join is what must not happen here.
+  Detaching is safe at both sites: `safeExit` does not return, so the global pool's shutdown
+  (`Server.cpp:1723`), which would wait for these threads, is never reached.
+- **Shared state.** The completion state (a mutex, a condition variable, the number of pool threads still
+  running, a flag that dispatch is finished) and every disk and pool reference are owned by a `shared_ptr`
+  that each thread holds. Nothing lives on the calling thread's stack, so a thread that finishes after the
+  caller returned touches valid memory.
+- **Cut off by the exit.** A thread still in discovery, in a join, in the wait for zero or in the marker
+  write is ended by `_exit`. Before the marker was sent: no marker, full wait. During the marker write: an
+  unclear marker, which [§3.6](#cases) allows because steps 5 and 6 came first.
+- **One thread per pool**, so a pool that blocks does not take the others' markers with it. A thread that
+  cannot be started is skipped: a pool's, that pool; the coordinator's, all of them.
+- The cap is a parameter of the function with a default of 16 s, so a test does not wait 16 s.
 - No new `IDisk` or `IMetadataStorage` method. The chain uses the accessors that
   `ServerAsynchronousMetrics.cpp:396-405` uses on every tick.
 - **Generic files touched:** `programs/server/Server.cpp` only: one include and two call lines. The free
@@ -331,10 +351,13 @@ The marker is sent only when both hold:
   parts and the completion of a multipart upload, HTTP redirects, the client's own repeats. So are the
   function's own reissues, settling reads and pauses. A pause is at most 5 s (`CA/Backend/CasRetry.cpp:11-17`)
   and the fence check before it refuses after a trip.
-- **Ordering.** Thread: increment, then load `lost`. Hook: store `lost`, then load the count. For one of the
-  two to always see the other, all four operations must be sequentially consistent. Today `lost` is stored
-  with `release` and loaded with `acquire` (F5, F6), which allows both to miss. The store in the two trip
-  functions and the load in `admit` change to `memory_order_seq_cst`.
+- **Ordering.** Thread: increment, then load `lost`. Hook: store `lost`, then load the count. One of the
+  two must always see the other. With `lost` stored with `release` and loaded with `acquire`, as today
+  (F5, F6), both can miss. The fix is two `std::atomic_thread_fence(std::memory_order_seq_cst)` in new
+  code: in the guard after the increment, and in the hook after the trip of step 5. Whichever fence is
+  first in the total order, the other side's load sees the earlier store. Chosen over changing the orders
+  of the existing store and load: `admit` and the trip functions stay untouched, and the guarantee sits
+  next to the counter that needs it, where a later edit of `admit` cannot remove it.
 - **The wait for zero** uses the counter's own `wait` and `notify_all`. It is untimed: the hard cap of
   [§3.3](#writers) bounds it. There is no polling sleep.
 - **Which plane.** The mount plane's counter is the one read. The lease plane has one user, the renewer,
@@ -427,7 +450,7 @@ the query threads that forced the exit are still there.
 | `scheduleRemount` from a foreign-interference report | No-op once `workers_stop_requested` is set (F10) |
 | A late renewal commit calling `publishRenewedDeadline` | It moves the deadline only; the fence refuses on `lost` first (F5, F11). The renewal worker is joined before the marker |
 | A renewal or a farewell after the marker | The renewer is `Released`: both throw `LOGICAL_ERROR` on a non-`Active` renewer |
-| A lifecycle command on the same pool | Excluded by the lifecycle mutex the pool's thread holds until the process ends |
+| A lifecycle command on the same pool | Excluded by the lifecycle mutex while the pool's thread runs. A thread that finished has released it, up to 16 s before the exit. A FORGET or a GC start then is harmless: the workers are already stopped, the renewer is `Released` so the teardown writes nothing, and the GC plane is armed |
 | A new `Pool` for the same slot in the same process | It is a successor like any other: a fresh epoch, the marker branch, a conditional claim. The old pool stays fenced |
 
 ### 3.8 Other consumers of the slot {#other-consumers}
@@ -520,7 +543,10 @@ farewell, where it has no effect.
     `CallExit`; `MarkerSend` (enabled only when `hfenced` and the set of calls is empty, on the holder's
     last token); `MarkerLand` at any later tick; `LateApply` (the store applies an unanswered request).
   - `ObsDecide` uses `Settle + SettleAllowance + Cadence` when the watched token is marked.
-  - Invariant `NoRequestSentAfterMarker`: no request of the holder is sent after `MarkerSend`.
+  - A `Publish` call that is not in the set of counted calls and may send requests at any time, before
+    and after `MarkerSend`. The model must exercise the exclusion, not assume it away.
+  - Invariant `NoCountedRequestSentAfterMarker`: no request of a counted mount-plane mutation is sent
+    after `MarkerSend`. Requests of `Publish` are outside it.
 - **Sabotage rows, each must go red.** The marker is sent with a call in flight. The call joins the set
   after its fence check. A remount re-arms after the marker. The successor uses its own, smaller settle. The
   marker is treated as `gc_fenced`.
@@ -563,7 +589,7 @@ New gtests:
 | `CASPoolShutdown` | Marker write refused, token changed, unclear | No second write in any of the three; an unclear write that landed is in the slot and is reclaimed after the short threshold |
 | `CASPoolShutdown` | No write after the marker | A renewal or a `release` on that renewer: death test |
 | `CASPoolShutdown` | Lifecycle work in progress | With the lifecycle mutex held the pool is skipped and nothing is joined |
-| `CASPoolShutdown` | Hard cap | A pool whose worker never stops: the entry function returns at the cap and the other pool's marker is in its slot |
+| `CASPoolShutdown` | Hard cap | With a short cap passed in: a pool whose worker never stops, and separately a disk map whose mutex is held: the entry function returns at the cap in both; in the first the other pool's marker is in its slot. The stuck thread is released before the fixture ends |
 | `CASPoolRemount` | Fence stays down | After the marker: `scheduleRemount` is a no-op; a renewal commit that publishes a deadline does not admit a write; a remount that re-armed before the join is tripped again and the count is read after that |
 | `CASFenceTerminal`, `CASMountSlotOwnership`, `CASHeartbeatFloor` | Marked body | Not terminal; not held; counted live and fenced only after the full threshold |
 
@@ -591,8 +617,15 @@ One integration test, `test_cas_forced_exit_restart`:
 - Start. Assert: the successor line with the short wait; no `waiting ~131000 ms`; listening within 45 s; a
   table written before the stop reads back.
 - Second variant: the same with the marker write blocked by a failpoint. Assert the full wait.
-- Third variant: an `INSERT` held inside a ref-log write by a failpoint during the exit. Assert no marker and
-  the full wait.
+- Third variant: an `INSERT` held by a failpoint inside the backend call during the exit. The failpoint
+  sits in `ObjectStorageBackend::write` (`CA/Backend/CasObjectStorageBackend.cpp:840`), inside the counted
+  span. A pause before the engine call would not be counted, the marker would be written, and the variant
+  would fail for no defect. Assert no marker and the full wait; the start budget of this variant allows
+  131 s.
+- Where it lives: `tests/integration/test_cas_forced_exit_restart/`, next to the other CAS integration tests
+  that use failpoints (`tests/integration/test_cas_early_commit_restart/test.py:78`). The `no-fasttest` tag
+  that failpoint tests need concerns stateless tests; it does not apply to an integration test (inferred:
+  the rule's text was not found in this tree).
 
 Predictions that would refute the design if they fail:
 
@@ -746,19 +779,20 @@ No request changes. One request is added: the read of the epoch object.
    holds with the last fence trip as the anchor.
 4. So the store-side age of the body in the slot is at most the time the holder itself has counted against
    that body, and a wait of `T - age` after the first sighting ends no earlier than a wait of `T` that had
-   started when the stamp was created. Today's protocol already allows that second wait: it is an observer
-   that happened to read the slot at that moment, such as a GC leader watching continuously.
+   started when the stamp was created. That instant is not earlier than the authority anchor (step 3), and
+   a wait of `T` from the anchor is what the lease needs.
 5. Only durations are compared: one store stamp against another, then the remainder on the claimer's own
    `CLOCK_BOOTTIME`. No wall clock of a ClickHouse node decides anything. The stamped `expires_at_ms` still
    never enters the decision.
 6. Rate: the threshold carries `L / 20` for a 5 % difference between the holder's and the observer's clocks.
    The part of the wait measured by the store needs the same bound for the store's clock against the
-   holder's.
+   holder's `CLOCK_BOOTTIME`. Nothing in the code or in step 3 gives it. It is the second clause of the
+   contract ([§8.5](#c-assumptions)).
 7. A renewal in flight is handled as today. If it lands before the claim, the token changes and the claim
    fails. If the claim lands first, the renewal is refused and gives no authority.
 
-Step 4 is why holder versions do not matter: the credit never reclaims earlier than a real observer of today
-could, less the stamp error.
+Steps 3 and 4 are why holder versions do not matter: every version anchors its authority before it sends
+the write.
 
 The credit shortens the wait for the slot. It does not shorten what the wait stands for in each case: for a
 renewal body, the rest of the holder's lease; for a marker body, the settle time after a certificate that
@@ -768,27 +802,33 @@ already held when the stamp was created.
 
 The unsafe direction is a credit that is too large: `LM_slot` too early or `LM_now` too late.
 
-**The contract the operator accepts by turning the setting on:** for any two objects of the pool, the
-difference of their `Last-Modified` stamps exceeds the true time between the two writes by at most
-`cas_lease_safety_margin_ms` (2 s by default). This must hold across all nodes of the store and through
-clock steps.
+**The contract the operator accepts by turning the setting on.** Two clauses, independent of each other:
+
+1. **Stamp error.** Each `Last-Modified` stamp is created at a real instant between the first request of
+   its write and the write's completion. For any two objects of the pool, the difference of their stamps
+   exceeds the difference of those instants by at most `cas_lease_safety_margin_ms` (2 s by default). This
+   must hold across all nodes of the store and through clock steps.
+2. **Rate.** The time the store measures between two stamps advances at most 5 % faster than the
+   `CLOCK_BOOTTIME` of any holder of the pool, including under virtualization and suspension. Example of a
+   violation with exact stamps: a holder whose boot clock runs at 0.7 of real time has counted 95 s when
+   the store has counted 135 s, and still admits writes.
 
 - `margin = 2 × 1000 ms + cas_lease_safety_margin_ms`: 4000 ms by default. The first 2 s cover the 1 s
   resolution of each stamp. The rest is the contract.
-- No store documents such a bound. A MinIO node stamps with its own wall clock, and its nodes tolerate far
+- No store documents either clause. A MinIO node stamps with its own wall clock, and its nodes tolerate far
   more disagreement than 2 s between themselves. AWS and GCS document strong consistency and the header,
   not the error of its difference. This is why the part is off by default.
-- What a violation costs. With stamps that disagree by `e` beyond the contract, a holder that is alive but
+- What a violation of clause 1 costs. With stamps that disagree by `e` beyond it, a holder that is alive but
   not renewing is reclaimed `e` early. At 120 s and no clock drift the threshold exceeds the lease by 11 s
   and a holder admits its last request 9 s before its deadline. So up to about 11 s of excess the reclaim
   still follows the end of the holder's authority, and up to about 20 s it still follows the holder's last
   possible request start. These are slack figures, not guarantees. A healthy holder is never affected: its
   stamp is at most one renewal period old.
-- Further properties the contract implies: the store's clock runs within 5 % of the holder's; a stamp is
-  not set back afterwards (a restore that keeps old stamps, a copy of a `local` pool with `cp -p`). A later
-  re-stamp is the safe direction.
-- On `local` object storage the store's clock is the node's wall clock. The contract then says that clock
-  does not step forward by more than 2 s between the two writes.
+- Clause 1 also means that a stamp is not set back afterwards: a restore that keeps old stamps, or a copy
+  of a `local` pool with `cp -p`, breaks it. A later re-stamp is the safe direction.
+- `local` object storage is allowed under the same setting. Its store clock is the node's wall clock, read
+  through the file system. The two clauses then say: that wall clock does not step forward by more than
+  2 s between the two writes, and it runs at most 5 % faster than the holder's `CLOCK_BOOTTIME`.
 
 Bad stamps:
 
@@ -799,7 +839,7 @@ Bad stamps:
 | `d` within the margin | No credit, full wait |
 | Very large `d` | Valid: a server may have been down for days. The wait is 0 |
 
-No check against a ClickHouse wall clock is made. Such a check cannot establish the contract: a store node
+No check against a ClickHouse wall clock is made. Such a check cannot establish either clause: a store node
 and the successor's clock can be wrong together.
 
 ### 8.6 Compatibility {#c-compat}
@@ -818,15 +858,16 @@ and the successor's clock can be wrong together.
 
 Model, `M/CaMountObserveCore.tla`:
 
-- A third clock `sclock` with the same rate coupling and a bounded error per stamp. `RenewLand` records
-  `landStamp` from it, at or after the attempt's first request.
+- A third clock `sclock` with a bounded error per stamp (clause 1) and its own rate coupling against
+  `hclock` (clause 2), separate from the holder-observer coupling. `RenewLand` records `landStamp` from it,
+  at or after the attempt's first request.
 - Observer: `ObsStampNow` records `nowStamp` from `sclock` before `ObsRead`; `ObsDecide` dates the sighting
   `oclock - max(0, nowStamp - landStamp - Margin)`.
 - Invariant: `NoFenceInsideAuthority`, unchanged. `FenceMarginAtLeast` with the margin reduced by the stamp
   error.
 - Sabotage rows, each must go red: `nowStamp` taken after the sighting (double count); no margin with
-  truncated stamps; a stamp error beyond the contract (an environment row, like the existing drift row); for
-  a marked slot, the credit counted from the renewal body that preceded the marker.
+  truncated stamps; a stamp error beyond clause 1 and a store rate beyond clause 2 (two environment rows,
+  like the existing drift row); for a marked slot, the credit counted from the renewal body that preceded the marker.
 
 New gtests:
 
@@ -859,12 +900,13 @@ acceptance test for it.
 
 ### 8.8 Verdict {#c-verdict}
 
-- **Sound under its contract; opt-in.** The code cannot check the contract and no store documents it.
+- **Sound under its two-clause contract; opt-in.** The code cannot check either clause and no store
+  documents them.
 - **It adds a third clock to the protocol.** Today the wait trusts the rate of two `CLOCK_BOOTTIME` clocks.
   With Part C part of the wait is measured by the store's wall clock.
 - **What it cannot do:** shorten a restart that follows the last renewal by less than the threshold. A
   killed server restarted after 30 s still waits about 100 s.
-- **Size:** about 80 lines of product code, all under `CA/`; about 200 lines of tests.
+- **Size:** about 65 lines of product code, all under `CA/`; 300 to 450 lines of tests and test support.
 
 ## 9. How the parts compose {#composition}
 
@@ -886,8 +928,8 @@ write. "Today" is on the 5 s poll grid; the other columns are exact.
 |---|---|---|---|
 | Clean stop, any restart | 0 s | 0 s | 0 s |
 | Controlled stop with unfinished queries (forced exit), marker written, restart in place, `d` about 5 s | 135 s | 21.8 s | 20.8 s |
-| The same, then a node reboot, `d` above 25.8 s | 135 s | 21.8 s | 0 s |
-| Forced exit, no marker: a write still in flight at the 16 s cap, lifecycle work in progress, an unclear renewal | 135 s | 131 s | 131 s for `d <= 4 s`, else `135 s - d` |
+| The same, then a node reboot, `d >= 25.8 s` | 135 s | 21.8 s | 0 s |
+| Forced exit, no marker: a write still in flight at the 16 s cap, lifecycle work in progress, an unclear renewal | 135 s | 131 s | 131 s for `d <= 4 s`; `135 s - d` for `4 s < d < 135 s`; 0 s from `d = 135 s` |
 | `SIGKILL` or OOM kill, restart at once on the same running kernel, `d` up to 10 s | 135 s | 131 s | 125 s to 131 s |
 | The same, restarted by `systemd` after `RestartSec=30`, `d` 30 s to 40 s | 135 s | 131 s | 95 s to 105 s |
 | Power loss or kernel failure, node back after 90 s, `d` 90 s to 100 s | 135 s | 131 s | 35 s to 45 s |
@@ -908,11 +950,14 @@ write. "Today" is on the 5 s poll grid; the other columns are exact.
 
 | Part | Product code | Tests | Docs | Model |
 |---|---|---|---|---|
-| A | about 220 lines: format field 15; renewer marker write 40; stop request and runtime entry 25; counter, guard, three guard sites, the two ordering changes, the wait 35; pool steps 1 to 7 30; storage entry with the lifecycle lock 15; free function with pool threads and the cap 40; `Server.cpp` 5; threshold branch, exact sleep, logs 20 | about 450 lines of gtests, one integration test | 3 pages, about 50 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 120 lines and 9 configs |
+| A | about 240 lines: format field 15; renewer marker write 40; stop request and runtime entry 25; counter, guard, three guard sites, the two fences, the wait 35; pool steps 1 to 7 30; storage entry with the lifecycle lock 15; free function with the coordinator, detached pool threads, shared state and the cap 55; `Server.cpp` 5; threshold branch, exact sleep, logs 20 | 700 to 1100 lines of gtests for about 24 tests, one integration test | 3 pages, about 50 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 120 lines and 9 configs |
 | B | none | none | none | none |
-| C | about 80 lines: `Raw` and `Object` field 6; backend reads 10; in-memory backend stamp 15; `MountClaimResult` and `claimMount` 8; epoch read and credit in the loop, log 25; setting and its plumbing 15 | about 200 lines of gtests, one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` with the contract | A third clock in `CaMountObserveCore`: about 60 lines and 5 configs |
+| C | about 65 lines: `Raw` and `Object` field 6; backend reads 10; `MountClaimResult` and `claimMount` 8; epoch read and credit in the loop, log 25; setting and its plumbing 15 | 300 to 450 lines: about 9 gtests, a settable stamp in the in-memory backend (15 lines of test support), one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` with the two clauses of the contract | A third clock in `CaMountObserveCore`: about 60 lines and 6 configs |
 
-Estimates from reading the code, not from a prototype.
+Generic files touched: Part A one (`programs/server/Server.cpp`), Part C none.
+
+Estimates from reading the code, not from a prototype. The test figures use the size of the existing tests
+in the touched suites: about 30 to 45 lines each.
 
 ## 11. Open questions {#open}
 
@@ -927,26 +972,28 @@ Decided, and where the design reflects it:
 | A marker from a pool teardown, from FORGET, in the paused-writes branch, after an unclear renewal | No. The first two are a possible follow-up ([§3.3](#writers)) |
 | A new `system.cas_mounts` state, a new prior state, new event branches | No. Two log lines ([§3.10](#surface)) |
 | `Server.cpp:3671` | Hooked, with the same call |
-| The forced-exit hook's time | A hard cap of 16 s, enforced by the calling thread ([§3.3](#writers)) |
+| The forced-exit hook's time | A hard cap of 16 s from the hook's entry, enforced by the calling thread; discovery included ([§3.3](#writers)) |
+| The lifecycle exclusion of step 0 | One non-blocking take of `lifecycle_mutex`. It also skips a pool during an FSCK or a GC stop or start ([§3.2](#holder-steps)) |
+| Blob publication and the count | Not counted ([§3.5](#bound)) |
+| The memory ordering of the count | Two `seq_cst` fences in new code ([§3.5](#bound)) |
 | Part B | Rejected ([§7](#part-b)) |
-| Part C by default | Off. One disk setting ([§8.1](#c-rule)) |
+| Part C by default | Off. One disk setting; a contract of two clauses ([§8.1](#c-rule), [§8.5](#c-assumptions)) |
+| Part C on `local` object storage | Allowed under the same setting, with the same two clauses |
 | Part C cross-checks against a ClickHouse wall clock | Dropped ([§8.5](#c-assumptions)) |
 
-Still open, most important first:
+Still open, for the owner:
 
-1. **A restart after `SIGKILL` or an OOM kill keeps the lease wait.** Part A needs code to run at the stop;
-   Part B is rejected; Part C gives `135 s - d`. The test lanes use `cas_unsafe_remount_no_delay`. Nothing
-   in this design makes that restart fast in production.
-2. **Blob publication is not counted.** The argument is in [§3.5](#bound): a blob write is content-keyed and
-   outside the mount's authority. If that is not accepted, a server stopped while it uploads blobs writes
-   no marker until the uploads end, and usually none within 16 s.
-3. **Late application by the store.** A request whose call returned unanswered can be applied after the
-   successor started. The settle time makes it unlikely; nothing bounds it. The lease wait has the same
-   residual, with 131 s in place of 22 s. CAS-486 is the place to close it.
-4. **Part C on `local` object storage.** The store's clock there is the node's wall clock. Allowed under
-   the same opt-in, as written, or native mode only?
-5. **Part C for the GC leader.** The fence threshold of `computeHeartbeatFloor` could take the same credit
-   and fence a dead member sooner. Not included.
+1. **A restart after `SIGKILL` or an OOM kill keeps the lease wait.** Part A needs code to run at the stop.
+   Part B is rejected. Part C, where enabled, gives `max(0, 131 s - max(0, d - 4 s))`: about 100 s after the
+   30 s `RestartSec` of the packaged unit. The test lanes use `cas_unsafe_remount_no_delay`. Nothing in this
+   design makes that restart fast in production.
+
+Not questions, recorded so they are not lost:
+
+- Late application by the store is a residual of this design and of the lease wait alike
+  ([§12](#limits)). CAS-486 is the place to close it.
+- The GC leader's fence threshold could take the Part C credit and fence a dead member sooner. Not part of
+  this design.
 
 ## 12. Limits of what is established {#limits}
 
@@ -957,15 +1004,16 @@ Still open, most important first:
 - **The count covers engine calls.** A write to the store that used `IObjectStorage` directly with a key
   that is not private to the epoch would escape it. The two direct writers found are the staging upload and
   its delete.
-- **Sequential consistency.** The proof of [§3.5](#bound) needs the four atomic operations to be
-  sequentially consistent. That is a property of the implementation to be checked in review and under TSan,
-  not something a unit test shows.
+- **Memory ordering.** The proof of [§3.5](#bound) needs the two fences. Their presence is checked in
+  review. No test shows it: the miss they prevent is not a data race, so TSan does not report it, and a unit
+  test with a hook between the guard and the check covers the logical order only.
 - **Late application.** A request the store applies after the client's call returned is not bounded, with
   or without this design (`CasPool.cpp:880-897`).
 - **26.6.4** was read at one tag: the decoder, the tolerant mode, the claim conditions and the deadline
   anchor. Builds between that tag and this tree were not read (inferred to be the same).
-- **`Server.cpp`**: the exits at `:4018` and `:3671` were read, and the state of the disks at each. Whether a
-  thread can still be started from the global pool at `:3671` is inferred. Whether the log sink flushes the
+- **`Server.cpp`**: the exits at `:4018` and `:3671` were read, and the state of the disks at each. That a
+  thread can still be started from the global pool at `:3671` follows from the pool's shutdown being later
+  (`Server.cpp:1723`); it was not tried. Whether the log sink flushes the
   hook's lines before `_exit` is inferred from the existing `Will shutdown forcefully` line in CI logs.
 - **Part B's counterexamples** were checked at the cited code locations. The bind-mount case was not run.
 - **Part C**: no stamp was measured on any store. That S3-compatible stores stamp a write no earlier than
