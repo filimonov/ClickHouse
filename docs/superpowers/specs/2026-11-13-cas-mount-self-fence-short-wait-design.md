@@ -1,18 +1,20 @@
 ---
-description: 'Design for a short mount wait after a controlled stop of a CAS disk that cannot write the clean farewell: the holder raises its mount fence, writes a new optional field into its own mount slot, and exits; a successor of the same server uuid that finds the field waits a bound declared by the holder (about 22 s with default settings) instead of the 131 s lease observation threshold. Covers the forced server exit and a pool teardown with undrained ref lanes. Additive on-store field that old readers skip. A second, separable part analyses a local record of slot write attempts for a restart after a kill.'
+description: 'Design in three separable parts for a shorter mount wait of a CAS disk after a restart on the same node, with or without a node reboot. Part A: on a controlled stop that cannot write the clean farewell, the holder raises its mount fence and writes a new optional field into its own mount slot; a successor of the same server uuid waits a bound declared by the holder (about 22 s) instead of the 131 s lease observation threshold. Part B: a local record of slot write attempts for a restart after a kill on the same running kernel. Part C: the successor credits the age of the slot body, measured by the object store, against the threshold.'
 sidebar_label: 'CAS: short mount wait after a self-fence'
 sidebar_position: 115
 slug: /superpowers/specs/cas-mount-self-fence-short-wait-design
-title: 'CAS: short mount wait after a holder fenced itself'
+title: 'CAS: shorter mount wait after a restart: holder fence marker, local attempt record, store-clock age'
 doc_type: 'reference'
 ---
 
-# CAS: short mount wait after a holder fenced itself — design {#cas-mount-self-fence-short-wait}
+# CAS: shorter mount wait after a restart — design {#cas-mount-self-fence-short-wait}
 
-- Date: 2026-11-13. Status: Part A is decided in principle, this document fixes its details. Part B is a
-  proposal; this document gives a verdict on it. Nothing here is implemented, built or run.
+- Date: 2026-11-13. Status: Part A is decided in principle, this document fixes its details. Parts B and C
+  are proposals; this document gives a verdict on each. Nothing here is implemented, built or run.
+- Target case: a restart of the server on the same node, possibly together with a reboot of the node.
+- The three parts are separable. Each can be reviewed, built and dropped alone ([§9](#composition)).
 - Tasks: CAS-355 (forced shutdown leaves the lease), CAS-480 (restart after a kill waits 131 s),
-  CAS-482 (local witness, shelved), CAS-483 (slot age on the store's clock, independent of this design),
+  CAS-482 (local witness, shelved), CAS-483 (slot age on the store's clock: Part C),
   CAS-484 (wrong claim in the text of `cas_unsafe_remount_no_delay`, not fixed here).
 - Source tree: worktree `cas-pr1-clean` at `a3967637843`. Every `path:line` below was read at that commit.
   The head `802077e5c1a` adds test configs only.
@@ -21,7 +23,7 @@ doc_type: 'reference'
 - Input: `tmp/prbundle/wave2/lease-inventory.md` in the `master` worktree, called "the inventory". It lists
   what relies on the mount lease and the write kinds R1 to R4.
 - Old format reference: tag `v26.6.4.20001.altinityantalya`, called "26.6.4".
-- "Inferred" marks a statement that was not traced in the code. [§10](#limits) lists all of them.
+- "Inferred" marks a statement that was not traced in the code. [§12](#limits) lists all of them.
 
 ## 1. Decision {#decision}
 
@@ -56,19 +58,34 @@ doc_type: 'reference'
   after an OOM kill. The CI lanes no longer need it: their configs set `cas_unsafe_remount_no_delay`
   (commit `802077e5c1a`).
 
-Restart wait before the reclaim, default settings, S3 disk. "A" and "B" are computed, not measured. The loop
-looks at the slot every `poll` = 5 s, so a wait ends at the first multiple of 5 s at or above the threshold.
+**Part C. The successor credits the slot's age on the store's clock: sound under conditions on the store's
+clock.**
 
-| Stop of the previous process | Today | With A | With B |
-|---|---|---|---|
-| Clean stop, farewell written | 0 s | 0 s | 0 s |
-| Pool teardown, ref lanes not drained | 135 s | 25 s | 25 s on the same kernel boot, else 135 s |
-| Forced exit (`Will shutdown forcefully`), restart on the same node | 135 s | 25 s | 25 s |
-| Forced exit, restart on another node or after a reboot | 135 s | 25 s | 135 s |
-| `SIGKILL`, OOM kill, abort, second `SIGTERM`, `SYSTEM KILL`; same kernel boot | 135 s | 135 s | 25 s |
-| The same, after a reboot or on another node | 135 s | 135 s | 135 s |
-| Successor runs a build without the feature | 135 s | 135 s | 135 s |
-| Slot fenced by GC before the restart | 0 s | 0 s | 0 s |
+- Rule: `wait = threshold - age`, never below zero. `age` is the `Last-Modified` of the epoch object this
+  mount just wrote minus the `Last-Modified` of the slot body, less a 4 s margin. Both stamps come from the
+  store. No on-store change, no local state, no generic file, one extra read per mount.
+- Why it is safe: a holder counts its lease from the start of the renewal attempt, and the store stamps the
+  body later. The age is at most what the holder itself has counted ([§8.4](#c-safety)).
+- It is the only part that helps after a node reboot, a power loss, or a move to another node without a
+  controlled stop. It does nothing for a restart seconds after a kill.
+- Conditions: the store's stamps are accurate to seconds across its nodes and are never set back
+  ([§8.5](#c-assumptions)). Not in doubt on AWS S3; not measured on self-hosted clusters.
+
+Restart wait before the reclaim, default settings, S3 disk, computed, not measured. `d` is the store time
+from the last slot write to the successor's start. The full table is in [§9](#composition).
+
+| Stop of the previous process | Today | A | B | C | Best |
+|---|---|---|---|---|---|
+| Clean stop, farewell written | 0 s | 0 s | 0 s | 0 s | 0 s |
+| Forced exit (`Will shutdown forcefully`), restart in place | 135 s | 25 s | 25 s | 130 s | A+C: 21 s |
+| Forced exit, then a node reboot | 135 s | 25 s | 135 s | `135 s - d` | A+C: 0 s |
+| `SIGKILL` or OOM kill, restart on the same running kernel | 135 s | 135 s | 25 s | `135 s - d` | B+C: `29 s - d` |
+| Power loss, another node, any downtime above 135 s | 135 s | 135 s | 135 s | 0 s | C |
+| Successor runs a build without these parts | 135 s | 135 s | 135 s | 135 s | 135 s |
+| Slot fenced by GC before the restart | 0 s | 0 s | 0 s | 0 s | 0 s |
+
+Without Part C the loop looks at the slot every `poll` = 5 s, so a wait ends at the first multiple of 5 s at
+or above the threshold: 21.8 s becomes 25 s. Part C makes the loop sleep only the remaining time.
 
 ### 1.1 Failure asymmetry {#asymmetry}
 
@@ -85,6 +102,7 @@ looks at the slot every `poll` = 5 s, so a wait ends at the first multiple of 5 
 |---|---|---|
 | A | Sound | The fence check before every mount-plane request, the join of both workers before the marker, and a fence that nothing re-arms ([§3.5](#bound), [§3.7](#no-rearm)). Residuals are the ones the full wait has today: a request the store applies after the client gave up, and a thread stalled between the fence check and the wire |
 | B | Sound with conditions | Four deployment rules outside CAS code ([§7.5](#b-holes)). Without them a live but stalled predecessor is reclaimed after 25 s |
+| C | Sound with conditions | Five properties of the store's clock and stamps ([§8.5](#c-assumptions)). A stamp error beyond the margin and the threshold's slack (about 13 s at defaults) reclaims a live but stalled predecessor early |
 
 ## 2. Context {#context}
 
@@ -216,7 +234,7 @@ nothing.
 |---|---|---|
 | Lanes drained, renewer `Active`, lease has room | farewell | farewell, unchanged |
 | Lanes not drained (wedged or still writing), or writer cleanup duties pending; renewer `Active` | nothing | steps 2, 4, 5: marker |
-| Lanes drained, renewer `Active`, writes paused ("too little time left for the farewell") | nothing | marker. Safe: the marker needs no lease room. Changes a behaviour a test pins, see [§9](#open). The pause must be read before the trip: `writesPausedSinceBootMs` answers "not paused" once `lost` is set (`CasMountRuntime.cpp:185-188`) |
+| Lanes drained, renewer `Active`, writes paused ("too little time left for the farewell") | nothing | marker. Safe: the marker needs no lease room. Changes a behaviour a test pins, see [§11](#open). The pause must be read before the trip: `writesPausedSinceBootMs` answers "not paused" once `lost` is set (`CasMountRuntime.cpp:185-188`) |
 | Renewer not `Active` (a sent renewal is unclear, or the renewer is terminal) | nothing | nothing |
 | Farewell withheld by a decommission admin (F26) | nothing | nothing. The admin wants the victim's restart delayed by the full threshold |
 | `Pool` opened for decommission | farewell or nothing | never a marker |
@@ -399,6 +417,8 @@ Recommendation: no change.
   applies one after the claim; it does not bound it. No wait does (`CasPool.cpp:880-897`).
 - So unification trades 25 s per clean restart for a smaller chance of an event that the recovery seal and
   the conditional writes already handle. Not worth it.
+- With Part C the cost falls to `25.8 s - d`. [§9.1](#uniform-farewell) evaluates that case; the
+  recommendation stays the same.
 
 ### 3.10 Names, logs, tables, docs {#surface}
 
@@ -510,7 +530,7 @@ Existing tests that change:
 | Test | Today | New |
 |---|---|---|
 | `CASPoolShutdown.UnresolvedWedgeSkipsFarewell` (`T/gtest_cas_pool.cpp:2525`) | No farewell; the slot is a plain live body | No farewell; the body carries the field |
-| `CASMountRuntime.ACleanShutdownDuringAPauseLeavesTheSlotForObservation` (`T/gtest_cas_pool.cpp:4770`) | Slot unchanged | Marker, if the paused branch is kept ([§9](#open)) |
+| `CASMountRuntime.ACleanShutdownDuringAPauseLeavesTheSlotForObservation` (`T/gtest_cas_pool.cpp:4770`) | Slot unchanged | Marker, if the paused branch is kept ([§11](#open)) |
 | `CASForget.ForgetCleanFarewellGatedOnDrain` (`T/gtest_cas_forget.cpp:319`) | Wedged arm: no farewell | Wedged arm: no farewell, marker |
 | `CASRefWriterStalePrecommitSweep.BoundedBatchesAndInterruptionResumeAcrossMounts` (`T/gtest_cas_ref_writer.cpp:3502`, comment at `:3594`) | Third mount is `UncleanObserved` and "pays ~36.5 s" on a fake clock | Third mount is `HolderFenced`. Stays green on the fake clock (inferred, not run); the comment changes |
 
@@ -568,6 +588,8 @@ Separable from Part A. No on-store change. Nothing of the shelved lock or socket
 - The claim stays conditional on the observed token. New prior state, for the log only.
 - Nothing about the machine goes to the store. Hostname and IP are not used: a StatefulSet pod keeps its
   hostname on another node, and a cloned VM keeps both.
+- A changed boot id is no evidence of anything. It is not read as "the same node rebooted": another node
+  has another boot id too. The rule falls through to the full threshold, where Part C applies if built.
 - `short_wait_ms` covers the requests in flight and gives a healthy twin time to renew once. Defaults:
   `max(16000, 19000) = 19000`, threshold 24950 ms, 25 s on the poll grid.
 
@@ -620,8 +642,8 @@ Every failure of the local side ends in the full wait.
 | `SIGKILL`, OOM kill, abort; restart in the same container or pod on the same node | Short wait |
 | CI hard-restart tests (kill and start inside one container) | Short wait |
 | Forced server exit, restart on the same node | Short wait, without Part A |
-| Node reboot | Full wait, although the old process is certainly dead |
-| Pod rescheduled to another node with the same volume, old node partitioned | Full wait: other boot id |
+| Node reboot | Full threshold, although the old process is certainly dead. Part C credits the downtime |
+| Pod rescheduled to another node with the same volume, old node partitioned | Full threshold: other boot id. Part C credits the downtime |
 | VM cloned from a disk image, started elsewhere | Full wait: other boot id |
 | Predecessor alive and healthy | Its renewal changes the token inside the short wait; the observation restarts; after 3 restarts the start is refused as today |
 | A tool or an admin holds the slot | No match. Full wait, or refusal while it renews |
@@ -656,16 +678,309 @@ renew within the short wait, then writes again inside its lease. A healthy prede
   the file systems that hold `path` in production; how often a restart after an OOM kill matters in
   production. Without these the honest answer is "off by default, or not built".
 
-## 8. Size {#size}
+## 8. Part C: credit the slot's age on the store's clock {#part-c}
+
+Separable from Parts A and B. Task CAS-483. No on-store change, no local state, no generic file.
+
+### 8.1 The rule {#c-rule}
+
+The wait loop subtracts from its threshold the time the slot body has already existed, measured by the
+store.
+
+```text
+LM_slot = Last-Modified of the slot body the loop is watching        (the read the loop already makes)
+LM_now  = Last-Modified of the epoch object this mount just wrote     (one extra read, once per mount attempt)
+credit  = LM_now - LM_slot - margin        when both stamps are known and the result is positive; else 0
+credit  = 0                                when a cross-check fails (see 8.5)
+remaining = threshold - min(credit, threshold)
+```
+
+- `threshold` is whatever applies to the body: the full lease threshold, the Part A marker threshold, or the
+  Part B threshold. The credit does not depend on which.
+- The loop starts its own clock at the first sighting, as today, and reclaims when `remaining` has passed on
+  that clock with the token unchanged.
+- The claim stays conditional on the token. With `remaining = 0` the loop does not sleep: it makes the
+  conditional claim at once, which reads the slot a second time and requires the same token.
+- The loop sleeps `min(poll, remaining)` instead of a whole `poll`. Otherwise a credit of the full threshold
+  would still cost 5 s. This also turns today's 135 s into 131 s.
+- A new token restarts the observation, as today. Its stamp is later than `LM_now`, so its credit is 0.
+- The log keeps the existing line with the threshold and adds one line with the credit and the remaining
+  wait. A test that matches the existing line stays green
+  (`tests/integration/test_cas_mount_renewal_retry/test.py:631`).
+- Scope: the same-uuid wait of a starting server and of the in-process remount. The GC leader's fence
+  threshold does not change.
+
+Defaults, `margin = 4000 ms`, `d` = store time between the two stamps:
+
+| Threshold | Wait |
+|---|---|
+| Full lease, 131000 ms | `max(0, 135 s - d)` |
+| Part A marker, 21800 ms | `max(0, 25.8 s - d)` |
+| Part B match, 24950 ms | `max(0, 29 s - d)` |
+
+`d` starts at the last renewal, not at the stop. A killed server's last renewal is up to one renewal period
+(10 s) older than the kill.
+
+### 8.2 Plumbing {#c-plumbing}
+
+The generic interface already carries the value: `ObjectMetadata::last_modified` with
+`is_last_modified_known` (`src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:135-140`). The CAS
+backend receives it on every read and drops it.
+
+| Backend of a writable CAS mount | Where the stamp is today | Resolution | Clock |
+|---|---|---|---|
+| S3 API, native mode: AWS S3, MinIO, RustFS, GCS through its S3 endpoint | The `GET` the backend already sends returns it: `ReadBufferFromGetObjectResult` fills `last_modified` from the response; `ObjectStorageBackend::readUnder` takes `got.metadata.etag` and ignores the rest. `HEAD` fills it too | 1 s | The store's |
+| `local` object storage, emulated mode (tests, single process) | `makeObjectMetadata` fills it from `st_mtime`; the emulated read already asks for the metadata to mint its token | 1 s | The node's wall clock, through the file system |
+| In-memory backend (unit tests) | None. Add a settable stamp | test-defined | test-defined |
+| Azure, HDFS | Not a writable CAS backend: native mode needs `supportsRetryProfile(SingleAttempt)`, which only `S3ObjectStorage` provides. Azure's small-object read returns metadata as well, should that change | — | — |
+
+Where: `src/IO/S3/ReadBufferFromGetObjectResult.cpp:21`;
+`src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:407-427`, `:972`, `S3ObjectStorage.h:200`;
+`CA/Backend/CasObjectStorageBackend.cpp:626-643` (native read), `:561-565` and `:657-676` (emulated read),
+`:203-218` (the capability check);
+`src/Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.cpp:87-94`;
+`src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:562`;
+`src/Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.cpp:389-412`.
+
+Changes, all under `CA/`:
+
+1. `Backend::Raw` (`CA/Backend/CasBackend.h:159`) and `Object` (`CA/Backend/CasWriteResult.h:28`) get
+   `std::optional<uint64_t> store_modified_ms`. Unset when the storage does not know it or reports 0.
+2. `ObjectStorageBackend::readUnder` fills it in both modes. `CasOperation::readUnder` passes it on
+   (`CA/Backend/CasRequests.cpp:537-545`). The decorating backends forward `Raw` unchanged.
+3. `MountClaimResult` carries the stamp of the body it reports, next to `etag`
+   (`CasServerRoot.cpp:1015`, `:1119`, `:1264-1276`).
+4. A helper reads the epoch object after `allocateWriterEpoch` and returns its stamp. Four call sites
+   allocate an epoch: `CasPool.cpp:689`, `:810`, `:872`, `:1559`.
+5. `claimMountAwaitingExpiry` takes that stamp and applies the rule at `CasServerRoot.cpp:1289`.
+
+No request changes. One request is added: the read of the epoch object.
+
+### 8.3 "Now" on the store's clock {#c-now}
+
+- **The mount already writes before it looks at the slot.** Every writable open and every in-process remount
+  allocates its `writer_epoch` by a conditional write of the `epoch` object, with a fresh nonce, before the
+  mount claim (`CasServerRoot.cpp:817-900`; `CasPool.cpp:688-690` before `:755-788`; `:1559` before
+  `:1574`).
+- **A `PUT` response does not return `Last-Modified`.** So the stamp of that write costs one read of the
+  `epoch` object: one `GET` of a 100-byte object per mount attempt.
+- **Why this is "now".** The store stamped that object when the write reached it, which is before this
+  process read it back. So `LM_now` is never later than the moment the loop first reads the slot. An earlier
+  "now" only makes the credit smaller.
+- **It need not be our own write.** If another process rewrote the `epoch` object in between, its stamp is
+  later than ours and still earlier than our read. The argument does not change.
+- **Order matters.** `LM_now` must be taken before the loop starts its own clock. Taken after, the time
+  between the first sighting and the stamp would be counted twice. The epoch allocation precedes the loop on
+  every path, and the stamp is taken once per mount attempt, not per observation.
+- **Rejected: the `Date` response header.** `ObjectMetadata` has no field for it and the S3 read path does
+  not surface it. It would need changes in generic S3 code. The mount's own write gives the same information
+  from the interface that exists.
+
+### 8.4 Safety argument {#c-safety}
+
+1. A holder counts its authority from the start of the renewal attempt, before any I/O:
+   `attempt_start_boot_ms` is sampled at the top of `renewOn` and the deadline is that plus the lease
+   (`CasServerRoot.cpp:1977-1979`, `:2077-2081`; `CasMountRuntime.cpp:603-609`). The first arm does the same
+   (`CasServerRoot.cpp:1805`, `:1816-1820`; `CasPool.cpp:966-971`). 26.6.4 does the same
+   (26.6.4 `CasServerRoot.cpp:1447-1461`, `CasMountRuntime.cpp:485-488`).
+2. A logical renewal that retries through an outage keeps one body and one start. Whenever it lands, the
+   authority it gives ends one lease after that start.
+3. The store stamps a body no earlier than the request reached it, which is after the holder sent it, which
+   is after that start. So the store-side age of the body in the slot is at most the time the holder itself
+   has counted against that body. A slot body is one small `PUT`, never a multipart upload.
+4. So a wait of `threshold - age` after the first sighting ends no earlier than a wait of `threshold` that
+   had started when the body reached the store. Today's protocol already allows that second wait: it is an
+   observer that happened to read the slot at that moment, such as a GC leader watching continuously.
+5. Only durations are compared: one store stamp against another, then the remainder on the claimer's own
+   `CLOCK_BOOTTIME`. No wall clock of a ClickHouse node decides anything. The stamped `expires_at_ms` still
+   never enters the decision.
+6. Rate: the threshold carries `L / 20` for a 5 % difference between the holder's and the observer's clocks.
+   The part of the wait measured by the store needs the same bound for the store's clock against the
+   holder's.
+7. A renewal in flight is handled as today. If it lands before the claim, the token changes and the claim
+   fails. If the claim lands first, the renewal is refused and gives no authority.
+
+Step 4 is why holder versions do not matter: the credit never reclaims earlier than a real observer of today
+could, less the stamp error.
+
+### 8.5 Assumptions, margin, bad stamps {#c-assumptions}
+
+The unsafe direction is a credit that is too large: `LM_slot` too early or `LM_now` too late.
+
+| # | Assumption about the store | If it fails | Covered by |
+|---|---|---|---|
+| S1 | A stamp has an error of at most 1 s (resolution, rounding) | Credit too large by up to 2 s | 2000 ms of the margin |
+| S2 | Two stamps taken by different nodes of one store disagree by a bounded amount | Credit too large by the disagreement | `cas_lease_safety_margin_ms` (2000 ms) of the margin, then the slack of the threshold, then the cross-checks |
+| S3 | The store's clock runs within 5 % of the holder's | The stored part of the wait is short by the excess | `L / 20`, as for two servers |
+| S4 | The store's clock does not step forward between the two stamps | Credit too large by the step | Cross-check 2, when this node's wall clock is right |
+| S5 | `Last-Modified` of an object version is not set to an earlier time afterwards (a restore that keeps old stamps, a copy of a `local` pool with `cp -p`) | Credit too large | Not covered. A later re-stamp (replication, healing) is the safe direction |
+
+- `margin = 2 × 1000 ms + cas_lease_safety_margin_ms`: 4000 ms by default. No new setting.
+- Slack behind the margin, at 120 s and no clock drift: the threshold exceeds the lease by
+  `L / 20 + poll` = 11 s, and a holder admits its last request one envelope plus the margin (9 s) before its
+  deadline. A disagreement of up to about 13 s still reclaims after the holder's authority ended. Up to
+  about 22 s still reclaims after the holder could start its last request. Beyond that, a holder that is
+  alive but not renewing can overlap the successor. A healthy holder is never affected: its stamp is at most
+  one renewal period old.
+- For the Part A marker threshold the slack is `settle / 20 + poll` = 5.8 s plus the spare envelope inside
+  the declared bound.
+
+Cross-checks. Each can only remove the credit:
+
+1. `LM_slot + margin < started_at_ms` of the body: the store stamped the body before the holder says it
+   started the attempt. One of the two clocks is wrong. No credit.
+2. `LM_now > wall clock of this node after the read + margin`: the store stamped our write in our future.
+   No credit.
+
+These compare a store stamp with a wall clock of a ClickHouse node. That is new, and it is allowed only in
+this direction. A node with a wrong wall clock loses the credit and waits as today. They are droppable
+([§11](#open)).
+
+Bad stamps:
+
+| Stamps | Result |
+|---|---|
+| Either unknown, or 0 | No credit, full wait |
+| `LM_now < LM_slot + margin`: negative or within the margin | No credit, full wait. One `Information` line when negative: the slot was written after our epoch write, or the clocks disagree |
+| A cross-check fails | No credit, full wait, one `Warning` with both values |
+| Very large age | Valid: a server may have been down for days. The credit is capped at the threshold |
+
+### 8.6 Compatibility {#c-compat}
+
+- Nothing is written differently. No field, no object, no key. Checked: the rule reads two existing objects
+  and changes one local comparison.
+- Any holder version: covered by step 4 of [§8.4](#c-safety). A 26.6.4 holder counts from the attempt start
+  too.
+- A successor without Part C waits as today.
+- Mixed leases: the threshold is still the longer of the own and the declared lease. The credit is
+  subtracted from that.
+- `cas_unsafe_remount_no_delay`, a `gc_fenced` slot and a farewell are decided before the loop and do not
+  change.
+
+### 8.7 Model and tests {#c-model-tests}
+
+Model, `M/CaMountObserveCore.tla`:
+
+- A third clock `sclock` with the same rate coupling. `RenewLand` records `landStamp` from it.
+- Observer: `ObsStampNow` records `nowStamp` from `sclock` before `ObsRead`; `ObsDecide` dates the sighting
+  `oclock - max(0, nowStamp - landStamp - Margin)`.
+- Invariant: `NoFenceInsideAuthority`, unchanged. `FenceMarginAtLeast` with the margin reduced by the stamp
+  error.
+- Sabotage rows, each must go red: `nowStamp` taken after the sighting (double count); no margin with
+  truncated stamps; a store clock that steps beyond the margin (an environment row, like the existing drift
+  row).
+
+New gtests:
+
+| Suite | Test | Asserts |
+|---|---|---|
+| `CASObjectStorageBackend` | Stamp pass-through | Native read returns the storage's `last_modified`; emulated read returns the file time; unknown and 0 are unset |
+| `CASMountAwaitExpiry` | Credit shortens the wait | Fake clocks: reclaim at `threshold - credit`, not earlier |
+| `CASMountAwaitExpiry` | Full credit claims without a sleep, still conditionally | No sleep call; a token that changes between the two reads restarts the observation with no credit |
+| `CASMountAwaitExpiry` | Margin | A credit at or below the margin is 0 |
+| `CASMountAwaitExpiry` | Bad stamps | Unknown, zero, negative: full wait |
+| `CASMountAwaitExpiry` | Cross-checks | Each one alone removes the credit |
+| `CASMountAwaitExpiry` | A renewing holder | Credit at most one period; the start is refused after 3 restarts as today |
+| `CASMountAwaitExpiry` | Control | `PastExpiryStillPaysTheFullObservationThreshold` (`T/gtest_cas_mount.cpp:1326`) stays: a stamped `expires_at_ms` in the past, no store stamp, full wait |
+| `CASPoolRemount` | Order | The stamp is read after the epoch allocation and before the first slot read, once per attempt |
+
+One integration test on the S3 stand: kill the server, wait longer than the threshold, start; assert the
+credit line, no sleep, listening within seconds. Second half: start at once after the kill; assert a credit
+of at most one renewal period and the remaining wait.
+
+Predictions:
+
+| # | Prediction | Refuted if |
+|---|---|---|
+| P4 | On the S3 stands in use, the `Last-Modified` of a fresh slot body is within 1 s of the body's `started_at_ms` | It is earlier, or off by more than the margin: S1 or S2 does not hold there |
+| P5 | With the holder alive and renewing, the credit never exceeds one renewal period plus one envelope | A larger credit is logged |
+| P6 | After a kill and 140 s of downtime, the start logs a credit of the full threshold and claims on its second read | It sleeps, or waits the threshold |
+
+### 8.8 Verdict {#c-verdict}
+
+- **Sound with conditions.** The conditions are S1 to S5: properties of the store's clock and stamps. The
+  design checks S2 and S4 partly, against the wall clocks of the two ClickHouse nodes. S5 is not checked.
+- **It adds a third clock to the protocol.** Today the wait trusts the rate of two `CLOCK_BOOTTIME` clocks.
+  With Part C part of the wait is measured by the store's wall clock.
+- **What it cannot do:** shorten a restart that follows the last renewal by less than the threshold. A
+  killed server restarted after 30 s still waits about 100 s. That case is Part A or Part B.
+- **Size:** about 110 lines of product code, all under `CA/`; about 250 lines of tests.
+- **Evidence missing for a default-on decision:** measured stamp disagreement on the MinIO and RustFS
+  clusters in use (P4); `Last-Modified` through the GCS S3 endpoint. On AWS S3 the assumptions are not in
+  doubt.
+
+## 9. How the three parts compose {#composition}
+
+Each part stands alone and can be dropped alone. In the wait loop, for a same-uuid older-epoch body that is
+neither `gc_fenced` nor a farewell:
+
+1. Pick the threshold: the marker's (Part A), else the local match's (Part B), else the full lease
+   threshold.
+2. Subtract the credit (Part C).
+
+Without A step 1 has no marker branch. Without B it has no local branch. Without C step 2 is absent. No part
+reads another part's state.
+
+Target case: a restart of the server on the same node, possibly together with a reboot of the node.
+
+Waits at default settings on S3. `d` is the store time from the last slot write to the successor's epoch
+write. "A+C" and "B+C" are the part plus the credit.
+
+| Case | Today | A | B | C | Best combination |
+|---|---|---|---|---|---|
+| Clean stop, any restart | 0 s | 0 s | 0 s | 0 s | 0 s |
+| Controlled stop with unfinished queries (forced exit), restart in place, `d` about 5 s | 135 s | 25 s | 25 s | 130 s | A+C: about 21 s |
+| The same, then a node reboot, `d` above 26 s | 135 s | 25 s | 135 s | `135 s - d` | A+C: 0 s |
+| `SIGKILL` or OOM kill, restart at once on the same running kernel, `d` up to 10 s | 135 s | 135 s | 25 s | 125 s to 135 s | B+C: 19 s to 29 s |
+| The same, restarted by `systemd` after `RestartSec=30` (`packages/clickhouse-server.service:19`), `d` 30 s to 40 s | 135 s | 135 s | 25 s | 95 s to 105 s | B+C: 0 s |
+| Power loss or kernel failure, node back after 90 s | 135 s | 135 s | 135 s: the boot id changed | 35 s to 45 s | C |
+| Any downtime above 135 s | 135 s | 135 s | 135 s | 0 s | C |
+| Pod moved to another node, old node partitioned; eviction takes minutes | 135 s | 135 s | 135 s | 0 s | C |
+| VM cloned from a disk image, original alive and renewing | refused | refused | refused: other boot id | refused: the stamp is at most 10 s old | — |
+
+- **The moved pod is safe under C** because the credit is the old holder's own lease running out. It
+  counted from the start of its last renewal; the store stamped that renewal later. If the old node can
+  still reach the store, it renews, the stamp is fresh and the credit is small.
+- **A changed boot id is not "the same node rebooted".** Another node has another boot id too. Part B treats
+  a changed boot id as no evidence and falls through to the full threshold, where Part C applies. Hostname
+  and IP are not identities and are used nowhere.
+- **For the target case:** a clean stop is already instant. A forced exit needs A. A kill with an immediate
+  restart needs B. Everything with a reboot or a long downtime needs C, and C is the only part that helps
+  across nodes without a controlled stop.
+
+### 9.1 The clean farewell under a uniform rule, with Part C {#uniform-farewell}
+
+The uniform rule: every controlled stop trips the fence and declares the settle bound; the successor waits
+it, less the credit.
+
+- **The farewell body cannot be replaced by the marker.** It is a terminal certificate for other consumers:
+  decommission, rejoin, pool recreation, creator takeover, and it releases the GC floor with
+  `min_active_build_sequence = UINT64_MAX` (`CasServerRoot.cpp:1024`, `:1373-1378`, `:1472`, `:1570-1571`).
+  So the uniform rule can only mean: the farewell body also carries `holder_fenced_settle_ms`, and a
+  same-uuid successor waits `25.8 s - d` before it reclaims a farewell.
+- **Cost.** A clean stop followed by a node reboot, a pod reschedule or an image pull: `d` exceeds 26 s,
+  the wait is 0. A clean restart in place (`systemctl restart`, a config change, a package upgrade): `d` is
+  a few seconds, the wait is 16 s to 24 s where it is 0 s today.
+- **Gain.** Today a clean stop gives requests outside the ref lanes no time at all: one that ended at the
+  client unresolved a second before the stop can land after the successor started. Under the uniform rule
+  it gets the same bound as after a forced exit. It is a smaller chance, not a guarantee
+  ([§3.9](#farewell)).
+- **Recommendation: no.** The restart in place is the most frequent clean restart and the target case. The
+  uniform rule makes exactly that case slower by about 20 s, and near-zero cost holds only when the restart
+  itself takes longer than the bound. If the late form of R3 and R4 after a clean stop is later judged worth
+  it, this is the form to build: a farewell with the field, no other change.
+
+## 10. Size {#size}
 
 | Part | Product code | Tests | Docs | Model |
 |---|---|---|---|---|
 | A | about 240 lines: format field 15; renewer marker write 45; runtime and teardown decision 40; pool steps 1 to 5 40; storage entry and free function 40; `Server.cpp` 4; threshold, prior state, logs 35; `listMounts` and the `switch` 10; events 10 | about 500 lines of gtests, one integration test | 6 pages, about 80 lines | `CaMountObserveCore` and `CaMountRenewRetryCore`: about 100 lines and 8 configs |
 | B | about 250 lines: file codec 90; boot id 15; renewer hook 30; config plumbing and application type 40; threshold, prior state, logs 50; file lifecycle 25 | about 400 lines | 3 pages | A new holder-side record in `CaMountObserveCore` |
+| C | about 110 lines: `Raw` and `Object` field 6; backend reads 10; in-memory backend stamp 15; `MountClaimResult` and `claimMount` 8; epoch stamp helper and four call sites 25; credit, cross-checks, sleep, logs in the loop 45 | about 250 lines of gtests, one integration test | 2 pages: `D/architecture/mounts-and-leases.md`, `D/configuration.md` | A third clock in `CaMountObserveCore`: about 60 lines and 4 configs |
 
 Estimates from reading the code, not from a prototype.
 
-## 9. Open questions {#open}
+## 11. Open questions {#open}
 
 Most important first.
 
@@ -673,7 +988,8 @@ Most important first.
    `test_shutdown_waits_for_backup` kill with `SIGKILL` before the server's own forced exit, which waits
    `shutdown_wait_unfinished` (120 s by default, the helper kills after 60 s). Part A closes CAS-355 only.
    The test configs already skip the wait with `cas_unsafe_remount_no_delay`. Is the production restart
-   after an OOM kill worth Part B and its rules A1 to A4?
+   after an OOM kill worth Part B and its rules A1 to A4? Part C alone leaves that case at `135 s - d`:
+   about 100 s after the 30 s `RestartSec` of the packaged unit.
 2. **The forced exit takes longer.** The hook joins two threads and sends one request per pool. Healthy
    store: tens of milliseconds. Unreachable store: up to one envelope for a join plus the 16 s deadline.
    A supervisor that sends `SIGKILL` meanwhile only loses the marker. Acceptable?
@@ -684,7 +1000,7 @@ Most important first.
    the declared bound already holds a 2 s margin and a spare envelope. Dropping it saves 5 s: 16.8 s, 20 s
    on the grid. Recommended: keep it; one function, one model shape.
 5. **The poll grid.** The loop sleeps whole polls, so 21.8 s becomes 25 s (and 131 s becomes 135 s). Sleeping
-   `min(poll, remaining)` is one line in generic loop code and changes the lease case too. Not included.
+   `min(poll, remaining)` changes the lease case too. Not included in Part A; Part C includes it.
 6. **The paused-writes branch.** Writing the marker where the farewell has no lease room is safe, but it
    replaces "the slot is left for observation", which a test pins. Keep it, or leave that branch alone?
 7. **An unclear renewal.** With a renewal sent and unresolved, no marker is written, by the farewell's rule.
@@ -694,8 +1010,22 @@ Most important first.
 8. **`system.cas_mounts.state = 'holder_fenced'`.** A new value in a user-visible column. Alternative: show
    `live` and `expired` as old builds do.
 9. **The other forced exit.** `Server.cpp:3671` (introspection servers) was not traced. Hook it too?
+10. **Part C: trust in the store's clock.** Part C makes part of the wait depend on a third clock. On by
+    default for every S3-compatible store, or only after P4 of [§8.7](#c-model-tests) was measured on the
+    self-hosted clusters in use?
+11. **Part C: the margin.** `2 s + cas_lease_safety_margin_ms` = 4 s, with about 11 s more slack in the
+    threshold. A cluster with worse clock agreement needs a setting to raise it or to turn the credit off.
+    None is proposed; one disk setting would be about 10 lines.
+12. **Part C: the two cross-checks.** They remove the credit when a store stamp contradicts a ClickHouse
+    wall clock. They cost 15 lines and can cost a full wait on a node whose clock is wrong after boot.
+    Recommended: keep them.
+13. **Part C on `local` object storage.** The "store clock" there is the node's wall clock, which can be
+    stepped. The emulated mode is single-process by contract, so a second live holder is already excluded.
+    Allow the credit there, as proposed, or restrict it to native mode?
+14. **Part C for the GC leader.** The fence threshold of `computeHeartbeatFloor` could take the same credit
+    and fence a dead member sooner. Not included.
 
-## 10. Limits of what is established {#limits}
+## 12. Limits of what is established {#limits}
 
 - **Nothing was built or run.** No test, no TLC run. P1 to P3 in [§6](#tests) are predictions.
 - **Plane assignment.** That every durable mutation of a mount goes through the mount plane is taken from
@@ -714,6 +1044,10 @@ Most important first.
   line in CI logs.
 - **Integration test trigger**: that an idle client connection alone forces the exit is inferred from CI
   logs.
+- **Part C**: no stamp was measured on any store. That a `GET` through the GCS S3 endpoint returns
+  `Last-Modified` with the semantics assumed here is inferred. That S3-compatible stores stamp a `PUT` no
+  earlier than its arrival is taken from the protocol, not tested. Azure and HDFS as CAS backends were
+  checked only at the capability gate.
 - **Part B**: boot id behaviour of gVisor and Kata, `flock` on network and FUSE file systems, and the
   watchdog fork order were not verified. `clickhouse-disks` mounting a CAS disk writable was read at its
   start-up code only.
