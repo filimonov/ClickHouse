@@ -97,7 +97,8 @@ Store requests, warm namespace, one writer; counted from the code, not measured 
   (`CA/Pool/CasRefLedger.cpp:146-151`) names it iff the epochs match. Unresolved, it wedges the lane: `{W,1}` waits.
 - **Conflict on the lane.** Own bytes: install (the encoding is deterministic). A later epoch's tombstone: `Closed`. Any
   other readable occupant: the lane clears the attempt, so recovery's retained-attempt check (`:1098-1104`) does not see
-  it, and goes `NeedsRecovery`; unreachable under [§4](#eager): the lane seals only a drained epoch.
+  it, and goes `NeedsRecovery`, whose walk adopts the occupant: a recovery tombstone or numeric seal that a build of
+  commits 4 to 5 left in flight across a clean farewell ([§4](#eager)).
 - **Conflict in recovery.** The walk applies the occupant and loops:
 
 | Occupant | Recovery then |
@@ -127,8 +128,8 @@ Store requests, warm namespace, one writer; counted from the code, not measured 
    create into another epoch's slot: its success, or an adopted occupant, proves "this was the chain's end" only if the
    base did not move since the walk; otherwise cleanup may have emptied the slot ([§5](#crashes), row 21). A tombstone
    left by a restarted walk is on the chain, or below the new base, where no reader looks.
-6. Confirm the life in the catalog ([§3.1](#chain-rule)). A removed life detaches the runtime
-   (`invalidateRemovedCatalogLife`, `:796-840`): retry-later for a write, absent for a read.
+6. Confirm the life in the catalog ([§3.1](#chain-rule)), also before reporting an error of steps 1 to 4. A removed life
+   detaches the runtime (`invalidateRemovedCatalogLife`, `:796-840`): retry-later for a write, absent for a read.
 7. Install. Chain epoch above `W`: lane `Closed`. Terminal: positive lane closed. Otherwise `Ready`.
 
 - Recovery writes nothing after a clean predecessor; read paths call it (`:315`, `:390`, `:413`). The stale-precommit
@@ -176,10 +177,11 @@ A never-born stream follows the rule of any first write of an epoch; `life_epoch
 - Grammar: a tombstone is legal on a never-born stream and refused only after a terminal record
   (`CA/Pool/CasRefProtocol.cpp:393-412` today refuses both). A sequence-1 record carries a backlink iff the record
   before it is a tombstone. The lifecycle test at `:555-557` is replaced by that rule.
-- A terminal record is final: the walk reads no key after it. Today recovery walks on
-  (`CA/Pool/CasRefLedger.cpp:1231-1241`) and replay accepts a birth after it (`CA/Pool/CasRefProtocol.cpp:359-367`);
-  replay must refuse it. Both producers of a birth already exclude it: `CA/Pool/CasPartWriteTxn.cpp:827-835` behind
-  `refuseTerminalLife` (`CA/Pool/CasRefLedger.cpp:5291-5304`), and the `DROP` builder (`:5666-5675`).
+- A terminal record is final: the walk reads no key after it, so replay must refuse a birth after it; today recovery
+  walks on and replay accepts one (`CA/Pool/CasRefProtocol.cpp:359-367`). No stream holds one. The precommit builder
+  would emit it (`CA/Pool/CasPartWriteTxn.cpp:827-835`), but a positive append needs the exact row `Live` at flush time
+  (`CA/Pool/CasRefLedger.cpp:3606-3636`; 26.6 too, `26.6:CA/Pool/CasRefLedger.cpp:3442-3463`), and `DROP` first shuts
+  the positive lane (`CA/Pool/CasRefLedger.cpp:5521`, `:2243`) and builds no birth on a terminal state (`:5666-5675`).
 - Nothing else needs the birth epoch: the contextual grammar (`CA/Formats/CasRefLogFormat.cpp:262-278`), the walk start
   (`CA/Pool/CasRefCkpt.cpp:211`) and the GC first fold (`CA/Gc/CasGc.cpp:2799`) need the first key.
 - Old-format streams: the first key is `{life_epoch,1}` with the value they have, raised or not: the birth without a
@@ -218,18 +220,18 @@ A never-born stream follows the rule of any first write of an epoch; `life_epoch
   a deleted slot as a record. `_ckpt` does not detect it: a delayed `completeCreation` re-creates it
   (`CA/Pool/CasRefCatalog.cpp:631-637` precedes the row check at `:650-652`). The janitor is not changed.
 - **Rule.** A reader whose catalog cut can predate an erase re-reads the catalog after its last read of the life and
-  confirms that a row still carries this exact incarnation, in any state. A missing or replaced row is a removed life:
-  nothing is installed, and no corruption is reported about that life without this re-read.
+  confirms that a `Live` or `Removing` row still carries this exact incarnation. A missing, replaced or `Creating` row
+  is a removed life: nothing is installed, and no corruption is reported about that life without this re-read.
 - **Why it is enough.** The janitor deletes only objects of a life that a catalog read taken after its listing does not
-  name (`CA/Gc/CasNamespaceJanitor.cpp:75`, `:86`, `:140`), and an erased row never returns ([§2.7](#genesis)). A row
-  present after the walk proves that no janitor delete preceded any of its reads.
+  name (`CA/Gc/CasNamespaceJanitor.cpp:75`, `:86`, `:140`), and an erased row never returns ([§2.7](#genesis);
+  exception: [§8](#risks), row 9). So a row present after the walk proves that no janitor delete preceded its reads.
 
 | Reader | Can its cut predate an erase | Confirms today | Change |
 |---|---|---|---|
 | Ledger recovery: write admission (`namespaceLife`, `CA/Pool/CasRefLedger.cpp:5272-5292`) and read admission (`acquireReadableRefTableRuntime`), which a read-only open shares (inferred) | yes: the catalog reads (`:5275`; `:743`, `:763`) precede the walk, and another server's GC does not signal here (`:5242-5244`). For the lease holder the window is narrow: its own `DROP` goes through the name slot (`:662`, `:1926-1930`), and a superseded mount fails its lease check | no; only the resident write path re-reads, after a recovery error or a terminal (`:5245-5267`). The positive append's read (`:3612`) guards positive appends only | step 6 of [§2.4](#writer-recovery) |
-| fsck | yes: one cut for the scan (`CA/Tools/CasFsck.cpp:491`), `_ckpt` sampled later (`:628`), replay at `:644` | no; it re-reads `_ckpt` only, and keeps that (`:323-335`, CAS-448) | re-read the catalog after the walks; one read confirms every life walked before it. A removed life is janitor-pending (`:588-598`), not a finding (CAS-457) |
+| fsck | yes: one cut for the scan (`CA/Tools/CasFsck.cpp:491`), `_ckpt` sampled later (`:628`), replay at `:644` | no; it re-reads `_ckpt` only, and keeps that (`:323-335`, CAS-448) | re-read the catalog after the walks; one read confirms every life walked before it. A late recheck walks a life again (`recoverLateRefTable`, `:127-155`; manifests `:665`, blobs `:778`, `:1074`): its `Dangling` verdict is reported only after one more batched re-read confirms the life. A removed life is janitor-pending (`:588-598`), not a finding (CAS-457) |
 | Orphan sweep, `sweepNamespace` (decommission) | yes: cut at `CA/Gc/CasOrphanManifestSweep.cpp:626`, deletes after the walk | no | the exclusion of the paged sweep, before its deletes |
-| Presence probe; orphan sweep, paged | yes | yes: a catalog read after the terminal proof (`CA/Pool/CasRefLedger.cpp:5415`); candidates whose row changed are dropped (`CA/Gc/CasOrphanManifestSweep.cpp:169-190`, `:964`) | none |
+| Presence probe; orphan sweep, paged | yes | yes: a catalog read after the terminal proof (`CA/Pool/CasRefLedger.cpp:5415`); candidates whose row changed are dropped (`CA/Gc/CasOrphanManifestSweep.cpp:169-190`, `:964`) | none for the sweep. The probe recovers a `Removing` row through writer recovery (`CA/Pool/CasRefLedger.cpp:5397-5403`): a removed life found by step 6 goes to the probe's own catalog decision (`:5415-5424`), row gone `false`, any other row of the name `true`. It never throws, as a throw fails `DatabaseOnDisk::dropTable` |
 | GC intake, `REBUILD`; inspect | no: the leader alone erases, and its drain precedes its cut (`CA/Gc/CasGc.cpp:842`, `:922`, `:4657-4662`); a deposed leader's round ends at the `gc/state` write (inferred). Inspect reads no catalog and walks no chain | — | none |
 
 ### 3.2 Where GC resumes {#cursor}
@@ -244,10 +246,9 @@ The fold cursor `c` is the last folded id, without its kind (`CA/Formats/CasFold
 1. Warm path: the GC process remembers `(cursor, successor key)` from its own fold. If the durable cursor equals the
    remembered one, it probes the remembered key. Nothing is persisted.
 2. `c >= S`, or no snapshot: cleanup cannot have deleted `c`, so nothing replaced it. Read `c` for its kind.
-3. `c < S`: neither read `c` nor probe `{c.e,c.s+1}` first. Back-chain from the epoch of `S` through sequence-1
-   backlinks (`crossEpochFromSeal`, `CA/Pool/CasRefProtocol.cpp:847-909`). A head names `c`: `c` was a tombstone, that
-   head is the successor. The back-chain reaches the epoch of `c` without naming it: `c` was ordinary, the successor is
-   `{c.e,c.s+1}`. Else: hold.
+3. `c < S`: neither read `c` nor probe `{c.e,c.s+1}` first. Back-chain from the epoch of `S` by sequence-1 backlinks
+   (`crossEpochFromSeal`, `CA/Pool/CasRefProtocol.cpp:847-909`). A head names `c`: `c` was a tombstone, the head its
+   successor. Reaching the epoch of `c` without naming it: `c` was ordinary, its successor `{c.e,c.s+1}`. Else: hold.
 
 - Step 3 reads only keys above the cursor that the chain leads to. They were never deleted, so their only occupant is
   the chain's record. A cursor below `S` has a successor: cleanup keeps the snapshot's same-id log (`:831`) and the
@@ -305,11 +306,11 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
 | Body without the field (older build) | the predecessor's `writer_epoch` |
 | No slot | the claimer's epoch minus 1 |
 
-- Writers of the body: the claim (`CA/Pool/CasServerRoot.cpp:1004`, `:1089`); the renewer's `encodeBody` (`:1689`:
-  `start` `:1799`, the adoption write `:1718`, every renewal), fed by a member set at `installRenewer`; the farewell
-  (`terminate`, `:2171`); `fenceOwnClaim` (`:1126`) and the GC fence (`:1403`), copies of the decoded body; the rejoin
-  rewrite (`rejoinRetiredOwner`, `:602-667`). Forgetting the field is safe: such a body reads as the predecessor's
-  `writer_epoch`.
+- Body writers: the claim (`CA/Pool/CasServerRoot.cpp:1004`, `:1089`); the renewer's `encodeBody` (`:1689`: `start`
+  `:1799`, the adoption write `:1718`, every renewal), fed by a member set at `installRenewer`; the farewell
+  (`terminate`, `:2171`); `fenceOwnClaim` (`:1126`) and the GC fence (`:1403`), which copy the body; the rejoin rewrite
+  (`:654-667`), which makes a fenced body clean but only on a root without catalog rows or manifests (`:629-650`), so no
+  chain depends on its value. Forgetting the field is safe: such a body reads as the predecessor's `writer_epoch`.
 - Publish point: with the live epoch (`setLiveWriterEpoch`, `CA/Pool/CasPool.cpp:965`, `:1632`), before recoveries are
   cancelled and the fence re-armed. Recovery captures both once (`CA/Pool/CasRefLedger.cpp:1602`). A self-remount makes
   the same claim (`CA/Pool/CasPool.cpp:1574`) over a body that is never clean, so a fresh runtime seals the old epoch.
@@ -326,8 +327,9 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
   item (`:2334-2341`). An epoch between `X` and `W` is drained too or raises the value above `X`. The rule compares the
   chain epoch, not the predecessor, so an epoch that never read the namespace passes the value on.
 - **The lane tombstone needs no `_ckpt` re-read.** It exists only when `X > last_unclean_epoch`: no mount of `X` or of a
-  later epoch below `W` can write the slot, and cleanup deletes only what exists: the slot stays absent until `W` fills
-  it. A successor's tombstone there is the conflict of [§2.3](#tombstone) or, once cleaned, row 1 of [§8](#risks).
+  later epoch below `W` can append there, and cleanup deletes only what exists. A recovery tombstone or numeric seal of
+  a build of commits 4 to 5 can still land in the slot; nothing follows it, so it stays for `W`'s create to meet
+  ([§2.3](#tombstone)). A successor's tombstone is the same conflict or, once cleaned, row 1 of [§8](#risks).
 - **What a clean farewell does not exclude.** An unresolved recovery tombstone (`CA/Pool/CasRefLedger.cpp:1318`) is not
   a lane attempt and can land later; the farewell is not withheld. It carries no table content: the next lane step or
   recovery adopts it on conflict, GC folds a record without edges and deletes nothing for it ([§5](#crashes), row 20).
@@ -368,12 +370,12 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
 | Item | Change |
 |---|---|
 | Generation constants (`CA/Formats/CasFormat.h:16`) | new `G_REF_CHAIN = 3`. `G_BUILD = 3` and the change points `{3,3}` for `RefLog` and `RefCkpt` arrive with the first generation 3 write ([§11](#staging)) |
-| `RefLogTxn` and its header | optional `next_epoch`, wire key `!next_epoch` on the meta line, only on a tombstone. Header 3 iff the transaction carries `!next_epoch` or `!prev_epoch`; else as today (`CA/Formats/CasRefLogFormat.cpp:294`) |
+| `RefLogTxn` and its header | optional `next_epoch`, wire key `!next_epoch` on the meta line, only on a tombstone. Through commit 4a every log a build writes keeps today's header, 2 with a `Move`, else 1 (`CA/Formats/CasRefLogFormat.cpp:294`): the numeric seal and the sequence-1 head with `!prev_epoch` after it included. Only a transaction with `!next_epoch` gets header 3, and only tests build one. From commit 5: header 3 iff the transaction carries `!next_epoch` or `!prev_epoch`, so every tombstone and every head after one; any other log as today |
 | Structural grammar (`:230-260`) | header 3: backlink epoch strictly lower, adjacency dropped; a tombstone must carry `!next_epoch` above its own epoch. Header 1 or 2: as today, and `!next_epoch` is rejected |
-| `_ckpt` (`CA/Formats/CasRefCkptFormat.cpp:95-127`) | the encoder always writes header 3 and the two fields of [§2.5](#ckpt); the decoder accepts 1 to 3 and rejects the old fields under header 3 |
-| Pool floor | every writable mount raises `min_reader_generation` to 3. The raise moves from `Pool::open` (`CA/Pool/CasPool.cpp:598-610`) into `mountWritable`, after the claim and before `armMountFence` (`:966`) and the workers (`:979-980`). `openForDecommission` (`:1057-1075`) skips it today and writes generation 3 objects under this design: the tombstone before its terminal append. A self-remount (`:1574`) follows a mount that raised it. The raise from 2 to 3 takes what CAS-410 decides for the raise from 1 to 2: a `min_reader_generation` column in `system.cas_mounts`, a `cas_log` event, and the switch, if any. A switch must also keep the old append rule: the floor precedes the first generation 3 write |
+| `_ckpt` (`CA/Formats/CasRefCkptFormat.cpp:95-127`) | the decoder accepts 1 to 3 and rejects the old fields under header 3. The encoder keeps the old body and header through commit 4a; from commit 5 it always writes header 3 and the two fields of [§2.5](#ckpt) |
+| Pool floor | every writable mount raises `min_reader_generation` to 3. The raise moves from `Pool::open` (`CA/Pool/CasPool.cpp:598-610`) into `mountWritable`: after the claim and before the renewal-window check samples the clock (`:931`, `renewal_window_fits` `:944-963`), so that check counts the raise's time, and before `armMountFence` (`:966`) and the workers (`:979-980`). `openForDecommission` (`:1057-1075`) skips it today and writes generation 3 objects under this design: the tombstone before its terminal append. A self-remount (`:1574`) follows a mount that raised it. The raise from 2 to 3 takes what CAS-410 decides for the raise from 1 to 2: a `min_reader_generation` column in `system.cas_mounts` and a `cas_log` event. This change ships without a switch: one from CAS-410 needs its own design, because commit 7 removes the old append rule |
 | Mount lease | additive optional `last_unclean_epoch`; unknown keys are skipped by older decoders |
-| Stamp | below header 3, the runtime publishes the generation 3 body (one `PUT`, once per namespace) before its first tombstone or append ([§2.4](#writer-recovery), step 3). A new namespace is created stamped |
+| Stamp | below header 3, the runtime publishes the generation 3 body (one `PUT`, once per namespace) before its first tombstone or append. Recovery stamps by [§2.4](#writer-recovery), step 3. The lane stamps conditional on the `_ckpt` token its installed recovery accepted, which the runtime keeps from install; a mismatch or an unresolved write sends the lane to `NeedsRecovery`. A new namespace is created stamped |
 | Later fields | a future log field (the block id of CAS-393) needs its own gate, an unknown `!` key or a generation, and cannot go into `_ckpt`, which holds two fields. An unknown `!` key is `UNKNOWN_FORMAT_VERSION` (`CA/Formats/CasTextFormat.cpp:315-324`); the header is read first |
 
 | Older reader | What stops it |
@@ -389,10 +391,10 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
 
 Positive and terminal appends keep their catalog `GET` (`CA/Pool/CasRefLedger.cpp:3612`, `:3581`). Removing it requires:
 
-- **Order.** The terminal record comes first, not `Removing` as today; then a late `beginRemoving` is benign.
-- **Completer.** GC's erase (`CA/Pool/CasRefCatalog.cpp:466-475`) accepts a terminal stream's `Live` row whose adopted
-  parent seal holds `cleanup_evidence` and no hold; a `Live -> Removing` write of its own adds no proof. The writer's
-  `beginRemoving` stays the fast path: re-creation must not wait for a GC round.
+- **Order.** The terminal record comes first, not `Removing` as today; then a late `beginRemoving` is benign. A positive
+  item built after the terminal emits a birth ([§2.7](#genesis)); the flush must refuse it without the read.
+- **Completer.** GC's erase (`CA/Pool/CasRefCatalog.cpp:466-475`) accepts a `Live` row with `cleanup_evidence` and no
+  hold, without a `Live -> Removing` write. The writer's `beginRemoving` stays the fast path for re-creation.
 - **Dead life.** `_ckpt` is re-creatable: its deletion proves nothing. Guard: the catalog re-read ([§3.1](#chain-rule)).
 - **Decommission.** Its cut recheck (`CA/Tools/CasDecommission.cpp:370-378`) and accounting (`:455-464`) take a selected
   life that GC moved or erased, and a `Live` row whose terminal drop succeeded in this run, as pending GC.
@@ -411,28 +413,29 @@ Positive and terminal appends keep their catalog `GET` (`CA/Pool/CasRefLedger.cp
 | 6 | An old read-only view serves a stale table (accepted) | it recovered the namespace before the stamp and is never restarted |
 | 7 | A stray log sits below the base | any late create that lands in a slot cleanup reclaimed, with correct clocks too. It is never folded ([§3.2](#cursor)), cleanup deletes it, and it is never a witness: witnesses are ids above the probed key (`CA/Gc/CasGc.cpp:2731`) and a stray lies below it |
 | 8 | Every recovery reads the catalog once more | the confirmation of [§3.1](#chain-rule): one whole-catalog `GET` per walk that installs, on top of the one or two of a cold admission |
+| 9 | The row of an erased life returns as `Creating` (accepted; no catalog stamp) | all of: a 26.6 writer, which mints one incarnation per call and resends an ambiguous catalog write (`26.6:CA/Pool/CasRefCatalog.cpp:687-698`, `26.6:CA/Backend/CasRequests.cpp:1077-1081`, `:1119-1135`); one copy of that request undelivered across the namespace's creation, the stop of that writer, the upgrade, the namespace's `DROP`, the GC erase and a janitor pass; a pool catalog then byte-identical to its state before the namespace was created, under a content-derived ETag (the erase restores the bytes, `CA/Pool/CasRefCatalog.cpp:530-533`). Then a reader that walked the life sees `Creating` and reports it removed ([§3.1](#chain-rule)). That test costs no reader, as none walks a `Creating` life: write admission resolves only a `Live` row (`CA/Pool/CasRefLedger.cpp:1461`), `DROP` cancels a stalled creation without a walk (`:5456-5483`), read admission (`:748`) and the probe (`:5383`) do not recover it, fsck (`CA/Tools/CasFsck.cpp:503`), the sweep (`CA/Gc/CasOrphanManifestSweep.cpp:630`, `:856`) and GC (`CA/Gc/CasGc.cpp:253`) skip the row. Nothing in GC cancels it either, so the row and what the janitor left of the life stay until a `DROP` of that name cancels the creation. A writer that opens the same name instead completes it (`CA/Pool/CasRefLedger.cpp:1497-1525`): the life is `Live` again, and its recovery and GC's fold read what the janitor left, a stray included |
 
 ## 9. TLA+ obligations {#tla}
 
 `M/CaRefLogOnlyAppendCore.tla` (39 rows in `M/run_reflogonlyappend.sh`) models the chain, both tombstone rules with the
-marker, a walk that re-reads the base after its absent read and after a tombstone create, a snapshot publication in
-flight across a takeover or from a superseded writer, a late recovery tombstone, and a GC cursor back-chained from the
-snapshot's epoch. Results on the current model (the 34-row battery of an earlier model is no evidence):
+marker, a walk that re-reads the base after its absent read and after a tombstone create, a snapshot publication across
+a takeover or from a superseded writer, a late recovery tombstone, and a GC cursor back-chained from the snapshot's
+epoch. Results: `M/CaRefLogOnlyAppendCore_RESULTS.md`, regenerated from the battery on the current model. Expected:
 
-- Green: `safe_lease` (1083839 states). Red as expected: `sab_seal_norecheck_zombie` (`INV_NO_DELETE_SERVABLE`, 492630
-  states) and `sab_seal_norecheck_zombie_acked` (`INV_LIVE_ACKED_REACHABLE`, 2320025), which need a lying clock;
-  `sab_gccursor_anyhead_zombie` (6094056); `sab_gccursor_probefirst_lateland` (334314).
-- Pending battery 7: `safe_clocklies_gc` (lying clock, cleanup, selective rule, no late landings; no violation in 560 s,
-  not exhaustive), `safe_clocklies_gc_lateland`, `safe_clocklies_gc_4txn` and every row not named here.
+- Green: the `safe_` rows. `safe_clocklies_gc` (lying clock, cleanup, selective rule, no late landings) is a long
+  exhaustive run in progress; `safe_clocklies_gc_4txn` and `safe_clocklies_gc_lateland` are bounded searches.
+- Red on the invariant the runner names: the `sab_` and `res_` rows. `sab_seal_norecheck_zombie`
+  (`INV_NO_DELETE_SERVABLE`) and `sab_seal_norecheck_zombie_acked` (`INV_LIVE_ACKED_REACHABLE`) drop step 5 of
+  [§2.4](#writer-recovery) and need a lying clock. The `witness_` rows show that a schedule is reachable.
 - Not in the model: the catalog, a second physical life, the janitor, the marker as a lease field, GC rounds. To add:
 
 | # | Addition | Expected rows |
 |---|---|---|
 | 1 | Genesis follows the uniform rule and the safe rows already check it: the empty chain at `<<1,1>>` is sealed by the first later epoch that writes. Remaining: creation as a step that sets `life_epoch` once, the birth as a record kind, an old-format stream whose `life_epoch` was raised | safe with `PROP_MONOTONE`; sabotage "birth raises `life_epoch`" violates it |
 | 2 | The marker as a value copied through lease bodies, starting from a body without it, published with the live epoch at a self-remount | safe; `sab_selective_immediate` stays red; sabotage "marker published after the epoch" |
-| 3 | GC rounds with the destructive gate, the intake slice, the remembered successor and a consumer whose cursor lags. `BackChainSucc` holds, as [§3.2](#cursor) does, when a head's backlink falls below the cursor's epoch (today it returns the same-epoch successor; unreachable while `INV_GC_PREFIX` holds) | sabotage "cut-off counts as proven" violates `INV_GC_CUT_SOUND` |
+| 3 | GC rounds with the destructive gate, the intake slice, the remembered successor and a consumer whose cursor lags | sabotage "cut-off counts as proven" violates `INV_GC_CUT_SOUND` |
 | 4 | An old reader bounded by a frozen frontier; the stamp | safe with stamp-first; sabotage "append before the stamp" lets the old GC delete |
-| 5 | The catalog, a second physical life, the janitor, a delayed `completeCreation`, late requests of the first life; the catalog confirmation after a walk ([§5](#crashes) rows 15 and 22) | safe; sabotage "no confirmation" lets a reader interpret a stray |
+| 5 | The catalog, a second physical life, the janitor, a delayed `completeCreation`, an older build's resent catalog admission, late requests of the first life; the catalog confirmation after a walk ([§5](#crashes) rows 15 and 22, [§8](#risks) row 9) | safe; sabotage "no confirmation" lets a reader interpret a stray |
 | 6 | The `_snap` create as a request separate from its `_ckpt` publish; more than one travelling copy of a request | safe |
 
 Every new or rerun model carries a table "action -> store requests it stands for" (CAS-375).
@@ -444,16 +447,16 @@ Tests are written first. A `LOGICAL_ERROR` expectation is a death test in a `*De
 | Suite | Test | Pins |
 |---|---|---|
 | `T/gtest_cas_ref_writer.cpp` | `CASRefWriterAppendLane.PositiveAppendIsOneCatalogReadAndOneCreate`, `.RefRemovalIsOneRequest`, `.LostAdmissionAfterDurablePutNeedsRecoveryAndIsNotAcknowledged`, `.DurableUnacknowledgedAppendIsReplayedByRecovery` | request counts 2 and 1, no `_ckpt` request; commit rule; replaces `CommittedChunkPublishesFrontierBeforeInstallAndAck` (`:1450`), `:1598` and `:1693` |
-| | `CASRefWriterTombstone.FirstAppendOfAnEpochWritesTombstoneThenHead`, `.BacklinkSkipsEpochsThatOnlyRead`, `.AmbiguousTombstoneWedgesAndBlocksTheHead`, `.TombstoneOnlyEpochIsClosedAtItsFirstSlot`, `.LatePredecessorAppendIsAdoptedAndTheTombstoneMovesOneSlot`, `.NewerTombstoneClosesTheLane`, `.TerminalOccupantEndsTheStream`, `.DetachedRuntimeInARemountWindowWritesNoTombstone` | keys, `!next_epoch`, backlink, order of checks; [§5](#crashes) rows 10, 2, 1, 5, 16 and 14 |
+| | `CASRefWriterTombstone.FirstAppendOfAnEpochWritesTombstoneThenHead`, `.BacklinkSkipsEpochsThatOnlyRead`, `.AmbiguousTombstoneWedgesAndBlocksTheHead`, `.TombstoneOnlyEpochIsClosedAtItsFirstSlot`, `.LatePredecessorAppendIsAdoptedAndTheTombstoneMovesOneSlot`, `.NewerTombstoneClosesTheLane`, `.TerminalOccupantEndsTheStream`, `.DetachedRuntimeInARemountWindowWritesNoTombstone`, `.LateRecoveryTombstoneOfAnEarlierBuildIsAdopted`, `.LaneStampMismatchNeedsRecovery` | keys, `!next_epoch`, backlink, order of checks; [§5](#crashes) rows 10, 2, 1, 5, 16, 14 and 20; [§6](#format) |
 | | `CASRefWriterRecovery.CleanPredecessorCostsSixReadsAndNoWrite`, `.UncleanPredecessorSealsBeforeInstall`, `.EagerRuleSurvivesACleanEpochThatNeverReadTheNamespace`, `.StampsCkptBeforeTheFirstNewWrite` | request count and order, no object for a reading epoch; [§4](#eager), transitivity |
-| | `CASRefWriterRecovery.RestartsWhenTheBaseMovesUnderTheWalk`, `.RestartsWhenTheBaseMovesUnderTheTombstoneCreate`, `.FollowsOldSealsByPlusOneAndLinksAfterThem`, `.LifeErasedUnderTheWalkIsRemovedNotInstalled`, `.AbsentCkptOfAnErasedLifeIsNotCorruption` | rows 17, 21, 18 and 22; [§3.1](#chain-rule) |
+| | `CASRefWriterRecovery.RestartsWhenTheBaseMovesUnderTheWalk`, `.RestartsWhenTheBaseMovesUnderTheTombstoneCreate`, `.FollowsOldSealsByPlusOneAndLinksAfterThem`, `.LifeErasedUnderTheWalkIsRemovedNotInstalled`, `.AbsentCkptOfAnErasedLifeIsNotCorruption`, `.CreatingRowIsNotAConfirmation`, `.PresenceProbeOverAnErasedLifeDoesNotThrow` | rows 17, 21, 18 and 22; [§3.1](#chain-rule) |
 | | `CASRefWriterGenesis.BirthInALaterEpochSealsTheCreationSlotAndWritesNoCkpt`, `.LateBirthOfAPredecessorIsAdoptedOrRefused`, `.EagerRuleSealsANeverBornStream`; `CASRefWriterSnapshotPublish.GenerationThreeBodyHasTwoFields`, `.ReadingEpochDoesNotPublish` | [§2.7](#genesis), row 13, request count; [§2.5](#ckpt), [§2.4](#writer-recovery) |
-| `T/gtest_cas_ref_epoch_seal_format.cpp`, `T/gtest_cas_format.cpp` | `NextEpochMustExceedOwnEpoch`, `NextEpochOnlyOnATombstone`, `HeaderThreeTombstoneRequiresNextEpoch`, `SparseBacklinkNeedsHeaderThree`, `ReadCeilingTwoRejectsHeaderThree`; `RefLogAndRefCkptHistoriesRecordGenerationThree` (commit 5, reworks `T/gtest_cas_format.cpp:47-79`) | grammar and gate (`setReadCeilingForTest`); [§11](#staging) |
+| `T/gtest_cas_ref_epoch_seal_format.cpp`, `T/gtest_cas_format.cpp` | `NextEpochMustExceedOwnEpoch`, `NextEpochOnlyOnATombstone`, `HeaderThreeTombstoneRequiresNextEpoch`, `SparseBacklinkNeedsHeaderThree`, `ReadCeilingTwoRejectsHeaderThree`, `BacklinkHeadKeepsItsHeaderBeforeTheWriterCommit` (commits 1 to 4a; replaced at commit 5 by `BacklinkHeadIsHeaderThree`); `RefLogAndRefCkptHistoriesRecordGenerationThree` (commit 5, reworks `T/gtest_cas_format.cpp:47-79`) | grammar and gate (`setReadCeilingForTest`); [§6](#format), [§11](#staging) |
 | `T/gtest_cas_ref_statemachine.cpp` | `ReplayRejectsHeadThatDoesNotNameItsTombstone`, `ReplayRejectsRecordAfterTombstoneInTheSameEpoch`, `TombstoneIsLegalBeforeBirthAndRefusedAfterTerminal`, `BirthAfterTerminalIsRefused` | reciprocity, genesis grammar |
 | `T/gtest_cas_ref_ckpt.cpp` | `DecodesGenerationsOneToThree`, `HeaderThreeRejectsOldFields`, `IdenticalSkipComparesGeneration`, `DurableLifeEpochIsNeverReplaced`, `OnlyCreationCreatesAnAbsentCkpt` | [§6](#format), [§2.7](#genesis), [§2.5](#ckpt) |
 | `T/gtest_cas_gc_bounded_walk.cpp` | `QuietNamespaceCostsCkptAndOneProbeOnceTheSuccessorIsRemembered`, `ColdCursorCostsOneMoreRead`, `ARoundStopsAtItsFirstAbsentKey`, `SliceCutLeavesTheNamespaceUnprovenAndKeepsItsCursor`, `PassOneIsNeverCutAndPassTwoRotatesByRound`, `TerminalRecordProvesTheFrontierWithoutAProbe` | request counts 2 and 3; cut, [§3.4](#budget); replaces `:231`, `:280` and `:388` |
 | | `CursorOnATombstoneResumesAtTheLinkedEpoch`, `CursorOnAnOldSealResumesAtTheNextEpoch`, `CursorBelowTheSnapshotIsNeverRead`, `StrayAtAReclaimedCursorKeyIsNotFolded`, `StrayAfterAReclaimedTombstoneIsNotFolded` | rows 7, 8 and 19, [§3.2](#cursor) |
-| `T/gtest_cas_orphan_manifest_sweep.cpp`, `T/gtest_cas_fsck.cpp`, `T/gtest_cas_gc_rebuild.cpp`, `T/gtest_cas_inspect.cpp` | `RemovalAboveTheCursorAcrossASkippedEpochStaysProtected`, `RemovalWalkDoesNotTrustAReclaimedCursorKey`, `LaggingSweepRestartsOnceWhenItsCursorMoved`, `SweepNamespaceSkipsALifeErasedUnderItsWalk`; fsck `LifeErasedDuringTheScanIsJanitorPending`; one test each for a chain with a skipped epoch | [§3.3](#consumers), [§3.1](#chain-rule), [§3.2](#cursor) |
+| `T/gtest_cas_orphan_manifest_sweep.cpp`, `T/gtest_cas_fsck.cpp`, `T/gtest_cas_gc_rebuild.cpp`, `T/gtest_cas_inspect.cpp` | `RemovalAboveTheCursorAcrossASkippedEpochStaysProtected`, `RemovalWalkDoesNotTrustAReclaimedCursorKey`, `LaggingSweepRestartsOnceWhenItsCursorMoved`, `SweepNamespaceSkipsALifeErasedUnderItsWalk`; fsck `LifeErasedDuringTheScanIsJanitorPending`, `LateRecheckOfAnErasedLifeIsNotDangling`; one test each for a chain with a skipped epoch | [§3.3](#consumers), [§3.1](#chain-rule), [§3.2](#cursor) |
 | `T/gtest_cas_pool.cpp` | `ClaimSetsLastUncleanEpoch` (one case per row of [§4](#eager)), `EveryBodyWriterKeepsOrResetsIt`, `SelfRemountRecoveryUsesTheRemountClaimsMarker`, `DecommissionMountRaisesThePoolFloor` | marker; [§6](#format) |
 
 - Integration, as in `test_cas_ref_move_compat`: older servers refuse to mount after the stamp and an old GC holds; a
@@ -467,23 +470,21 @@ it.** `G_BUILD` is the default read ceiling (`CA/Formats/CasFormat.cpp:88-92`) a
 (`CA/Formats/CasPoolMetaFormat.cpp:155`). A build of commit 1 or 2 with ceiling 3 would open a generation 3 pool, and
 its GC would take a `_ckpt` without `committed_through` for a proven empty frontier (`CA/Gc/CasGc.cpp:2838-2841`).
 
-- Commits 1 to 4a keep `G_BUILD = 2`: production refuses header 3 at `checkCompatibility`
-  (`CA/Formats/CasFormat.cpp:94-100`), and tests reach the new codecs and readers through `setReadCeilingForTest(3)`
-  (`:83-92`). Such a build refuses a pool that commit 5 or later wrote, like any older build.
-- The change point `{3,3}` waits for commit 5: `:36` asserts the last entry's generation `<= G_BUILD`. Nothing reads the
-  history at decode time (`T/gtest_cas_format.cpp:44`), so the codecs do without it. Commit 5 sets `G_BUILD = 3`,
-  appends `{3,3}` to `REF_LOG_HISTORY`, gives `RefCkpt` its own history and retargets the assertion at
-  `CA/Formats/CasFormat.cpp:35`.
+- Commits 1 to 4a keep `G_BUILD = 2`: production refuses header 3 (`CA/Formats/CasFormat.cpp:94-100`) and a floor-3 pool
+  at mount, like any older build; tests reach the new codecs and readers through `setReadCeilingForTest(3)` (`:83-92`).
+- The change point `{3,3}` waits for commit 5: `:36` asserts the last entry's generation `<= G_BUILD`, and `:35` ties it
+  to `G_REF_MOVE`. Nothing reads the history at decode time (`T/gtest_cas_format.cpp:44`). Commit 5 sets `G_BUILD = 3`,
+  appends `{3,3}` to `REF_LOG_HISTORY`, gives `RefCkpt` its own history and retargets the assertion.
 
 | # | Commit | State after it | Product / test lines, estimated |
 |---|---|---|---|
-| 1 | Format: `G_REF_CHAIN`, `!next_epoch` codec, grammar by header, `_ckpt` decode of 1 to 3 | nothing writes or admits generation 3 | 200 / 350 |
+| 1 | Format: `G_REF_CHAIN`, `!next_epoch` codec, grammar by header, `_ckpt` decode of 1 to 3. The encoders keep today's headers for every log and `_ckpt` a build writes ([§6](#format)) | nothing writes or admits generation 3 | 200 / 350 |
 | 2 | Replay reciprocity, genesis and terminal grammar, successor function, `walkRefChain`; read-only recovery, fsck, inspect, `REBUILD`, orphan sweep use it; fsck and `sweepNamespace` confirm the catalog after their walks | readers handle both formats under the test ceiling; writers unchanged | 480 / 750 |
 | 3 | GC intake: cut at the first absent key, cursor resolution with the remembered successor, intake slice; a `_ckpt` without `committed_through` no longer proves a frontier (`CA/Gc/CasGc.cpp:2838-2848`) | GC no longer needs the frontier | 380 / 650 |
 | 4 | `last_unclean_epoch` in the lease body, every body writer, published with the live epoch | marker recorded, no consumer | 150 / 300 |
 | 4a | Refactoring only: writer recovery reads through `walkRefChain`; frontier publishes, numeric seals and the one-unfrontiered-successor check (`CA/Pool/CasRefLedger.cpp:1114-1140`) stay on top of the walk | behaviour unchanged | 150 / 100 |
-| 5 | The complete protocol with a tombstone at every recovery: `G_BUILD = 3` and the change points, floor 3 raised in `mountWritable`, generation 3 `_ckpt` created only at creation, stamp-first, one-request append and wedge, writer recovery by [§2.4](#writer-recovery) with no `_ckpt` publish, the forward-linked tombstone written by recovery (it names the live epoch; sparse backlink), uniform genesis, no one-unfrontiered-successor rule | the eager protocol (`safe_lateland_eager`; under a lying clock `safe_clocklies_gc`); the series can stop here | 650 / 1250 |
-| 6 | The lazy lane step and the selective rule, the consumer of the marker | protocol complete | 250 / 500 |
+| 5 | The complete protocol with a tombstone at every recovery: `G_BUILD = 3` and the change points, floor 3 raised in `mountWritable`, header 3 for `!prev_epoch`, generation 3 `_ckpt` created only at creation, stamp-first, one-request append and wedge, writer recovery by [§2.4](#writer-recovery) with no `_ckpt` publish, the forward-linked tombstone written by recovery (it names the live epoch; sparse backlink), uniform genesis, no one-unfrontiered-successor rule | the eager protocol (`safe_lateland_eager`, with correct clocks; no config runs the always-eager rule under a lying clock); the series can stop here | 650 / 1250 |
+| 6 | The lazy lane step with its stamp, the selective rule, the consumer of the marker | protocol complete | 250 / 500 |
 | 7 | Delete what [§2.6](#removed) lists as removed | no dead code | -350 / -300 |
 | 8 | Docs: `docs/en/antalya/cas/` upgrade and architecture pages, `CA/Formats/README.md` | — | 150 |
 
@@ -494,12 +495,12 @@ Non-goals: [§7](#deferred); fewer appends per part (CAS-485); a combine window 
 ### 12.1 Inferred, not traced {#inferred}
 
 - A snapshot or a tombstone re-encoded from the same state has identical bytes ([§2.3](#tombstone)). No old read-only
-  view caches ref tables; a read-only open reads through the ledger's read admission. No mount slot is absent for a
-  server root that has written namespaces. No consumer assumes that a stream that holds logs is born. No log exists
-  before the row is `Live`.
+  view caches ref tables; a read-only open uses the ledger's read admission. No server root that wrote namespaces lacks
+  a mount slot. No consumer assumes that a stream with logs is born. No log exists before the row is `Live`.
 - On a pool of old writers every durable on-chain log above `committed_through` is history.
 - A deposed GC leader's round fails the `gc/state` write. A `DROP` in the same process waits for the recovery of its
-  runtime ([§3.1](#chain-rule)). Not measured: how often a namespace's coverage cursor moves under one sweep walk
+  runtime ([§3.1](#chain-rule)). Nothing follows a seal or recovery tombstone that lands after its epoch's clean
+  farewell ([§4](#eager)). Not measured: how often a namespace's coverage cursor moves under one sweep walk
   ([§3.2](#cursor)), any request count or line estimate. No model other than `CaRefLogOnlyAppendCore` was read.
 
 ## 13. Backlog interactions {#backlog}
