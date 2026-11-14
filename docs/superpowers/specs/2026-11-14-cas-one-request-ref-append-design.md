@@ -210,9 +210,11 @@ A never-born stream follows the rule of any first write of an epoch; `life_epoch
 - **End.** The first absent key on the validated chain, including an absent successor of a tombstone. Forward links
   strictly increase, so the walk terminates ([§3.4](#budget)).
 - **Why an absent read can be trusted against cleanup.** Cleanup deletes only logs strictly below the snapshot id it
-  read from `_ckpt` (`:824-836`), and that id only grows. A walk from a base re-reads `_ckpt` after its absent read: an
-  unchanged token means every cleanup so far used an id at or below the walk's base, a changed one restarts the walk. A
-  walk from the GC round's own cursor needs no re-read: cleanup deletes only at or below it (`:829`).
+  read from `_ckpt` (`:824-836`), and that id only grows. A walk from a base re-reads `_ckpt` after its last read,
+  whether it ended at an absent key or at a terminal record: an unchanged token means every cleanup so far used an id
+  at or below the walk's base, a changed one restarts the walk. The terminal end needs it too: a predecessor's late
+  `RemoveNamespace` can land in a slot that cleanup emptied, and a read-only walker would end "terminal" on a live
+  stream. A walk from the GC round's own cursor needs no re-read: cleanup deletes only at or below it (`:829`).
 - **A failed validation is not yet corruption.** The walk re-reads `_ckpt` first: a changed token restarts it, only an
   unchanged one is `CORRUPTED_DATA` (CAS-315). It frees its read-ahead window on a throw (CAS-86).
 - **A life that dies under the walk.** After GC erases a row, the janitor deletes that life's objects page by page
