@@ -1,5 +1,5 @@
 ---
-description: 'Design for a CAS ref-log append that writes one object and never touches `_ckpt`. An ordinary append becomes one create-if-absent of `_log/{epoch,seq}`; a durable log on the chain is committed history; `_ckpt` is written only at namespace creation and at snapshot publication. An epoch change is recorded lazily by a tombstone (`EpochSeal`) that carries a forward link to the successor epoch, so an epoch that does not write a namespace leaves no object. Readers find the end of history by exact reads to the first absent key. Ships behind format generation 3. A positive append keeps its catalog read.'
+description: 'Design for a CAS ref-log append that writes one object and never touches `_ckpt`. An ordinary append becomes one create-if-absent of `_log/{epoch,seq}`; a durable log on the chain is committed history; `_ckpt` is written only at namespace creation and at snapshot publication. An epoch change is recorded lazily by a tombstone (`EpochSeal`) that carries a forward link to the successor epoch, so an epoch that only reads a namespace leaves no object after a clean predecessor. Readers find the end of history by exact reads to the first absent key. Ships behind format generation 3. A positive append keeps its catalog read.'
 sidebar_label: 'CAS: one-request ref-log append'
 sidebar_position: 116
 slug: /superpowers/specs/cas-one-request-ref-append-design
@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS: one-request ref-log append — design {#cas-one-request-ref-append}
 
-- Date: 2026-11-14. Status: design; nothing is implemented, built or run. Task: CAS-487; other tasks: [§13](#backlog).
+- Date: 2026-11-14. Status: implemented on branch `work/antalya-26.8/cas-reflog-one-request-clean` (tip `e80936fd437`, 13 commits over `802077e5c1a`, not merged); request counts in §1 are measured. Task: CAS-487; other tasks: [§13](#backlog).
 - Fixed inputs: the change ships with 26.8 as generation 3; the acknowledgement fence is the mount lease; no seal is
   retained for fencing; no snapshot is forced at an epoch change; external deletion of CAS objects and an untrusted
   stream `LIST` stay as today; objects of generations 1 and 2 stay readable.
@@ -46,9 +46,23 @@ Store requests, warm namespace, one writer; counted from the code, not measured 
 | Terminal `RemoveNamespace` append | 4 | 2 | catalog `GET` `:3581` (stays) |
 | First append of an epoch in a namespace, extra | 0 | +1 | the tombstone `PUT` |
 | New part without blobs | 14 | 8 | manifest `PUT` `CA/Pool/CasPartWriteTxn.cpp:696`, precommit `:842`, manifest `GET` `:873`, promote `:1061`, `Move` |
-| Writer recovery, quiet namespace, one dead epoch, snapshot base | 12, 2 writes | 6, 0 writes | `CA/Pool/CasRefLedger.cpp:954-1386`; one of the 6 is the catalog confirmation; 7 with 1 write under the eager rule |
+| Writer recovery, quiet namespace, one dead epoch, snapshot base | 12, 2 writes | 6, 0 writes | `CA/Pool/CasRefLedger.cpp:954-1386`; one of the 6 is the catalog confirmation; 7 when the base record carries a backlink to a predecessor's seal; after an unclean predecessor plus one tombstone `PUT`, and one stamp `PUT` for a namespace not yet stamped |
 | GC intake, quiet namespace, per round that is not deferred | 1 | 2 | `_ckpt` `GET`; new: plus the successor probe; 3 on the cold path ([§3.2](#cursor)) |
 | Snapshot publication | 3 | 3 | `_snap` `PUT`, `_ckpt` `GET` + `PUT`, `:4821`, `:4872` |
+
+Measured on a local RustFS stand (median of 25 repetitions, one server; baseline and change on the same version string).
+`INSERT` is 18, not 19: the first append to a fresh namespace also loses a second `_ckpt` `GET` (3 requests saved, not 2).
+
+| Statement | Requests before -> after | Wall ms before -> after |
+|---|---|---|
+| `INSERT`, first block into a new table | 25 -> 18 | 22.2 -> 12.8 |
+| `INSERT`, second block | 24 -> 18 | 22.3 -> 12.8 |
+| `OPTIMIZE FINAL` | 41 -> 35 | 23.4 -> 17.6 |
+| Mutation | 38 -> 32 | 29.0 -> 22.5 |
+| `CREATE TABLE` | 24 -> 24 | 22.0 -> 22.5 |
+| `DROP TABLE SYNC` | 33 -> 23 | 126.8 -> 88.6 (bimodal) |
+| `SELECT` | 3 -> 3 | 4.0 -> 4.4 |
+| First `INSERT` after a restart | 24 -> 19 | 21.9 -> 12.7 |
 
 - **Given up.** The store-side refusal of a superseded writer's append in a reclaimed slot ([§8](#risks), row 1).
 - The exact frontier. A cold reader pays one absent probe, GC one more read per quiet namespace per round.
@@ -132,7 +146,9 @@ Store requests, warm namespace, one writer; counted from the code, not measured 
    detaches the runtime (`invalidateRemovedCatalogLife`, `:796-840`): retry-later for a write, absent for a read.
 7. Install. Chain epoch above `W`: lane `Closed`. Terminal: positive lane closed. Otherwise `Ready`.
 
-- Recovery writes nothing after a clean predecessor; read paths call it (`:315`, `:390`, `:413`). The stale-precommit
+- Recovery writes nothing after a clean predecessor; read paths call it (`:315`, `:390`, `:413`). After an unclean
+  predecessor a read triggers it too, and it writes the eager tombstone and, for a namespace not yet stamped, the stamp
+  (step 3 and 4). The stale-precommit
   sweep uses the lane (`:4942-4966`): a reading epoch with stale precommits writes a tombstone and a removal.
 - Snapshot publication is admitted only when the chain epoch equals the live epoch (one more term at `:4381-4388`). A
   reading epoch publishes nothing, as today (`T/gtest_cas_ref_writer.cpp:3252`). Accepted.
@@ -216,7 +232,10 @@ A never-born stream follows the rule of any first write of an epoch; `life_epoch
   `RemoveNamespace` can land in a slot that cleanup emptied, and a read-only walker would end "terminal" on a live
   stream. A walk from the GC round's own cursor needs no re-read: cleanup deletes only at or below it (`:829`).
 - **A failed validation is not yet corruption.** The walk re-reads `_ckpt` first: a changed token restarts it, only an
-  unchanged one is `CORRUPTED_DATA` (CAS-315). It frees its read-ahead window on a throw (CAS-86).
+  unchanged one is `CORRUPTED_DATA` (CAS-315). Only a `CORRUPTED_DATA` failure is judged against `_ckpt`
+  (`failureJudgedAgainstCkpt`, `CA/Pool/CasRefProtocol.cpp:133-136`); any other exception propagates. In the writer
+  recovery's base-load step an absent `_ckpt` on the re-read is corruption: the sampled base itself failed to load
+  (`classifyMissingSampledBase`, `CA/Pool/CasRefCkpt.cpp:180-185`; `CA/Pool/CasRefLedger.cpp:1011-1037`). It frees its read-ahead window on a throw (CAS-86).
 - **A life that dies under the walk.** After GC erases a row, the janitor deletes that life's objects page by page
   (`CA/Gc/CasNamespaceJanitor.cpp:143-190`). A walk that spans this reads a deleted key as the end, or a late create in
   a deleted slot as a record. `_ckpt` does not detect it: a delayed `completeCreation` re-creates it
@@ -273,7 +292,7 @@ Consumers, by an untruncated `grep` over `src/`: 26 files in `CA/`, 46 under `T/
 | GC intake and round cut | `_ckpt` sampled at round start bounds the fold (`CA/Gc/CasGc.cpp:2449-2455`, `:2872-2883`) | cut = first absent key read in this round; nothing above it is folded even if it appears later; [§3.2](#cursor) for the start. Witnesses stay the listing, the snapshot id and the carried hold (`:2731-2739`), and `committed_through` only in an old body; a log above that frontier is folded, as old recovery adopts it too | 1 -> 2, cold 3 |
 | Destructive gate | `frontier_proven` per namespace, all must hold (`:3541-3547`) | gate unchanged; a namespace is proven only by an absent key or a terminal record read in this round | none |
 | GC cursor on a tombstone with an absent successor | cursor `+1` in the same epoch (`:2794-2800`), kind unknown (`:2851-2854`) | [§3.2](#cursor): resumes at `{n,1}`, never at `{e,s+2}`, and never trusts a key cleanup may have deleted | cold path only |
-| Orphan manifest sweep | owner recovery (`CA/Gc/CasOrphanManifestSweep.cpp:256`), removal walk to `committed_through` (`:271`), exact `{E+1,1}` for a missing cursor (`:277-292`) | owner recovery uses `walkRefChain`; the removal walk resumes by [§3.2](#cursor) and no longer reads the cursor object below `S`; an incomplete walk keeps every candidate; `:546` unchanged | +1 probe |
+| Orphan manifest sweep | owner recovery (`CA/Gc/CasOrphanManifestSweep.cpp:256`), removal walk to `committed_through` (`:271`), exact `{E+1,1}` for a missing cursor (`:277-292`) | owner recovery uses `walkRefChain`; the removal walk resumes by [§3.2](#cursor) and no longer reads the cursor object below `S`; an incomplete walk keeps every candidate; `:546` unchanged | per page and namespace: the cursor `GET` (`gc/state`, `:126`), `_ckpt` (`:843`), the walk's reads (`:340`), then `gc/state` again after the walk (`:370`) and the fold seal `GET` only if `gc/state` names another one (`:373`). When no frontier bounds the chain, `walkRefChain` hints at most `kHintDepthWithoutFrontier` (4) keys past the record it reads (`CA/Pool/CasRefProtocol.cpp:900`, `:949-952`), so a sweep page over a quiet namespace wastes at most 8 reads |
 | `REBUILD` | read-only recovery, cursor = greatest applied (`CA/Gc/CasGc.cpp:4823-4829`) | complete walk required; a cut-off fails the rebuild | +1 probe |
 | fsck | stream audit to the frontier (`CA/Tools/CasFsck.cpp:312-420`), owner replay (`:628-645`), late recheck (`:133-140`) | both legs share one walk result from the base and read no key below it; the listing only attributes keys to lives (`:537-547`); "hole" is reported only below a generation 1 or 2 frontier or against a listed witness | +1 probe; catalog re-reads, batched |
 | Inspect | prints the four `_ckpt` fields and the backlink (`CA/Tools/CasInspect.cpp:184-188`) | prints generation and `next_epoch`; old fields labelled as old-format; a log named by key is printed as stored (`:519-520`) and labelled "may be a stray" when it is below the base | none |
@@ -320,14 +339,24 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
   forced exit writes no farewell and must not (CAS-355 option a): the successor would skip the tombstone.
 - **Rule.** Recovery of a non-terminal stream (never-born included) seals before install iff `X <= last_unclean_epoch`.
 - **Why it is enough.** Only the mount of epoch `X` creates ordinary records in epoch `X`. If `X > last_unclean_epoch`,
-  epoch `X` ended with a clean farewell: any other end is recorded by the next claim. A farewell is written only after
-  `drainRefLanesForShutdown` returned true (`CA/Pool/CasPool.cpp:1126-1137`, `:1280-1288`,
-  `CA/Pool/CasMountRuntime.cpp:1230`): every resident lane idle, none `Writing` or `Wedged`
-  (`CA/Pool/CasRefLedger.cpp:2103-2161`; eviction keeps non-`Ready` lanes, `:1918-1920`). So no append and no lane
-  tombstone of `X` is in flight. None starts later: the drain first latches `shutting_down` (`:2109`), which nothing
-  clears; the lane's only enqueue checks it under the same lock (`:2239`, `:2251`); a flush runs only for an enqueued
-  item (`:2334-2341`). An epoch between `X` and `W` is drained too or raises the value above `X`. The rule compares the
-  chain epoch, not the predecessor, so an epoch that never read the namespace passes the value on.
+  epoch `X` ended with a clean farewell: any other end is recorded by the next claim. Three facts make the lazy
+  tombstone safe after it:
+  - **(a) The lanes are drained before the farewell.** A farewell is written only after `drainRefLanesForShutdown`
+    returned true (`CA/Pool/CasPool.cpp:1126-1137`, `:1280-1288`, `CA/Pool/CasMountRuntime.cpp:1230`): every resident
+    lane idle, none `Writing` or `Wedged` (`CA/Pool/CasRefLedger.cpp:2103-2161`; eviction keeps non-`Ready` lanes,
+    `:1918-1920`). So no append and no lane tombstone is in flight at the farewell. None starts later: the drain first
+    latches `shutting_down` (`:2109`), which nothing clears; the lane's only enqueue checks it under the same lock
+    (`:2239`, `:2251`); a flush runs only for an enqueued item (`:2334-2341`).
+  - **(b) Recovery seals only at or below its marker.** It issues a tombstone only for a chain whose epoch `X` is at or
+    below its own `last_unclean_epoch` (`CA/Pool/CasRefLedger.cpp:1150`).
+  - **(c) The marker never decreases along the successors.** `lastUncleanEpochAfter` (`CA/Pool/CasServerRoot.cpp:902`)
+    returns the predecessor's marker after a clean farewell that carries one, else the predecessor's `writer_epoch`, and
+    the claimer's epoch minus 1 without a slot. So when the recovery of an epoch seals chain epoch `X`, the recovery of
+    every later epoch seals the same chain too. The drain does not cover a recovery tombstone whose create has an unknown
+    outcome ([§5](#crashes), row 20): it can land after the farewell. It then meets the successor's create in the same
+    slot: one of them conflicts and adopts the other ([§2.3](#tombstone)).
+
+  The rule compares the chain epoch, not the predecessor, so an epoch that never read the namespace passes the marker on.
 - **The lane tombstone needs no `_ckpt` re-read.** It exists only when `X > last_unclean_epoch`: no mount of `X` or of a
   later epoch below `W` can append there, and cleanup deletes only what exists. A recovery tombstone or numeric seal of
   a build of commits 4 to 5 can still land in the slot; nothing follows it, so it stays for `W`'s create to meet
@@ -353,7 +382,7 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
 | 7 | Predecessor `PUT` lands after cleanup deleted the tombstone | orphan log below the base | not on the chain | acknowledged only if its lease check passes wrongly ([§8](#risks), row 1); then it may write on in that epoch; GC folds none of it and cleanup deletes it | `res_clocklies`, `safe_clocklies_nocleanup`, `safe_clocklies_gc`, `safe_clocklies_gc_4txn`, `sab_gccursor_probefirst_zombie`, `sab_gccursor_anyhead_zombie` |
 | 8 | Predecessor `PUT`, sent under a valid lease, lands in a slot that cleanup reclaimed; correct clocks | a stray log at or below the GC cursor and below the snapshot id | not on the chain; no reader interprets that key ([§3.2](#cursor)) | nothing is acknowledged; cleanup deletes the stray as a covered log | `safe_lateland_selective`, `witness_cursorreused`; the unsafe rule is `sab_gccursor_probefirst_lateland` |
 | 9 | Predecessor `PUT` lands after a lazy recovery | `{E,n+1}` ordinary | history that the live writer lacks | excluded by [§4](#eager); without the rule this is the read window | `res_readwindow_gcdelete`, `sab_selective_immediate` |
-| 10 | `E` writes, `R` only reads, `W` writes | `{E,n+1} -> W`, `{W,1}` | chain skips `R` | `R` left nothing | `witness_skipepoch`, `witness_lazyafterclean` |
+| 10 | `E` ends cleanly after writing, `R` only reads, `W` writes | `{E,n+1} -> W`, `{W,1}` | chain skips `R` | `R` left nothing (clean predecessor) | `witness_skipepoch`, `witness_lazyafterclean` |
 | 11 | `E` writes, `R` only reads and ends uncleanly, `S` only reads, `W` writes | `{E,n+1} -> S` from the recovery of `S`, then `{S,1} -> W`, `{W,1}` | chain passes through `S`, which holds only a tombstone | `R` left nothing; `S` left one tombstone | `safe_lateland_selective` |
 | 12 | Stop between `_snap` `PUT` and its `_ckpt` publish | `_snap` above the checkpoint | old base, longer tail | republish meets identical bytes; cleanup deletes the orphan once a later base passes it | `safe_lateland_selective` (the publication travels and may land after a takeover) |
 | 13 | Created in `C`; `W > C` stops after its genesis tombstone, or its birth log is still in flight | `{C,1} -> W`, birth unknown | never-born, or born once the birth lands | as rows 1, 5 and 6 at slot `{W,1}`: the birth is adopted or refused; `life_epoch` stays `C` | safe rows (first record is a tombstone); creation step to add |
@@ -375,7 +404,7 @@ The claim (`:1089-1100`) writes the first body with the classification in hand:
 | `RefLogTxn` and its header | optional `next_epoch`, wire key `!next_epoch` on the meta line, only on a tombstone. Through commit 4a every log a build writes keeps today's header, 2 with a `Move`, else 1 (`CA/Formats/CasRefLogFormat.cpp:294`): the numeric seal and the sequence-1 head with `!prev_epoch` after it included. Only a transaction with `!next_epoch` gets header 3, and only tests build one. From commit 5: header 3 iff the transaction carries `!next_epoch` or `!prev_epoch`, so every tombstone and every head after one; any other log as today |
 | Structural grammar (`:230-260`) | header 3: backlink epoch strictly lower, adjacency dropped; a tombstone must carry `!next_epoch` above its own epoch. Header 1 or 2: as today, and `!next_epoch` is rejected |
 | `_ckpt` (`CA/Formats/CasRefCkptFormat.cpp:95-127`) | the decoder accepts 1 to 3 and rejects the old fields under header 3. The encoder keeps the old body and header through commit 4a; from commit 5 it always writes header 3 and the two fields of [§2.5](#ckpt) |
-| Pool floor | every writable mount raises `min_reader_generation` to 3. The raise moves from `Pool::open` (`CA/Pool/CasPool.cpp:598-610`) into `mountWritable`: after the claim and before the renewal-window check samples the clock (`:931`, `renewal_window_fits` `:944-963`), so that check counts the raise's time, and before `armMountFence` (`:966`) and the workers (`:979-980`). `openForDecommission` (`:1057-1075`) skips it today and writes generation 3 objects under this design: the tombstone before its terminal append. A self-remount (`:1574`) follows a mount that raised it. This change keeps the WARNING line of the raise, now naming floor 3. A `min_reader_generation` column in `system.cas_mounts` and a `cas_log` event are CAS-410's deliverable for both raises and are not part of this change. It ships without a switch: one from CAS-410 needs its own design, because commit 7 removes the old append rule |
+| Pool floor | every writable mount raises `min_reader_generation` to 3. The raise moves from `Pool::open` (`CA/Pool/CasPool.cpp:598-610`) into `mountWritable`: after the claim and before the renewal-window check samples the clock (`:931`, `renewal_window_fits` `:944-963`), so that check counts the raise's time, and before `armMountFence` (`:966`) and the workers (`:979-980`). `openForDecommission` (`:1057-1075`) skips it today and writes generation 3 objects under this design: the tombstone before its terminal append. An open that overruns the lease renewal window because of the raise logs a warning, re-writes the lease once and continues; it fails only if that write fails (`Pool::mountWritable`, `CA/Pool/CasPool.cpp:899-902`, `:974-995`). A self-remount (`:1574`) follows a mount that raised it. This change keeps the WARNING line of the raise, now naming floor 3. A `min_reader_generation` column in `system.cas_mounts` and a `cas_log` event are CAS-410's deliverable for both raises and are not part of this change. It ships without a switch: one from CAS-410 needs its own design, because commit 7 removes the old append rule |
 | Mount lease | additive optional `last_unclean_epoch`; unknown keys are skipped by older decoders |
 | Stamp | below header 3, the runtime publishes the generation 3 body (one `PUT`, once per namespace) before its first tombstone or append. Recovery stamps by [§2.4](#writer-recovery), step 3. The lane stamps conditional on the `_ckpt` token its installed recovery accepted, which the runtime keeps from install; a mismatch or an unresolved write sends the lane to `NeedsRecovery`. A new namespace is created stamped |
 | Later fields | a future log field (the block id of CAS-393) needs its own gate, an unknown `!` key or a generation, and cannot go into `_ckpt`, which holds two fields. An unknown `!` key is `UNKNOWN_FORMAT_VERSION` (`CA/Formats/CasTextFormat.cpp:315-324`); the header is read first |
@@ -416,6 +445,10 @@ Positive and terminal appends keep their catalog `GET` (`CA/Pool/CasRefLedger.cp
 | 7 | A stray log sits below the base | any late create that lands in a slot cleanup reclaimed, with correct clocks too. It is never folded ([§3.2](#cursor)), cleanup deletes it, and it is never a witness: witnesses are ids above the probed key (`CA/Gc/CasGc.cpp:2731`) and a stray lies below it |
 | 8 | Every recovery reads the catalog once more | the confirmation of [§3.1](#chain-rule): one whole-catalog `GET` per walk that installs, on top of the one or two of a cold admission |
 | 9 | The row of an erased life returns as `Creating` (accepted; no catalog stamp) | all of: a 26.6 writer, which mints one incarnation per call and resends an ambiguous catalog write (`26.6:CA/Pool/CasRefCatalog.cpp:687-698`, `26.6:CA/Backend/CasRequests.cpp:1077-1081`, `:1119-1135`); one copy of that request undelivered across the namespace's creation, the stop of that writer, the upgrade, the namespace's `DROP`, the GC erase and a janitor pass; a pool catalog then byte-identical to its state before the namespace was created, under a content-derived ETag (the erase restores the bytes, `CA/Pool/CasRefCatalog.cpp:530-533`). Then a reader that walked the life sees `Creating` and reports it removed ([§3.1](#chain-rule)). That test costs no reader, as none walks a `Creating` life: write admission resolves only a `Live` row (`CA/Pool/CasRefLedger.cpp:1461`), `DROP` cancels a stalled creation without a walk (`:5456-5483`), read admission (`:748`) and the probe (`:5383`) do not recover it, fsck (`CA/Tools/CasFsck.cpp:503`), the sweep (`CA/Gc/CasOrphanManifestSweep.cpp:630`, `:856`) and GC (`CA/Gc/CasGc.cpp:253`) skip the row. Nothing in GC cancels it either, so the row and what the janitor left of the life stay until a `DROP` of that name cancels the creation. A writer that opens the same name instead completes it (`CA/Pool/CasRefLedger.cpp:1497-1525`): the life is `Live` again, and its recovery and GC's fold read what the janitor left, a stray included |
+
+- **Reader-floor raise has no staging switch.** One writable mount of the new build, including
+  `clickhouse-disks cas-drop-member`, raises the pool floor; older builds then refuse the pool at their next mount.
+- **GC pass 1 after a leader change** resolves cold cursors sequentially ([§3.2](#cursor)).
 
 ## 9. TLA+ obligations {#tla}
 
@@ -459,11 +492,12 @@ Tests are written first. A `LOGICAL_ERROR` expectation is a death test in a `*De
 | `T/gtest_cas_gc_bounded_walk.cpp` | `QuietNamespaceCostsCkptAndOneProbeOnceTheSuccessorIsRemembered`, `ColdCursorCostsOneMoreRead`, `ARoundStopsAtItsFirstAbsentKey`, `SliceCutLeavesTheNamespaceUnprovenAndKeepsItsCursor`, `PassOneIsNeverCutAndPassTwoRotatesByRound`, `TerminalRecordProvesTheFrontierWithoutAProbe` | request counts 2 and 3; cut, [§3.4](#budget); replaces `:231`, `:280` and `:388` |
 | | `CursorOnATombstoneResumesAtTheLinkedEpoch`, `CursorOnAnOldSealResumesAtTheNextEpoch`, `CursorBelowTheSnapshotIsNeverRead`, `StrayAtAReclaimedCursorKeyIsNotFolded`, `StrayAfterAReclaimedTombstoneIsNotFolded` | rows 7, 8 and 19, [§3.2](#cursor) |
 | `T/gtest_cas_orphan_manifest_sweep.cpp`, `T/gtest_cas_fsck.cpp`, `T/gtest_cas_gc_rebuild.cpp`, `T/gtest_cas_inspect.cpp` | `RemovalAboveTheCursorAcrossASkippedEpochStaysProtected`, `RemovalWalkDoesNotTrustAReclaimedCursorKey`, `LaggingSweepRestartsOnceWhenItsCursorMoved`, `SweepNamespaceSkipsALifeErasedUnderItsWalk`; fsck `LifeErasedDuringTheScanIsJanitorPending`, `LateRecheckOfAnErasedLifeIsNotDangling`; one test each for a chain with a skipped epoch | [§3.3](#consumers), [§3.1](#chain-rule), [§3.2](#cursor) |
-| `T/gtest_cas_pool.cpp` | `ClaimSetsLastUncleanEpoch` (one case per row of [§4](#eager)), `EveryBodyWriterKeepsOrResetsIt`, `SelfRemountRecoveryUsesTheRemountClaimsMarker`, `DecommissionMountRaisesThePoolFloor` | marker; [§6](#format) |
+| `T/gtest_cas_pool.cpp` | `ClaimSetsLastUncleanEpoch` (one case per row of [§4](#eager)), `EveryBodyWriterKeepsOrResetsIt`, `SelfRemountRecoveryUsesTheRemountClaimsMarker` | marker; [§6](#format) |
+| `T/gtest_cas_decommission.cpp` | `CASDecommission.DecommissionMountRaisesThePoolFloor` | [§6](#format) |
 
 - Integration, as in `test_cas_ref_move_compat`: older servers refuse to mount after the stamp and an old GC holds; a
   kill between tombstone and head in `test_cas_insert_fault_recovery`. Stateless (`add-test`): store requests of one
-  `INSERT` and one `OPTIMIZE`. Measurement: the A/B of CAS-487 again (`INSERT`: 25 requests today, 19 by arithmetic).
+  `INSERT` and one `OPTIMIZE`. Measurement: the A/B of CAS-487 again (`INSERT`: 25 requests today, 18 measured, [§1](#decision)).
 
 ## 11. Staging {#staging}
 
@@ -501,8 +535,8 @@ Non-goals: [§7](#deferred); fewer appends per part (CAS-485); a combine window 
   a mount slot. No consumer assumes that a stream with logs is born. No log exists before the row is `Live`.
 - On a pool of old writers every durable on-chain log above `committed_through` is history.
 - A deposed GC leader's round fails the `gc/state` write. A `DROP` in the same process waits for the recovery of its
-  runtime ([§3.1](#chain-rule)). Nothing follows a seal or recovery tombstone that lands after its epoch's clean
-  farewell ([§4](#eager)). Not measured: how often a namespace's coverage cursor moves under one sweep walk
+  runtime ([§3.1](#chain-rule)). A seal or recovery tombstone that lands after its epoch's clean farewell meets the
+  successor's create in the same slot ([§4](#eager), fact (c)). Not measured: how often a namespace's coverage cursor moves under one sweep walk
   ([§3.2](#cursor)), any request count or line estimate. No model other than `CaRefLogOnlyAppendCore` was read.
 
 ## 13. Backlog interactions {#backlog}
@@ -518,5 +552,5 @@ Checked against the code at `802077e5c1a` unless marked. Tasks not listed are un
 | CAS-176.1, CAS-454, CAS-367, CAS-455 | not delivered by this change; [§7](#deferred) records what their change must solve. Of the reads of CAS-176 only the `_ckpt` read goes; the catalog read and the manifest re-read stay |
 | CAS-387 (epoch out of the key) | rejected: a second format generation for a cost this design removes, and the orphan sweep compares a build's epoch with the cursor's (`CA/Gc/CasOrphanManifestSweep.cpp:546`) |
 | Constrained, answered in the body | CAS-350, CAS-379, CAS-391 ([§2.3](#tombstone)); CAS-32, CAS-56, CAS-479 ([§2.4](#writer-recovery), [§2.5](#ckpt)); CAS-368, CAS-449 ([§2.7](#genesis)); CAS-315, CAS-448, CAS-457, CAS-86 ([§3.1](#chain-rule)); CAS-29.1 ([§3.2](#cursor)); CAS-29.10, CAS-92, CAS-31 ([§3.4](#budget)); CAS-179, CAS-355, CAS-364 ([§4](#eager)); CAS-410, CAS-393 ([§6](#format)); CAS-375, CAS-29.8 ([§9](#tla)). CAS-147: every unclean operator restart costs one tombstone per namespace touched |
-| Texts, counters and docs (commits 7 and 8) | reword "publishing its checkpoint frontier was not confirmed" (`CA/Pool/CasRefLedger.cpp:2596`, `:4226`); retire `CASRefCheckpointFrontierRefused`, re-describe `CASRefCheckpoint{Published,IdenticalSkip,NotAdvanced}`, `CASRefRecoveryEpochSeal{ed,Adopted}`, `CASRefAppendSealRejected` (`src/Common/ProfileEvents.cpp:851`, `:882-885`, `:1014-1015`); rewrite the comments that justify the removed materialization wait by "recovery closes every dead epoch": `CA/Pool/CasPool.cpp:889-895`, `:1600-1608`, `CA/Pool/CasPool.h:276-283`, `CA/Pool/CasRefLedger.cpp:1964-1970`, `CA/Pool/CasServerRoot.cpp:1033-1036`; the reason is now [§4](#eager). Docs: `docs/en/antalya/cas/bucket-requirements.md:92` (`_ckpt` write rate), `docs/en/antalya/cas/architecture/manifests-and-refs.md:277-308` (recovery). Invariant 5 of `docs/superpowers/cas/AGENTS.md` forbids dropping a protocol step as an optimization: record there that this step goes by an owner decision. Amend the CAS-321 note "the acknowledgement follows the checkpoint" |
+| Texts, counters and docs (commits 7 and 8) | reword "publishing its checkpoint frontier was not confirmed" (`CA/Pool/CasRefLedger.cpp:2596`, `:4226`); add `CASRefAppendTombstoneWritten` (`CA/Pool/CasRefLedger.cpp:2684`, `:3122`) and `CASRefCheckpointStamped` (`CA/Pool/CasRefCkpt.cpp:171`); `CASRefCheckpointFrontierRefused` is removed; re-describe `CASRefCheckpoint{Published,IdenticalSkip,NotAdvanced}`, `CASRefRecoveryEpochSeal{ed,Adopted}`, `CASRefAppendSealRejected` (`src/Common/ProfileEvents.cpp:851`, `:882-885`, `:1014-1015`); rewrite the comments that justify the removed materialization wait by "recovery closes every dead epoch": `CA/Pool/CasPool.cpp:889-895`, `:1600-1608`, `CA/Pool/CasPool.h:276-283`, `CA/Pool/CasRefLedger.cpp:1964-1970`, `CA/Pool/CasServerRoot.cpp:1033-1036`; the reason is now [§4](#eager). Docs: `docs/en/antalya/cas/bucket-requirements.md:92` (`_ckpt` write rate), `docs/en/antalya/cas/architecture/manifests-and-refs.md:277-308` (recovery). Invariant 5 of `docs/superpowers/cas/AGENTS.md` forbids dropping a protocol step as an optimization: record there that this step goes by an owner decision. Amend the CAS-321 note "the acknowledgement follows the checkpoint" |
 | Tests to re-target | `tests/integration/test_cas_gcs_relink_liveness` delays every `_ckpt` `PUT` and asserts the match (`test.py:30-32`, `:191`, `:224`): move the lever to `_log`. `test_cas_ref_snaplog`, `test_cas_gcs`, `test_cas_drop_pool_member`, and a sweep of the 46 gtest files of [§3.3](#consumers) |
