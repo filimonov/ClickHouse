@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS: one-request ref-log append — design {#cas-one-request-ref-append}
 
-- Date: 2026-11-14. Status: implemented on branch `work/antalya-26.8/cas-reflog-one-request-clean` (tip `e80936fd437`, 13 commits over `802077e5c1a`, not merged); request counts in §1 are measured. Task: CAS-487; other tasks: [§13](#backlog).
+- Date: 2026-11-14. Status: implemented on branch `work/antalya-26.8/cas-reflog-one-request-clean` (tip `97123265e03`, 14 commits over `802077e5c1a`, not merged); request counts in §1 are measured. Task: CAS-487; other tasks: [§13](#backlog).
 - Fixed inputs: the change ships with 26.8 as generation 3; the acknowledgement fence is the mount lease; no seal is
   retained for fencing; no snapshot is forced at an epoch change; external deletion of CAS objects and an untrusted
   stream `LIST` stay as today; objects of generations 1 and 2 stay readable.
