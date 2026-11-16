@@ -396,6 +396,15 @@ def summarize_phases(rows, *, top_n: int = 5) -> dict:
         # only keys some row actually had, so it is the presence oracle the scalar column cannot be:
         # a phase that RAN emits its own detector metrics unconditionally, so an absent key means the
         # name moved, not that the value was zero.
+        #
+        # One exception: a phase cut short by an exception still gets its row (the phase timer emits
+        # it on unwind) but with an EMPTY metrics map. That is a failed round, not a renamed metric:
+        # a renamed one leaves the phase's other keys in the map. Seen live when a GC leader that
+        # lost its lease mid-round read a run its successor had deleted and the round ended in
+        # `CORRUPTED_DATA`. Such a window reports the detector value as absent, like a phase that
+        # never ran.
+        if not r["metrics"]:
+            continue
         if metric not in r["metrics"]:
             raise SignalsUnsupported(
                 f"the GC phase {phase!r} ran ({r['calls']} rows) but its `phase_metrics` map carries "

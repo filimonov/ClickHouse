@@ -251,6 +251,21 @@ def test_a_renamed_phase_metric_fails_closed_instead_of_reading_zero():
     assert "some_future_name" in str(e.value), "the message must name the keys that ARE there"
 
 
+def test_a_phase_cut_short_by_an_exception_is_absent_not_a_renamed_metric():
+    """A phase that throws still gets its row (the phase timer emits it on unwind), with an EMPTY
+    metrics map. Live-soak finding (2026-11-16): a GC leader that lost its lease mid-round read a run
+    its successor had deleted, `fold_reduce` ended in `CORRUPTED_DATA`, and the only `fold_reduce` row
+    of the window had no metrics; the presence check called it a renamed metric and aborted the run.
+    A renamed metric leaves the phase's other keys in the map; no keys at all is a failed phase."""
+    text = "\n".join([
+        _phase_row("fold_ref_intake", logs_accounted="10", logs_applied="10"),
+        _phase_row("fold_reduce", transactions_unapplied="0", metrics={}),
+    ])
+    s = summarize_phases(parse_phase_summary(text))
+    assert "fold_reduce.transactions_unapplied" not in s["detector"]
+    assert s["detector"]["fold_ref_intake.logs_accounted"] == 10
+
+
 def test_a_phase_that_never_ran_is_absent_not_zero():
     """A round that never led emits no `fold_*` phase at all. Reporting "0 holes" for a window in which
     the probe never ran would be a claim the data does not support."""
