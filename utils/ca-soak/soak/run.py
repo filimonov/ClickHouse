@@ -449,6 +449,31 @@ class Driver:
                 pass
 
     # -- barrier (mutation) op execution ------------------------------------------------------
+    def _pull_mutations(self, node):
+        """Make `node` load every mutation entry that exists in Keeper right now. `SYSTEM SYNC REPLICA
+        ... PULL` reads the replication log and the mutation entries synchronously and waits for
+        nothing else; it throws on a replica without a Keeper session (read-only), which the retry
+        loop treats as transient. Without it a replica that just restarted, or that did not accept
+        the query itself, may not show the newest entries in `system.mutations` yet."""
+        node.command(f"SYSTEM SYNC REPLICA {DB}.{TABLE} PULL")
+
+    def _last_mutation_id(self, node):
+        """Id of the newest mutation `node` knows after a pull ('' if none). Ids are zero-padded
+        sequence numbers, so string order is creation order, also after finished ones are cleaned up."""
+        self._pull_mutations(node)
+        return node.scalar(f"SELECT max(mutation_id) FROM system.mutations "
+                           f"WHERE database = '{DB}' AND table = '{TABLE}'")
+
+    def _update_landed_after(self, node, last_mutation, bucket):
+        """True iff, after a pull, `system.mutations` on `node` has an UPDATE of `bucket` created
+        after the mutation `last_mutation`."""
+        self._pull_mutations(node)
+        n = node.scalar(
+            f"SELECT count() FROM system.mutations WHERE database = '{DB}' AND table = '{TABLE}' "
+            f"AND mutation_id > '{last_mutation}' "
+            f"AND match(command, 'UPDATE .*WHERE bucket = {int(bucket)}([^0-9]|$)')")
+        return int(n) > 0
+
     def apply_barrier(self, op):
         """Drain inserts, then apply the mutation to the cluster (on op.target's replica) AND the
         model. The model mutation must see exactly the rows the cluster sees, hence the drain. Under
@@ -463,14 +488,16 @@ class Driver:
         v3 tolerance gap). It is applied to the model ONLY AFTER the cluster command succeeds, so a
         never-landed mutation surfaces as a transport failure instead of silently diverging the model.
 
-        KNOWN residual (pre-existing, documented not fixed): a retried UPDATE is NOT idempotent at
-        the table level (`v = v + 1`), so an AMBIGUOUS first attempt -- one that actually created its
-        mutation entry server-side before the error surfaced (possible for node-down mid-op and the
-        Keeper `Operation timeout` shape; NOT for readonly/mount-fenced, which reject before doing
-        anything) -- followed by a successful retry double-applies the increment and the NEXT
-        checkpoint's model comparison catches it loudly. This window (entry-created-but-error-
-        surfaced) is a few ms wide and has not been observed across the 2h soaks; DELETE/TRUNCATE
-        retries are table-level idempotent."""
+        A retried UPDATE is NOT idempotent at the table level (`v = v + 1`), and an error does not
+        prove the mutation was not created: a server stopped mid-op answers 394 "Query ... is killed
+        in pending state" AFTER it wrote the mutation entry to Keeper
+        (https://github.com/ClickHouse/ClickHouse/issues/131967). So before every UPDATE attempt but
+the first, `_update_landed_after` looks in `system.mutations` (after a log pull) for an
+        UPDATE of this bucket newer than the last mutation seen before the first attempt, and does
+        not resubmit when it finds one.
+        Barriers run one at a time, so such an entry can only be this op's own earlier attempt.
+        Residual: an attempt still held inside a PAUSED node lands after the check.
+        DELETE/TRUNCATE retries are table-level idempotent."""
         self.drain()
         if op.type == OpType.UPDATE:
             sql = update_sql(TABLE, self.model._pred_bucket(op.param))
@@ -485,9 +512,20 @@ class Driver:
             raise AssertionError(f"apply_barrier on non-barrier op {op.type}")
 
         order = self._nodes_starting_at(op.target)
+        update_bucket = self.model._pred_bucket(op.param) if op.type == OpType.UPDATE else None
+        seen = {"last_mutation": None}
 
         def one_attempt(attempt_idx):
-            order[attempt_idx % len(order)].command(sql)
+            node = order[attempt_idx % len(order)]
+            if update_bucket is not None:
+                if seen["last_mutation"] is None:
+                    # Nothing was sent yet: a failure here is retried without any ambiguity.
+                    seen["last_mutation"] = self._last_mutation_id(node)
+                elif self._update_landed_after(node, seen["last_mutation"], update_bucket):
+                    log(f"BARRIER:UPDATE op_id={op.op_id} attempt {attempt_idx + 1}: an earlier attempt "
+                        f"created its mutation (bucket {update_bucket}); not resubmitting")
+                    return
+            node.command(sql)
 
         self._with_transport_retry(f"BARRIER:{op.type.name}", op.op_id, one_attempt)
         with self.model_lock:
