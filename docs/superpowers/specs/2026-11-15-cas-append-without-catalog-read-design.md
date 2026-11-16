@@ -80,6 +80,15 @@ it returns, new or resident: `removal_admission_closed` and a new latch, `removi
 build handles `Creating` as `Live`: an open lane on such a row is today's behaviour, and a latched lane would refuse
 the writes of a new table until a remount.
 
+**A complete catalog cut applies the same rule.** `reconcileCatalogCut` closes and latches a resident runtime whose
+exact life (namespace and incarnation) reads `Removing` in the cut. It has two callers: every GC round, which runs
+only on the GC leader (`Pool::reconcileRefCatalogCut`), and the reconcile inside `namespaceLife`. A resident runtime of
+another life of the same name is left alone.
+
+**A removal is bound to the runtime it closed.** After its drain, `dropNamespaceImpl` sends every request under the
+fence generation of that runtime, with the liveness check `commitRefChunk` uses. A `DROP` that spans a remount fails
+with `NETWORK_ERROR` before it sends `beginRemoving`; the row stays `Live` and a retry starts on the new runtime.
+
 **The reopen honours the latch.** A failed drop reopens the lane from a catalog read it took before it locks (`L:5719`,
 lock at `L:5732`, clear at `L:5735`); another caller can read `Removing` and close the lane in between. The guard at
 `L:5733` gets one more term, `!rt->removing_observed`. So no runtime that the rule closed has an open lane again.
@@ -92,24 +101,32 @@ lock at `L:5732`, clear at `L:5735`); another caller can read `Removing` and clo
 | 4 | Presence probe, `namespaceStillLogicallyPresent` (`L:5504`) | `Removing` (`L:5493-5503`) | closed and latched; today open |
 | 5 | `dropNamespaceImpl` (`L:5602`) | `Live` or `Removing` (`L:5558-5600`) | `Live`: open until `L:5634`. `Removing`: closed and latched; today open from `L:5602` to `L:5634` |
 
-- Three readers can see `Removing` without reaching the rule, and change no resident runtime. All three are unchanged:
+- Three readers can see `Removing` without reaching either rule, and change no resident runtime. All three are unchanged:
   - cold read admission returns no runtime for a `Removing` row (`L:796-797`);
   - cold write admission refuses it, "is Removing" (`L:5387-5390`);
   - the recovery confirmation (`L:1696-1705`) runs after every walk and uses only the row's presence: a `Removing`
     row keeps the runtime as it is. Closing there instead is rejected: `namespaceLife` reads the flag before it waits
     for the recovery (`L:5301-5345`).
 - So a runtime can have an open lane while its row is `Removing`: it was admitted as `Live` and the row turned later.
-  An own drop closes that runtime before it sends the write (fact 2 of [§2](#safety)); what remains is [§4](#residual).
+  An own drop closes that runtime before it sends the write (fact 2 of [§2](#safety)). On the GC leader the next GC
+  round closes it. What remains is [§4](#residual).
 - An item queued before the lane closes still commits; a drop drains it (`L:5635-5638`), then removes it (`L:5789-5802`).
 
 What the closed lane does, with existing code:
 
-- **Writes fail with `NETWORK_ERROR`** from `throwCasWriteRetryLater` (`CA/Backend/CasRequests.cpp:93-97`). Through
-  `namespaceLife`, which every `appendRefOps` and namespace-file write calls: "CAS namespace '…' is Removing: creation
-  waits for its terminal fold and catalog removal to complete; retry later" (`L:5308-5321`), after one catalog `GET`. A
-  caller that holds the runtime: "… is Removing: positive ref mutation admission is closed …" (`L:2129-2131`, `L:2168-2170`).
-- **Why these texts.** Same code and retry class as the removed refusal ("exact catalog life is no longer Live",
-  `L:3848-3850`). Same text as cold write admission of the same row (`L:5388-5390`). No new message.
+- **Writes fail with `NETWORK_ERROR`** from `throwCasWriteRetryLater` (`CA/Backend/CasRequests.cpp:93-97`), the code
+  and retry class of the removed refusal ("exact catalog life is no longer Live", `L:3848-3850`).
+- **A latched runtime has its own text**, on the warm and the cold branch of `namespaceLife` and for a caller that
+  holds the runtime: "CAS namespace '…' is Removing in the catalog: writes are refused and reads see no data, and its
+  removal has not finished; see the CAS troubleshooting page". It names no command: what finishes a removal depends on
+  the operation that started it. A lane closed by a removal in progress in this server keeps the texts "creation
+  waits for its terminal fold …" and "positive ref mutation admission is closed …".
+- **The latch resolves an ambiguous `beginRemoving`.** It clears `removal_write_may_land`: the row was read
+  `Removing`, so the write landed.
+- **One warning per closed lane.** When the latch closes a lane that was open, the server logs "its catalog row is
+  Removing, so this server closes it: writes are refused and reads see no data". A runtime whose lane a drop already
+  closed logs nothing, so an ordinary `DROP` is silent. A runtime built for a row that is already `Removing` logs it
+  too: the line alone does not mean a stuck removal.
 - **Reads see no files.** Warm read admission returns no runtime (`L:777-778`), as cold read admission does for a
   `Removing` row (`L:796-797`). Kept: the removed read set this same flag, so it stopped reads too, and a "writes only"
   flag is new state. Today a probe-created runtime serves reads that a cold read refuses; that goes.
@@ -122,24 +139,38 @@ What the closed lane does, with existing code:
 
 Accepted. No catalog revision and no binding of `Live -> Removing` to the mount generation are added.
 
-1. A `DROP` sends the conditional catalog write of `beginRemoving`; no answer arrives. The `DROP` fails (`L:5750-5759`).
-2. The drop is not retried to completion. The disk remounts; the runtimes are discarded (`L:1901-1916`).
+1. A removal sends the conditional catalog write of `beginRemoving`; no answer arrives. The removal fails
+   (`L:5750-5759`). Four operations remove a namespace: `DROP TABLE`, the source side of a table rename that moves
+   the data, `SYSTEM UNFREEZE` and `SYSTEM CAS DROP POOL MEMBER`.
+2. The removal is not retried to completion. The disk remounts; the runtimes are discarded (`L:1901-1916`).
 3. A writer opens the table. Cold admission reads `Live`; the lane is open.
 4. The request of step 1 lands: the row is `Removing`. It lands only while the catalog still carries the token of
    step 1: no other catalog write in the pool since, or a store whose token repeats when the bytes repeat.
 5. Before this change: the next positive append reads `Removing`, closes the lane and fails; reads see no files.
    After: appends are acknowledged and reads work. GC folds the appends (fact 4). No terminal record exists, so no
    evidence, no erase, no janitor delete. No acknowledged append is deleted.
-6. The stop comes when an admission reads the row. Reliable: a restart, a remount, a `DROP` of the table. From then
-   on writes fail with "is Removing" and reads see no files. The data stays in the store.
+6. The stop comes when the server reads the row. Reliable: a restart, a remount, a retried `DROP` of the table, and
+   on the GC leader its next GC round. A server that is not the GC leader keeps serving the table until one of the
+   first three. From then on writes fail with "is Removing in the catalog" and reads see no files. The data stays in
+   the store.
+
+The late request is the only way in. A removal that itself spans a remount sends nothing ([§3](#removing-runtime)).
 
 - **Not reliable stops.** An eviction needs an idle runtime and a full cache, and a writer between `namespaceLife` and
   its slot lookup (`L:835-841`) rebuilds an open runtime with no catalog read. A probe answers from its fast path.
 - **What the operator sees.** After `gc_stuck_removal_rounds` (10, `CA/Pool/CasPool.h:166`) rounds, every GC round logs
   "CAS GC namespace removal is stuck: namespace='…', life_id=…, …; cleanup evidence is absent because terminal has not
   folded" (`CA/Gc/CasGc.cpp:217-242`) and increments `CASGCStuckRemovals` (`:1598-1610`).
-- **What the operator does.** While the table still answers, copy its data out. Then run `DROP TABLE` again: it
-  completes the removal. No tool returns a row to `Live`.
+- **What the operator does.** No tool returns a row to `Live`. What finishes the removal depends on the operation
+  that started it (`docs/en/antalya/cas/operations/troubleshooting.md`):
+
+| Operation | What finishes the removal |
+|---|---|
+| `DROP TABLE`, `Atomic` database | the server retries the drop itself |
+| `DROP TABLE`, `Ordinary` database | the failed drop re-attaches the table; `DROP TABLE` again |
+| `SYSTEM CAS DROP POOL MEMBER` | a rerun |
+| Source side of a table rename | no statement: the parts already moved to the destination namespace, which is `Live`; a `DROP` of the old name or a second rename would strand them |
+| `SYSTEM UNFREEZE` | a rerun, only while another namespace under the backup name still has a part |
 
 ## 5. `promote` without the manifest re-read {#promote}
 
@@ -258,7 +289,7 @@ Each commit builds and passes alone. Gate for commits 1 to 3: the `CAS*` gtest s
 
 | # | Risk | Precondition or bound |
 |---|---|---|
-| 1 | Acknowledged inserts land in a table whose row is `Removing`; the stop comes at a restart, a remount or a `DROP` ([§4](#residual)) | a `beginRemoving` request that the store applies after a whole remount, with the catalog token of its send still current |
+| 1 | Acknowledged inserts land in a table whose row is `Removing`; the stop comes at a restart, a remount, a retried `DROP`, or the next GC round on the GC leader ([§4](#residual)). For a rename source and for `SYSTEM UNFREEZE` no statement finishes the removal | a `beginRemoving` request that the store applies after a whole remount, with the catalog token of its send still current |
 | 2 | `promote` commits a ref whose manifest body is gone. The first reader gets `FILE_DOESNT_EXIST` and fsck reports it. GC's fold notices it only when it meets a manifest edge it has not folded yet (`CASGCFold.CommittedMissingBodyClampsCursorAndRecordsAnomaly`, `T/gtest_cas_gc_fold.cpp:161`); a `promote` adds no manifest edge, so a body deleted after its precommit was folded is not noticed by GC | the body was deleted outside the protocol, or by a defect. The window grows: today from the `promote` read to the append, after story 2 from `stageManifest` to `promote`, across the blob uploads |
 | 3 | A new production caller of `beginRemoving`, of the erase, or of `CasRefCatalog::casUpdate` (`C:354`, tests only today) | invalidates fact 1 or 3 of [§2](#safety); the argument must be redone |
 | 4 | A probe of a `Removing` namespace without a terminal record costs one catalog `GET` each time | how often `existsDirectory` runs on such a table is not measured |
