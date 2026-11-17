@@ -20,7 +20,7 @@ tests, Task 12 the measurements that fix the defaults.
 (shell), integration tests (pytest; RustFS and the GCS emulator), Markdown docs, Python (`utils/cas-yardstick`,
 `utils/ca-soak` in `M`).
 
-**Spec:** `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` at commit `9296f2e2f0d` (branch
+**Spec:** `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` at commit `4dd7485afcd` (branch
 `cas-gc-rebuild`). It is binding; "§N" below is a section of it. A conflict between this plan and the spec resolves
 to the spec, except the readings listed in [Spec readings](#spec-readings).
 
@@ -470,7 +470,9 @@ caller; its own unit suites stay green until Task 8.
   `G:1052` (phase `pending_deletes` also sends intent deletes), `G:5061` (`previewDeletes`), the round's
   `meta_writer` calls
 - Modify: `CA/ContentAddressedSettings.cpp:69` and `CA/Pool/CasPool.h:105` (`gc_round_graduation_budget` default
-  stays 0, unbounded; description: intent creates per round); `src/Common/ProfileEvents.cpp`
+  stays 0; new description: `Maximum deletion-intent creates per GC round, summed over every GC shard; a blob over
+  the cap stays a candidate and is created in a later round (0 = unbounded)`); `G:824` (where the round copies it
+  into `GcRoundWorkBudget::max_graduations`); `src/Common/ProfileEvents.cpp`
 - Test: create `T/gtest_cas_blob_intent_writer.cpp`, `T/gtest_cas_gc_intents.cpp`; modify every suite Step 4 lists
 
 **Interfaces:**
@@ -502,6 +504,11 @@ caller; its own unit suites stay green until Task 8.
   `beginPublication` is the first (W5). No request after a publication (W6). Both reads through `op.head` and
   `op.read` of this attempt (W7). The loop, its deadline and the cap of 8 stay (`W:296`, `:406`, `:415-423`), and
   so do the admission checks before each proof (`W:454`, `:466`, `:545`, `:562`).
+- Create budget scope, as the code applies it: one `GcRoundWorkBudget` per round (`G:818-824`), passed by
+  reference to `foldDeltasIntoGeneration` for each shard in turn, serially on the round thread (`G:3757-3778`),
+  so the cap is per round and summed over shards. Keep that; G2, G3 and G7 each consume one slot through
+  `graduationAvailable` / `graduations_used` (`CA/Gc/CasBlobInDegree.h:283-290`), and only a create that is sent
+  consumes one.
 - GC rules, all decided in the fold after the cut (§3.2 "Order inside one round"):
   - `head_blob` (G2): canonical present body → `create_intent` when the budget admits, else no request;
     confirmed → `pending(t)`, else `candidate(t)`; absent or uncanonical → no row. No marker write.
@@ -538,7 +545,9 @@ caller; its own unit suites stay green until Task 8.
   `StandingRemovesTheIntentOnALaterZeroCut`, `SuppressedRoundDeletesNoIntent`,
   `SpareDropsStandingAndLeavesAnOrphanIntent`, `SpareDropsPendingAndKeepsTheIntent`,
   `DecisionHeadsAreSentAfterTheCut`, `CreatesOverTheBudgetAreCandidates` (budget 2, five zero transitions: two
-  creates, three candidates, no request for those three), `DeleteHeadDecidesTheRowInTheFold`, `MismatchCommitsStanding`,
+  creates, three candidates, no request for those three), `CreateBudgetIsSharedByEveryShardOfARound`
+  (`gc_shards = 4`, budget 3, two zero transitions in each shard: three creates in the round, five candidates),
+  `UnboundedCreateBudgetCreatesEveryCandidate` (budget 0), `DeleteHeadDecidesTheRowInTheFold`, `MismatchCommitsStanding`,
   `UnansweredBodyDeleteFailsTheRoundAndKeepsPending`, `FailedIntentDeleteFailsTheRound`,
   `IntentDeletesShareABatchRequest` (`gc_shards = 4`, intent deletes of every shard in one request on
   `BatchCapabilityBackend`),
@@ -831,6 +840,7 @@ Places where the spec leaves a choice; the plan takes the reading on the right.
 | G9 anomaly "counted" | a `RoundReport` field and one ERROR line; §9.2 names no counter for it |
 | Q10 "pool open deferred for this command only" | a process flag set by `DisksApp` for `cas-migrate-pool` before the disk starts |
 | M2 "the tool's poll step" | `poll_step_ms = 1000` |
+| The create budget "per round" | per round, summed over GC shards, as the code applies `GcRoundWorkBudget` today. The key `gc_round_graduation_budget` stays (the spec names it; settings are not on-store format); its description in Task 6 says what it does. A renamed key with the old one ignored is the owner's alternative |
 
 ## Backlog effects {#backlog-effects}
 
