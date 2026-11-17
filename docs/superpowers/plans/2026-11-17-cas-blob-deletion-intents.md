@@ -470,7 +470,7 @@ caller; its own unit suites stay green until Task 8.
   `G:1052` (phase `pending_deletes` also sends intent deletes), `G:5061` (`previewDeletes`), the round's
   `meta_writer` calls
 - Modify: `CA/ContentAddressedSettings.cpp:69` and `CA/Pool/CasPool.h:105` (`gc_round_graduation_budget` default
-  1000; description: intent creates per round); `src/Common/ProfileEvents.cpp`
+  stays 0, unbounded; description: intent creates per round); `src/Common/ProfileEvents.cpp`
 - Test: create `T/gtest_cas_blob_intent_writer.cpp`, `T/gtest_cas_gc_intents.cpp`; modify every suite Step 4 lists
 
 **Interfaces:**
@@ -622,7 +622,7 @@ Read §9.2. Deletes what Task 6 left unreferenced; the `.meta` codec (`CA/Format
 - Docs content: the writer's two reads and the reuse cost after a standing intent; GC's three row states and the
   round order; intents in the storage layout; `LIST` and delete rights under `blob-intents/`, batch delete, one
   token dialect per pool (bucket requirements); no mixed versions on one pool, `gc_meta_pool_size` ignored,
-  `cas_gc_round_graduation_budget` default 1000, `cas_intent_sweep_list_budget_keys`; the counters of §9.2; phase
+  `cas_gc_round_graduation_budget` (intent creates per round, default 0, unbounded), `cas_intent_sweep_list_budget_keys`; the counters of §9.2; phase
   rows `intent_sweep_list` added and `meta_pool_wait` gone; event reasons `intent_present`, `token_rejected`.
 - [ ] **Step 1: Write the failing tests.** `CASObservability.NoMarkerCounterExists` (iterate `ProfileEvents::getName(e)`
   for every `e < ProfileEvents::end()`; none of the nine removed names appears);
@@ -799,7 +799,7 @@ Acceptance:
 | `INSERT` of duplicate content | per blob 1 `HEAD`, 1 intent `GET`, no `PUT` |
 | GC per reclaimed blob | at most 5 requests, 2 rounds from "no reference" to the body delete |
 | Wide insert like the stand's (§1) | marker `PUT`s 54,997 → 0; upload thread time and wall time reported against the 2,047 + 1,325 thread-seconds baseline |
-| Round time with synchronous creates, per 1,000 creates, S3 and GCS | reported; the default `gc_round_graduation_budget = 1000` stands if 1,000 creates fit the spec's estimate of about 24 s; otherwise the owner picks the value |
+| The same mass drop (the stand's ~55,000 blobs) with `gc_round_graduation_budget` at 0 (unbounded) and at 5000, S3 and GCS: round time, creates per round, rounds to condemn, insert latency during the rounds | reported for both settings; the default stays 0 unless the unbounded round outlasts the GC lease or slows inserts, then the owner picks the value |
 | Publication hash on a large body | CPU per GiB reported |
 | Standing intents, equal parts dropped and re-inserted within one round | count of extra uploads reported |
 | The tool on a pool like the stand's | requests per step against the §1 migration ledger; wall time; then a duplicated insert: two reads, no upload |
