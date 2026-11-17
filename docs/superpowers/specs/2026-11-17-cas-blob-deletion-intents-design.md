@@ -9,7 +9,8 @@ doc_type: 'reference'
 
 # CAS: blob publication without a birth marker, deletion intents — design {#cas-blob-deletion-intents}
 
-- Date: 2026-11-17. Status: design, not implemented. No test and no model of this design was run.
+- Date: 2026-11-17. Status: design, not implemented. The steady state is model-checked
+  (`M/CaBlobIntentProtocol.tla`, results in `M/CaBlobIntentProtocol_RESULTS.md`); the migration is not. No test was run.
 - Code: worktree `cas-pr1`, commit `a966a374b17`. Every code `path:line` was read there.
 - `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`. `T/` = `src/Disks/tests/`. `M/` =
   `docs/superpowers/models/`. `D/` = `docs/en/antalya/cas/`. `W:` = `CA/Pool/CasPartWriteTxn.cpp`. `G:` =
@@ -30,7 +31,8 @@ doc_type: 'reference'
 1. **No birth marker.** A writer publishes a body with one unconditional `PUT` after its `HEAD`. It writes no `Clean`
    marker. Writers never read or write `.meta`, and never create, change or delete an intent.
 2. **GC warns with immutable intents.** `I(B,t)` is keyed by the body incarnation, has constant bytes, and is created
-   only by GC and the tool, deleted only by GC and `cas-fsck`. It exists only for bodies on their way to deletion.
+   only by GC and the tool, deleted only by GC and `cas-fsck`. It exists only for bodies on their way to deletion and
+   for those the migration covers.
 3. **Write-ahead GC.** A condemned row is committed first, with no intent. A later round whose cut still shows
    in-degree 0 creates the intent; the confirmed create graduates the row. A round after that commit deletes.
 4. **Reuse by three reads.** `HEAD B`, `GET I(B,t)`, `HEAD B`: adopt iff the intent is absent and both `HEAD`s show
@@ -62,12 +64,10 @@ upload thread time and 49 % of all `PUT`s (54,997 of 111,486). It bought 7,029 a
 **Budget**, per blob and writer attempt on the successful uncontended path: first creation one `PUT` and at most 3
 reads; clean reuse reads only; reuse after condemnation at most 2 `PUT`s and 3 reads. The ledger meets it.
 
-**Request ledger.** Counted from the code, not measured. The first columns count protocol operations on the blob key
-and its intent. One publication counts as one `PUT`, whatever its transport: `PutObject`, a multipart upload above
-`max_single_part_upload_size`, `CopyObject`, or a multipart copy above `max_single_operation_copy_size` (both 32 MiB by
-default, `src/IO/S3Defines.h:26`, `:34`). The last column lists requests on other keys: the staging `HEAD` of a
-server-side copy (`S3:1115`, `src/IO/S3/getObjectInfo.cpp:203`) and the staging `GET` of a publication streamed from
-S3 staging (`X:308-332`).
+**Request ledger.** Counted from the code, not measured. One publication counts as one `PUT`, whatever its
+transport: `PutObject`, multipart upload, `CopyObject` or multipart copy (above 32 MiB, `src/IO/S3Defines.h:26`, `:34`).
+The last column lists requests on other keys: the staging `HEAD` of a server-side copy (`S3:1115`,
+`src/IO/S3/getObjectInfo.cpp:203`) and the staging `GET` of a publication streamed from S3 staging (`X:308-332`).
 
 Writer, per blob and attempt, successful and uncontended:
 
@@ -109,20 +109,21 @@ Migration, once per pool ([§7.1](#tool)):
 |---|---|
 | Per `.meta` object | 1 `GET`, 1 `DELETE` (`If-Match`), and 2 keys of a `LIST` page of 1,000 (the body key is listed too) |
 | Per blob with a marker that is not `Clean`, or with a condemned row | 1 `HEAD`; with a body present 1 intent `PUT`; 1 more `GET` when the intent exists (a rerun) |
-| Per run object the adopted seal names | 1 `GET`, 1 `PUT` |
-| Per mount slot | 1 `GET` per observation; 1 `PUT` when it is fenced |
-| Fixed | the catalog, seal, `gc/state`, `gc/hb` and `_pool_meta` reads; one seal `PUT`, one `gc/state` `PUT`, one `_pool_meta` `PUT` |
+| With `--intents-for-all-bodies`, per other body | 1 `HEAD`, 1 intent `PUT` |
+| Per run object the adopted seal names | 1 `GET` |
+| Per mount slot | 1 `GET` per observation and 1 at M7; 1 `PUT` when it is fenced |
+| Fixed | the catalog, seal and `_pool_meta` reads; `gc/state` and `gc/hb` read twice at M2 and once at M7, `gc/state` also at M3; one `gc/state` `PUT`, one `_pool_meta` `PUT` |
 
 Estimate for one table of 62,000 blobs, each with a marker: 124 `LIST` pages, 62,000 `GET`, 62,000 `DELETE`, about
-124,100 requests; plus 2 per condemned blob (1,240 at 1 %) and the runs. Requests per key are independent and run in
-parallel. Duration is not measured.
+124,100 requests; plus 2 per condemned blob (1,240 at 1 %) and the runs; about 248,000 with
+`--intents-for-all-bodies`. Requests per key are independent and run in parallel. Duration is not measured.
 
 ## 2. Objects and formats {#formats}
 
 `G_BLOB_INTENTS = 4`; `G_BUILD` 3 → 4 (`CA/Formats/CasFormat.h:16`). `mount_reader_floor` → 4
 (`CA/Pool/CasPool.h:450`): the generation a pool must already have, not one a mount raises to. Unchanged: the blob
-envelope, manifests, ref logs, the mount slot, the epoch counter. The `.meta` codec (`FormatId::BlobMeta`) stays for
-the tool and `cas-inspect` only. Field validity: [§3.5](#failure-contract).
+envelope, manifests, ref logs, runs and seals, the mount slot, the epoch counter. The `.meta` codec
+(`FormatId::BlobMeta`) stays for the tool and `cas-inspect` only. Field validity: [§3.5](#failure-contract).
 
 ### 2.1 The intent object {#intent-object}
 
@@ -136,13 +137,12 @@ the tool and `cas-inspect` only. Field validity: [§3.5](#failure-contract).
 | Registry | `FormatId::BlobIntent = 26`, type `cas_blob_intent`, `TextFamily::Control`, `CompressionPolicy::PinnedRaw` (bytes are compared), object cap 4 KiB, line cap 1 KiB; change points `{4,4}` (`CA/Formats/CasFormat.cpp`). A later generation must keep accepting this record as a confirmation. |
 | Request class | New `CasNs::BlobIntent` in `classifyCasNs` (`CA/Backend/CasInstrumentedBackend.cpp:119-136`), tested before the blob rule: `CASBlobIntentGet`, `CASBlobIntentPut`, `CASBlobIntentDelete`, `CASBlobIntentList`. |
 
-### 2.2 Pool meta, `gc/state`, runs {#control-formats}
+### 2.2 Pool meta and `gc/state` {#control-formats}
 
 | Object | Change | Written by |
 |---|---|---|
 | `_pool_meta` | `min_reader_generation = 4`. New key `token_dialect` (`etag`, `generation`, `emulated`), present iff the floor is 4, written once in the write that sets the floor. `PoolMeta` carries it, so every read-modify-write keeps it (`CA/Pool/CasPoolMeta.cpp:69-86`). A mount no longer raises the floor: the raise at `CA/Pool/CasPool.cpp:628-640`, `:904` goes | pool creation (`CA/Pool/CasPool.cpp:583-587`); the tool, M8 |
-| `gc/state` | header 4, written with the explicit-version header writer (`CA/Formats/CasTextFormat.h:153`), not the write floor it stamps today (`CA/Formats/CasGcStateFormat.cpp:42`). Fields unchanged. The decoder (`:60`) reports the header generation | every writer of this build: lease bootstrap (`G:5204-5211`), renewal, commit, rebuild; the tool, M7 |
-| `cas_run` | header 4, explicit. Record and packed row unchanged (`CA/Formats/CasRecordStreamFormat.cpp:198-205`, `N:262-290`). In a header-4 run, `pending` means: graduated by G3 on a confirmed intent. `confirmed` is written with `pending` as today and stays unread (`CA/Gc/CasBlobInDegree.h:41-42`) | every fold of this build; the tool, M6 |
+| `gc/state` | header 4, written with the explicit-version header writer (`CA/Formats/CasTextFormat.h:153`), not the write floor it stamps today (`CA/Formats/CasGcStateFormat.cpp:42`). Fields unchanged. The decoder (`:60`) reports the header generation | every writer of this build: lease bootstrap (`G:5204-5211`), renewal, commit, rebuild; the tool, M6. Header 4 is the barrier against an older GC ([§2.3](#gate)) |
 
 ### 2.3 The generation gate {#gate}
 
@@ -151,7 +151,7 @@ the tool and `cas-inspect` only. Field validity: [§3.5](#failure-contract).
 | An older build, `_pool_meta` at floor 4: mount, read-only open, tools | refused at the floor (`CA/Formats/CasPoolMetaFormat.cpp:155-158`) |
 | An older build that still runs, `gc/state` at header 4 | its lease read-modify-write decodes and throws (`G:5214`): no round starts. A round already past that read fails its `If-Match` commit (`G:1326`); its deletes went out before the commit ([§7.4](#late)) |
 | This build, `_pool_meta` below floor 4: writable mount, read-only open, decommission, every tool but `cas-migrate-pool` | refused; the message names the tool ([§7.5](#refusals)) |
-| This build, a `gc/state` or a run below header 4 on a migrated pool | the GC round, the rebuild and the dry run fail. Only deletion of `gc/state` followed by an older bootstrap produces it: unsupported (A9) |
+| This build, a `gc/state` below header 4 on a migrated pool | the GC round, the rebuild and the dry run fail. Only deletion of `gc/state` followed by an older bootstrap produces it: unsupported (A9) |
 | An older build, an intent | its writer and GC never read the prefix; its `cas-inspect` answers `cas-inspect: unrecognized key layout '<key>'` (`CA/Tools/CasInspect.cpp:562`) |
 
 ## 3. Protocol {#protocol}
@@ -187,15 +187,15 @@ One mode. The marker writer (`MW:`), its pool and the phase `meta_pool_wait` (`G
 
 | # | Rule | Replaces |
 |---|---|---|
-| G1 | **Admission.** A round runs on a pool this build opened: generation 4 and the recorded dialect, both checked at the open ([§6.1](#identity)). A `gc/state` or a run it decodes below header 4 fails the round with no request after that read | — |
+| G1 | **Admission.** A round runs on a pool this build opened: generation 4 and the recorded dialect, both checked at the open ([§6.1](#identity)). A `gc/state` it decodes below header 4 fails the round with no request after that read | — |
 | G2 | **Condemn.** Trigger unchanged: a fresh transition to in-degree 0 (`N:637-648`). `HEAD B` (`G:2194`). Present with a token that canonicalises → a non-pending row with the observed token, size and round. Absent, or a token that does not canonicalise → no row. No other request | marker write, `G:2227` |
 | G3 | **Graduate.** For a row an earlier round committed (`condemn_round < current_round`), not pending, with in-degree 0 in this round's cut, when destruction is not suppressed and the budget admits (`N:559-571`): `PUT I(B,t)` with `If-None-Match: *` and the canonical record (`op.create`). Confirmed → the row gets `pending` in this round's run and this round's commit (`G:1326`); nothing is deleted in this round. Not confirmed → the row is carried unchanged, counted, the round continues | marker read, `G:2264-2287`; `N:572-583` |
 | G4 | **Delete.** For a row read with `pending` from the adopted state, after this round's cut showed in-degree 0 (`N:545-557`). (1) `HEAD B`. (2) Absent → `Gone`. Canonical identity equals the row's → `DELETE B If-Match <raw token of this HEAD>` (`op.remove`): `Removed`, `Gone` or `Mismatch`. Another identity → `Mismatch`, no body request. (3) After any answered outcome of (2): delete `I(B,t)` with the write-once verb below; an absent key is success. (4) The row leaves the state only after (2) and (3) both answered. After `Mismatch` it is dropped, not superseded, as today (`G:601-603`) | `G:583-595`; marker delete `G:634-640` |
 | G5 | **A delete job without a usable answer throws.** That is an unanswered or refused `HEAD`, body `DELETE` or intent `DELETE`. The round fails before its commit, the row stays pending (`G:752-762`), and the next round starts again at (1). A body `DELETE` without an answer never leads to the intent `DELETE` | — |
 | G6 | **Spare.** In-degree above 0 (`N:520-543`): the row is dropped. No request. An intent stays where it is | — |
 | G7 | **Supersede.** A touched row at in-degree 0 whose `HEAD` shows another canonical identity `u` (`N:612-631`): the row becomes a candidate for `(B,u)`. A row token that does not canonicalise never equals a live token, so a canonical `u` supersedes it too ([§3.5](#failure-contract)). If the old row was pending: one delete of `I(B,t)` with the write-once verb, best effort; a failure is counted (`CASGCIntentDeleteFailed`). A row that was not pending gets no delete, though `I(B,t)` may exist: the tool made it, a round failed, a pending row was spared, a create landed late. Over a superseded token that intent protects nothing, F3 removes it, and removing it here would cost a request per supersede | `matches` at `N:616` |
-| G8 | **Pending means confirmed.** Only G3 sets `pending`. The tool writes every row it carries over as a candidate ([§7.3](#inherited)), so a pending row in a header-4 run always had its intent confirmed by this build | — |
-| G9 | **Never.** GC never deletes an intent on a spare, never derives a row from an intent, never reads or writes `.meta` | — |
+| G8 | **Pending means confirmed.** A pending row's intent was confirmed: by G3 of this build, or, for a row committed before the migration, by M5 for the token current at that read ([§7.3](#inherited)). Either way the delete waits for a cut of this build at in-degree 0 (G4) | — |
+| G9 | **Never.** GC never deletes an intent on a spare and never reads or writes `.meta`. A round derives no row from an intent; the rebuild does ([§3.4](#recovery)) | — |
 | G10 | **Reads go to the store.** The `HEAD`s of G2 and G7 are sent in this round, after its lease (`G:787`); a read-ahead `HEAD` of the same round qualifies. The `HEAD` of G4 is sent after the cut. No cache answers them | — |
 
 **G3: what confirms.** The gate consumes the result of its own create:
@@ -244,7 +244,12 @@ classes and list `blob-intents/` beside `blobs/` (`CA/Tools/CasFsck.cpp:892-913`
 | Dies after the intent `DELETE`, before the commit | row pending | next round: `HEAD` absent, intent `DELETE` finds no key, row dropped |
 | A create lands after its row left the state | a row-less intent | over a live body it costs one upload and stays until `t` is gone; F3 removes it once it is stale |
 | Writer dies after its `PUT` | a body, its precommit edge abandoned | the next writer adopts it; GC condemns it when the edge is removed |
-| `SYSTEM CAS GC REBUILD`, `cas-gc-rebuild` | no condemned row (`G:4762-4765`) | intents stand. No candidate is recovered from an intent: it proves a past condemnation, not zero references now |
+| `SYSTEM CAS GC REBUILD`, `cas-gc-rebuild` | no condemned row from the fold (`G:4762-4765`); intents stand | after its fold the rebuild lists `blob-intents/` and sends `HEAD B` per intent. An intent whose identity equals the body's, at rebuilt in-degree 0, yields a candidate row for that token. G3 confirms it on the intent as the equal occupant; the delete still needs the commit, a later cut and the `HEAD` of G4. Any other intent is left to F3 |
+
+**Rows from intents.** An intent read over the current body is the confirmation G3 would get, so a candidate derived
+from it is safe. Only the rebuild derives rows so; `cas-fsck` reports the observation as `intent_current`. A round
+derives none: its trigger is a fresh transition to zero (G2), and a `LIST` per round costs requests for nothing.
+The tool derives none either: it makes intents from rows and markers.
 
 ### 3.5 Failure contract {#failure-contract}
 
@@ -253,8 +258,8 @@ Request failures: with each rule. Generations: [§2.3](#gate). Refusal texts: [�
 | Field | Valid | Missing | Unknown or malformed |
 |---|---|---|---|
 | `_pool_meta.token_dialect` | `etag`, `generation`, `emulated`; present iff the floor is 4 | at floor 4: decode fails, `CORRUPTED_DATA` | unknown word: `UNKNOWN_FORMAT_VERSION`. Present below floor 4: `CORRUPTED_DATA` |
-| A token that does not canonicalise, in GC | — | — | It justifies no request, and ends the row unless G7 supersedes it. From the `HEAD` of G2: no row. From the `HEAD` of G7: no new row; the old row is dropped and its intent stays. As the own token of a row the tool carried over: the row equals no live token. If the G7 `HEAD` of this round shows a canonical `u`, G7 applies and the row becomes a candidate `(B,u)`, with no intent delete. Otherwise the row is dropped. From the `HEAD` of G4: no body delete, no intent delete, the row is dropped. Counted (`CASGCIntentTokenRejected`), one ERROR per round. GC never deletes such a body ([§8.2](#residuals)). Writer: W3, W5. `cas-fsck`: F2. The tool: no intent ([§7.1](#tool), M5) |
-| Intent object bytes | the canonical record | — | other bytes at an intent key. Writer: an intent (W4 → W6). GC and the tool: not a confirmation; GC carries the row (`CASGCIntentUnconfirmedCarry`, one ERROR per round), the tool fails. `cas-fsck`: `intent_malformed`, never deleted |
+| A token that does not canonicalise, in GC | — | — | It justifies no request, and ends the row unless G7 supersedes it. From the `HEAD` of G2: no row. From the `HEAD` of G7: no new row; the old row is dropped and its intent stays. As the own token of an inherited row: the row equals no live token. If the G7 `HEAD` of this round shows a canonical `u`, G7 applies and the row becomes a candidate `(B,u)`, with no intent delete. Otherwise the row is dropped. From the `HEAD` of G4: no body delete, no intent delete, the row is dropped. Counted (`CASGCIntentTokenRejected`), one ERROR per round. GC never deletes such a body ([§8.2](#residuals)). Writer: W3, W5. `cas-fsck`: F2. The tool: no intent ([§7.1](#tool), M5) |
+| Intent object bytes | the canonical record | — | other bytes at an intent key. Writer: an intent (W4 → W6). GC and the tool: not a confirmation, and the rebuild derives no row; GC carries the row (`CASGCIntentUnconfirmedCarry`, one ERROR per round), the tool fails. `cas-fsck`: `intent_malformed`, never deleted |
 
 ## 4. Invariants and the safety argument {#safety}
 
@@ -266,20 +271,20 @@ Request failures: with each rule. Generations: [§2.3](#gate). Refusal texts: [�
 | I2 | **Content.** Every body ever at `B` has the pool's envelope length and the payload that hashes to `B` | [§6.2](#source-check), A6 |
 | I3 | **Edge before observe.** A writer's edge on `B` is durable before its first `HEAD B`; it commits only while that precommit is the live owner | W1; `W:965-970` |
 | I4 | **Intent permanence.** A delete of `I(B,t)` is sent only on evidence that `t` is gone from `B`: an answered observation that `B` is absent or has another canonical identity, or an answered `Removed` of that exact incarnation. That evidence is later than evidence that `t` had been current: the committed row (G4, G7) or the intent read first (F2). So while `t` is current, no such request was ever sent, and an existing `I(B,t)` stays | G4, G6, G7, G9, F3; the tool deletes no intent; I1; A2 (the observation is not stale); A5 |
-| I5 | **Delete evidence.** Every `DELETE B If-Match t` this build sends follows, in this order: a confirmation that `I(B,t)` exists; the commit of the pending row; a complete cut, taken from that committed state, with in-degree 0; a `HEAD B` that shows `t` | G3, G4, G8; `frontier_complete`, `G:3548-3551` |
+| I5 | **Delete evidence.** Every `DELETE B If-Match t` this build sends follows: a confirmation that `I(B,t)` exists and the commit of the pending row; then a complete cut with in-degree 0, taken by a later round of this build; then a `HEAD B` that shows `t`. The confirmation is G3's, committed after it; for a row committed before the migration it is M5's, and the cut is after the migration | G3, G4, G8, M5; the pending branch of `settleEntry` runs only at in-degree 0 of this round's merge (`N:520-557`); `frontier_complete`, `G:3548-3551` |
 | I6 | **Adoption.** A writer records an adoption only after W4 answered 404 and W5 showed the identity of W2 | W3 to W5, W8 |
-| I7 | **Inherited authority.** No writer of this build runs before the floor is raised. At that write, `I(B,t)` exists for every `t` that is current at its key and that a delete sent by an older build can still name, outside the residual R1 of [§7.4](#late) | the order M5 before M8; [§7.4](#late) |
-| I8 | **Goal.** A committed ref never names a blob key with no body | [§4.2](#argument) |
+| I7 | **Inherited authority.** No writer of this build runs before the floor is raised. At that write, `I(B,t)` exists for every `t` that is current at its key and that a delete sent by an older build can still name, outside R1 of [§7.4](#late). It protects reuse of `t`, not a ref that already names `t` (R3) | the order M5 before M8; [§7.4](#late) |
+| I8 | **Goal.** Every ref this build commits by observation names a body protected by this protocol; a ref copied without observation is as safe as its source. Outside the residuals of [§8.2](#residuals), a committed ref never names a blob key with no body | [§4.2](#argument) |
 
 ### 4.2 The argument {#argument}
 
 **Adoption.** Writer `W` of this build: edge at `Te`, W2 sees `t` at `T1`, W4 answers 404 at `T2`, W5 sees `t` at
 `T3`. By I1, `t` was current during `[T1, T3]`. Suppose a delete removes `t` at `Td > T3`.
 
-1. **This build sent it.** By I5 the delete has a confirmation at `Tc`, a commit `K` and a cut `C`, `Tc < K < C < Td`.
+1. **This build sent it.** By I5 the delete has a confirmation at `Tc` and a cut `C` of this build, `Tc < C < Td`.
    The row's token was observed at its condemn `HEAD`, so by I1 `t` was current from then to `Td`. By I4 the intent
    exists during `[Tc, Td)`. `W` read it absent at `T2 < Td`, so `T2 < Tc`. By W8, `Te < T2`. So
-   `Te < T2 < Tc < K < C`: the edge is durable before the cut. A complete cut counts it and the row is spared:
+   `Te < T2 < Tc < C`: the edge is durable before the cut. A complete cut counts it and the row is spared:
    contradiction. If the edge was removed before `C`, `W` cannot commit (I3).
 2. **An older build sent it**, before the migration. By I7 the intent existed before `W` ran, and by I4 it stays while
    `t` is current. W4 could not answer 404: contradiction, outside R1.
@@ -291,7 +296,9 @@ condition is exact. **Cleanup.** A delete of `I(B,t)` is sent only when `t` is g
 at any time.
 
 **No-bytes references.** `adoptEvidence` (`W:572-587`; callers `X:260`, `X:1262`, `CA/Parts/PartFolderAccess.cpp:457`)
-adds an edge with no request. It needs a live source edge, which the cut counts. Unchanged by this design.
+adds an edge with no request. It needs a live source edge, which the cut counts, so this build never deletes under
+it. Against an older delete already in flight the copy is exactly as safe as its source (R3 of [§7.4](#late)): the
+intent protects reuse through W2 to W5, not a reference that already exists.
 
 **Where evidence must be positive, where absence is accepted:**
 
@@ -300,7 +307,7 @@ adds an edge with no request. It needs a live source edge, which the cut counts.
 | Graduation | positive: the create answered, or an equal occupant read | an unanswered create may never land; then nothing warns the writer |
 | Intent absent at W4 | absence, an answered 404 only | sound by I4 and the second `HEAD`; a failed read is not absence |
 | Body absent at W2, G2, G4, F2, M5 | absence, an answered 404 only | each leads to an action that is safe if a body appears later: publish, no row, intent cleanup under I1, no intent |
-| A `LIST` | nominates intents (F1), markers and mount slots ([§7.4](#late)) only (decision-2) | a missing key delays cleanup or leaves debris; it never authorizes a body delete |
+| A `LIST` | nominates intents (F1), candidate rows in the rebuild ([§3.4](#recovery)), markers and mount slots ([§7.4](#late)) only (decision-2) | a missing key delays cleanup, leaks bytes or leaves debris; it never authorizes a body delete |
 
 ### 4.3 Schedules each rule defeats {#schedules}
 
@@ -316,22 +323,22 @@ adds an edge with no request. It needs a live source edge, which the cut counts.
 | S8 | **Spelling.** GC confirms `I(B,t)`. A later `HEAD` renders the same incarnation with other quoting. A textual compare reads "replaced", cleanup deletes a live intent | [§6.1](#identity): one identity for every comparison |
 | S9 | **Ambiguous body delete.** The delete is unanswered and not applied; GC removes the intent; a writer adopts; a reissued delete lands | G5 |
 | S10 | **Cleanup in another dialect.** GC confirms `I(B,t)`, commits pending, takes its delete cut. A cleanup client configured for another dialect reads the intent, then `HEAD B`: the same body renders as another identity. It calls the intent stale and deletes it. A writer adds its edge, reads no intent, adopts; the delete lands | the dialect rule of [§6.1](#identity) |
-| S12 | **A stale read.** G7 or F2 takes the identity at `B` from a cache that shows `u` while `t` is current, and deletes a live intent. Or W4 takes a 404 from a request sent before the writer's edge, and GC confirmed in between | W8, G10, F2 |
-| S13 | **Floor before intents.** The floor is raised while a body under older delete authority has no intent. A writer of this build adopts it; the older delete lands | [§7.1](#tool): M5 before M8 |
-| S14 | **Inherited row executed.** A pending row of the older GC is deleted by this build on its old confirmation, and the tool's create for it was sent but never applied | G8, [§7.3](#inherited): the row is a candidate; G3 confirms itself |
+| S11 | **A stale read.** G7 or F2 takes the identity at `B` from a cache that shows `u` while `t` is current, and deletes a live intent. Or W4 takes a 404 from a request sent before the writer's edge, and GC confirmed in between | W8, G10, F2 |
+| S12 | **Floor before intents.** The floor is raised while a body under older delete authority has no intent. A writer of this build adopts it; the older delete lands | [§7.1](#tool): M5 before M8 |
+| S13 | **Inherited row with no intent.** The tool's create for an inherited pending row is sent and never applied. The floor is raised; a writer reads no intent and adopts; the first round at in-degree 0 deletes | M5: a create that is not confirmed fails the run before M8 |
 
 ## 5. Assumptions and the contract with the store {#assumptions}
 
 | # | Assumption | What provides it | What stays assumed |
 |---|---|---|---|
 | A1 | A body token never recurs at a key | One publication call site, `W:509` through `Q:780`. Streaming: a fresh 128-bit tag per attempt (`W:326`, `:497`), one send (`W:299`, `B:894-900`). Verbatim copy: the staging tag is minted once (`X:797`), and the copy happens at most once per staging object because hardlink copies share the flag (`CA/ContentAddressedTransaction.h:162-165`, `X:252`, `:300`; `CA/Pool/CasPartWriteTxn.h:26-38`). Generation dialect: the store's own counter | No transport reissue after a request may have been applied (redirect, re-sign, reconnect). The store applies one request at most once. Random tags do not collide. A generation is never reused. A removed delete marker on a versioned bucket is external manipulation. The `emulated` dialect over local files (tests, single-node development): its token is the file mtime in nanoseconds plus an in-process counter dropped 2 s later (`B:400`, `:457`, `:578`), so a delete and a re-create inside one mtime tick can repeat a token. The contract comment that calls these tokens a never-reused sequence (`CA/Backend/CasBackend.h:135-136`) holds for the in-memory backend only and is corrected with the implementation |
-| A2 | Reads are linearizable per key: a `HEAD` or `GET` sent after a write was applied reflects it, for every client, whether or not the writer got an answer. Safety needs it at: the adoption reads W2, W4, W5; the delete-site `HEAD` of G4, the supersede `HEAD` of G7 and the body `HEAD` of F2, where an absent or other-identity answer authorizes an intent delete (I4); the tool's reads M2 to M5 | the store; W8, G10 and F2 keep caches and earlier requests out | proxies and caches between a server and the store |
+| A2 | Reads are linearizable per key: a `HEAD` or `GET` sent after a write was applied reflects it, for every client, whether or not the writer got an answer. Safety needs it at: the adoption reads W2, W4, W5; the delete-site `HEAD` of G4, the supersede `HEAD` of G7 and the body `HEAD` of F2, where an absent or other-identity answer authorizes an intent delete (I4); the tool's reads M2 to M5 and M7 | the store; W8, G10 and F2 keep caches and earlier requests out | proxies and caches between a server and the store |
 | A3 | A conditional delete removes only the named incarnation | the capability probe (`CA/Backend/CasProbe.cpp:47`); contract at `CA/Backend/CasBackend.h:120-139` | the probe samples; it does not certify non-recurrence (`:137-139`) |
 | A4 | The size and the token of one `HEAD` describe one incarnation | the store | a proxy that mixes two responses |
 | A5 | One token dialect and one spelling per pool, across clients | `token_dialect` in `_pool_meta`, checked at every open ([§6.1](#identity)); canonical identity | two clients that render one tag with different bytes beyond the quote pair |
 | A6 | A staging object holds the bytes hashed at staging | the staging key is 32 random characters under the writer's epoch (`X:950`), written once, known to one transaction | corruption inside the store; hash collisions |
 | A7 | Cuts are complete: every live or precommit edge is in a cut that authorizes a delete | `frontier_complete` suppresses destruction otherwise (`G:3548-3551`) | unchanged, not re-proved here |
-| A8 | No older build works on a migrated pool | operator precondition: every older process is stopped before the tool runs. The floor, the `gc/state` header and the fences of M2 enforce and diagnose | a suspended older process: R2 of [§7.4](#late) |
+| A8 | No older build works on a migrated pool | operator precondition: every older process is stopped before the tool runs. The floor and the `gc/state` header enforce; M2, M7 and the fences diagnose | a suspended older process, one started inside M7's window: R2, R4 of [§7.4](#late) |
 | A9 | Control objects are not deleted, rolled back or copied between pools | — | external manipulation is unsupported. A deleted `gc/state` lets a late older bootstrap create one below header 4, which this build refuses ([§2.3](#gate)) |
 
 This dependence is a shipping contract. A store whose tokens can recur must not host a pool under this protocol.
@@ -374,58 +381,70 @@ One-time, offline, upward only, in place. Existing bodies are adopted by the ord
 
 ### 7.1 The tool {#tool}
 
-`clickhouse-disks cas-migrate-pool [--grace-seconds N] [--dry-run]`, on a disk configured read-only like the other
-offline tools (`programs/disks/CommandCaGcRebuild.cpp:55-59`). It is the only code of this build that opens a pool
-below generation 4 (`Pool::openForMigration`): no mount, no slot of its own, no writer, no GC. The operator stops
-every server and tool of the pool, runs it, then starts the servers on this build.
+`clickhouse-disks cas-migrate-pool [--grace-seconds N] [--intents-for-all-bodies] [--dry-run]`, on a disk configured
+read-only like the other offline tools (`programs/disks/CommandCaGcRebuild.cpp:55-59`). It is the only code of this
+build that opens a pool below generation 4 (`Pool::openForMigration`): no mount, no slot of its own, no writer, no GC.
+The operator stops every server and tool of the pool, runs it, then starts the servers on this build.
 
 | # | Step | Writes | Refuses or fails when |
 |---|---|---|---|
-| M1 | **Check.** Decode `_pool_meta`. Floor 4 with this backend's dialect → go to M9. Run the capability probe unless `skip_access_check` | probe scratch keys | floor below 3 (Q3); floor 4 with another dialect; pool prefix too long ([§2.1](#intent-object)); probe failure |
-| M2 | **No live member.** Slots: every key under `gc/server-roots/` (one `LIST`) and the slot of every server root the catalog names (exact `GET`). A terminal slot passes: a farewell or `gc_fenced` (`SR:489-505`). Any other slot is watched on the tool's own clock for `mountObservationThresholdMs` (`SR:382-387`), then fenced with the incarnation-guarded replace GC uses for a dead mount (`SR:425-466`). GC: the lease pair of `gc/state` and the pair of `gc/hb` are read first. Then the grace interval (default 120 s, one request window, `CA/Backend/CasRequestBudget.h:9`), then every slot and both pairs are read again | fences | a slot token changed, a fence met a conflict, a slot does not decode: names the `server_root_id`. A GC pair moved: names the lease owner |
+| M1 | **Check.** Decode `_pool_meta`. Floor 4 with this backend's dialect → go to M9. Run the capability probe unless `skip_access_check` or `--dry-run` | probe scratch keys | floor below 3 (Q3); floor 4 with another dialect; pool prefix too long ([§2.1](#intent-object)); probe failure |
+| M2 | **No live member.** Slots: every key under `gc/server-roots/` (one `LIST`) and the slot of every server root the catalog names (exact `GET`). A terminal slot passes: a farewell or `gc_fenced` (`SR:489-505`). Any other slot is watched on the tool's own clock for `mountObservationThresholdMs` (`SR:382-387`), with the disk's `mount_lease_ttl_ms` as the observer lease and the tool's poll step as the cadence, then fenced with the incarnation-guarded replace GC uses for a dead mount (`SR:425-466`). GC: the lease pair of `gc/state` and the pair of `gc/hb` are read first. Then the grace interval, then every slot and both pairs are read again | fences | a slot token changed, a fence met a conflict, a slot does not decode: names the `server_root_id`. A GC pair moved: names the lease owner |
 | M3 | **Read the GC state.** `gc/state` with its token `e0`, the seal it names, every run the seal names. Collect every condemned row, candidate or pending | — | a read fails |
 | M4 | **Read the markers.** `LIST` of `blobs/`; exact `GET` of every `.meta` key. Class: `Clean`, or not `Clean` (`Condemned`, or a body that does not decode) | — | a `GET` is refused or unanswered |
-| M5 | **Convert.** For every blob with a marker that is not `Clean` or with a condemned row: `HEAD B`. Absent, or a token that does not canonicalise → nothing: such a body is never adopted (W3). Else `PUT I(B,t)` with `If-None-Match` for the current `t`, confirmed by the table of G3 | intents | a create is not confirmed |
-| M6 | **Demote.** Under a GC generation above every `gc/gen/` prefix (the rebuild's numbering, `G:4729-4752`): a copy of every run with header 4 and every condemned row written as a candidate (`pending` and `confirmed` false; token, size and round as read), and a seal equal to the adopted one except for the run references and the recomputed condemned summary (`CA/Formats/CasFoldSealFormat.h:176-178`). No row is dropped. A pool whose GC never folded has no seal and M6 writes nothing | runs, seal, not yet adopted | a write fails |
-| M7 | **Adopt.** Replace `gc/state` with `If-Match e0`: header 4, the new seal's generation and attempt, every other field as read. No `gc/state` at M3: create it with `If-None-Match`, header 4, lease owner 0, `gc_shards` from `_pool_meta` | `gc/state` | a conflict: the run restarts at M2 |
+| M5 | **Convert.** For every blob with a marker that is not `Clean` or with a condemned row, and with `--intents-for-all-bodies` for every body M4 listed: `HEAD B`. Absent, or a token that does not canonicalise → nothing: such a body is never adopted (W3). Else `PUT I(B,t)` with `If-None-Match` for the current `t`, confirmed by the table of G3. So every inherited pending row whose body is still its token has a confirmed intent, or the run fails | intents | a create is not confirmed |
+| M6 | **Fence the older GC.** Replace `gc/state` with `If-Match e0`: header 4, every field as read. No `gc/state` at M3: create it with `If-None-Match`, header 4, lease owner 0, `gc_shards` from `_pool_meta` | `gc/state` | a conflict: the run restarts at M2 |
+| M7 | **Check again.** Immediately before M8: read every slot (the `LIST` and the catalog reads of M2) and both GC pairs again. `gc/state` must still have the token M6 wrote (on a rerun that skipped M6, the token M3 read) and the lease pair M2 saw, `gc/hb` its pair, every slot the token M2 left | — | anything moved, or a slot that is not terminal appeared: an older member started during the run. Names it. The operator stops that server and runs the tool again |
 | M8 | **Raise the floor.** Read-modify-write of `_pool_meta`: `min_reader_generation = 4` and `token_dialect`. **Completion mark** | `_pool_meta` | the body it reads has floor 4 with another dialect |
 | M9 | **Remove markers.** Delete every `.meta` read at M4 with `If-Match` the token of that read (`deleteMetaExact`, `CA/Pool/CasBlobMeta.cpp:42`). One that changed since is left to F4. On a rerun of a migrated pool: the code of F4 | deletes | a delete is refused or unanswered: rerun |
 
-- **Order:** M2 before every read; M5 confirmed before M6; M7 after M6; M8 last of the protocol writes; M9 only after
-  M8. So the tool destroys nothing before the pool is migrated. It prints the counts of each step, then
-  `migration complete`. `--dry-run` runs M1, the read-only slot scan (`probeNonTerminalMountSlots`, `SR:505`), M3 and
-  M4, and writes nothing.
-- **The lease after M7.** `gc/state` keeps the dead leader's pair, or owner 0. The background loop of the first member
+- **Order:** M2 before M3 to M5; M5 confirmed before M6; M7 after M6 and right before M8; M8 last of the protocol
+  writes; M9 only after M8. So the tool deletes nothing before the pool is migrated. It prints the counts of each
+  step, then `migration complete`. `--dry-run` runs M1 without the probe, the read-only slot scan
+  (`probeNonTerminalMountSlots`, `SR:505`), M3 and M4, and writes nothing.
+- **The lease after M6.** `gc/state` keeps the dead leader's pair, or owner 0. The background loop of the first member
   takes it after its two observations, as from any stalled leader (`G:5244-5268`); a manual round before is refused.
+- **The grace interval is a heuristic.** `--grace-seconds`, default 120 s, the default `request_window_ms`
+  (`CA/ContentAddressedSettings.cpp:90`). It detects a live GC leader only if it exceeds the `gc/hb` cadence,
+  `gc_interval_sec / 4` (`CA/Gc/CasGcScheduler.h:209`); set it to at least twice that. It does not bound when the
+  store applies a request, nor an older member's own request window, which is configurable.
+- **`--intents-for-all-bodies`**, off by default. It blocks reuse of every current incarnation M4 enumerates, so no
+  older delete can hit a body adopted after the migration. It does not cover a ref that already exists (R3), a token
+  that reappears after the scan (case (e)), or a body the listing omits (case (d)). Cost: about twice the tool's
+  requests; one upload per old blob on its first reuse; up to one stale intent per blob for F3. Use it on a pool that
+  ran a 26.6.x GC (case (a)) or whose `gc/state` was rebuilt. The default leaves it off: it pays for R1, which needs a
+  marker anomaly and a delete applied after the whole offline window, and leaves R2 and R4 open.
 
 ### 7.2 Restart and completion {#restart}
 
 | Crash | Pool state | Next |
 |---|---|---|
-| Before M7 | still generation 3. Added: fences, intents, an unadopted GC generation. An older build mounts and works as before: it reads none of them, and a fence is what its own GC writes for a dead mount. This build refuses | rerun, from M1. The unadopted generation is debris, as a deposed leader's attempt is |
-| After M7, before M8 | `gc/state` at header 4, floor 3. No older GC round can start. An older build can still mount and write; this build refuses | rerun only. M6 and M7 are skipped when `gc/state` already has header 4: the run that wrote it had finished M5 |
+| Before M6 | still generation 3. Added: fences, intents. An older build mounts and works as before: it reads neither, and a fence is what its own GC writes for a dead mount. This build refuses | rerun, from M1 |
+| After M6, before M8 | `gc/state` at header 4, floor 3. No older GC round can start, so an older build that mounts writes and never reclaims; this build refuses | rerun only. M6 is skipped when `gc/state` already has header 4: the run that wrote it had finished M5 |
 | After M8 | migrated. Markers may remain: debris | rerun, or `cas-fsck --fix legacy-markers` |
 
-- **Point of no return:** M7 for GC, M8 for mounts. Nothing this design supports leads back from M7.
+- **Points of no return, in order.** M6: from then on an older build's GC is refused, so the pool cannot go back to
+  the older build with reclamation. M8: an older build is refused at every open. Nothing this design supports leads
+  back from either.
 - **A rerun repeats M2 to M5** against what it reads. Every write is a create-if-absent, a conditional replace or a
   read-modify-write that decides on the current body, so a step that landed is not repeated, and two runs at once
-  converge: the loser of M7 restarts and skips to M8. A run with another dialect that loses M8 is refused; F3 removes
-  the intents it made.
+  converge: the loser of M6 restarts and then skips M6. A run with another dialect that loses M8 is refused; F3
+  removes the intents it made.
 
 ### 7.3 Inherited state {#inherited}
 
 | Object at migration | After the migration |
 |---|---|
 | Body with a `Clean` marker or none, no row | adopted by W2 to W5 |
-| Candidate row | carried. G3 creates, meets the tool's intent as the equal occupant, confirms |
-| Pending row | carried as a candidate; the same. Deleted no earlier than the second round of this build |
+| Candidate row | carried as it is. G3 creates, meets the tool's intent as the equal occupant, confirms |
+| Pending row | carried as it is. M5 confirmed `I(B,t)` for the token current at its `HEAD`. The first round of this build whose cut shows in-degree 0 deletes it (G4). A body replaced since gives `Mismatch` |
 | Marker that is not `Clean`, no row (a spare, a rebuild) | an intent with no row. The next writer of that content uploads once; F3 removes the intent when it is stale |
 | Every marker | deleted at M9 |
 
-**Why candidates.** Dropping the rows would leak the bodies: GC makes a row only on a fresh transition to in-degree 0
-(`N:637-648`), which a body already at zero does not have again. Keeping rows pending would let a delete run on a
-confirmation and a cut from before the migration. A candidate is deleted only after G3 of this build confirmed the
-intent itself and a later round took its cut (I5). Cost: one round of delay; per row one refused create and one `GET`.
+Rows are kept because dropping them would leak the bodies: GC makes a row only on a fresh transition to in-degree 0
+(`N:637-648`), which a body already at zero does not have again. A pending row needs no rewrite: `settleEntry` reaches
+its pending branch only when the merge of this round gives in-degree 0 (`N:520-557`), so the cut is always one of this
+build, and the confirmation is M5's (I5).
 
 ### 7.4 Requests that land after the members stopped {#late}
 
@@ -434,15 +453,13 @@ applied (`D/operations/debugging.md:306`).
 
 | Late request of an older build | Lands as | Outcome |
 |---|---|---|
-| GC `DELETE B If-Match t` | removes `t` if it is still current | Safe where `I(B,t)` exists before the first writer of this build (I7): no such writer adopts `t` (W4), the intent stays while `t` is current (I4), so every ref this build commits on `B` names a later body. Refs older builds made are judged by the marker protocol's own argument, unchanged. Coverage: below |
+| GC `DELETE B If-Match t` | removes `t` if it is still current | Where `I(B,t)` exists before the first writer of this build (I7), no such writer adopts `t` (W4), and the intent stays while `t` is current (I4). It does not protect a ref that already names `t`, nor a copy of that ref made with no request: R3. Coverage: below |
 | Writer marker write: the `Clean` create or the `Condemned` to `Clean` swap (`W:352-404`) | a `.meta` object, or refused | nothing reads `.meta`: debris for F4. Before M4's read of that key it turns a marker `Clean`: case (b) |
-| Writer body `PUT` | a new incarnation `u`, if A1 held in that build; else case (e) | no authority names `u`: that needs two committed older rounds after `u` appeared, and none commits after M7. An intent M5 made for the replaced token is stale. With no edge left it is the late body of [§8.2](#residuals) |
+| Writer body `PUT` | a new incarnation `u`, if A1 held in that build; else case (e) | no authority names `u`: that needs two committed older rounds after `u` appeared, and none commits after M6. An intent M5 made for the replaced token is stale. With no edge left it is the late body of [§8.2](#residuals) |
 | GC marker write or delete (`MW:45-51`, `:57-63`) | a `.meta` object, or its removal | only a committed pending row authorizes a delete; a marker does not. Debris |
-| GC `gc/state` commit or lease write (`G:1326`, `G:5194`) | refused | `If-Match` a token older than M7's write. Header-4 bytes never equal an older body, so a content-derived token cannot recur. Landing before M7 it makes M7 conflict, and the run restarts. A late bootstrap create finds the key present |
-| GC run, seal and outcome objects | objects of an attempt nobody adopted | invisible, as a deposed leader's are today |
-| Slot renewal or farewell | refused on a fenced slot; before the fence, a token change | the tool reads it as a live member and refuses |
+| GC `gc/state` commit or lease write (`G:1326`, `G:5194`) | refused | `If-Match` a token older than M6's write. Header-4 bytes never equal an older body, so a content-derived token cannot recur. Landing before M6 it makes M6 conflict, and the run restarts. A late bootstrap create finds the key present |
+| Slot renewal or farewell | refused on a fenced slot; before the fence, a token change | M2 or M7 reads it as a live member and refuses |
 | `_pool_meta` read-modify-write | refused, or absorbed | conditional; M8 decides on the body it reads |
-| Ref log, catalog and checkpoint writes | as today | formats and rules unchanged by this design |
 
 **Which tokens a late delete can name.** Only the token of a row read with `pending` from a committed state
 (`N:545-557`, `G:583-595`). A build with the graduation gate set `pending` only after it read a `Condemned` marker
@@ -457,36 +474,38 @@ Five cases defeat that. In (a) to (d) the marker is not `Condemned` while `t` is
 | # | Case |
 |---|---|
 | (a) | The pool ran a 26.6.x GC: a marker delete it sent can remove a marker GC relies on, and the rows it scheduled are deleted without a fresh marker read (`D/operations/debugging.md:305-307`) |
-| (b) | A writer's `Clean` over a condemned body, written after the graduation read: a conditional `Clean` applied late on a store with content-derived tokens, or the reconcile of the writer that published `t` itself. Both are accepted residuals of the marker protocol |
+| (b) | A writer's `Clean` over a condemned body, written after the graduation read by `reconcileMetaClean` (`W:352-404`), whose read-modify-write fallback writes `Clean` over any marker that is not `Clean`: applied late on a store with content-derived tokens, or by the writer that published `t` itself. Both are accepted residuals of the marker protocol |
 | (c) | A marker delete of an earlier incarnation that lands after `gc/state` was rebuilt at a lower round: the guard compares rounds (`MW:54-63`) |
 | (d) | The `LIST` of M4 did not return the marker |
 | (e) | The token recurred: an older build without the once-only staged copy (`CA/ContentAddressedTransaction.h:162-165`) copied one staging object twice, and the second copy lands late over a newer body |
 
 - **R1, a late delete with no intent.** In (a) to (d) a row that is still committed yields the intent, so the tool
-  misses `t` only if no committed row names `B` any more (a spare, a rebuild); in (e) it misses `t` always. The miss
-  matters only while a delete of `t` sent by a stopped leader is still in flight: a writer of this build can then
-  adopt `t` and the delete can remove it. The result is a committed ref with no body, which `cas-fsck` reports.
-- **What the grace interval gives.** A delete that lands before M5's `HEAD` of its key is seen: the body is absent.
-  One that lands before a writer of this build adopts is harmless: that writer sees no body or another token. Only a
-  request delayed past M2, the tool's run and the restart can hurt, and only under R1. The interval outlasts a
-  client's own reissue window; it does not bound a store or a proxy that applies a request later.
+  misses `t` only if no committed row names `B` any more (a spare, a rebuild); in (e) it misses `t` unless M5 observed
+  `t` itself. The miss matters only while a delete of `t` sent by a stopped leader is still in flight: a writer of
+  this build can then adopt `t` and the delete can remove it. The result is a committed ref with no body, which
+  `cas-fsck` reports.
+- **R3, an inherited reference.** A ref committed under the older protocol whose body is under an outstanding older
+  delete stays exposed after the migration, for example after case (b) let an older writer adopt `t`. A ref this
+  build copies from it with no request (hardlink, relink fetch: `adoptEvidence`) inherits the exposure. The intent
+  blocks reuse of `t`, not these refs. The migration neither creates nor repairs the exposure.
+- **R4, an older server started during the migration.** M2 and M7 see its slot and refuse. Not covered: a server
+  whose mount reads `_pool_meta` before M8 and claims its slot after M7's read. It then runs as the third row of the
+  table below.
 - **`LIST`.** The tool lists `blobs/` and `gc/server-roots/` on a pool with no member, the one listing this project
   lets nominate. Every marker is then read by exact key, and M9 deletes objects no actor reads. A missed `Clean`
-  marker is debris; a missed marker that is not `Clean` is case (d); a missed slot is a member not checked, and the
-  catalog reads cover every root that owns a namespace.
+  marker is debris; a missed marker that is not `Clean` is case (d). A missed slot is a member not checked: the catalog
+  reads cover every root that owns a namespace, and only the listing sees a root that owns none.
 
-**R2, a member that was suspended, not stopped.** M2 checks renewals, not processes.
+**R2, a member that was suspended, not stopped.** M2 and M7 check renewals, not processes.
 
-| State when suspended | After it resumes | It stops at |
+| Suspended | What it can still send after the migration | What stops it, and when |
 |---|---|---|
-| Mounted writer | its mount plane checks the lease on its own boot clock before every attempt (`CA/Pool/CasMountRuntime.cpp:156-170`), so after a pause longer than the lease it starts nothing. A request admitted before the pause still goes out: a late request of the table above | its next renewal, refused on the fenced slot (`SR:461-463`). Its remount reads `_pool_meta` at floor 4 and stays down (`CA/Pool/CasPool.cpp:142-166`) |
-| The same, on a host whose boot clock stood still | it runs the marker writer until that renewal: it publishes bodies with `Clean` markers and adopts any body that has one (`W:452`) | the same |
-| GC leader inside a round | its body deletes go out with no lease check (`G:710`): late deletes, as above. Its commit is refused | its next lease read (`G:5214`). The scheduler keeps ticking and failing (`CA/Gc/CasGcScheduler.cpp:396-397`) |
-| Inside its mount sequence, after its `_pool_meta` read | it claims its slot, which a fence leaves reclaimable by the same server (`SR:464-466`), and works as a mounted marker writer with a live lease. It does not read `_pool_meta` again (`CA/Pool/CasPool.cpp:630-631`) | nothing in the store. Only its GC fails |
+| Mounted writer | requests admitted before the pause: late requests of the table above. Its mount plane checks the lease on its own boot clock before every attempt (`CA/Pool/CasMountRuntime.cpp:156-170`), so after a pause longer than the lease it starts nothing. On a host whose boot clock stood still it runs the marker writer: it publishes bodies with `Clean` markers and adopts any body whose key carries a decodable `Clean`, its own marker included (`W:452`) | its next renewal, refused on the fenced slot (`SR:461-463`). Its remount reads `_pool_meta` at floor 4 and stays down (`CA/Pool/CasPool.cpp:142-166`) |
+| GC leader inside a round | its body deletes, with no lease check (`G:710`): late deletes, as above. Its commit is refused | its next lease read, which decodes header 4 and throws (`G:5214`). The scheduler logs `CA GC round failed (will retry next tick)` every tick (`CA/Gc/CasGcScheduler.cpp:489`) |
+| Inside its mount sequence, after its `_pool_meta` read | it claims its slot, which a fence leaves reclaimable by the same server (`SR:464-466`), and runs as a mounted marker writer with a live lease. It never reads `_pool_meta` again (`CA/Pool/CasPool.cpp:630-631`). It adopts any body whose key carries a decodable `Clean` while GC of this build deletes under an intent it never reads: a committed ref with no body | nothing in the store. Only its GC fails |
 
-The harm: such a writer adopts a body on a `Clean` marker while GC of this build, which reads no marker, deletes that
-body under an intent the older writer never reads: a committed ref with no body. After M9 only markers such writers
-wrote exist. **The operator precondition: every process of an older build is stopped, not suspended, and stays so.**
+**The operator precondition: every process of an older build is stopped, not suspended, before the tool runs, and
+stays stopped.**
 
 ### 7.5 Refusals {#refusals}
 
@@ -497,9 +516,9 @@ The only registry of refusal texts. The first two come from existing gates.
 | Older build, any open of a migrated pool | `UNKNOWN_FORMAT_VERSION` | `CAS pool meta: pool requires reader generation 4 but this build supports at most 3` |
 | Older build, GC lease read | `UNKNOWN_FORMAT_VERSION` | `CAS cas_gc_state: object requires reader generation 4 but this build supports at most 3` |
 | This build, any open of a pool below generation 4 | `UNKNOWN_FORMAT_VERSION` | `CAS pool meta: pool is at reader generation <n>, this build needs 4; stop every server of the pool and run 'clickhouse-disks cas-migrate-pool'` |
-| This build, GC: `gc/state` or a run below header 4 | `INVALID_STATE` | `<object> is at generation <n> in a generation 4 pool` |
+| This build, GC: `gc/state` below header 4 | `INVALID_STATE` | `cas_gc_state is at generation <n> in a generation 4 pool` |
 | Any open, dialect | `BAD_ARGUMENTS` | `CAS pool records token dialect '<a>', this disk uses '<b>': identities are not comparable` |
-| The tool, a live member | `INVALID_STATE` | `mount slot of server root '<id>' changed during the check; stop that server`, or `GC lease of owner <id> moved during the check; stop that server` |
+| The tool, a live member | `INVALID_STATE` | `mount slot of server root '<id>' changed during the migration; stop that server and run the tool again`, or `GC lease of owner <id> moved during the migration; stop that server and run the tool again` |
 | The tool, floor below 3 | `BAD_ARGUMENTS` | `pool is at reader generation <n>; mount it once with a generation 3 build first` |
 | Pool creation and the tool, prefix too long | `BAD_ARGUMENTS` | `pool prefix of <n> bytes leaves no room for blob intent keys; the limit is <m>` |
 | Writable mount, pool creation, the tool: probe token | `NOT_IMPLEMENTED` | `the store returns a token that cannot serve as a blob identity: <token>` |
@@ -513,23 +532,21 @@ The only registry of refusal texts. The first two come from existing gates.
 |---|---|
 | An online in-place switch: a mark on bodies (`Content-Type`), a mount probe, an operator command | a change in shared S3 code, two GC modes, a permanent legacy branch in the writer, and an argument for every mixed state |
 | A new pool prefix with a data copy | every body is downloaded and uploaded: the envelope carries the pool id (`CA/Formats/CasPoolMetaFormat.h:23-24`); double storage meanwhile |
-| Both protocols in one build | the marker writer and the marker GC stay as live code and tests, and each mode is safe only if every other actor runs the same one |
 | A mutable per-hash marker that names the target token | fewer stored states, but conditional GC transitions on a shared object and an observation order to preserve; not model-checked. It has the same dependence on A1 |
 | An inventory of bodies | its premise, "no edge in the run means unreferenced", fails on a rebuilt pool (CAS-33.3) |
 | A GC circuit for row-less intents | recorded rate of pending rows spared on one production node: 117 in 16.8 days; a circuit can be added with no format change |
 | Keeping a row on a spare | breaks the zero-I/O shard carry (`G:3714`) and forces a fold every round (`G:4402`) |
 | The writer deletes an intent after its own upload | safe only on an unequivocal answer; a misread outcome loses data; saves under 40 bytes |
-| A hash of the token as key segment; case folding | not injective; folding merges incarnations |
 | Adopting at W5 when the token changed to `u` | safe under I1: `u` first appeared between the two `HEAD`s, so every authority on `u` has a cut after the edge. It would widen the adoption proof for a rare case |
 
 ### 8.2 Residuals accepted {#residuals}
 
 | Residual | Effect | Handling |
 |---|---|---|
-| R1, R2 of [§7.4](#late) | a committed ref with no body | R1: none; `cas-fsck` reports it. R2: the operator precondition |
+| R1 to R4 of [§7.4](#late) | a committed ref with no body | R1, R3: none; `cas-fsck` reports the dangling ref. R2, R4: the operator precondition; M7 narrows R4 to its window |
 | A body that lands after the fold processed its writer's edge removal has no edge, no row and no intent | bytes leak until the content is written again and dies | existing gap, CAS-33.2, unchanged. This design promises reclamation only of a body whose transition to zero GC observes while the body is present with a token that canonicalises |
 | A body whose token does not canonicalise. Exposure: a store whose tokens leave the accepted grammar on a path the probe does not sample (multipart), a proxy that weakens tags, a later change of the store | never adopted: one upload per reuse. Never condemned: the bytes leak until a writer of that content publishes a body whose token canonicalises; a row that still names the old token is then superseded (G7) | not reclaimed. `CASBlobReuseTokenRejected`, `CASGCIntentTokenRejected` and their ERROR lines show it; F2 reports `intent_unread` |
-| Row-less intents: spare of a pending row (by design), a failed round followed by a spare, a late or stale create, a supersede whose intent delete failed, a rebuild, the tool's intents over spared or superseded tokens | over a live body: one upload by the next writer; over a dead token: under 40 bytes. Their number grows until F3 runs | F3, run by the operator or on a schedule |
+| Row-less intents: spare of a pending row (by design), a failed round followed by a spare, a late or stale create, a supersede whose intent delete failed, a rebuild, the tool's intents over spared or superseded tokens, and with `--intents-for-all-bodies` up to one per body | over a live body: one upload by the next writer; over a dead token: under 40 bytes. Their number grows until F3 runs | F3, run by the operator or on a schedule |
 | Markers written late by an older build, or left by a crashed M9 | 90 bytes each | F4 |
 | Token form per store is taken from the client library | A5 | the probe at mount; an integration test records it per store ([§10.2](#tests)) |
 
@@ -556,8 +573,9 @@ The only registry of refusal texts. The first two come from existing gates.
   the tool's: a generation-3 pool with markers, rows in each state, slots and a `gc/state`.
   `T/gtest_cas_blob_meta_format.cpp` stays for the codec the tool reads. Every other fixture seeds generation 4.
 - **Docs.** `D/operations/migration.md`: "Migrating a pool to generation 4" (stop every server, run the tool, start;
-  what it refuses; the points of no return; downtime; R1 and R2 in plain words). `D/configuration.md`: no mixed
-  versions; `gc_meta_pool_size` (`CA/ContentAddressedSettings.cpp:86`) is accepted and ignored.
+  what it refuses; the two points of no return, and that after M6 the only way on is to rerun the tool; downtime;
+  `--intents-for-all-bodies`; R1 to R4 in plain words). `D/configuration.md`: no mixed versions;
+  `gc_meta_pool_size` (`CA/ContentAddressedSettings.cpp:86`) is accepted and ignored.
   `D/architecture/blob-protocol.md`, `garbage-collection.md`: rewritten. `D/bucket-requirements.md`: rights under
   `blob-intents/`, batch delete, one token dialect per pool across clients and tools. `D/operations/troubleshooting.md`.
 - **Counters.** Removed: the six `CASMeta*` counters (three at `src/Common/ProfileEvents.cpp:968-970`),
@@ -571,40 +589,43 @@ The only registry of refusal texts. The first two come from existing gates.
 
 ### 10.1 TLA+ {#tla}
 
-Required before implementation: `M/CaBlobIntentCore.tla` and `M/CaBlobIntentMigration.tla`, with a runner and a
-results file, and a table "action → store requests it stands for" (CAS-375). `M/CaBlobPublishCore.tla` and
-`M/CaGcCondemnMarkerGate.tla` stay as the record of the marker protocol.
+**Steady state: done.** `M/CaBlobIntentProtocol.tla`; runs, traces and the action-to-request table in
+`M/CaBlobIntentProtocol_RESULTS.md` (commit `10f9f0f0021`). Its `Start=T1` configurations and
+`M/CaBlobIntentFreshPool.tla` model an online switch this design dropped. `sab_candidate_from_intent` is green, with
+the witness `wit_derived_row_deletes`: it is the alternative of [§3.4](#recovery) that must stay green, not a sabotage.
+`M/CaBlobPublishCore.tla` and `M/CaGcCondemnMarkerGate.tla` stay as the record of the marker protocol.
 
-Core model. Every request is three actions: send, apply, respond; the apply may come after the sender stopped
-waiting. Two GC actors with lease loss and lost commits; rows, cuts, spares, supersede, same-token re-condemnation;
-the create of G3 with its resolve read as a separate action; the cleanup of F2 as two observations and a delete, by a
-client of the pool's dialect or of another. Publication: fresh envelopes, content-derived and generation tokens, two
-absent publishers, a source that changes after staging, staging aliases. A linker that adds an edge from a live source
-edge with no observation. Read counters that are not reset on contention.
+**Migration: required before implementation.** `M/CaBlobIntentMigration.tla`, small: one blob key; a marker (absent,
+`Clean`, `Condemned`); a committed row (none, candidate, pending); requests of stopped older members in flight, one of
+each kind of [§7.4](#late); older members that start, or resume inside their mount sequence; the tool's steps M2 to
+M9 as separate actions, with a crash after each and a rerun; then one writer, one linker and one GC of this build.
 
-Migration model, small. One blob key; a marker (absent, `Clean`, `Condemned`); a committed row (none, candidate,
-pending); requests of stopped older members in flight, one of each kind of [§7.4](#late); the tool's steps M2 to M9 as
-separate actions, with a crash after each and a rerun; then one writer and one GC of this build.
+(a) Configurations that must be green:
 
 | Row | Expected |
 |---|---|
-| `safe_base`, `safe_base_generation` | green |
-| `safe_late_put`, `safe_late_create`, `safe_late_intent_delete`, `safe_late_body_delete` | green |
-| `safe_refused_create`, `safe_spare_recondemn`, `safe_lost_commit`, `safe_cleanup`, `safe_integrity`, `safe_linker`, `safe_budget` | green; `safe_budget` checks 1/1, 3/0 and 2/1 reads and `PUT`s on uncontended paths |
-| `alt_adopt_changed_token` | green; documents the alternative of [§8.1](#not-done) |
-| `sab_no_second_head` (S1), `sab_cleanup_head_first` (S2), `sab_spare_deletes_intent` (S3), `sab_attempted_create_confirms` (S4), `sab_absent_conflict_confirms`, `sab_delete_on_graduation_cut`, `sab_ambiguous_delete_cleans_intent` (S9), `sab_cleanup_raw_spelling` (S8), `sab_cleanup_foreign_dialect` (S10), `sab_stale_read` (S12) | red on `INV_COMMITTED_REF_HAS_BODY`, and on `INV_INTENT_PERMANENT` or `INV_DELETE_EVIDENCE` where the rule breaks first |
-| `sab_resend_envelope`, `sab_staging_alias_two_copies` | red on `INV_NO_RECURRENCE` |
-| `sab_unchecked_stream` (S7) | red on `INV_KEY_NAMES_PAYLOAD` |
-| `sab_delete_despite_indegree`, `sab_writer_deletes_intent`, `sab_candidate_from_intent` | red |
-| `mig_base`, `mig_crash_after_each_step`, `mig_two_runs` | green: the pool ends below generation 4 and migratable, or migrated |
-| `mig_late_old_delete`, `mig_late_old_clean`, `mig_late_old_put`, `mig_late_old_marker_write`, `mig_late_old_gc_commit` | green on `INV_COMMITTED_REF_HAS_BODY` |
-| `mig_spared_row_marker_only`, `mig_rebuilt_state_marker_only` | green: the marker alone yields the intent |
-| `sab_mig_floor_before_intents` (S13), `sab_mig_rows_only`, `sab_mig_pending_kept_on_sent_create` (S14), `sab_mig_gc_state_not_rewritten` | red on `INV_COMMITTED_REF_HAS_BODY` or `INV_DELETE_EVIDENCE` |
-| `sab_mig_suspended_old_writer`, `sab_mig_missed_condemned_marker` | red when the sabotage is enabled, green when it is not: R2 and case (d) of R1, the stated residuals |
-| `witness_*`: adoption, publish over an intent, spare with a standing intent, re-condemnation on an existing intent, late create after its row left, stale intent cleaned, changed token at W5, a deposed leader's delete lands, an inherited pending row deleted two rounds after the migration, a body with a `Clean` marker adopted with no upload | each reachable |
+| `mig_base`, `mig_crash_after_each_step`, `mig_two_runs` | the pool ends below generation 4 and migratable, or migrated |
+| `mig_late_old_delete`, `mig_late_old_put`, `mig_late_old_marker_write`, `mig_late_old_gc_commit`, `mig_late_old_clean` | green on `INV_COMMITTED_REF_HAS_BODY`, with the anomalies of cases (a) to (e) switched off |
+| `mig_spared_row_marker_only`, `mig_rebuilt_state_marker_only` | the marker alone yields the intent |
+| `mig_inherited_pending_executed` | the first round of this build at in-degree 0 deletes an inherited pending row, on M5's intent |
+| `mig_member_started_before_recheck` | M7 refuses |
+| `sab_mig_floor_before_intents` (S12), `sab_mig_rows_only`, `sab_mig_pending_without_confirmed_intent` (S13), `sab_mig_gc_state_not_rewritten`, `sab_mig_no_recheck` | red on `INV_DELETE_EVIDENCE` or `INV_COMMITTED_REF_HAS_BODY` |
+
+(b) Admitted failing histories. Each is switched on by its own constant and must be RED on
+`INV_COMMITTED_REF_HAS_BODY` when allowed: a green run means the model lacks the history, not that the residual is
+closed.
+
+| Row | Residual |
+|---|---|
+| `res_r1_marker_anomaly` | R1, cases (a) to (c): no `Condemned` marker, the row spared or rebuilt away, an older delete in flight |
+| `res_r1_missed_listing`, `res_r1_token_recurs` | R1, cases (d) and (e); red also with `--intents-for-all-bodies` |
+| `res_r3_inherited_ref` | R3: an older writer adopts on a late `Clean`, the row is spared, the migration runs, the linker copies the ref, the older delete lands; red also with `--intents-for-all-bodies` |
+| `res_r4_started_in_window` | R4: a member reads `_pool_meta` before M8 and claims its slot after M7 |
+| `res_r2_resumed_in_mount_sequence` | R2, third row |
 
 Not modelled, to be covered by tests: token spelling beyond two renderings, a token that does not canonicalise,
-multipart transport, the slot observation of M2, the run and seal rewrite of M6.
+multipart transport, the slot observation of M2 and M7, the rebuild's derivation of rows from intents beyond the
+steady-state alternative.
 
 ### 10.2 Tests {#tests}
 
@@ -613,14 +634,14 @@ Tests are written first. A `LOGICAL_ERROR` expectation is a death test in a `*De
 | Layer | Tests | Pins |
 |---|---|---|
 | gtest, writer, on the etag-faithful fakes (`EtagFaithfulPublicationBackend`, `ContentEtagBackend`) | `CASBlobIntentWriter.FirstCreationIsHeadAndOnePut`, `.CleanReuseIsHeadGetHead`, `.IntentPresentPublishesFreshOnce`, `.ChangedTokenAtSecondHeadPublishesWithoutRestart`, `.BodyGoneAtSecondHeadPublishes`, `.SameTokenInvalidSizeAtSecondHeadIsCorrupted`, `.LandedAmbiguousPublicationIsAdoptedInFourReads`, `.FailedIntentReadIsNotAbsence`, `.WriterNeverMutatesIntents`, `.NoMetaRequestOnAnyPath`, `.VerbatimCopyIsSelectedOnlyAfterAnAbsentFirstHead`, `.UncanonicalTokenPublishesFreshAndNeverThrows`, `.UncanonicalTokenAtSecondHeadPublishesFresh` | W1 to W7; S1; ledger |
-| gtest, reads reach the store | `CASBlobIntentWriter.AdoptionReadsReachTheStoreAfterAPrimedAbsence`: read `I(B,t)` absent through the same pool, let GC confirm the intent and commit, then write. Assert the backend saw both `HEAD`s and the intent `GET` of this attempt, and that the writer publishes | W8; S12 |
-| gtest, GC | `CASGcIntents.CondemnIsOneHead`, `.GraduationCreatesAndCommitsPending`, `.EqualOccupantConfirms`, `.AbsentOrDivergentOccupantCarries`, `.UnansweredCreateCarries`, `.DeleteIsThreeRequests`, `.IntentDeletesShareABatchRequest`, `.FailedIntentDeleteFailsTheRoundAndTheNextFinishes`, `.RefusedIntentDeleteKeepsTheRowPending`, `.UnansweredBodyDeleteKeepsTheIntent`, `.MismatchDeletesTheOldIntentAndDropsTheRow`, `.SpareLeavesTheIntent`, `.RecondemnationConfirmsOnTheStandingIntent`, `.SupersedeDeletesTheOldIntentOnce`, `.NoMetaRequestInARound`, `.RebuildWritesHeaderFourAndReadsNoIntent`, `.UncanonicalTokenWritesNoRow`, `.UncanonicalRowTokenIsSupersededByACanonicalBody`, `.UncanonicalTokenAtTheDeleteHeadDropsTheRowWithNoRequest` | G2 to G10; S3 to S6, S9; 5 requests |
-| gtest, generation gate | `CASBlobIntentGeneration.WritableMountOfAGeneration3PoolIsRefusedAndNamesTheTool`, `.ReadOnlyOpenIsRefused`, `.DecommissionOpenIsRefused`, `.NewPoolIsCreatedAtGeneration4WithItsDialect`, `.MountNeverRaisesTheFloor`, `.GcStateBelowHeader4FailsTheRoundWithNoRequest`, `.RunBelowHeader4FailsTheRound`, `.ReadCeiling3RefusesPoolMetaAndGcState` | [§2.3](#gate), G1 |
+| gtest, reads reach the store | `CASBlobIntentWriter.AdoptionReadsReachTheStoreAfterAPrimedAbsence`: read `I(B,t)` absent through the same pool, let GC confirm the intent and commit, then write. Assert the backend saw both `HEAD`s and the intent `GET` of this attempt, and that the writer publishes | W8; S11 |
+| gtest, GC | `CASGcIntents.CondemnIsOneHead`, `.GraduationCreatesAndCommitsPending`, `.EqualOccupantConfirms`, `.AbsentOrDivergentOccupantCarries`, `.UnansweredCreateCarries`, `.DeleteIsThreeRequests`, `.IntentDeletesShareABatchRequest`, `.FailedIntentDeleteFailsTheRoundAndTheNextFinishes`, `.RefusedIntentDeleteKeepsTheRowPending`, `.UnansweredBodyDeleteKeepsTheIntent`, `.MismatchDeletesTheOldIntentAndDropsTheRow`, `.SpareLeavesTheIntent`, `.RecondemnationConfirmsOnTheStandingIntent`, `.SupersedeDeletesTheOldIntentOnce`, `.NoMetaRequestInARound`, `.RebuildWritesHeaderFour`, `.RebuildDerivesACandidateFromACurrentIntentAtZero`, `.RebuildDerivesNoRowFromAStaleIntent`, `.UncanonicalTokenWritesNoRow`, `.UncanonicalRowTokenIsSupersededByACanonicalBody`, `.UncanonicalTokenAtTheDeleteHeadDropsTheRowWithNoRequest` | G2 to G10; S3 to S6, S9; 5 requests |
+| gtest, generation gate | `CASBlobIntentGeneration.WritableMountOfAGeneration3PoolIsRefusedAndNamesTheTool`, `.ReadOnlyOpenIsRefused`, `.DecommissionOpenIsRefused`, `.NewPoolIsCreatedAtGeneration4WithItsDialect`, `.MountNeverRaisesTheFloor`, `.GcStateBelowHeader4FailsTheRoundWithNoRequest`, `.ReadCeiling3RefusesPoolMetaAndGcState` | [§2.3](#gate), G1 |
 | gtest, dialect | `CASBlobIntentDialect.WritableMountIsRefused`, `.ReadOnlyOpenIsRefused` (so `cas-fsck`, `cas-gc-dryrun` and `cas-gc-rebuild` never run), `.ToolOnAMigratedPoolOfAnotherDialectIsRefused`. Each asserts zero delete and zero intent requests | the dialect rule; S10 |
-| gtest, identity and formats | canonical identity and each rejected form, with today's grammar unchanged for control keys; a generation over 20 digits; intent key round trip, rejected spellings, key length; `BlobIntent` in the format battery; `gc/state` and run headers; `token_dialect` survives `admitOrValidate` (`CA/Pool/CasPoolMeta.cpp:98-123`) and every other read-modify-write; an unknown word and each invalid pair fail the decode; the probe refuses a token that does not canonicalise | [§2](#formats), [§3.5](#failure-contract), [§6.1](#identity); S8 |
+| gtest, identity and formats | canonical identity and each rejected form, with today's grammar unchanged for control keys; a generation over 20 digits; intent key round trip, rejected spellings, key length; `BlobIntent` in the format battery; the `gc/state` header 4 and runs unchanged; `token_dialect` survives `admitOrValidate` (`CA/Pool/CasPoolMeta.cpp:98-123`) and every other read-modify-write; an unknown word and each invalid pair fail the decode; the probe refuses a token that does not canonicalise | [§2](#formats), [§3.5](#failure-contract), [§6.1](#identity); S8 |
 | gtest, source check | `CASBlobPublishDigest.FlippedByteIsRefusedBeforeCompletion`, `.StaleSourceOfASecondAbsentPublisherIsRefused`, `.S3StagedRestreamIsVerified` | [§6.2](#source-check); S7 |
 | gtest, fsck | classes; `FixReadsTheIntentBeforeTheBody` with a hook that publishes between the reads; `FailedReadIsNeverStale`; `UncanonicalHeadTokenIsUnread`; `RefusedDeleteStopsTheRun`; `LegacyMarkersAreDebrisAndTheFixDeletesThem`. The failure cases assert that no key outside `intent_stale` and `.meta` was deleted | F0 to F6; S2 |
-| gtest, the tool, on generation-3 fixtures | `CASMigratePool.RefusesASlotThatRenews`, `.FencesASilentSlotAfterTheThreshold`, `.RefusesAMovingGcLease`, `.RefusesAPoolBelowGeneration3`, `.CondemnedMarkerGetsAnIntentForTheCurrentToken`, `.UndecodableMarkerCountsAsCondemned`, `.EveryCondemnedRowGetsAnIntent` (candidate and pending), `.AbsentBodyAndUncanonicalTokenGetNone`, `.UnconfirmedCreateFailsTheRun`, `.RowsAreCarriedAsCandidatesInHeader4Runs`, `.LateOldGcCommitRestartsTheRun`, `.FloorIsTheLastProtocolWrite`, `.NoMarkerIsDeletedBeforeTheFloor`, `.CrashAfterEachStepThenRerunCompletes` (one case per step), `.RerunOfAMigratedPoolOnlyRemovesMarkers`, `.TwoRunsConverge`, `.DryRunWritesNothing`, `.FirstRoundConfirmsOnTheStandingIntentAndTheSecondDeletes`, `.CleanMarkedBodyIsAdoptedWithNoUpload`, `.LateOldDeleteMissesAfterARepublish` | [§7](#migration); S13, S14 |
+| gtest, the tool, on generation-3 fixtures | `CASMigratePool.RefusesASlotThatRenews`, `.FencesASilentSlotAfterTheThreshold`, `.RefusesAMovingGcLease`, `.RefusesAPoolBelowGeneration3`, `.CondemnedMarkerGetsAnIntentForTheCurrentToken`, `.UndecodableMarkerCountsAsCondemned`, `.EveryCondemnedRowGetsAnIntent` (candidate and pending), `.AbsentBodyAndUncanonicalTokenGetNone`, `.UnconfirmedCreateFailsTheRun`, `.RowsAreCarriedAsTheyAre`, `.GcStateIsRewrittenAtHeader4WithItsFieldsAsRead`, `.LateOldGcCommitRestartsTheRun`, `.RecheckRefusesASlotThatAppearedAfterTheGcStateRewrite`, `.RecheckRefusesAMovedGcPair`, `.FloorIsTheLastProtocolWrite`, `.NoMarkerIsDeletedBeforeTheFloor`, `.CrashAfterEachStepThenRerunCompletes` (one case per step), `.RerunOfAMigratedPoolOnlyRemovesMarkers`, `.TwoRunsConverge`, `.DryRunWritesNothingAndSendsNoProbe`, `.AllBodiesOptionGivesEveryListedBodyAnIntent`, `.OnlyThisCommandReachesOpenForMigration`, `.InheritedCandidateConfirmsOnTheStandingIntentAndTheNextRoundDeletes`, `.InheritedPendingRowIsDeletedByTheFirstRoundAtZero`, `.CleanMarkedBodyIsAdoptedWithNoUpload`, `.LateOldDeleteMissesAfterARepublish` | [§7](#migration); S12, S13 |
 | Stateless (`add-test`) | requests of one `INSERT` of new content (1 `HEAD`, 1 `PUT` per blob, no intent request), of a duplicate (2 `HEAD`, 1 intent `GET`, no `PUT`), and of a duplicate after `DROP` and two GC rounds | ledger |
 | Integration, RustFS and the GCS emulator | an upgrade test like `test_cas_ref_move_compat`: an older image writes, drops and runs GC until candidate and pending rows exist; one older server left up makes the tool refuse and name it; all stopped, the tool completes; the new image starts and the older image is refused; data reads back; a duplicate insert reuses with three reads and no upload; `cas-fsck` reports no dangling ref and no marker. The recorded token form on `HEAD` per store, multipart upload and multipart copy above 32 MiB included. `test_cas_gc_s3`: at most 5 requests per reclaimed blob | [§7](#migration), [§6.1](#identity) |
 | Soak, 2 hours, with process kills | `cas-fsck --fix stale-intents` every 10 minutes while writers and GC run; fsck: zero dangling refs; at the end, with writers and GC stopped, one more fix run and then a report with `intent_stale = 0`; no `CASBlobPublishDigestMismatch` | I8; F3 |
@@ -639,11 +660,11 @@ Tests are written first. A `LOGICAL_ERROR` expectation is a death test in a `*De
 | Q1 | Is `cas-migrate-pool` the command name? | That name |
 | Q2 | Should the verbatim staged copy carry a source-token precondition (`x-amz-copy-source-if-match`) instead of resting on A6? | No precondition. The copy already reads the staging object with a `HEAD` (`S3:1115`), but `copyS3File` has no source-condition parameter: it would be a change in shared code |
 | Q3 | Should the tool accept a pool below generation 3? | No: it is mounted once by a generation-3 build first, so the tool has one input format |
-| Q4 | Should a condemned row get a new field for "intent confirmed"? | No field: the run header marks the meaning of `pending` ([§2.2](#control-formats)), and the tool writes no pending row |
-| Q5 | Should the tool create an intent for every existing body? It closes R1 and costs one upload per blob that is ever reused | No: only for markers that are not `Clean` and for condemned rows |
-| Q6 | Should the store stop a suspended older member (R2)? Two partial guards: the tool writes a critical key into every root's epoch counter, so an older mount sequence fails its allocation; slots declare a generation and GC of this build deletes nothing while a live slot of an older build exists | Neither: the operator precondition stands. Each adds a format change and narrows R2 without closing it (a brand-new root has no counter; a slot the listing omits) |
+| Q4 | Should a condemned row get a new field for "intent confirmed"? | No field: every pending row's intent was confirmed, by G3 or by M5 (G8) |
+| Q5 | Should `--intents-for-all-bodies` be the default? | No: [§7.1](#tool) |
+| Q6 | Should the store stop a suspended older member (R2, R4)? Two partial guards: the tool writes a critical key into every root's epoch counter, so an older mount sequence fails its allocation; slots declare a generation and GC of this build deletes nothing while a live slot of an older build exists | Neither: the operator precondition stands. Each adds a format change and narrows R2 without closing it (a brand-new root has no counter; a slot the listing omits). M7 needs no format change |
 | Q7 | Should M2 fence a silent slot, or only refuse and leave it to the operator? | Fence: it uses the rule GC already has, and it makes a suspended mounted writer fail at its next renewal |
-| Q8 | Should markers be removed before the floor is raised? | After: before M8 the tool then destroys nothing, and a crashed run leaves a pool an older build can still use at no cost |
+| Q8 | Should markers be removed before the floor is raised? | After: before M8 the tool then deletes nothing, a rerun still finds the markers, and a run that stopped before M6 leaves a pool an older build can use as before |
 | Q9 | Is one dialect check per open enough for GC, or should each round read `_pool_meta` again? | Per open: neither value changes during an open, and a round saves one `GET` |
 | Q10 | How does `clickhouse-disks` reach a pool that the disk's own `startup` refuses (`CA/ContentAddressedMetadataStorage.cpp:842-883`)? | The disks client starts the disk with the pool open deferred for this command only; no server path reaches `Pool::openForMigration` |
-| Q11 | Is 120 s the right default grace? | Yes: one request window |
+| Q11 | Is 120 s the right default grace? | Yes, as a heuristic at default settings ([§7.1](#tool)) |
