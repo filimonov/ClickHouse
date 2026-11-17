@@ -121,7 +121,7 @@ stays for the tool and `cas-inspect` only. Field validity: [§3.5](#failure-cont
 |---|---|
 | Key | `<pool>/blob-intents/<algo>/<hex[0:2]>/<hex>/<dialect>/<tag-hex>`. The first four segments mirror `Layout::blobKey` (`CA/Formats/CasLayout.cpp:35-38`); `<dialect>/<tag-hex>` is the canonical identity ([§6.1](#identity)). New `Layout::blobIntentKey(ref, identity)`, `blobIntentsPrefix`, `parseBlobIntentKey`. |
 | Parse | `parseBlobIntentKey` accepts only the spelling `blobIntentKey` produces: known algo word, shard equal to `hex[0:2]`, dialect `etag`, `generation` or `emulated`, lowercase even-length hex that decodes to a tag the grammar of [§6.1](#identity) accepts for that dialect. Anything else is not an intent. |
-| Length | The tag cap counts the bytes of the opaque tag: 128 for `etag` and `emulated`, 20 for `generation`. The key is at most 14 + 6 + 4 + 64 + 1 + 10 + 1 + 256 = 356 bytes after the pool prefix. Pool creation and the tool refuse a pool prefix longer than 1024 − 356 bytes; `blobIntentKey` throws `LOGICAL_ERROR` over 1024 bytes. |
+| Length | The tag cap counts the bytes of the opaque tag: 128 for `etag` and `emulated`, 20 for `generation`. The key is at most 356 bytes after the pool prefix (14 + 6 + 4 + 64 + 1 + 10 + 1 + 256, an upper bound: the 10-byte word `generation` never meets a 256-character tag, so the longest reachable key is 354 bytes). Pool creation and the tool refuse a pool prefix longer than 1024 − 356 bytes; `blobIntentKey` throws `LOGICAL_ERROR` over 1024 bytes. |
 | Bytes | Constant: `{"type":"cas_blob_intent","v":4}\n{}\n` (under 40 bytes). No round, no epoch, no size, no token: the key is the identity. A constant makes the confirmation of [§3.2](#gc-rules) a byte comparison. |
 | One body, many lives | An intent is created with `If-None-Match`. The key can be deleted and created again (a late create of a deposed leader), always with that byte string. `Layout::writeOnceBlobIntentKey` still mints a `WriteOnceKey`, the capability for a delete with no precondition: the delete is sent only after `t` was observed gone from `B` (I4, I1), so it is right for every life of the key. The contracts of `WriteOnceKey` (`CA/Primitives/CasWriteOnceKey.h:10-14`) and `removeManyWriteOnce` (`CA/Backend/CasBackend.h:205-210`) widen from "the one body the key ever held" to "one byte string in every life". |
 | Registry | `FormatId::BlobIntent = 26`, type `cas_blob_intent`, `TextFamily::Control`, `CompressionPolicy::PinnedRaw` (bytes are compared), object cap 4 KiB, line cap 1 KiB; change points `{4,4}` (`CA/Formats/CasFormat.cpp`). A later generation must keep accepting this record as a confirmation. |
@@ -486,10 +486,13 @@ Five cases defeat that. In (a) to (d) the marker is not `Condemned` while `t` is
   misses `t` only if no committed row names `B` any more (a spare, a rebuild); in (e) it misses `t` unless M5 observed
   `t` itself or a pending row names it. The miss matters only while a delete of `t` sent by a stopped leader is still
   in flight: a writer of this build can then adopt `t` and the delete can remove it. The result is a committed ref
-  with no body, which `cas-fsck` reports. Whatever M5 covered, case (e) can also lose one blob after the migration: a
-  delayed token-repeating copy of an older writer restores `t` after GC removed `I(B,t)`, a writer of this build
-  adopts it, and a delayed delete of an older GC removes it. It needs both requests still in flight after every older
-  process stopped and the grace passed. An extra intent does not close it.
+  with no body, which `cas-fsck` reports. Whatever M5 covered, case (e) can also lose one blob after the migration,
+  and one delayed request is enough: a token-repeating copy of an older writer that lands after the floor is raised.
+  It restores `t` over a body `u` that a writer of this build has just published for a reference the round's cut does
+  not contain; G4 of this build then finds `t`, the token of its confirmed `pending(t)` row, and deletes it. The same
+  copy landing between G4 and G8 leaves `t` current while G8 removes `I(B,t)`. No delete of an older GC is needed, and
+  an extra intent does not close it: the intent exists and the writer saw the key absent. It needs a request still in
+  flight after every older process stopped and the tool's grace passed; with none in flight the loss does not occur.
 - **R3, an inherited reference.** A ref committed under the older protocol whose body is under an outstanding older
   delete stays exposed after the migration, for example after case (b) let an older writer adopt `t`. A ref this
   build copies from it with no request (hardlink, relink fetch: `adoptEvidence`) inherits the exposure. The intent
