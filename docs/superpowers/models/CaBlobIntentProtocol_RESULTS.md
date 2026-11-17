@@ -9,6 +9,24 @@ doc_type: 'reference'
 
 # `CaBlobIntentProtocol` and `CaBlobIntentFreshPool` results {#cablobintentprotocol-results}
 
+## What still holds after the design dropped the online transition {#scope-after-offline-migration}
+
+The design moves an older pool once, offline, with `clickhouse-disks cas-migrate-pool`. Its model is
+`CaBlobIntentMigration.tla`, results in `CaBlobIntentMigration_RESULTS.md`.
+
+- **Valid: the steady state.** Every configuration with `Start = "T3"`, `Builds = {"new"}`, `OldGCs = {}`, a seed
+  that is not `legacy*`, and no transition sabotage. With these constants every body is marked and every writer has
+  learned, so the module runs the protocol of the current specification. These rows, and their `.cfg` files, stand.
+- **Record only: the online transition and the fresh pool.** Rows with `Start = "T1"`, a `legacy*` seed, an older
+  writer build, an older GC, or one of the sabotages `adopt_unmarked`, `mark_before_learned`, `no_stamp`,
+  `old_gc_after_stamp`, `lost_stamp_old_bootstrap`, `mode_cached`, `mode_on_failed_read`, `old_writer_after_switch`,
+  `inherited_executed`; and every `fp_*` row. Their `.cfg` files and `CaBlobIntentFreshPool.tla` are removed. The
+  tables below keep their numbers as a record of the dropped design.
+- **The module is unchanged.** Removing the transition from it (`Stamp`, `Switch`, `LoseStamp`, `GMode`, `WLearn`,
+  the mark bit, the older builds) would be a rewrite. Under the steady-state constants those actions are disabled.
+- **Checked after the removal:** `safe_base` re-run gives 3,639,570 distinct states and `safe_late_put` 1,875,003,
+  equal to the table [Green, steady state](#green-steady-state).
+
 Models of `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` as it stands at commit
 `d2f130ebfef`. Section numbers and rule ids (W1, G3, F2, I5, A8, S1, X1) are the specification's.
 
