@@ -20,7 +20,7 @@ tests, Task 12 the measurements that fix the defaults.
 (shell), integration tests (pytest; RustFS and the GCS emulator), Markdown docs, Python (`utils/cas-yardstick`,
 `utils/ca-soak` in `M`).
 
-**Spec:** `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` at commit `4dd7485afcd` (branch
+**Spec:** `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` at the commit that names `gc_round_intent_create_budget` (branch
 `cas-gc-rebuild`). It is binding; "§N" below is a section of it. A conflict between this plan and the spec resolves
 to the spec, except the readings listed in [Spec readings](#spec-readings).
 
@@ -35,7 +35,7 @@ pending row's own token and case (e) on. No task starts before the owner confirm
 
 | Name | Value |
 |---|---|
-| `WT` | `/home/mfilimonov/workspace/ClickHouse/cas-pr1`; new branch `work/antalya-26.8/cas-blob-intents` from `ac144e848aa` |
+| `WT` | `/home/mfilimonov/workspace/ClickHouse/cas-pr1`; branch `work/antalya-26.8/cas-blob-intents` from `0aa837e942e` (`antalya-26.8` after the merge of PR 2831) |
 | `M` | `/home/mfilimonov/workspace/ClickHouse/master`, branch `cas-gc-rebuild` (spec, plan, models, `utils/cas-yardstick`, `utils/ca-soak`) |
 | `CA/` | `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` |
 | `T/` | `src/Disks/tests/` |
@@ -43,7 +43,7 @@ pending row's own token and case (e) on. No task starts before the owner confirm
 | `W:` `G:` `N:` | `CA/Pool/CasPartWriteTxn.cpp`, `CA/Gc/CasGc.cpp`, `CA/Gc/CasBlobInDegree.cpp` |
 | `B:` `Q:` `SR:` | `CA/Backend/CasObjectStorageBackend.cpp`, `CA/Backend/CasRequests.cpp`, `CA/Pool/CasServerRoot.h` |
 
-Every `path:line` was read in `WT` at `ac144e848aa`. Lines move as tasks land: find the named symbol, use the line
+Every `path:line` was read in `WT` at `ac144e848aa`. The branch base `0aa837e942e` has the same `CA/` and `T/` trees except commit `ac144e848aa` (upload buffer sizing: `CA/Backend/CasBackend.h`, `CA/Backend/CasObjectStorageBackend.cpp`, `CA/ContentAddressedTransaction.cpp`, `.h`, two gtest files), which is not on the base: lines in those files are shifted by a few. Lines move as tasks land: find the named symbol, use the line
 as a hint.
 
 ### Rules {#rules}
@@ -469,10 +469,12 @@ caller; its own unit suites stay green until Task 8.
 - Modify: `G:583-763` (body deletes without a `HEAD`, the intent delete batch), `G:2154-2287` (the hooks),
   `G:1052` (phase `pending_deletes` also sends intent deletes), `G:5061` (`previewDeletes`), the round's
   `meta_writer` calls
-- Modify: `CA/ContentAddressedSettings.cpp:69` and `CA/Pool/CasPool.h:105` (`gc_round_graduation_budget` default
-  stays 0; new description: `Maximum deletion-intent creates per GC round, summed over every GC shard; a blob over
-  the cap stays a candidate and is created in a later round (0 = unbounded)`); `G:824` (where the round copies it
-  into `GcRoundWorkBudget::max_graduations`); `src/Common/ProfileEvents.cpp`
+- Modify: `CA/ContentAddressedSettings.cpp:69` and `CA/Pool/CasPool.h:105` (new setting
+  `gc_round_intent_create_budget`, default 0, description: `Maximum deletion-intent creates per GC round, summed over
+  every GC shard; a blob over the cap stays a candidate and is created in a later round (0 = unbounded)`;
+  `gc_round_graduation_budget` stays declared and is described as ignored; `PoolConfig` carries the new field and
+  drops the old one); `G:824` (where the round copies the budget; rename `GcRoundWorkBudget::max_graduations` and its
+  accessors to `max_intent_creates`); `src/Common/ProfileEvents.cpp`
 - Test: create `T/gtest_cas_blob_intent_writer.cpp`, `T/gtest_cas_gc_intents.cpp`; modify every suite Step 4 lists
 
 **Interfaces:**
@@ -631,7 +633,7 @@ Read §9.2. Deletes what Task 6 left unreferenced; the `.meta` codec (`CA/Format
 - Docs content: the writer's two reads and the reuse cost after a standing intent; GC's three row states and the
   round order; intents in the storage layout; `LIST` and delete rights under `blob-intents/`, batch delete, one
   token dialect per pool (bucket requirements); no mixed versions on one pool, `gc_meta_pool_size` ignored,
-  `cas_gc_round_graduation_budget` (intent creates per round, default 0, unbounded), `cas_intent_sweep_list_budget_keys`; the counters of §9.2; phase
+  `cas_gc_round_intent_create_budget` (intent creates per round, default 0, unbounded), `cas_gc_round_graduation_budget` ignored, `cas_intent_sweep_list_budget_keys`; the counters of §9.2; phase
   rows `intent_sweep_list` added and `meta_pool_wait` gone; event reasons `intent_present`, `token_rejected`.
 - [ ] **Step 1: Write the failing tests.** `CASObservability.NoMarkerCounterExists` (iterate `ProfileEvents::getName(e)`
   for every `e < ProfileEvents::end()`; none of the nine removed names appears);
@@ -808,7 +810,7 @@ Acceptance:
 | `INSERT` of duplicate content | per blob 1 `HEAD`, 1 intent `GET`, no `PUT` |
 | GC per reclaimed blob | at most 5 requests, 2 rounds from "no reference" to the body delete |
 | Wide insert like the stand's (§1) | marker `PUT`s 54,997 → 0; upload thread time and wall time reported against the 2,047 + 1,325 thread-seconds baseline |
-| The same mass drop (the stand's ~55,000 blobs) with `gc_round_graduation_budget` at 0 (unbounded) and at 5000, S3 and GCS: round time, creates per round, rounds to condemn, insert latency during the rounds | reported for both settings; the default stays 0 unless the unbounded round outlasts the GC lease or slows inserts, then the owner picks the value |
+| The same mass drop (the stand's ~55,000 blobs) with `gc_round_intent_create_budget` at 0 (unbounded) and at 5000, S3 and GCS: round time, creates per round, rounds to condemn, insert latency during the rounds | reported for both settings; the default stays 0 unless the unbounded round outlasts the GC lease or slows inserts, then the owner picks the value |
 | Publication hash on a large body | CPU per GiB reported |
 | Standing intents, equal parts dropped and re-inserted within one round | count of extra uploads reported |
 | The tool on a pool like the stand's | requests per step against the §1 migration ledger; wall time; then a duplicated insert: two reads, no upload |
@@ -840,7 +842,7 @@ Places where the spec leaves a choice; the plan takes the reading on the right.
 | G9 anomaly "counted" | a `RoundReport` field and one ERROR line; §9.2 names no counter for it |
 | Q10 "pool open deferred for this command only" | a process flag set by `DisksApp` for `cas-migrate-pool` before the disk starts |
 | M2 "the tool's poll step" | `poll_step_ms = 1000` |
-| The create budget "per round" | per round, summed over GC shards, as the code applies `GcRoundWorkBudget` today. The key `gc_round_graduation_budget` stays (the spec names it; settings are not on-store format); its description in Task 6 says what it does. A renamed key with the old one ignored is the owner's alternative |
+| The create budget "per round" | per round, summed over GC shards, as the code applies `GcRoundWorkBudget` today. The key is new, `gc_round_intent_create_budget`; `gc_round_graduation_budget` is ignored and documented as ignored, like `gc_meta_pool_size` |
 
 ## Backlog effects {#backlog-effects}
 
