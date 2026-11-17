@@ -6,7 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:44'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -65,4 +65,8 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F5; stated only 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (83949645ce7, by 'audit F5')
+
+After CAS-487 merges this question is moot: `_ckpt` is never written per flush, so there is no "every N flushes" choice. AC #2 (recovery walks at most N logs) has no analogue: the log tail is bounded only by snapshots.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Moot since PR 2831 `18be198c7ab`: appends do not write `_ckpt`. Archived as obsolete.
 <!-- SECTION:NOTES:END -->

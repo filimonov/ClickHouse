@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -67,4 +67,8 @@ Provenance: umbrella-roadmap.md section 2 bullet 'Ref-lane batching'; filed 2026
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `flushRefBatch` is 2026-07-12 (e1e76106f40); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-11-14: part of the direction in CAS-487 (cheaper ref-log append instead of fewer appends). Measured on 26.8: of about 6 ms added per INSERT only 1.9 ms is store time, the rest is ref batch queue wait (8.5 -> 15.5 ms).
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds. Re-measure the combine window against a one-PUT append.
 <!-- SECTION:NOTES:END -->

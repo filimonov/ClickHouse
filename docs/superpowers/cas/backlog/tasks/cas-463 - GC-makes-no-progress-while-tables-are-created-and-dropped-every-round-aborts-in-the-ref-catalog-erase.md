@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 19:20'
-updated_date: '2026-11-12 16:55'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -77,4 +77,8 @@ Evidence: `tmp/prbundle/measure/runs/{R1b_before_churn,R2b_after_churn}/{gc_all_
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): the stall threshold lies between 1.1 and 9.4 create/drop cycles per second for the pool; no run in between. That one object (`cas/ref_catalog`) limits CREATE/DROP throughput is the likely explanation, not a proven one: no run varied catalog contention alone.
 
 2026-11-12, wave 1 of the 26.8 improvements bundle (spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 5, PR https://github.com/Altinity/ClickHouse/pull/2831). The wave takes the minimal fix: the pause of a conflicted erase moves before the admission check and the resolution read (same growing backoff), and the `deleted` phase metric is filled when the drain throws (AC #3). AC #2 is not in the wave: a fold that runs with a `Removing` row left behind contradicts `DrainBeforeDecision` of `CaRefPreFoldDrainCore.tla`; it moved to CAS-463.1 (model configuration first). AC #1 is a stand criterion and is re-measured after the wave.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commits e3d8bf5e1c5 "Pause a conflicted catalog erase before its resolution read" and fa02e75843e "Report the erases of a pre-fold drain that throws" cover: #1 only a unit stand-in (a conflicted erase now sends an ETag read after its pause); #3 the `deleted` metric of the `pre_fold_ref_drain` phase is filled on every exit, also when the drain throws. Still open: #1 stand criterion, `ddl16` not rerun on this head; #2 a contended erase can still abort the fold, because a fold with a `Removing` row left behind contradicts `DrainBeforeDecision` of `CaRefPreFoldDrainCore.tla`, owned by CAS-463.1 (model configuration first); #3 reports erases done but no count of erases left. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `e3d8bf5e1c5` pauses a conflicted erase before its resolution read and `fa02e75843e` reports erases of a pre-fold drain that throws. Open: `ddl16` rerun and the non-aborting fold (CAS-463.1).
 <!-- SECTION:NOTES:END -->

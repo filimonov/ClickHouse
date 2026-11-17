@@ -4,7 +4,7 @@ title: Stop copying the whole `RefTableState` per queued item in `flushRefBatch`
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -48,4 +48,6 @@ Provenance: BACKLOG/performance.md#writepath-cost-txn-final [ref-table-copy-comm
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (0f266066bef, by 'ref-table-copy-commit-path')
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds.
 <!-- SECTION:NOTES:END -->

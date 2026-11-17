@@ -3,9 +3,10 @@ id: CAS-400
 title: >-
   Verify that staged-copy privilege is not shared by hardlink copies with the
   same staging key
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-15 11:41'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:write-path'
   - 'area:backend'
@@ -38,3 +39,9 @@ Source: review of https://github.com/Altinity/ClickHouse/pull/2555 (tmp/pr2555/R
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Fixed in PR 2831 by `a966a374b17`: the once-only flag moved from `BlobSource` to `PendingBlob`, so hardlink copies share it and only the first publication copies the staging object verbatim.
+<!-- SECTION:NOTES:END -->

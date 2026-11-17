@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:lifecycle'
   - 'area:ci'
@@ -55,4 +55,10 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 3); PR https://github.c
 
 <!-- SECTION:NOTES:BEGIN -->
 PR 15 (fix/antalya-26.6/cas-remove-remount-machine) does not touch startup's per-disk observation; unchanged.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): stress arm_release 131829639805: forced shutdown after 24 outstanding connections at 60 s, two test-created CAS disks (05387 pc3a/pc3b) mounted in parallel, 131 s wait against the 110 s budget.
+
+CAS-487 requires a clean farewell to follow a lane drain. Option (a) of this task (release every pool lease on the forceful-shutdown path so the next start sees a clean farewell) would violate that. Options (b) and (c) are not affected.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a cuts the per-disk wait after a kill to about 47 s. Not measured with 3 or more CAS disks against the 100 s budget.
 <!-- SECTION:NOTES:END -->

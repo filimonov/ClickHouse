@@ -4,7 +4,7 @@ title: 'Find why CA-S3 lanes hold over 10,000 concurrent Disk-group HTTP session
 status: To Do
 assignee: []
 created_date: '2026-07-27'
-updated_date: '2026-11-11 21:22'
+updated_date: '2026-11-13 14:29'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -56,4 +56,12 @@ First recorded: 2026-07-27 (1258b8c2a30, by 'CA-s3 Disk session pressure')
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `Too many active sessions in group Disk` warnings: asan 2/2 2 lines, tsan 1/2 9, tsan 2/2 8 (counts 8000-13800), none on msan, arm_binary or asan 1/2. All FAIL rows on the asan 2/2 and tsan shards are `having stderror` with this warning, clustered after about 3 h of the run.
 
 2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). The `ConnectionGroup: Too many active sessions in group Disk` warning fails 16 stateless tests in this run: 1 on ASan 2/2 (`00084_external_aggregation`, count 9100), 4 on TSan 1/2, 10 on TSan 2/2 (counts up to 19000), 1 on arm_binary (`04093_lazy_final_combined_filtering`). It is the largest single cause of stateless FAILs on the cas-s3 lanes.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2831 @d8cbdfae3ec, run 43248330323 (triage: tmp/prbundle/wave1/ci/triage.md). Six TSan FAILs with stdout correct and stderr = "Too many active sessions in group Disk": job 131350839384 03532_json_dynamic_updates (count 8100); job 131350839414 04339_virtual_row_prefetch_filtered_out (8300), 04813_remote_database_engine_multi_shard_sharding_key (9900), 02714_read_bytes_aggregateFunction (9500), 01913_quantile_deterministic (8100 to 9400), 05054_injective_plus_minus_type_gate_plan_shape (11000). Peak count 11100. ASan and MSan shards: 0 hits. Base 43246617309 has 17 TSan FAILs (9 in job 131304876494, 8 in job 131304877124); the 9 sampled ones carry the same warning.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824, job 131775013788 (ASan cas s3 storage 2/2 on the larger runner, no shedding): 03279_pr_3_way_joins_full_first FAIL on stderr 'Too many active sessions in group Disk, count 8500'. First occurrence on an ASan shard: with all 8 workers kept, the session count now crosses the limit there too.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): tsan 2/2 job 131780028435: 01061_alter_codec_with_type (count 9500), 02151_hash_table_sizes_stats_joins_reordered (10800 to 11400), 04653_merging_aggregated_deserialized_thread_count (8000).
+
+2026-11-13: RCA on PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (report tmp/prbundle/wave1/ci2/sanitizer-rca.md): the session warnings are caused by one system log merge (system.metric_log, 2418 columns): 8000 to 9000 sessions held for 93 s on ASan 1/2. They are not tied to the number of workers or of CAS disks.
 <!-- SECTION:NOTES:END -->

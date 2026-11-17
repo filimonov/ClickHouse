@@ -3,10 +3,10 @@ id: CAS-354
 title: >-
   A conditional PUT that meets a vanished key logs <Error> AWSClient 404 and
   fails .sh stateless tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:backend'
   - 'area:tests'
@@ -51,4 +51,6 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 2); PR https://github.c
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-18: fix on fix/antalya-26.6/cas-354-ifmatch-404-not-error @0a51702489a6 (Expect404ResponseScope for If-Match PUT); release 2701, ASan 2706. Local, not pushed. Review and body tmp/small-fixes/cas-354/. RCA docs/superpowers/reports/2026-10-16-cas-aws404-conditional-put-rca.md.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `3c14e5546ea`. The 404 of an `If-Match` marker write that lost a race with GC is no longer logged at Error. A write with `If-None-Match` stays loud.
 <!-- SECTION:NOTES:END -->

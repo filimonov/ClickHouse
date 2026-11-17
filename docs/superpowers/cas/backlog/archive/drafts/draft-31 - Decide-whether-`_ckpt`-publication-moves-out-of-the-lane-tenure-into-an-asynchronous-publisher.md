@@ -6,7 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -56,4 +56,8 @@ Provenance: BACKLOG/gcs.md#gcs-hot-control-keys-429 (alternatives A2 / token buc
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `NeedsRecovery` is 2026-07-30 (bb4dd513118); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+After CAS-487 merges this task is obsolete: `_ckpt` is no longer written per append, so there is no lane tenure that publishes it. Snapshot publication is not the starved path this draft targeted.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Moot since PR 2831 `18be198c7ab`. Archived as obsolete.
 <!-- SECTION:NOTES:END -->

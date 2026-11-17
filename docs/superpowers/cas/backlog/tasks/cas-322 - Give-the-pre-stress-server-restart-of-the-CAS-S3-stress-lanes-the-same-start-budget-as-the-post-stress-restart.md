@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 07:43'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ci'
   - 'complexity:trivial'
@@ -63,4 +63,8 @@ Request breakdown of the failing pre-stress start (2026-09-30). Source: `lane-g/
 - 2,075 (12%) are GETs of `ns/stream/<ns>/_log/` (ref-log reads at mount); 803 are manifest GETs.
 The larger start budget treats the symptom. CAS-95.1 (https://github.com/Altinity/ClickHouse/pull/2440, open) removes the `_files/` LISTs; whether the synchronous load then fits the default 60 s under ASan is not measured. The `_log` GETs are a separate cost that PR #2440 does not touch.
 Same cost on the yardstick (`utils/cas-yardstick/reference/2026-09-30-647dbf9dfe9`, card `attach_200`, cold): CAS 1005 LIST + 358 GET in 123 ms, plain S3 0 LIST + 1801 GET in 50 ms.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): stress restart budget exceeded on arm_release 131829639805, see the CAS-355 note of the same date.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a: the restart wait after a kill is about 47 s per disk (was 131 s at the 120 s lease).
 <!-- SECTION:NOTES:END -->

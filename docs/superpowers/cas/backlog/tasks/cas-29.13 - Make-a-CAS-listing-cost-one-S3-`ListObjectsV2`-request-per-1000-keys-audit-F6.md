@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:backend'
   - 'area:gc'
@@ -72,4 +72,8 @@ First recorded: 2026-09-26 (fc7b142789d, by 'audit F6')
 - A full page costs three requests: its own batch, the next batch for the sentinel key (the store's page is 1000 = `limit`, key 1001 is on the next batch), and the prefetch that `nextBatch` schedules unconditionally (`ObjectStorageIteratorAsync.cpp:71-73`).
 - Levers (arithmetic, not measured): no prefetch 60 -> 41; no sentinel lookahead 60 -> 41; both -> 21. The prefetch lever works on any store and does not change the page contract.
 - Why it matters: with one GC round per 300 s, `defer_decision` (the listing phase) is 57-58% of the round on local RustFS (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/03-long-rounds-and-latency.md`). otel.demo's 9.3 requests per page is not explained by these runs.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commits bd712122b60 "List CAS pages of 999 keys so the sentinel fits the batch" and e1be3807259 "Let a list caller turn off the next-page prefetch" cover: #1 a 10000-key walk costs 11 `ListObjectsV2` requests instead of 27 (tests in `gtest_cas_s3_single_attempt_client.cpp`, `gtest_cas_namespace_janitor.cpp`, `gtest_object_storage_iterator_async.cpp`); #3 the first-page probe bound and the no-`start_after` fallback are pinned by existing tests plus new ones. `ObjectStorageIteratorAsync.{h,cpp}` is the only shared upstream code touched (`prefetch_next_page`, default `true`). Still open: #2 stand ratio of `S3ListObjects` per list page (not measured); the 9.3 requests per page seen on otel.demo remain unexplained. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `bd712122b60` and `e1be3807259`: a 10000-key walk costs 21 requests instead of 27 (and 11 without prefetch). Open: the stand ratio.
 <!-- SECTION:NOTES:END -->

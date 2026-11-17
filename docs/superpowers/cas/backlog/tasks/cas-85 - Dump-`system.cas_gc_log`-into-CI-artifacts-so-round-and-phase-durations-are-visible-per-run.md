@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ci'
   - 'complexity:trivial'
@@ -56,4 +56,8 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded ask 5. Verified 2026-09-26 agai
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `query_log` is 2026-06-05 (2c762c70d33); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 9fddee6d03b "Dump `cas_gc_log` and `cas_log` from CI lanes that mount a CAS disk" covers: #2 `dump_system_tables` adds the two tables only when a server config holds `<metadata_type>cas</metadata_type>`, and skips a table that `EXISTS TABLE` reports absent, so non-CAS lanes keep their list. Still open: #1 only for a run that completes and fails (the dump runs then; a green run dumps no system table). `cas_gc_log` and `cas_log` were dumped in job 131765755569 of run https://github.com/Altinity/ClickHouse/actions/runs/43379266824, and no job failed on the scrape step. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `9fddee6d03b`. Open: a shard killed by the job time limit uploads no dump.
 <!-- SECTION:NOTES:END -->

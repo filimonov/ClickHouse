@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
-updated_date: '2026-10-13 20:55'
+updated_date: '2026-11-15 14:38'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -67,4 +67,6 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-114 (2031-triage CAS-114; th
 2026-10-12, cursor finality under (d). Today `RefTxnId{writer_epoch, ref_sequence}` is already a total order per namespace (`operator<=>` default, `CasTypes.h:267`; `writer_epoch` durable-monotone per server root and each life rooted at one root, `CasRefCkpt.cpp:77-85`), and the fold seal stores it as `RefCoverage.last_folded_ref_id` (`CasFoldSealFormat.h:136`). CAS-358's `as_of` cursor is that pair. What the pair lacks is finality: 'nothing below C appears later' holds only via the per-dead-epoch seals, because density is per epoch. Under (d) density is global, so `C <= committed_through` is final by construction, the cursor is one integer, and CAS-358 compares integers with no logic change. Relation: (d) is a format bump, CAS-358 is not; CAS-358 lands on the pair first.
 
 2026-10-13: direction (d) is now its own task, CAS-387 (one monotone sequence per life; epoch leaves the log key, the seal carries the closed writer epoch). This task stays as the bound on today's format; if CAS-387 lands first, this task closes with it.
+
+After CAS-487 merges this task is obsolete: the lane tombstone is lazy. After a clean predecessor a first touch writes nothing. Otherwise it writes at most one tombstone, not one seal per skipped epoch. The durable "epochs ended clean" record of direction (b) is the `last_unclean_epoch` marker of CAS-487.
 <!-- SECTION:NOTES:END -->

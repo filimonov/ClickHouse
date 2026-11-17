@@ -3,10 +3,10 @@ id: CAS-364
 title: >-
   Make the mount slot epoch-monotone on the release line: same-pair refusal,
   greater-epoch reclaim, `SupersededEpoch` only for a greater epoch
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-12 05:00'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -56,4 +56,6 @@ On the base `claimMount` refreshes a slot holding the same `(uuid, epoch)` (T7/M
 2026-10-18: draft prepared on fix/antalya-26.6/cas-364-fence-greater-epoch @0c57ca5a337e (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/364/.
 
 Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle` at `fa1b89d1529` (worktree `cas-pr1`, 40 commits over `be74be9fa7b`). Not pushed, pull request not opened. Gates on that head: release `CAS*` 3005, ASan/UBSan 3009, Fast-test compile, stateless 58 of 58. Design: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`. Story A: `d2c7d444ee3`.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `c991bf35cc0`: only a strictly greater slot epoch proves supersession, whether the body is live, GC-fenced or a clean release. Claim monotonicity was already on the branch.
 <!-- SECTION:NOTES:END -->

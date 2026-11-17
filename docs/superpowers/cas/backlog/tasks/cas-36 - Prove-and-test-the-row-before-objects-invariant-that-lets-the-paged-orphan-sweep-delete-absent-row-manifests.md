@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-19 20:46'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -101,4 +101,6 @@ CAS-358 reshapes the same function and depends on this task: its owner view (fol
 - 2026-10-14: CAS-358 spec rev.3 (codex round 7, finding 2): moving the floor only ahead of catalogEntryOf keeps CasRefCatalog::read at CasOrphanManifestSweep.cpp:704 before the floor, so a build that ends between the catalog read and the floor sample is still deletable through the rowless branch. Amend this spec's §4 to a page prepass: floors for every listed namespace BEFORE the catalog read; T1 hook must fire right after the catalog read returns the rowless cut, and the reversed-order mutant must fail.
 
 2026-10-19, PR #2528 head 08a90873 (657c521c + merge of antalya-26.6): the dropped path-hygiene check is restored at the write boundary: `validateManifestEntryPath` in `Formats/CasPartManifestFormat.cpp` is now shared by `encodePartManifest` and `decodePartManifest`, so `stageManifest` rejects `../evil`, `/abs`, empty, `a//b`, `a/./b` before the PUT (gtests `EncodeRejectsMalformedEntryPaths`, `StageManifestRejectsTraversalPathBeforeBodyWrite`; the decode test now forges bytes). The author's own review (gist 7b34b402f18b051ced88f457c95d5df4, at 593311dc) also asked for: the 64 KiB entry-record cap at encode time (added in 470fb0e4, removed again in 17dc11cc; decoder-only cap remains, so an over-cap record is still committable without a re-read), a `retained_catalog_changed` counter for the recheck retention (not done; it lands in the generic `skipped`), and the PR body/changelog naming the orphan-sweep safety fix (not done; body still 'Performance Improvement', still says 'proof'). CI 08a90873: unit, stateless cas s3 and integration green; AST fuzzer old_compatibility = docker pull timeout; stress (asan_ubsan, cas s3) 'Cannot start clickhouse-server' = `Hybrid` engine from the antalya-26.6 merge stores `remote(..., currentDatabase(), ...)` unevaluated and re-resolves it to `default` on ATTACH after restart (03643_hybrid.sql ran under test_5), not CAS.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commits 7ab340235e7, 5d2af6db3a1, d383d7d79c4, 1810fb2fef3 carry the part-manifest encoder checks of PR 2794; the 64 KiB cap is checked at encode time. Not the `gc/state` line cap of CAS-268.
 <!-- SECTION:NOTES:END -->

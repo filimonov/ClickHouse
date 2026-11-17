@@ -3,10 +3,10 @@ id: CAS-366
 title: >-
   Refuse a ref-log append that lands in a reclaimed seal slot instead of
   acknowledging it
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-12 05:00'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'area:gc'
@@ -57,4 +57,8 @@ Fix (no format change): in `publishCkpt`, refuse a non-seal contribution whose `
 2026-10-18: draft prepared on fix/antalya-26.6/cas-366-superseded-ckpt-contribution @2d2182b3b19c (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/366/.
 
 Implemented 2026-11-11 on branch `fix/antalya-26.8/cas-ref-cleanup-per-life-licence` at `be74be9fa7b` (worktree `cas-pr1`, 39 commits over `2f89c5db182`). Not pushed, pull request not opened. Design: `docs/superpowers/specs/2026-11-11-cas-pr1-ref-cleanup-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr1-ref-cleanup-bundle-measurements.md`. Story B: `d9b31225949`, `412f0c56334`, `c909f68e3e8`.
+
+CAS-487 drops the store-side refusal this task added (`SuccessorSeal`, `Superseded` in `publishCkpt`). A superseded writer is now fenced by the mount lease only. Any work on this task must target the lease recheck, not a store refusal. CAS-451 and CAS-459 follow this task.
+
+2026-11-17: OBSOLETE, closed without implementation. Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Made obsolete in PR 2831: `bbe4f736b5e` added the refusal, `a1a34ae367d` removed `SuccessorSeal` and `Superseded` under generation 3. A deposed writer is stopped by the mount lease.
 <!-- SECTION:NOTES:END -->

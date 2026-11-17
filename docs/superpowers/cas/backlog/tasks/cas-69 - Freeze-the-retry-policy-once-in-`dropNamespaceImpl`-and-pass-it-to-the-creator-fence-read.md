@@ -3,10 +3,10 @@ id: CAS-69
 title: >-
   Freeze the retry policy once in `dropNamespaceImpl` and pass it to the
   creator-fence read
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-12 05:00'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:ref-ledger'
   - 'complexity:trivial'
@@ -58,4 +58,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 0. Verified 2026-09
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 0')
 
 Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle` at `fa1b89d1529` (worktree `cas-pr1`, 40 commits over `be74be9fa7b`). Not pushed, pull request not opened. Gates on that head: release `CAS*` 3005, ASan/UBSan 3009, Fast-test compile, stateless 58 of 58. Design: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`. Story D: `5905e35e911`.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `d4b25141bc1`. The resolution read after a failure keeps its own window on purpose, so it can still reopen the lane. Whether the local waits need a deadline stays in CAS-462.
 <!-- SECTION:NOTES:END -->

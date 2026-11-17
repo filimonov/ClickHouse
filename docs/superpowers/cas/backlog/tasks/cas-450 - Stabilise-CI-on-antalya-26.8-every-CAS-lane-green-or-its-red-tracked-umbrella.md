@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 10:15'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ci'
   - 'area:testing'
@@ -153,4 +153,12 @@ Open decisions
 2026-11-11: CAS-466 added (hang of gtest `CASRefWriterSnapshotPublish.C4InFlightGateAdmitsAtMostOne`, test-only race, seen once locally; it can hang the unit-test job in CI the same way).
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). Reds of CI run 42999688750 (15 failed jobs, triage tmp/pr2805/run_42999688750/triage.md) are now reds of the base branch; each has a task in the groups above. Next steps on antalya-26.8: own PRs for CAS-443 (ad04f95e441) and CAS-432 (2a4b5e72aa2, 41d4a78eeb9), then close CAS-437, CAS-438, CAS-442, CAS-444 after the first run that shows their lanes green.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2831 @d8cbdfae3ec, run 43248330323 (triage: tmp/prbundle/wave1/ci/triage.md). Base run 43246617309 finished red with 37 failed jobs and 1 cancelled. All 18 reds of PR 2831 are on the base run or map to a task, except 03985_kill_query_dict_load (MSan 2/3) and 02125_many_mutations (arm_binary sequential), which are one-off. CAS-465 did not occur on either architecture. Update the Swarms and test_database_glue rows once public issues exist.
+
+2026-11-12: new tasks from the PR 2831 triage (run 43248330323): CAS-468 (three Swarms scenarios, not CAS), CAS-469 (test_database_glue message, not CAS), CAS-470 (02125_many_mutations margin on arm_binary sequential, not CAS), CAS-471 (03985_kill_query_dict_load curl reset on MSan cas-s3, one occurrence). They are not yet in the dependency list.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): run 43379266824 on the head with the wave 1 commits: 32 failed jobs at the last refresh. 11 fail only because of the 120 s lease default and 3 more integration jobs hide a lease-caused failure behind a rerun (CAS-480); 17 are base reds or known tasks; Stress arm_debug is not established (no CAS disk, one occurrence). ASan cas-s3 1/2 passed for the first time on the larger runner. Did not recur: CAS-252, CAS-470, CAS-471, CAS-431, CAS-340, CAS-440, CAS-468. Not CAS and not tracked: test_storage_iceberg_with_spark under MSan (16 failures here, 28 on base, ATTEMPT_TO_READ_AFTER_EOF). The fork's pull-request workflow runs no Style check job.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) closes CAS-434, CAS-443, CAS-354, CAS-466, CAS-480, CAS-481. CI run 44084349150 on 44fc40023c1: hard-restart regression jobs green on both architectures with the 40 s lease; both ASan `cas s3 storage` shards green (one run; CAS-432 needs a second); five MSan/TSan `cas s3 storage` shards ended at the job time limit (CAS-223); `03770_min_columns_to_activate_adaptive_write_buffer` red on `cas s3 storage` until the upload-buffer follow-up merges (CAS-79).
 <!-- SECTION:NOTES:END -->

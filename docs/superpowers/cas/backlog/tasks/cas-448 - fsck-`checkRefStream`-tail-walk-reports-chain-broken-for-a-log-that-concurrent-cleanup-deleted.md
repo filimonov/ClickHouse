@@ -3,10 +3,10 @@ id: CAS-448
 title: >-
   fsck `checkRefStream` tail walk reports chain-broken for a log that concurrent
   cleanup deleted
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 06:48'
-updated_date: '2026-11-11 07:52'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -42,4 +42,6 @@ ordinal: 551000
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11 spec: docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md (draft, not approved by the owner). Model: docs/superpowers/models/CaRefCleanupLicenceCore.tla, results in CaRefCleanupLicenceCore_RESULTS.md (12 configurations, all expectations met, TLC -workers 1). No existing model changes. Owner decisions 2026-11-11: implementation starts after PR 2805 merges into antalya-26.8 and is not part of it; no backport to antalya-26.6; the TLA+ model is added. Spec review (codex, 3 rounds): round 3 ended with 1 MAJOR, the incarnation-freshness premise is not guaranteed across admission retries of createNamespace. Folded into the spec as a stated gap and tracked as CAS-449, which is delivery step 0 and a prerequisite of the licence change. The corrected text has not had a fresh review round.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `4848f49e21f`. An absent tail log now gets the `_ckpt` re-read the base already got; a changed, absent or unreadable `_ckpt` gives `Unchecked`, an unchanged one stays chain-broken. CAS-457 stays open.
 <!-- SECTION:NOTES:END -->

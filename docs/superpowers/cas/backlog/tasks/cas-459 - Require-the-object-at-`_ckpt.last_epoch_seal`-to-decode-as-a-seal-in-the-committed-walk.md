@@ -3,9 +3,10 @@ id: CAS-459
 title: >-
   Require the object at `_ckpt.last_epoch_seal` to decode as a seal in the
   committed walk
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 17:18'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
@@ -36,3 +37,11 @@ Optional hardening after CAS-366. The frontier refusal trusts `_ckpt.last_epoch_
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+After CAS-487 merges this task is obsolete: `_ckpt.last_epoch_seal` does not exist in generation 3, so the frontier refusal no longer trusts it.
+
+2026-11-17: OBSOLETE, closed without implementation. Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Made obsolete by PR 2831: `_ckpt.last_epoch_seal` does not exist in generation 3.
+<!-- SECTION:NOTES:END -->

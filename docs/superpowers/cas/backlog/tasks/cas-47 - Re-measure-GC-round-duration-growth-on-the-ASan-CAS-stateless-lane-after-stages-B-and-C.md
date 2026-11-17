@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-13 14:29'
 labels:
   - 'area:gc'
   - 'area:ci'
@@ -59,4 +59,6 @@ Provenance: BACKLOG/gc.md#gc-round-duration-superlinear-growth (from the deleted
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (e35929424c6, by 'gc-round-duration-superlinear-growth')
+
+2026-11-13: RCA on PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (report tmp/prbundle/wave1/ci2/sanitizer-rca.md): first data from the CI dump of system.cas_gc_log (release arm_binary cas-s3 lane, job 131765755569). Over 90 minutes: GC round duration 20 s to 460 s; ref keys listed per round 3723 to 111086; namespaces seen 241 to 8126; catalog entries 180 to 4294; dead-life debris 98 to 3949. 8 of the last 14 rounds ended Aborted in fold_reduce after 113 to 117 s with 'list of cas_s3/cas/manifests/: gave up at the policy deadline after 14-19 attempt(s)' (the 120 s request window); no S3 error on the GC thread, only slow requests; LIST latency 6.7 to 17.3 ms. Phase seconds over the lane: fold_reduce 1260, defer_decision 898, fold_ref_intake 706, namespace_cleanup 467, ref_object_cleanup 376, manifest_deletes 304, pre_fold_ref_drain 250. Ref cleanup itself works (87117 of 102294 planned objects deleted), so CAS-447's cause is gone; what grows is the listing work per round, and aborted rounds delete nothing, so the backlog feeds itself. The ASan 1/2 server log shows the opposite on the larger runner: 190 rounds, all successful, plateau at 20 to 35 s. Open: why the manifest LIST exceeds the window on the arm lane.
 <!-- SECTION:NOTES:END -->

@@ -4,7 +4,7 @@ title: 'Precommit-and-stay-open for temporary part names: one ledger append per 
 status: To Do
 assignee: []
 created_date: '2026-10-07 21:05'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-11-14 10:18'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -51,4 +51,8 @@ Depends on the GC nomination fix from CAS-346. Source: codex review of docs/supe
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): measured one INSERT on local object storage = 3 ref-log flushes (`precommit`, `publish`, `Move`; `CASRootPut` 3, `CASRequestAttempt` 21, 1 manifest PUT). The rename is now one `Move` append (CAS-346 done on the branch); this task's remaining target is the publish+Move pair -> one append.
+
+2026-11-13: feasibility memo master/tmp/prbundle/wave2/promote-move-memo.md (code read at cas-pr1-clean 802077e5c1a, nothing run). Owner's idea: do the commit and the rename of a new part in ONE ref-log append. Verdict: feasible WITHOUT a format change as one append `[Promote(tmp), Move(tmp -> final), SetPublishedAt(final)]`: `RefTableState::applyTxnInPlace` applies ops in array order (`CA/Pool/CasRefProtocol.cpp:567-568`), the decoder has no cross-op rule, and a 26.8-tip node folds it (the ref protocol and log format files are byte-identical between the 26.8 tip and this head). Counts per new part (no blobs, warm namespace; one append = catalog GET, `_log` PUT, `_ckpt` GET + PUT): 26.6 every path 2 appends / 10 requests; 26.8 plain and replicated INSERT, plain merge, plain and replicated mutation 3 appends / 14 requests; 26.8 replicated merge already 2 appends / 10 (`MergeFromLogEntryTask.cpp:415` renames before `:416` commits). Saving: 4 requests per part on five of six paths. Cost: a process-local 'sealed' part state (uploaded and precommitted, not promoted) between `commitTransaction` and the rename, estimated 400-600 product lines in 5-6 CA files and 600-900 test lines; differences from a committed temp ref: a self-remount's stale-precommit sweep removes it (retryable INSERT error), and a leaked handle pins `min_active_build_sequence`. Variant W: for plain merges rename before commit as the replicated merge does (swap `MergePlainMergeTreeTask.cpp:157` and `:160`, an upstream file): 4 requests saved on that path alone. The older formula in cas-347 (`RemovePrecommit + AddPrecommit + Promote`) puts a -1/+1 edge pair on one manifest; `Promote + Move` emits no edge. Not established: whether 4 requests per part are material (the local A/B measures it), and readers of the temp part between commit and rename on createEmptyParts, MOVE/REPLACE PARTITION, part moves, zero-copy, text-index scratch refs, deduplicated-insert removal.
+
+2026-11-14, owner decision: not built in this form (deviation from the upstream writer order). See CAS-485 and docs/superpowers/reports/2026-11-14-cas-promote-move-one-append-feasibility.md. If reopened: replace the op formula `RemovePrecommit(tmp) + AddPrecommit(final) + Promote(final)` with `[Promote(tmp), Move(tmp -> final), SetPublishedAt(final)]`. The pair emits no manifest edge, so the dependency on the GC un-nomination fix goes away. Prefer wiring A of the report (park the build in the disk layer, promote on first observation): it edits no upstream file. Wiring B (keep the storage transaction open) edits three upstream sites.
 <!-- SECTION:NOTES:END -->

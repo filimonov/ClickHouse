@@ -4,7 +4,7 @@ title: Aarch64 CAS aggregate-functions regression suites fail on p_value snapsho
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-13 12:56'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -34,4 +34,10 @@ RegressionTestsAarch64 / CASAggregateFunctions (1-3) and CASS3CacheAggregateFunc
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): still red. Six jobs: `RegressionTestsAarch64 / CASAggregateFunctions (1)(2)(3)` and `CASS3CacheAggregateFunctions (1)(2)(3)`. Part 2 and part 3 fail 3 leaf scenarios each (`analysisOfVariance`, `studentTTest`, `welchTTest`, merge and finalizeAggregation variants); part 1 has 496 `Fail` lines under the same three functions. First traceback: snapshot `p_value` 0.2519310730478018, actual 0.2519310730478017. Scenario counts equal the previous PR run 42864462634. The base-branch MasterCI run 39839856866 fails the same jobs.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2831 @d8cbdfae3ec, run 43248330323 (triage: tmp/prbundle/wave1/ci/triage.md). Six Aarch64 aggregate jobs red: CASAggregateFunctions (1) 131374910373, (2) 131374910552, (3) 131374910719; CASS3CacheAggregateFunctions (1) 131374912761, (2) 131374912475, (3) 131374912593. Failing scenario names and summary lines identical to base 43246617309 (jobs 131295808929, 131295809367, 131295809094, 131295811972, 131295812566, 131295812268). Shard 3: analysisOfVarianceMerge p_value 0.2519310730478018 expected, ...017 actual. The non-CAS AggregateFunctions (1/2/3) jobs on Aarch64 are red on the same base run, so the cause is not CAS.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824: aarch64 CASAggregateFunctions (1) 131784879845 and CASS3CacheAggregateFunctions (1) 131784880064 red again (welchTTest and others, 7 failed scenarios each), same class.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): jobs 131784880435, 131784880188, 131784879717, 131784880464 (3 failed scenarios each, totals equal to base).
 <!-- SECTION:NOTES:END -->

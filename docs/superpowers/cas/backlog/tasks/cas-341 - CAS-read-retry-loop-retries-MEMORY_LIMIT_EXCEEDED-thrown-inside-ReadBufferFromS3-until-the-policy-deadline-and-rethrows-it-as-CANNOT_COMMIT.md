@@ -7,7 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:57'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-13 09:58'
 labels:
   - gc
   - bug
@@ -49,3 +49,9 @@ The memory-tracker level is only in the exception text today; if no structured f
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824, job 131765755569 (Stateless tests arm_binary, cas s3 storage, parallel): 04023_rollup_totals_memory_limit FAIL after 113 s: expected server error 241 but got 210, 'CAS write could not be committed (read of cas/manifests/.../000001.zst ... at the policy deadline after 51 attempt(s))'. The only failure of the job (13643 passed). With the request window at 120 s (was a fixed 90 s) the masked retry now runs longer before it gives up.
+<!-- SECTION:NOTES:END -->

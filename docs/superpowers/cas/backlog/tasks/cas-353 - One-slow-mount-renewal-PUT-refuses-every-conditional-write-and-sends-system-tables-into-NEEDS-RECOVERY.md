@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-11 13:00'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:lease'
   - 'area:ux'
@@ -51,4 +51,10 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 1); PR https://github.c
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11 defaults review: reproduced on the stand: every PUT delayed 6 s for 60 s gives 58 INSERT errors from 16 s at 30/10 (`def_slowput6`) and none at 120/40 or 120/10 (`l120_slowput6`, `rec_slowput6`); a 3 s delay gives none at 30/10. The 4 s slack is the cause; a 120 s lease with a 10 s renew period makes the slack 94 s. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commits b528b234dca "Default the CAS mount lease to 120 s" and 9dbc97f3e19 "Print the write reserve and the renewal slack at mount" cover: #1 with 120 s lease and 10 s renew period the slack between a due renewal and the write cutoff is 94 s, so a renewal `PUT` shorter than that does not refuse writes; #2 `write_reserve_ms` and `renewal_slack_ms` are in the mount request budget log line, documented in `mounts-and-leases.md`. Still open: #1 for a renewal `PUT` slower than 94 s, because background renewal retries with `Retry::untilDefinitive` and no request window bounds it (no owner named). The 120 s default is under an open decision (CAS-480): CI of the head shows a restart after a hard kill waits about 131 s (36.5 s at 30 s), and a mixed-build pool needs the lease pinned to 30 s (CAS-475). The default may be reverted or pinned in tests, which would restore the 4 s slack. CI run https://github.com/Altinity/ClickHouse/actions/runs/43379266824. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `9dbc97f3e19` prints the reserve and the slack at mount. With the 40 s default (`feb86da1f4a`) a renewal PUT shorter than 14 s does not refuse writes (4 s at 30 s). A renewal PUT slower than that is still unbounded by a request window.
+
+2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s.
 <!-- SECTION:NOTES:END -->

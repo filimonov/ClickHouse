@@ -3,10 +3,10 @@ id: CAS-455
 title: >-
   Report whether a catalog write was sent, so an unsent `beginRemoving` reopens
   the write lane
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 16:16'
-updated_date: '2026-11-12 01:08'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -44,4 +44,8 @@ Provenance: tmp/noclock/drafts/prep/367/REVIEW.md (declined item 1).
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-12: implemented on branch `fix/antalya-26.8/cas-late-request-audit-bundle` (head `fa1b89d1529`, not pushed, no pull request yet), so this task ships with CAS-367 instead of after it. `CasRefLedger::dropNamespaceImpl` sets its lane-closing local from `RequestObserver::on_write_attempt` of the removal operation; the engine calls it before each write attempt. Commits: `e83bf616613` (close the lane only after a sent write), `85cd6215887` (a later proof of `Removing` clears `removal_write_may_land`), `5e063710e2a` (refusal text of `namespaceLife`), `fa1b89d1529` (test for `FencedOut` after a sent write). Acceptance criterion 1, suite `CASRefWriterNamespaceRemoval` in `src/Disks/tests/gtest_cas_ref_writer.cpp`. Nothing sent, lane reopens: `RefusedBeginRemovingBeforeAnySendReopensTheLane`, `EntryChangedBeforeAnySendReopensTheLane`, `ReadFailureInsideBeginRemovingReopensTheLane`. Write sent, lane stays closed: `LeaseGoneAfterASentAttemptKeepsTheLaneClosed`, `EntryChangedAfterASentAttemptKeepsTheLaneClosed`, `FencedOutAfterASentAttemptKeepsTheLaneClosed`. Mutation checks: setting the local before the call fails the three reopen tests; clearing it on `FencedOut` fails only the `FencedOut` test; clearing it on `EntryChanged` fails the `EntryChanged` test. Spec: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md` section 5.2. Close this task when the branch merges.
+
+CAS-487 defers the durable terminal record of a removal to Part B. Once Part B lands, nothing reopens a lane after a terminal record, which contradicts AC #1. The tracking this task relies on (`removal_write_may_land`, `removal_attempt_active`) is removed by Part B.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `7d814447cb1`. `c821aece830` adds the `removing_observed` latch next to `removal_write_may_land`; the sent-write tracking is not removed.
 <!-- SECTION:NOTES:END -->

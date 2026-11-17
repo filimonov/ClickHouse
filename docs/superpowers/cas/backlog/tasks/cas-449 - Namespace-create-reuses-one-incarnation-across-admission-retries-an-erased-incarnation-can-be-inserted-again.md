@@ -3,10 +3,10 @@ id: CAS-449
 title: >-
   Namespace create reuses one incarnation across admission retries: an erased
   incarnation can be inserted again
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 07:51'
-updated_date: '2026-11-11 11:05'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:ref-catalog'
   - 'area:gc'
@@ -46,4 +46,6 @@ ordinal: 552000
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11 owner decision: no port of this fix to `antalya-26.6` (narrow window, complex scenario).
 2026-11-11 overlap found: CAS-368 asks for the same code change from another scenario (catalog ETag ABA after a cancelled `Creating` row). Its draft `fix/antalya-26.6/cas-368-fresh-incarnation-per-step1-retry` @d42febbcc9bf (2 commits on 8fefc27bd625, +262/-17, local, not pushed) mints the incarnation inside `mutate` of `createNamespaceStep1` and returns the entry from the landed catalog, which is this task's fix direction and criteria #2 and #3. `git apply --check --3way` of that diff passes on the PR 2805 tree (2f89c5db182); it was built and gated only on the 26.6 base on 2026-10-18. Left for this task: criterion #1, the gtest of the lost-response, complete, drop, erase, retry interleaving. This task was filed without a backlog search for `createNamespaceStep1`; CAS-368 should carry the code, this task the second scenario and its test.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `531d7c293e0` with `f81f7f8f544`. Same change as CAS-368.
 <!-- SECTION:NOTES:END -->

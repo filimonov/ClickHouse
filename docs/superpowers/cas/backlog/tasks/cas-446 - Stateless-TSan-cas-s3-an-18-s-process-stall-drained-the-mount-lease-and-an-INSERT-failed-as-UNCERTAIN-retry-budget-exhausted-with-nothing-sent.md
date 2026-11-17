@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:56'
-updated_date: '2026-11-12 16:55'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:write-path'
   - 'area:mounts'
@@ -61,4 +61,10 @@ Two defects and one open question:
 2026-11-11 defaults review: process-stall runs (`docker pause` of both servers): at 30/10 a 20 s stall costs 4 INSERT and 1 SELECT errors at wake-up; at 120/10 stalls of 20 s and 45 s cost none and 90 s costs 0-1. So the lease default closes the 18 s CI case; the misleading UNCERTAIN text (AC #1) stays. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 
 2026-11-12. AC #2 is a decision, not code: the 120 s default lease of CAS-405.3 (wave 1 of the 26.8 bundle, spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 6) removes the client-visible failure of a short stall; at 120/10 the 20 s and 45 s process stalls of `docs/superpowers/reports/2026-11-11-cas-defaults-review.md` cost no errors. AC #1: the decommission tombstone write already reports by `sent_any` (`Tools/CasDecommission.cpp:95-106`); the one remaining text is the part-manifest give-up at `Pool/CasPartWriteTxn.cpp:697-702`, rewritten in the wave from the `GaveUp` fields (six cases, spec section 10.4).
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 06f74c43a1f "Build the manifest give-up text from the give-up facts" covers: #1 for the part-manifest `PUT` in `stageManifest`: six texts chosen by `why`, `sent_any` and `deadline_source`, attempt count only when the body may have landed; `CASPartWriteTxn.StageManifestNotSentUnderDrainedLeaseSaysNotSent` and `CASPartWriteTxn.StageManifestSentThenGaveUpSaysUncertain` cover both. Still open: #1 for the decommission tombstone write, which already reports by `sent_any` only and is unchanged, and no text carries the pause age; #2 the decision (CAS-405.3, the 120 s lease, closes the short-stall failure) is recorded in the task, but that default is under an open decision (CAS-480, restart wait about 131 s on the head, mixed-build pools need 30 s per CAS-475), so the decision holds only while the default stays. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `06f74c43a1f` builds the `stageManifest` give-up text from the give-up facts. The decision "CAS-405.3 closes the stall" assumed the 120 s lease; at the 40 s default the write window is 14 s. Re-decide against CAS-185.
+
+2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s. The decision "CAS-405.3 closes the 18 s stall" assumed 120 s; it must be taken again.
 <!-- SECTION:NOTES:END -->

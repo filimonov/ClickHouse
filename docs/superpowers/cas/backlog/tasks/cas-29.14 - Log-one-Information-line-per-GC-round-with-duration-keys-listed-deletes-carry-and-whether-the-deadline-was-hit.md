@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -60,4 +60,8 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F28, one of the 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (83949645ce7, by 'audit F28')
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 9614529f050 "Log one `Information` line per finished GC round" covers: #1 for rounds ending `Success`, `Aborted`, `Error` and `Stopped`, one line from `runRoundLogged` with `round`, `outcome`, `trigger`, `duration_ms`, `deleted`, `condemned`, `error_code`, `keys_listed`; #2 `CASGCLog.FinishLogLineMatchesCasGcLogRow` and `CASGCLog.AnAbortedRoundLogsExactlyOneFinishLine` match the line to the Finish row. Still open: #1 for `Deferred` and `NotALeader` rounds (no line), and the fields `carried` and `deadline_hit` (the task says to add them with CAS-29.10). Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `9614529f050`. Fields `carried` and `deadline_hit` wait for CAS-29.10.
 <!-- SECTION:NOTES:END -->

@@ -4,6 +4,7 @@ title: Make `fsck` tail revalidation sound against the dead-life janitor
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:18'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -36,3 +37,9 @@ After CAS-448 `checkRefStream` rereads `_ckpt` when a tail log is absent and rep
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-17: CAS-448 is done: the `_ckpt` re-read of 4848f49e21f (PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e)) covers the base and the tail. The catalog-row re-read of criterion 2 is not done.
+<!-- SECTION:NOTES:END -->

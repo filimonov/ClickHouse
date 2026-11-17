@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 20:55'
+updated_date: '2026-11-15 14:38'
 labels:
   - 'area:ref-ledger'
   - 'touches:format'
@@ -50,3 +51,9 @@ Not a fix for the orphan sweep's second read of the ref history (CAS-358): that 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+CAS-487 keeps the writer epoch in the log key, adds the `!next_epoch` chain link and bumps the header to generation 3. Its lazy tombstone already meets AC #3 (a first touch writes at most one tombstone, not one seal per skipped epoch). A later CAS-387 would be generation 4 on top of that.
+<!-- SECTION:NOTES:END -->

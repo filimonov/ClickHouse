@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 16:13'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:tests'
   - 'area:gcs'
@@ -40,3 +40,11 @@ Fix in the test, not in the product (lazy per-profile clones are bounded and int
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): job 131829639714 test_interleaved_ordinary_and_cas_operations_do_not_leak_mode_or_build_a_client: first attempt assert 1 == 0, rerun passes; base job 131295791024 identical.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `97123265e03`. Open: confirm the restart variant of AC3.
+<!-- SECTION:NOTES:END -->

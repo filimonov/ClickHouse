@@ -3,10 +3,10 @@ id: CAS-373
 title: >-
   Small robustness fixes from the late-request audit: `mergeCkpt` fencing,
   `_pool_meta` vanish, `GetBucketVersioning` bound
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-12 05:00'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:ref-ledger'
   - 'area:backend'
@@ -57,4 +57,6 @@ Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20
 2026-10-18: draft prepared on fix/antalya-26.6/cas-373-late-request-robustness @0f285d4e01d5 (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/373/.
 
 Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle` at `fa1b89d1529` (worktree `cas-pr1`, 40 commits over `be74be9fa7b`). Not pushed, pull request not opened. Gates on that head: release `CAS*` 3005, ASan/UBSan 3009, Fast-test compile, stateless 58 of 58. Design: `docs/superpowers/specs/2026-11-11-cas-pr2-late-request-audit-bundle-design.md`. Measurements: `docs/superpowers/reports/2026-11-11-cas-pr2-late-request-audit-bundle-measurements.md`. Story E: `b07b0d9c5bf`, `1cf94f6dbd5`, `0221e08fdf9`.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `b49e0a6f636` and `65877ae7a2f`. The `mergeCkpt` item (`3a02548e627`) became moot when `a1a34ae367d` removed `mergeCkpt` under generation 3.
 <!-- SECTION:NOTES:END -->

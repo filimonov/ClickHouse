@@ -3,10 +3,10 @@ id: CAS-148
 title: >-
   Log the snapshot publisher's back-off on a `Writing` ref lane at Debug, and
   name the lane state
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:observability'
   - 'area:ref-ledger'
@@ -59,4 +59,8 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F28 second half)
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (83949645ce7, by 'audit F28')
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit b26ff0e9d66 "Name the append-lane state in the snapshot publication refusal" covers: #1 a `Writing` lane logs at `Debug`, every other state stays at `Warning`; #2 the message prints the name from `refLaneStateName`; `CASRefSnapshotPublishOrdering.LaneStateNamesCoverEveryState` checks six distinct names. Still open: none. The level split has no unit seam and was checked by reading. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `b26ff0e9d66`.
 <!-- SECTION:NOTES:END -->

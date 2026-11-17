@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 23:26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -48,4 +48,8 @@ On the cas-s3 stateless lanes `CASRefCleanupObjectsDeleted` stays 0 for the whol
 LINEAGE 2026-11-11: the gate is not new. 53e2a135980 (2026-08-02, 'Revalidate CAS ref cleanup deletes') replaced the plain per-key HEAD+deleteExact with a per-key re-read of cas/ref_catalog + gc/state and added the whole-catalog token equality (then 'token', renamed 'etag' in 55a967b433d 2026-09-03); fe0b909f011 (2026-09-04) moved the check from per-key to per-chunk (authorityHolds) and batched the delete, keeping the equality. Reached antalya-26.6 in a840c03b425 (2026-08-05, PR 2159 'CAS subsystem: GC layer') and antalya-26.8 via the 2159 cherry-pick c770be91e83. Before 53e2a135980 cleanup deleted without any catalog check. The same whole-catalog-stillness class was removed from the ref writer in 684161dcc03 (2026-08-05, 01069_database_memory 193/194 retries) but the GC site was left. Already tracked: 2031-triage CAS-079 (e811b3d68f4, 2026-08-21), CAS-29.7 (measure refusal reasons) and CAS-29.8 (per-life licence, spec B3). CAS-447 is the CI confirmation of CAS-29.7's hypothesis: PR 2794 shard 2/2 and the local lane show 0 deletes over a full run with 'catalog observation/life moved' as the only stop reason. Treat CAS-447 as a duplicate of CAS-29.8 for the fix; keep it for the CI evidence.
 
 2026-11-11 spec: docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md (draft, not approved by the owner). Model: docs/superpowers/models/CaRefCleanupLicenceCore.tla, results in CaRefCleanupLicenceCore_RESULTS.md (12 configurations, all expectations met, TLC -workers 1). No existing model changes. Owner decisions 2026-11-11: implementation starts after PR 2805 merges into antalya-26.8 and is not part of it; no backport to antalya-26.6; the TLA+ model is added. Spec review (codex, 3 rounds): round 3 ended with 1 MAJOR, the incarnation-freshness premise is not guaranteed across admission retries of createNamespace. Folded into the spec as a stated gap and tracked as CAS-449, which is delivery step 0 and a prerequisite of the licence change. The corrected text has not had a fresh review round.
+
+2026-11-13: RCA on PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (report tmp/prbundle/wave1/ci2/sanitizer-rca.md): the cause recorded here is gone at this head: on the release arm_binary cas-s3 lane ref cleanup deleted 87117 of 102294 planned objects. Round growth continues for another reason (listing work per round, aborted rounds); see the CAS-47 note of the same date.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Cause removed in PR 2831 by `20e4b2fd7f3`. Open: AC1, `_log` count per life bounded over a full lane run.
 <!-- SECTION:NOTES:END -->

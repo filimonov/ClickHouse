@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-15 00:45'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -114,4 +114,6 @@ Decision log (times are commit times, local):
 - 2026-10-14: codex round 9 on rev.4 (tmp/cas358/codex_spec_review_9.md): APPROVE, no new findings; rounds 6-9 went 10 / 7 / 3 / 0. Spec at ea3b16d1dbb is the one to plan from: stage 1 first (no prerequisites), stage 2 after CAS-36, CAS-391, CAS-362/363 and the rollout gate of §4.6.
 
 - 2026-10-15: TLA done (AC #6). CaGcRootLocalPartManifestCore gains snapPos, journal event epoch, OwnedAt, SnapRetain, SnapshotView, INV_COMMITTED_REMOVAL_BODY and six sabotage flags. fix_snapshotview green (5.27 B generated / 772 M distinct, depth 45, 56 min at 28 workers); witness_snapshotswept and witness_rebirthswept reachable; sab_snapcursor (CAS-310 shape), sab_snapepoch (finished-but-owned post-P build), sab_snapmissing, sab_grantcrossepoch(+_rowed, the CAS-391 gap), sab_floorfirst_snap, sab_sweepunfoldedremoval all red as predicted; the 64-cfg legacy battery unchanged. Exhaustive rebirth run (fix_snapshotview_rebirth) left under SLOW=1: does not fit the disk; the rebirth witness stands in. RESULTS.md §cas-358-snapshot-view.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 20b02254350 bounds the owner replay of `activeManifestKeys` per record against the round's recovery budget and keeps the namespace's candidates when it stops (`recovery_incomplete`). Stage 2 removes the replay; until then this bound applies.
 <!-- SECTION:NOTES:END -->

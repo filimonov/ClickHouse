@@ -3,10 +3,10 @@ id: CAS-167
 title: >-
   Coalesce `_ckpt` publications per namespace so the hot checkpoint key stays
   under the GCS mutation limit
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-10-01 17:57'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -70,4 +70,10 @@ Provenance: BACKLOG/gcs.md#gcs-hot-control-keys-429 (A1, cross-provider note, 20
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01: occurrence on PR #2463 aarch64 cas_alter_attach_3: minio timeouts on the shared data/cas/ref_catalog (~1.1 MB, 3 nodes conditional PUTs): clickhouse2 1648 S3 timeouts, 752 on ref_catalog, PreconditionFailed contention; CREATE TABLE ON CLUSTER failed with 210 after 12 attempts. tmp/ci-2463/rca.md section 9
+
+2026-11-14: CAS-487 studies a log-only ref append (no _ckpt write per append, _ckpt written only by the sealer and the snapshot publisher). If built, it removes the per-append write to this key and subsumes this task. A checkpoint-inline design (records carried in _ckpt) would keep one _ckpt write per append and conflict with AC #3 and #4. See the round-2 consults in docs/superpowers/reports/2026-11-14-cas-one-request-ref-append-consults/.
+
+After CAS-487 merges the append path of this task is delivered: `_ckpt` is no longer written per flush, so there is no hot `_ckpt` key to coalesce. AC #1 and #2 (lagging `committed_through`, flush on unmount) are moot. AC #3 and #4 (no 429 or 409 on `_ckpt`) follow by construction but the CAS-487 measurements do not check them. `_ckpt` is still written at creation and on snapshot publication.
+
+2026-11-17: OBSOLETE, closed without implementation. Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Made unnecessary by PR 2831 `18be198c7ab`: `_ckpt` is not written per append, so there is nothing to coalesce. The GCS 429 and AWS 409 soak was not run; fold it into CAS-172 if wanted.
 <!-- SECTION:NOTES:END -->

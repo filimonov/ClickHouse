@@ -4,7 +4,7 @@ title: Publish a part with zero GETs in the common path (decision-5)
 status: To Do
 assignee: []
 created_date: '2026-08-03'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -63,4 +63,10 @@ Provenance: BACKLOG/ref-protocol.md#part-publish-zero-gets, absorbing BACKLOG/pe
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-03 (73755caa6e5, by 'ckpt-read-policy')
+
+CAS-487 delivers part of this task: two of the four reads are gone (the `_ckpt` read and the `_ckpt` write); a flush is one `_log` `PUT`. The catalog `GET` stays until Part B. The manifest re-read (CAS-176.3) stays. AC #3 (matched before/after on HEAD) is still owed.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. PR 2831 delivers AC1 to AC3: a lone INSERT issues no catalog, `_ckpt` or manifest read, and an append is one `_log` PUT. AC4 needs one decision: the fallback reads it lists mostly no longer exist; close with that reason after CAS-176.1 AC3.
+
+2026-11-17: Children after PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) : CAS-176.1 and CAS-176.3 landed, CAS-176.2 closed as obsolete, CAS-176.4 open.
 <!-- SECTION:NOTES:END -->

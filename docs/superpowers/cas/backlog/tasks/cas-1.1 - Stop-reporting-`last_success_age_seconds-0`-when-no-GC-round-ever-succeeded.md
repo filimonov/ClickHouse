@@ -1,10 +1,10 @@
 ---
 id: CAS-1.1
 title: Stop reporting `last_success_age_seconds = 0` when no GC round ever succeeded
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -63,4 +63,8 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (f07a9ed680d, by 'ever-succeeded-unused')
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 8cb67305740 "Report no GC success age before the first success" covers: #1 `system.cas_mounts.last_success_age_seconds` is `NULL` and `CASGCLastSuccessAgeSeconds_<disk>` is absent until this server GC completes its first round as leader (a `Deferred` round counts); #2 the age is reported as before after a success; #3 stateless test `05484_cas_mounts_gc_success_age_null` plus the extended `CASGCHealth` gtest; docs (`monitoring.md` adds an alert on the absence of a recent age, `cas_mounts.md`, `debugging.md`, `troubleshooting.md`, `mounts-and-leases.md`). Still open: none. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `8cb67305740`. `system.cas_mounts.last_success_age_seconds` is `NULL` and the `CASGCLastSuccessAgeSeconds_<disk>` metric is absent until this process finishes its first GC round as leader.
 <!-- SECTION:NOTES:END -->

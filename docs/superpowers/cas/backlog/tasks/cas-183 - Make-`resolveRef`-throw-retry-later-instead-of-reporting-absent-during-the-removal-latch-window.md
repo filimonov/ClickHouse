@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-12 01:08'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'area:read-path'
@@ -54,4 +54,6 @@ First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
 2031-triage CAS-017: residual 1 (read path answers absent instead of retry-later while `dropNamespace` holds the admission latch).
 
 2026-11-12: the late-request bundle (branch `fix/antalya-26.8/cas-late-request-audit-bundle`) makes this window longer. A `DROP` whose `Live -> Removing` write was sent and not answered now leaves the lane closed until a retried `DROP` completes or the disk remounts, not only for the length of the drop. The final review of that branch notes that reads on that server see the table as absent for that whole time (`acquireReadableRefTableRuntime` returns no runtime while the lane is closed). A retry-later answer from `resolveRef` matters more with that change.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) keeps `removal_write_may_land` and adds `removing_observed` (c821aece830). A `beginRemoving` that lands after a remount leaves the row `Removing` under an open lane until a restart, a remount, a retried `DROP` or the GC leader's next round (accepted residual, d0e2d1a80bd). fc82bf0d80b latches a `Removing` row at the recovery confirmation.
 <!-- SECTION:NOTES:END -->

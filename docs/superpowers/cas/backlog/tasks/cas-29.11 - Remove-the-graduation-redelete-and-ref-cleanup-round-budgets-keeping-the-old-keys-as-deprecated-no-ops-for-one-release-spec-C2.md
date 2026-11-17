@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-12 16:55'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -85,4 +85,8 @@ Source: utils/ca-soak/scenarios/BACKLOG.md:3510 (uncommitted). Related owners: C
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): three caveats. The 1000-table pair (74277 against 20372 unreachable) is one run each and `mt1000_base` also ran the restart test before fsck; by share it is 82 % against 37 %. Above GC capacity budgets make no difference at equal load (`gcH_i900` against `gcH_i900_b0`: 109584 against 107309 unreachable) and do not bound a round either (1445 s with them in `gcD_H_i300`). No run had `cas_gc_round_outcome_entry_budget` at 0 on a busy round; that part of the proposal rests on the code.
 
 2026-11-12, owner picked the reduced form for wave 1 of the 26.8 bundle (spec `docs/superpowers/specs/2026-11-12-cas-improvements-wave1-design.md` section 8): the five round budgets default to 0 (unbounded), the keys stay and keep working. AC #1 (remove the keys and warn) is superseded: nothing is removed, so there is nothing to warn about.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 632f1b04a7d "Default five GC round budgets to unbounded" covers: #3 `configuration.md` lists the five budgets (graduation, redelete, ref-cleanup, hand-off, outcome entry) at default `0` with a migration note; #2 only the meaning of `0` on the ref-cleanup budget is pinned. Commit 9ece501b97e "Keep the outcome log of a GC round shard under the format cap" bounds the outcome object at 128 MiB (estimate) now that the entry budget is `0`; `pending_deletes` reports `outcome_rows_dropped`. Still open: #1 is superseded, the keys stay and work, so there is no warning; #2 has no test of its own for the `entries_redeleted` sum past 5000. First round after an upgrade on a backlogged pool runs long and delays the dead-member fence-out. No study run exists for the outcome-entry and hand-off budgets at `0`. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `632f1b04a7d` and `9ece501b97e` in reduced form: keys stay and default to unbounded. Open: a test of `entries_redeleted` past 5000; AC1 is superseded.
 <!-- SECTION:NOTES:END -->

@@ -3,10 +3,10 @@ id: CAS-451
 title: >-
   Bound the retries of a deposed ref-log recoverer that keeps getting
   `Superseded` from `publishCkpt`
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 11:49'
-updated_date: '2026-11-11 17:34'
+updated_date: '2026-11-17 20:02'
 labels: []
 dependencies:
   - CAS-366
@@ -38,4 +38,8 @@ After CAS-366, `publishCkpt` returns `CkptPublishOutcome::Superseded` when a con
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-11: a gtest now drives this path on the branch `fix/antalya-26.8/cas-ref-cleanup-per-life-licence`: `CASRefWedgeEveryAttempt.RecoveryWalkOfAWriterLaneInNeedsRecoveryRefusedBySupersedingEpochsInstallsNothing` (`src/Disks/tests/gtest_cas_ref_wedge_every_attempt.cpp`). A lane in `NeedsRecovery` gets `Superseded` from the recovery walk, installs nothing and answers retry-later. In that test the next touch recovers onto the successor's snapshot, so the loop ends after one retry. The unbounded case this task asks about needs a successor that keeps moving the frontier; the test is the starting fixture for it.
+
+After CAS-487 merges this task is obsolete: `CkptPublishOutcome::Superseded` is removed with the store-side seal-slot refusal, so a deposed recoverer no longer gets that outcome.
+
+2026-11-17: OBSOLETE, closed without implementation. Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Made obsolete by `a1a34ae367d` in PR 2831.
 <!-- SECTION:NOTES:END -->

@@ -4,7 +4,7 @@ title: CAS as fast as plain S3 on the same workload (parity umbrella)
 status: To Do
 assignee: []
 created_date: '2026-09-28 16:46'
-updated_date: '2026-09-28 16:49'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'theme:parity'
   - 'area:write-path'
@@ -63,4 +63,8 @@ Umbrella for the plan that makes a CAS disk cost no more than a plain S3 disk pe
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-28 correction (owner question 'is _ckpt not on every append safe?'): no, not as 'skip the checkpoint and ack anyway'. The ref-stream model CaRefTableSnapshotLogCore carries the sabotage SabotageAckBeforeFrontier ('acknowledge a durable log before _ckpt.committed_through') precisely because the acked-durability and GC frontier proofs (NoAckedLoss; a round may run destructive work only while holding a frontier proof taken from the exact _ckpt.committed_through) require the client ack to follow the checkpoint that covers the entry. The safe shape of stage 3 is group commit: several appends of a flush group share ONE _ckpt PUT and are acked after it (CAS-287 combine window; CAS-176.2 removes the _ckpt GET, not the PUT). DRAFT-26's 'every N flushes or T seconds' is admissible only with the ack deferred to that checkpoint, which is the same thing as a combine window, and it needs a model row before any code (AGENTS.md invariant 5).
+
+CAS-487 acknowledges an append with no `_ckpt` write. The recorded rule "the client ack follows the checkpoint that covers the entry" is replaced by the mount lease recheck. The stage 3 gate "no `_ckpt` per append" is met. The acked-durability and GC frontier arguments of this umbrella must be restated for that rule. Dependencies CAS-167, CAS-176.1 and CAS-176.2 are subsumed or obsolete as noted on each.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) delivers the per-append and promote request cuts: a lone INSERT 25 -> 14 store requests, 22.2 -> 11.6 ms on a local RustFS stand. Children: CAS-176.1 and CAS-176.3 landed (176.1 keeps one open test criterion), CAS-176.2 and CAS-167 closed as obsolete, CAS-85 partly (a shard killed by the job time limit uploads no dump), CAS-79 and CAS-223 open. Upload pool default is 64 (9fbdefb5711).
 <!-- SECTION:NOTES:END -->

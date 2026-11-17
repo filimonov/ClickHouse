@@ -4,7 +4,7 @@ title: Check the pinned RustFS image against the upstream fix for rustfs#3231
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 14:38'
+updated_date: '2026-11-17 09:56'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/formats-and-storage.md [F2 / rustfs#3231]; absorbs u06's dro
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'F2 / rustfs#3231')
 
 Merged from u19b-soak (merge into CAS-280): While the pinned RustFS still retains overwritten versions, long chaos soaks need the orphan reaper. Launched as `docker exec … orphan_reaper.sh` it dies on the first chaos RustFS restart, after which the leak grows until the disk watchdog stops the run. The fix recorded on 2026-07-09 (a host-side loop calling `orphan_reaper.sh <dir> --once` every 120 s) was applied by hand once and never wired: `utils/ca-soak/scripts/run_24h.sh` does not launch the reaper at all. If a fixed RustFS image removes the leak, retire the reaper instead.
+
+2026-11-17: https://github.com/Altinity/ClickHouse/pull/2876 (merged into antalya-26.8, 2026-11-17, by k-morozov) moves CI from RustFS 1.0.0-rc.3 to the stable 1.0.6: the CAS-over-S3 stateless tests and the RustFS-backed integration tests. Verified there: archive checksum, server start in the CI environment, object writes and reads, conditional delete with a matching and a mismatching ETag; the full suites were not run locally. Not covered by that PR and still open here: the pins under utils/ca-soak (cas-gc-rebuild) still name rustfs/rustfs:1.0.0-rc.3; whether 1.0.6 carries the fix for rustfs#3231 (false 404 under load, retained overwritten versions) is not checked; no full-scale merge-heavy soak has run on 1.0.6. Next step: move the ca-soak pins to 1.0.6, run the soak, record the result in RUN_HISTORY.md.
 <!-- SECTION:NOTES:END -->

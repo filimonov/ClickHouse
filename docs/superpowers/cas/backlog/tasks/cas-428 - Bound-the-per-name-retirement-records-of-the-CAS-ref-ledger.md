@@ -1,10 +1,10 @@
 ---
 id: CAS-428
 title: Bound the per-name retirement records of the CAS ref ledger
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-04 02:01'
-updated_date: '2026-11-12 15:43'
+updated_date: '2026-11-17 20:01'
 labels:
   - 'area:refs'
   - 'complexity:small'
@@ -46,4 +46,8 @@ PR https://github.com/Altinity/ClickHouse/pull/2570 keeps a ref-name slot with a
 - Churn rate measured by the defaults study: 9.4 `CREATE`/`DROP` cycles/s (`ddl4`, 16926 cycles in 30 min). At that rate: 100k records in 3 h, 1M in 30 h. At 1M each `CREATE` holds `ref_queue_mutex` for ~0.1 s.
 - CI stateless runs stay under ~10k records, so CI does not show it.
 - Sketch: count in-flight cold admissions in the slot; bump `retirements` only on an existing slot (`find`, not `operator[]`); erase the slot when `current` is null and no cold admission is in flight. An admission that starts after the retirement reads the catalog after it, which is the case the current code already trusts (`retirements_seen` equals the current count).
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 65c269418a6 "Keep a retirement record only while a cold admission is in flight" covers: #1 a retired name slot is erased unless a cold admission holds it (`ColdAdmission` guard, capture to publish), while the retirement count still refuses a republish of the retired life. It builds on the port of PR 2570 (27333a84b66, 31a9bd92e3d, 4cbee14c7a0). Two defects found in review of that port were fixed in the same series: 06cfc31c64e "Detach a resident removed life whose catalog row is gone" and 382444fc36b "Detach a namespace life again after its catalog erase". Still open: no criterion. Cost noted: `acquireMutableRefTableRuntime` takes `ref_queue_mutex` twice per call when the runtime is resident (one map lookup each). No stand run of the record count. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `65c269418a6` on top of the port of PR 2570. Cost: `acquireMutableRefTableRuntime` takes `ref_queue_mutex` twice on a resident runtime (CAS-473 measures it). No stand run of the record count.
 <!-- SECTION:NOTES:END -->

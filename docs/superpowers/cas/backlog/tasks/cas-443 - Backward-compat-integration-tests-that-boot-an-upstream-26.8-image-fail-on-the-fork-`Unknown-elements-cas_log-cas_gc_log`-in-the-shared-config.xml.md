@@ -3,10 +3,10 @@ id: CAS-443
 title: >-
   Backward-compat integration tests that boot an upstream 26.8 image fail on the
   fork: `Unknown elements 'cas_log', 'cas_gc_log'` in the shared config.xml
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-17 20:01'
 labels:
   - cas
   - ci
@@ -48,4 +48,8 @@ PR 2805 @8c26e8792eb, jobs `Integration tests (amd_asan_ubsan, targeted)`, `... 
 2026-11-11 21:25Z: confirmed on CI run 42999688750: both `allow_hosts` tests fail on integration 7/8 and on the targeted job with the same `UNKNOWN_ELEMENT_IN_CONFIG`; the head tree has no `configs/skip_check_for_incorrect_settings.xml`.
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix ad04f95e441 was dropped from the PR and is not on antalya-26.8; it needs its own PR. The commit is on the local branch backup/pr2805-before-history-rewrite-20261111.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit bf13b6824d7 "Skip the unknown-config check in the custom S3 disk allow-hosts test" covers: #1 decision recorded as `skip_check_for_incorrect_settings` for the two upstream-image instances of `test_custom_s3_disk_remote_url_allow_hosts` only; #2 `test_custom_s3_disk_remote_url_allow_hosts` passed in the four integration lanes that ran it on the head (run https://github.com/Altinity/ClickHouse/actions/runs/43379266824). The criterion names PR 2805, which merged without the fix. Still open: none. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `bf13b6824d7`.
 <!-- SECTION:NOTES:END -->

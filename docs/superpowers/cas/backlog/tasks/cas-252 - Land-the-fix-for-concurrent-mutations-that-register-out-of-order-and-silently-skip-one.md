@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 21:22'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -66,4 +66,8 @@ Provenance: BACKLOG/replication.md#mutation-registration-race; observed in CI as
 2026-11-11 PR https://github.com/Altinity/ClickHouse/pull/2805 @3fa3a01203b (run 42921139681): `RegressionTestsAarch64 / CASS3CacheLightweightDelete (4)` failed `/lightweight delete/concurrent delete/MergeTree/random delete entire table`: `concurrent_delete.py:285` read 1 row where it expects 0. Same surplus-row signature as CAS-333; the server log of this run was not read.
 
 2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). Release `cas_s3_cache_lightweight_delete_4`: 2 leaf scenarios failed, `/lightweight delete/concurrent alter and delete/AggregatingMergeTree/concurrent clear update and delete` and `/lightweight delete/concurrent delete/MergeTree/random delete half of the table`; `concurrent_alter_and_delete.py:341`: `count(*)` returned 1, expected 0 after acknowledged deletes. The first scenario was not seen before; same symptom as CAS-333.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2831 @d8cbdfae3ec, run 43248330323 (triage: tmp/prbundle/wave1/ci/triage.md). job 131386699125 (release CASS3CacheLightweightDelete (4)): /lightweight delete/concurrent alter and delete/MergeTree/concurrent clear update and delete, concurrent_alter_and_delete.py:341, count(*) = 550, expected 500 after the 60 s retry. First MergeTree variant of this scenario; same shard fails on base 43246617309 (job 131294967158) in concurrent delete/ReplacingMergeTree/concurrent delete without overlap. No server log in the console log.
+
+2026-11-17: CI run 44084349150 on 44fc40023c1: `RegressionTestsAarch64 / CASS3CacheLightweightDelete (4)` failed on one leaf, `/lightweight delete/concurrent delete/VersionedCollapsingMergeTree/concurrent delete without overlap`; Release and non-cache twins green. Looks like this class; the mutation order was not read from the logs.
 <!-- SECTION:NOTES:END -->

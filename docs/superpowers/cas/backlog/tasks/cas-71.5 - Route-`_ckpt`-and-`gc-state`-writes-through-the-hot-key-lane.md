@@ -4,7 +4,7 @@ title: Route `_ckpt` and `gc/state` writes through the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -56,4 +56,8 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 5. Verified 2026-09
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 5')
+
+After CAS-487 merges the `_ckpt` half of this task is obsolete: `publishCkptContribution` is removed, so AC #1 has no subject. The `gc/state` half is unaffected and stays open.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds. This task keeps only `gc/state`.
 <!-- SECTION:NOTES:END -->

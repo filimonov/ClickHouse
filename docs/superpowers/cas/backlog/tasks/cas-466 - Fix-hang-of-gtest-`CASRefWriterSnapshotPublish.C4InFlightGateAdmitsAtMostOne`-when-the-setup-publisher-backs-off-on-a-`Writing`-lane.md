@@ -3,10 +3,10 @@ id: CAS-466
 title: >-
   Fix hang of gtest `CASRefWriterSnapshotPublish.C4InFlightGateAdmitsAtMostOne`
   when the setup publisher backs off on a `Writing` lane
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-11 21:46'
-updated_date: '2026-11-12 16:55'
+updated_date: '2026-11-17 20:01'
 labels:
   - ci
   - 'area:tests'
@@ -61,4 +61,8 @@ Same shape to check: the other six `awaitBlockEntered` callers in `gtest_cas_ref
 2026-11-11: found while gating the namespace-drop retry-policy commit of the late-request bundle (worktree cas-pr1, base e06224820c0). The hung process had 35 sleeping threads and 25 s of CPU after 7 minutes. Related: CAS-148. A test-only fix is queued for the fix wave of that branch (tmp/prbundle/pr2/fixwave/batch.md).
 
 2026-11-12. The hang is fixed at `fa1b89d1529` by `50dbaee3a69` and `f1bdb36d374` (both in `gtest_cas_ref_writer.cpp`). Left for wave 1 of the 26.8 bundle: AC #4, the check of the sibling tests that set `snapshot_log_count_threshold = 0` (two in `gtest_cas_detached_work.cpp`, two in `gtest_cas_ref_snapshot_publish_ordering.cpp`, one in `gtest_cas_ref_chunked_flush.cpp`, two in `gtest_cas_ref_writer.cpp`).
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commits 8f08aaafa48 "Make the snapshot publish gate test independent of publisher backoff" and a3967637843 "Harden `SnapshotPublisherLatchedAcrossChunks` against a setup backoff" cover: #1 to #3 are already at `fa1b89d1529` (`50dbaee3a69`, `f1bdb36d374`); 8f08aaafa48 carries the same fix into this series (backoff disabled, compacted tail asserted, `awaitBlockEntered` gives up after 20 s and callers assert); #4 sibling check done: 30 repeats of 23 sibling tests, no failure. One sibling, `SnapshotPublisherLatchedAcrossChunks`, had the same setup exposure and got `snapshot_publish_backoff_initial_ms = 0` plus a compacted-tail assert in a3967637843. Still open: none. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Delivered in PR 2831 by `8f08aaafa48` and `a3967637843`.
 <!-- SECTION:NOTES:END -->

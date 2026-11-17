@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -60,4 +60,10 @@ Provenance: BACKLOG/performance.md#ca-write-buffer-allocation-concentration + #w
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (0f266066bef, by 'write-path-alloc-audit')
+
+2026-11-17: the UPLOAD stage is done, the WRITE stage (this task) is not. Commit ac144e848aa on the branch of https://github.com/Altinity/ClickHouse/pull/2831 (local, not pushed yet) sizes the buffers of a blob publication to the blob: blobTransferBufferSize(bytes) = clamp(bytes, 1, DBMS_DEFAULT_BUFFER_SIZE), used for the write buffer of ObjectStorageBackend::publish (native and emulated) and for the reader of the local staged payload. Before it every upload held two 1 MiB buffers charged to the inserting query, so peak memory was (upload pool size) x 2 MiB: 32 MiB at 16 threads, 128 MiB at 64. Found because raising cas_blob_upload_pool_size to 64 made 03770_min_columns_to_activate_adaptive_write_buffer fail with MEMORY_LIMIT_EXCEEDED at 50 MiB on the cas s3 storage lane (a part with 300+ blobs). Still open here: CaContentWriteBuffer, the per-stream buffer plus the spill sink while the part is being WRITTEN; its only bound is clampCasWriteBufferSize (a 256 MiB ceiling); the adaptive write buffer settings reach it (use_adaptive_buffer_size, adaptive_buffer_initial_size). Not sized by ac144e848aa either: the reader of an S3-staged payload. The measurement of acceptance criterion 1 is still not made.
+
+2026-11-17 (later): ac144e848aa is NOT part of PR 2831; it goes to a follow-up PR. It sits on the local branch work/antalya-26.8/cas-upload-buffers (worktree cas-pr1), on top of 44fc40023c1. Until it merges, 03770_min_columns_to_activate_adaptive_write_buffer is red on the cas s3 storage lane with cas_blob_upload_pool_size = 64.
+
+2026-11-17: PR 2831 merged as 0aa837e942e without the upload-buffer fix. This task stays open until ac144e848aa merges in the follow-up PR promised in https://github.com/Altinity/ClickHouse/pull/2831#issuecomment-6959088982.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:tests'
   - 'area:ci'
@@ -69,4 +69,16 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 2026-11-11: the LARGE-runner change for the ASan cas-s3 shards (`2a4b5e72aa2`, yaml regeneration `41d4a78eeb9`) is no longer in https://github.com/Altinity/ClickHouse/pull/2805: the branch history was rewritten without it, new head `2f89c5db182`. The PR is limited to the antalya-26.6 forward-port. The two commits are kept on the local branch `backup/pr2805-before-history-rewrite-20261111`; they need their own pull request against antalya-26.8. Expect ASan cas-s3 1/2 to time out again on the 2805 head until then (it passed in 2 h 27 min on the LARGE runner in run 42921139681).
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The runner change (2a4b5e72aa2, regenerated workflows 41d4a78eeb9) was dropped from the PR and is not on antalya-26.8; it needs its own PR. The commits are on the local branch backup/pr2805-before-history-rewrite-20261111.
+
+2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2831 @d8cbdfae3ec, run 43248330323 (triage: tmp/prbundle/wave1/ci/triage.md). job 131348217530 (ASan 2/2) timed out at 12600 s at 3413/6933 and job 131348217825 (ASan 1/2) at 4155/6890; both shed workers from 8 to 2 (7 shed lines each, from [1718/6933] and [2777/6890]), so the 2805-run note "no shedding" does not hold here. Base 43246617309 reached 2873 and 3397 with the same shedding. TSan 1/2 (job 131350839384) and 2/2 (job 131350839414) timed out at 5738/6890 and 5568/6933 with no shedding; tests that hit their own timeout as BROKEN: 03633_join_many_matches_limit 1200 s, 00169_contingency 1200 s, 04100_autopr_input_bytes_estimation_aggregation_in_order 678 s, 00084_external_aggregation 545 s, 00162_mmap_compression_none 485 s.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824, job 131775013788 (ASan cas s3 storage 2/2), first run on the larger runner (runner 'github-runner-static-builder-x86-...'): no worker shedding (0 shed lines), reached 6342 of 6933 at the 12600 s job timeout (the same shard reached 3413 of 6933 with shedding 8 to 2 on the previous run 43248330323). The runner change removes the shedding and nearly doubles progress, but the shard still does not fit the timeout. One FAIL before the timeout, 03279_pr_3_way_joins_full_first, is the CAS-127 session warning.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): asan 1/2 job 131775013692 PASSED 6891/6891 in 2 h 29 m on the larger runner; tsan 1/2 131780028303 5946/6891 no shedding; tsan 2/2 131780028435 6017/6933 with 7 shed lines (8 to 2). New BROKEN names on tsan 1/2: 04821_partial_merge_join_build_finalization, 03279_join_choose_build_table_statistics; tsan 2/2: 01037_polygon_dicts_correctness_fast.
+
+2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 (branch head a3967637843, draft, not merged). Commit 3478d29a671 "Run the ASan cas-s3 stateless shards on the LARGE runner" covers: the runner change (`altinity-builder, 64g`, six `runs-on` lines in three regenerated workflows). Still open: #1 two consecutive green pull-request runs (shard 2/2 does not fit the job timeout yet); #2 peak server memory recorded (not in this change); #3 not triggered, the commit changes the runner only. Evidence on the head tree: `CAS*` gtests 3052 passed (release) and 3056 (ASan), 59 of 59 `*_cas_*` stateless tests.
+
+2026-11-13: RCA on PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (report tmp/prbundle/wave1/ci2/sanitizer-rca.md): ASan ranked causes. (1) Shard 2/2 ran on a slow machine: median 6.69 s per test against 3.94 s on shard 1/2 (a WasmEdge MSan shard on the same machine type shows the same gap); at shard 1/2 speed it would finish in about 137 min; this explains about all of the 24 min it was short. (2) CAS costs 1.28x against the non-CAS twin on the fast runner, concentrated in MergeTree tests; three shards would remove the dependence on the runner. (3) Server resident memory climbs 14 to 31 GiB over the passed shard. Corrections: the 127-130 GB and 63 GB figures are docker --memory values (2x host RAM); hosts have 61-63 GiB (ASan runners) and 30.6-31.3 GiB (TSan, MSan); every job sets up zram swap at 200 percent of RAM; the last shed line leaves one worker, not two.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `3478d29a671` moves the ASan `cas s3 storage` shards to the larger runner. Run 44084349150 on `44fc40023c1`: both shards green (135 and 163 min). One run only; AC1 needs a second consecutive green run.
 <!-- SECTION:NOTES:END -->

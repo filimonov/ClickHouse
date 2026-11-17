@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-11 11:30'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -81,4 +81,6 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-079')
 Scratch TLC experiment (not committed, tmp/cas298/erase_epoch): `Erase` gated on a later round (`phase = idle` or `leaseMoved`) plus invariant 'the named life is intact unless some delete ran after the lease moved'. With incarnation reuse on: gated erase is green for the new licence (271605 states), the old licence (138946) and the lease term alone (291547); ungated erase violates it for the new and the old licence; dropping the lease term violates `DeposedLeaderDeletesAtMostOneChunk`. Reading: the committed model's `Erase` is more permissive than the code, and the reuse counterexample of `sab_reuseincarnation` needs an erase inside the cleaner's own round, which the code does not do. Open proposal for the owner, not applied to the spec: state the erase-epoch happens-before in section 5.4, gate `Erase` in the model, and reclassify CAS-449 from prerequisite to independent defect.
 
 2026-11-11 owner decision: the dependency on CAS-29.6 is removed. The spec (docs/superpowers/specs/2026-11-11-cas-ref-cleanup-per-life-licence-design.md, Non-goals) states the licence change does not depend on cleanup listing its own range. Delivery: one pull request on top of PR 2805 with one commit series per story: CAS-368 + CAS-449, CAS-366, CAS-448, CAS-29.8 + CAS-29.7.
+
+2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `20e4b2fd7f3`: the licence depends on the namespace's own row and life and on the GC lease; a moved row or life skips that namespace only. Open: read `CASRefCleanup*` stop counters from a `cas s3` lane run.
 <!-- SECTION:NOTES:END -->

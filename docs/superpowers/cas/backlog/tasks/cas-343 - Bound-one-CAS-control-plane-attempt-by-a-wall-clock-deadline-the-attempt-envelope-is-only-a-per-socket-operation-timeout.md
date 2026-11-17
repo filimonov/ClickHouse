@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 05:58'
-updated_date: '2026-10-12 11:51'
+updated_date: '2026-11-13 22:38'
 labels:
   - 'area:mounts'
   - 'area:requests'
@@ -68,4 +68,6 @@ Study: `tmp/issue-2431/ux/q2-request-deadline.md` (phase table with file, functi
 2026-10-08: deferred by the owner. The transport wall-clock deadline (series item 17b) is not being done now; `cas_request_deadline_ms` does not exist.
 
 2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/transport.md): unbounded within one attempt today — trickling response, `100-continue` + slow body, conditional multipart writes (`FoldSeal`/`GcOutcomes` up to 256 MiB, ≤18 requests under one 16 s reserve), two redirect loops of up to 11 resends (`Client::doRequest`, Poco 307), reconnect-and-rewrite in `HTTPClientSession::write`; no `SO_LINGER{1,0}` or `TCP_USER_TIMEOUT` anywhere, so the kernel sends buffered bytes after abort. Design: `mount_fence.deadline_boot_ms` already exists; hook via `IHTTPSessionDataHooks::atStart` (check before every send, clamp timeout, linger+user-timeout at the boundary), combined hook because `PooledConnection::sendRequest` overwrites hooks; ~170 lines in `src/`, nothing in `base/poco`. Counter `CASTransportSendAfterDeadline` first, then abort. Would let us drop `E` as the reserve unit and both `validateCasRequestBudget` inequalities (keep `P + M < L`); writes until ~27 s instead of 14 s. Open: thread-local scope misses parallel `publish`/`stream`; clamped timeout vs `SSL_write`; Linux-only `TCP_USER_TIMEOUT`.
+
+2026-11-13: re-found independently by the codex review of the self-fence spec (master/tmp/prbundle/wave2/review/sf-r1-codex.out, findings 1-2); see CAS-486 for one case not listed here: a conditional write that goes multipart on an ETag store (`CasObjectStorageBackend.cpp:810-814` forces single-part only for generation-token stores). The self-fence design (docs/superpowers/specs/2026-11-13-cas-mount-self-fence-short-wait-design.md) no longer depends on the envelope: its marker is certified by an observed zero of in-flight mount-plane mutations.
 <!-- SECTION:NOTES:END -->

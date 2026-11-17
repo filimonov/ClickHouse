@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 16:16'
-updated_date: '2026-11-12 01:08'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:ref-ledger'
   - 'complexity:large'
@@ -47,4 +47,8 @@ Provenance: tmp/noclock/drafts/prep/367/REVIEW.md (needs verification).
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-12: the final review of the late-request bundle (branch `fix/antalya-26.8/cas-late-request-audit-bundle`) raised the gap this task owns three times. After that branch a lane closes only when a `Live -> Removing` write was really sent, and the two ways out are a retried `DROP` that completes or a remount. Nothing bounds how long the sent write can stay in flight relative to the remount (`Retry::standard`, not lease-bound), so a copy that lands after the remount still stops the table at a later append. `docs/en/antalya/cas/architecture/namespaces.md` states this residual. The reviewers also asked for a time bound or a background resolver for the closed lane; both were declined because a wait cannot prove that the write will not land. Binding the write to the mount generation is the fix that removes both the residual and the need for the closed lane to outlive the mount.
+
+CAS-487 does not deliver this task: Part B was split off. When Part B lands, the terminal record is written first, so a late `Live -> Removing` catalog write is harmless and no format change is needed. A write from an older build remains a residual (spec sections 5 and 8).
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) keeps `removal_write_may_land` and adds `removing_observed` (c821aece830). A `beginRemoving` that lands after a remount leaves the row `Removing` under an open lane until a restart, a remount, a retried `DROP` or the GC leader's next round (accepted residual, d0e2d1a80bd). fc82bf0d80b latches a `Removing` row at the recovery confirmation.
 <!-- SECTION:NOTES:END -->

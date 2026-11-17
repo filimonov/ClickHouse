@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-24'
-updated_date: '2026-09-26 14:47'
+updated_date: '2026-11-17 20:02'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -61,4 +61,6 @@ Signature to check in the re-measure: `CASRefBatchFlushes` = `CASRefBatchedMutat
 Confirming metric set per INSERT `query_id`: `S3HeadObject`, `S3GetObject`, `CASBlobHeadFirst`, `CASBlobBodyPutAvoided`, `CASRefBatchFlushes` against `CASRefBatchedMutations`, and `CASRefQueueWaitMicroseconds` summed against query wall time.
 Status of the four fix directions: per-blob upload fan-out landed (`fanOutBlobUploads`, `CA/ContentAddressedTransaction.cpp:272-300`); concurrent per-part commit is DRAFT-2; the promote manifest re-read is CAS-176; adaptive HEAD-before-PUT is vetoed by decision-1.
 Source: utils/ca-soak/scenarios/BACKLOG.md:2891.
+
+2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 9fbdefb5711 sets `cas_blob_upload_pool_size` to 64: the first data point for criterion 3 (16 threads were saturated on a part of 62,000 blobs).
 <!-- SECTION:NOTES:END -->
