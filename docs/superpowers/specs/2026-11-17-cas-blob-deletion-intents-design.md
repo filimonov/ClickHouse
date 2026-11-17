@@ -157,14 +157,14 @@ anything else: [§3.6](#failure-contract).
 
 - `Content-Type: application/x-clickhouse-cas-blob-v2`, compared exactly. Any other value, or none, is unmarked.
   `v2` names the protocol: `markers` is 1, `intents` is 2.
-- The mark is part of the object: an unconditional `PUT` or copy replaces it with the body.
+- The mark is part of the object and uses no user metadata: an unconditional `PUT` or copy replaces it.
 
 ### 2.3 Pool meta, `gc/state`, run rows, mount slot, epoch counter {#control-formats}
 
 | Object | Change | Gate |
 |---|---|---|
 | `_pool_meta` | `min_reader_generation = 4`, raised by every writable mount as today (`CA/Pool/CasPool.cpp:628-640`, `:904`). New keys: `blob_protocol` (absent = markers; `intents`), monotone; `token_dialect` (`etag`, `generation`, `emulated`), written once, in the write that sets `intents`; `created_generation` (`4`), written only at creation by this build ([§7.4](#fresh-pool)). `PoolMeta` carries all three, so every read-modify-write keeps them (`CA/Pool/CasPoolMeta.cpp:69-86`) | additive keys: an unknown key is skipped (`CA/Formats/CasPoolMetaFormat.cpp:141`); older builds stop at the floor first (`:155-158`) |
-| `gc/state` | `GcState` gains `generation`, decoded from the header `v`. `encodeGcState` writes it with the explicit-version header writer (`CA/Formats/CasTextFormat.h:153`), not the write floor it stamps today (`CA/Formats/CasGcStateFormat.cpp:42`); the decoder is `:60`. Change point `{4,4}`. The stamp sets it to 4 | header 4 |
+| `gc/state` | `GcState` gains `generation`, decoded from the header `v`. Its default is 4, so only a decode yields a lower value and no construction site can write header 3. `encodeGcState` writes it with the explicit-version header writer (`CA/Formats/CasTextFormat.h:153`), not the write floor it stamps today (`CA/Formats/CasGcStateFormat.cpp:42`); the decoder is `:60`. Change point `{4,4}`. The stamp sets it to 4 | header 4 |
 | `cas_run` condemned row | new bool `intent` beside `pending` and `confirmed` (`CA/Formats/CasRecordStreamFormat.cpp:198-205`, `:290-298`). In the packed row it is flag value 4, and the check `flags > 3` widens to `flags > 7` (`N:266`, `:287`). Written `true` only by an intent-mode graduation, with `pending = true` and `confirmed = false`: no marker was confirmed, and nothing reads `confirmed` (`CA/Gc/CasBlobInDegree.h:41-42`). A run written by an intent-mode round has an explicit header 4; a marker-mode run keeps today's header. Change point `{4,4}` | header 4 |
 | Mount slot (`cas_mount_lease`) | new `protocol_generation`, 4 in every body this build writes | additive: older decoders skip it (`CA/Formats/CasServerRootFormats.cpp:223-224`) |
 | `epoch` counter (`cas_epoch`) | critical key `!protocol_generation`, written with the allocation of a writable mount | an older build fails the allocation with `UNKNOWN_FORMAT_VERSION` (`CA/Formats/CasTextFormat.cpp:315-322`) |
@@ -190,7 +190,8 @@ A writer has **learned** the switch when all hold for its `Pool`:
 
 1. It read `_pool_meta` with an exact `GET` and found `blob_protocol = intents`.
 2. The `token_dialect` recorded there equals its backend's dialect.
-3. Its mark probe passed, the token form included ([§6.2](#mark-rules)).
+3. Its mark probe passed, the token form included ([§6.2](#mark-rules)); or the pool has `created_generation = 4`
+   and the probe was skipped or found only false presence ([§7.4](#fresh-pool)).
 
 - Read points: at mount; then, while (1) is false, a re-read by the lease renewer every 60 s, and one when a
   writer meets a marked body (at most once per 10 s); at once on the server that ran the switch.
@@ -214,7 +215,7 @@ attempts stay (`W:296`, `:406`, `:415-423`).
 | W3 | **Not adoptable:** body unmarked, or writer not learned, or (marked and learned) a token that does not canonicalise ([§6.1](#identity)) | → W6. No other request. Not learned and marked: also trigger the re-read of [§3.1](#learned). A rejected token is counted (`CASBlobReuseTokenRejected`) and logged, one ERROR per mount; it is never an exception | `W:446-475` |
 | W4 | Body marked, writer learned, token canonical: `GET I(B,t)` | Any object at the key → W6, event `BlobReuseResurrect`. An answered 404 → W5 | marker `GET`, `W:446` |
 | W5 | `HEAD B` again | Same canonical identity and valid size → adopt: `Materialized`, `CASBlobBodyPutAvoided`, event `BlobReuseAdopt`. Absent, another identity, or a token that does not canonicalise → W6, once, no return to W2. The same identity with an invalid size → `CORRUPTED_DATA` exception | `W:452-471` |
-| W6 | Publish: one unconditional publication, sent once (`W:299`, `:509`), under a fresh envelope (`W:322-331`), marked iff the mark bit is set, digest-checked ([§6.3](#source-check)) | Answered success → `Materialized`. Unanswered → next loop iteration from W2 with the backoff (`W:511-540`). Answered failure → exception | `W:478-509` |
+| W6 | Publish: one unconditional publication (a body is never created conditionally), sent once (`W:299`, `:509`), under a fresh envelope (`W:322-331`), marked iff the mark bit is set, digest-checked ([§6.3](#source-check)) | Answered success → `Materialized`. Unanswered → next loop iteration from W2 with the backoff (`W:511-540`). Answered failure → exception | `W:478-509` |
 | W7 | After W6 | No request. The marker reconcile is deleted | `W:352-404`, `:542` |
 | W8 | **Reads go to the store.** W2 is sent after the edge of W1, W4 after the answer of W2, W5 after the answer of W4, each through `op.head` or `op.read` (`Q:601-609`) | No cache answers them, and no step takes the answer of a request sent before the event it must follow | — |
 
@@ -238,7 +239,7 @@ attempts stay (`W:296`, `:406`, `:415-423`).
 | G4 | **Delete.** For a row read with `pending` and `intent` from the adopted state, after this round's cut showed in-degree 0 (`N:545-557`). (1) `HEAD B`. (2) Absent → `Gone`. Canonical identity equals the row's → `DELETE B If-Match <raw token of this HEAD>` (`op.remove`): `Removed`, `Gone` or `Mismatch`. Another identity → `Mismatch`, no body request. (3) After any answered outcome of (2): delete `I(B,t)` with the write-once verb below; an absent key is success. (4) If (2) removed an unmarked body: delete `<blob>.meta` with `op.removeCurrent`, best effort, failures counted. (5) The row leaves the state only after (2) and (3) both answered. After `Mismatch` it is dropped, not superseded, as today (`G:601-603`) | `G:583-595`; marker delete `G:634-640` |
 | G5 | **A delete job without a usable answer throws.** That is an unanswered or refused `HEAD`, body `DELETE` or intent `DELETE`. The round fails before its commit, the row stays pending (`G:752-762`), and the next round starts again at (1). A body `DELETE` without an answer never leads to the intent `DELETE` | — |
 | G6 | **Spare.** In-degree above 0 (`N:520-543`): the row is dropped. No request. An intent stays where it is | — |
-| G7 | **Supersede.** A touched row at in-degree 0 whose `HEAD` shows another canonical identity `u` (`N:612-631`): the row becomes a candidate for `(B,u)`. If the old row had `intent`: one delete of `I(B,t)` with the write-once verb, best effort; a failure is counted (`CASGCIntentDeleteFailed`). A row without `intent` gets no delete, though an earlier round may have left `I(B,t)`: a failed round, a spare of a pending row, a late create. Over a superseded token that intent protects nothing, F3 removes it, and removing it here would cost a request per supersede | `matches` at `N:616` |
+| G7 | **Supersede.** A touched row at in-degree 0 whose `HEAD` shows another canonical identity `u` (`N:612-631`): the row becomes a candidate for `(B,u)`. A row token that does not canonicalise never equals a live token, so a canonical `u` supersedes it too ([§3.6](#failure-contract)). If the old row had `intent`: one delete of `I(B,t)` with the write-once verb, best effort; a failure is counted (`CASGCIntentDeleteFailed`). A row without `intent` gets no delete, though an earlier round may have left `I(B,t)`: a failed round, a spare of a pending row, a late create. Over a superseded token that intent protects nothing, F3 removes it, and removing it here would cost a request per supersede | `matches` at `N:616` |
 | G8 | **Inherited rows.** In intent mode a row with `pending` and without `intent` is a candidate: G3 applies, G4 does not. The demotion is decided before the pending branch of `settleEntry` (`N:545`) and before read-ahead picks its keys | [§7.6](#inherited) |
 | G9 | **Never.** GC never deletes an intent on a spare, never derives a row from an intent, never reads or writes `.meta` in intent mode except G4 (4) | — |
 | G10 | **Reads go to the store.** The `GET` of G1 and the `HEAD`s of G2 and G7 are sent in this round, after its lease; a read-ahead `HEAD` of the same round qualifies. The `HEAD` of G4 is sent after the cut. No cache answers them | — |
@@ -250,10 +251,12 @@ attempts stay (`W:296`, `:406`, `:415-423`).
   [§8.2](#residuals).
 - **A `HEAD` without a usable answer** at G2 or G7 fails the round before its commit.
 - **A mount with another dialect leaves GC.** Neither dialect changes during a mount, so the first round that
-  fails the dialect check is the last: no further lease write, no heartbeat (`CA/Gc/CasGcScheduler.cpp:522-526`),
-  and `SYSTEM CAS GC RUN` there is refused with the dialect text. The lease stops moving, so another member's
-  loop takes it after its two observations (`G:5244-5247`). One ERROR: `CAS gc: pool records token dialect
-  '<a>', this disk uses '<b>'; GC stops on this mount and its lease is left to expire`. No slot format change.
+  fails the dialect check is the last: the background loop writes no further lease and no heartbeat
+  (`CA/Gc/CasGcScheduler.cpp:522-526`), and `SYSTEM CAS GC RUN` there is refused with the dialect text. So is
+  `SYSTEM CAS GC REBUILD`: it makes the same check on its own `_pool_meta` read, before its lease (`G:4660`).
+  The lease stops moving, so another member's loop takes it after its two observations (`G:5244-5247`). One
+  ERROR: `CAS gc: pool records token dialect '<a>', this disk uses '<b>'; GC stops on this mount and its lease
+  is left to expire`. No slot format change.
 
 **G3: what confirms.** The gate consumes the result of its own create:
 
@@ -335,11 +338,11 @@ a tool run stops.
 |---|---|---|---|
 | `_pool_meta.blob_protocol` | `intents` | marker protocol | decode fails, `UNKNOWN_FORMAT_VERSION`. Never read as markers |
 | `_pool_meta.token_dialect` | `etag`, `generation`, `emulated`; present iff `blob_protocol = intents` | with `intents`: decode fails, `CORRUPTED_DATA` | unknown word: `UNKNOWN_FORMAT_VERSION`. Present without `intents`: `CORRUPTED_DATA` |
-| `_pool_meta.created_generation` | `4` | the pool was created by an older build: no automatic switch | below 4: `CORRUPTED_DATA`. Validated after the floor check (`CA/Formats/CasPoolMetaFormat.cpp:155-158`), which refuses a pool created by a later generation with `UNKNOWN_FORMAT_VERSION` first |
+| `_pool_meta.created_generation` | `4` | the pool was created by an older build: no automatic switch | below 4: `CORRUPTED_DATA`. Above 4: refused with the existing newer-format error, `UNKNOWN_FORMAT_VERSION` (`checkCompatibility`, `CA/Formats/CasFormat.cpp:102-109`). Both are checked after the floor check (`CA/Formats/CasPoolMetaFormat.cpp:155-158`), which refuses first when the later creator also raised the floor |
 | `cas_run` row `intent` | `true` only with `pending = true` | run header below 4: `false`. Header 4: `CORRUPTED_DATA`, like a missing `confirmed` (`CA/Formats/CasRecordStreamFormat.cpp:304-307`) | present in a run with header below 4, present on a non-condemned record (`:310-311`), or `true` without `pending`: `CORRUPTED_DATA` |
 | Packed row flags | values 1 (`pending`), 2 (`confirmed`), 4 (`intent`); 4 only with 1 | — | `flags > 7`, or 4 without 1: `CORRUPTED_DATA` |
 | A row with `intent`, read by a marker-mode round | never | — | the round fails, `CORRUPTED_DATA` |
-| A token that does not canonicalise, in intent-mode GC | — | — | It ends the row and justifies no request. From the `HEAD` of G2: no row. From the `HEAD` of G7: no new row; the old row is dropped and its intent stays. In a row inherited from marker mode: the row is dropped. From the `HEAD` of G4: no body delete, no intent delete, the row is dropped. Counted (`CASGCIntentTokenRejected`), one ERROR per round. GC never deletes such a body ([§8.2](#residuals)). Writer: W3, W5. `cas-fsck`: F2 |
+| A token that does not canonicalise, in intent-mode GC | — | — | It justifies no request, and ends the row unless G7 supersedes it. From the `HEAD` of G2: no row. From the `HEAD` of G7: no new row; the old row is dropped and its intent stays. As the own token of a row (a candidate or pending row inherited from marker mode): the row equals no live token. If the G7 `HEAD` of this round shows a canonical `u`, G7 applies and the row becomes a candidate `(B,u)`, with no intent delete. Otherwise the row is dropped: `u` does not canonicalise either, the body is absent, or the row was not touched and no `HEAD` showed a change. From the `HEAD` of G4: no body delete, no intent delete, the row is dropped. Counted (`CASGCIntentTokenRejected`), one ERROR per round. GC never deletes such a body ([§8.2](#residuals)). Writer: W3, W5. `cas-fsck`: F2 |
 | Intent object bytes | the canonical record | — | other bytes at an intent key. Writer: an intent (W4 → W6). GC: not a confirmation; row carried, `CASGCIntentUnconfirmedCarry`, one ERROR per round. `cas-fsck`: `intent_malformed`, never deleted |
 
 ## 4. Invariants and the safety argument {#safety}
@@ -351,10 +354,10 @@ a tool run stops.
 | I1 | **Non-recurrence.** Once `t` stops being the incarnation of `B`, it never is again | A1 |
 | I2 | **Content.** Every body ever at `B` has the pool's envelope length and the payload that hashes to `B` | [§6.3](#source-check), A6 |
 | I3 | **Edge before observe.** A writer's edge on `B` is durable before its first `HEAD B`; it commits only while that precommit is the live owner | W1; `W:965-970` |
-| I4 | **Intent permanence.** A delete of `I(B,t)` is sent only on evidence that `t` is gone from `B`: an answered observation that `B` is absent or has another canonical identity, or an answered `Removed` of that exact incarnation. That evidence is later than evidence that `t` had been current: the committed row (G4, G7) or the intent read first (F2). So while `t` is current, no such request was ever sent, and an existing `I(B,t)` stays | G4, G6, G7, G9, F0, F3; I1; A5 |
-| I5 | **Delete evidence.** Every `DELETE B If-Match t` under intent authority follows, in this order: a confirmation that `I(B,t)` exists; the commit of the pending row; a complete cut, taken from that committed state, with in-degree 0; a `HEAD B` that shows `t`. Every delete of a marked token is under intent authority | G1, G3, G4; T3 (a); `frontier_complete`, `G:3548-3551` |
+| I4 | **Intent permanence.** A delete of `I(B,t)` is sent only on evidence that `t` is gone from `B`: an answered observation that `B` is absent or has another canonical identity, or an answered `Removed` of that exact incarnation. That evidence is later than evidence that `t` had been current: the committed row (G4, G7) or the intent read first (F2). So while `t` is current, no such request was ever sent, and an existing `I(B,t)` stays | G4, G6, G7, G9, F0, F3; I1; A2 (the observation is not stale); A5 |
+| I5 | **Delete evidence.** Every `DELETE B If-Match t` under intent authority follows, in this order: a confirmation that `I(B,t)` exists; the commit of the pending row; a complete cut, taken from that committed state, with in-degree 0; a `HEAD B` that shows `t`. Every delete of a marked token is under intent authority. On a pool created by this build every delete is, marked token or not: no marker-mode round and no older build ever runs there ([§7.4](#fresh-pool)) | G1, G3, G4; T3 (a); `frontier_complete`, `G:3548-3551` |
 | I6 | **Adoption.** A writer records an adoption only of a marked body, when learned, after W4 answered 404 and W5 showed the identity of W2 | W3 to W5, W8 |
-| I7 | **Marked means new.** A marked body was published by a learned writer, so after the switch was written | [§3.1](#learned), [§6.2](#mark-rules), A4 |
+| I7 | **Marked means new**, on an upgraded pool. A marked body was published by a learned writer, so after the switch was written. A pool created by this build does not need I7 (I5): there a mark may be assumed or false | [§3.1](#learned), [§6.2](#mark-rules), A4 |
 | I8 | **Goal.** A committed ref never names a blob key with no body | [§4.2](#argument) |
 
 ### 4.2 The argument {#argument}
@@ -362,9 +365,10 @@ a tool run stops.
 **Adoption.** Writer `W`: edge at `Te`, W2 sees `t` at `T1`, W4 answers 404 at `T2`, W5 sees `t` at `T3`.
 
 1. By I1, `t` was current during `[T1, T3]`.
-2. Suppose a delete removes `t` at `Td > T3`. `t` is marked (I6), so by I5 the delete has a confirmation at `Tc`,
-   a commit `K` and a cut `C`, `Tc < K < C < Td`. The row's token was observed at its condemn `HEAD`, so by I1 `t`
-   was current from then to `Td`.
+2. Suppose a delete removes `t` at `Td > T3`. `t` reads marked (I6), so by I5 the delete has a confirmation at `Tc`, a
+   commit `K` and a cut `C`, `Tc < K < C < Td`: on an upgraded pool because the mark is true (I7), on a pool created
+   by this build for every token. The row's token was observed at its condemn `HEAD`, so by I1 `t` was current from
+   then to `Td`.
 3. By I4 the intent exists during `[Tc, Td)`. `W` read it absent at `T2 < Td`, so `T2 < Tc`.
 4. By W8, `Te < T2`. So `Te < T2 < Tc < K < C`: the edge is durable before the cut. A complete cut counts it, the
    row is spared, contradiction. If the edge was removed before `C`, `W` cannot commit (I3).
@@ -415,14 +419,14 @@ counts. Unchanged by this design; so is its assumption that the source edge outl
 | # | Assumption | What provides it | What stays assumed |
 |---|---|---|---|
 | A1 | A body token never recurs at a key | One publication call site, `W:509` through `Q:780`. Streaming: a fresh 128-bit tag per attempt (`W:326`, `:497`), one send (`W:299`, `B:894-900`). Verbatim copy: the staging tag is minted once (`X:797`), and the copy happens at most once per staging object because hardlink copies share the flag (`CA/ContentAddressedTransaction.h:162-165`, `X:252`, `:300`; `CA/Pool/CasPartWriteTxn.h:38`). Generation dialect: the store's own counter | No transport reissue after a request may have been applied (redirect, re-sign, reconnect). The store applies one request at most once. Random tags do not collide. A generation is never reused. A removed delete marker on a versioned bucket is external manipulation. The `emulated` dialect over local files: see below |
-| A2 | Reads are linearizable per key: a `HEAD` or `GET` sent after a write was applied reflects it, for every client, whether or not the writer got an answer. Relied on by the mode read of G1 (a switch that was applied without an answer is seen by every later round), by learning and F0, and by the adoption reads W2, W4, W5. A read that overlaps the write may show either state: a round whose mode read overlaps the switch is the marker-mode round of T3 | the store; W8, G10 and F2 keep caches and earlier requests out | proxies and caches between a server and the store |
+| A2 | Reads are linearizable per key: a `HEAD` or `GET` sent after a write was applied reflects it, for every client, whether or not the writer got an answer. Safety needs it at: the mode read of G1 (a switch that was applied without an answer is seen by every later round); the adoption reads W2, W4, W5; the delete-site `HEAD` of G4, the supersede `HEAD` of G7 and the body `HEAD` of F2, where an absent or other-identity answer authorizes an intent delete (I4). Learning and the admission read of F0 do not: a stale answer there is only conservative (not learned; intents skipped). A read that overlaps the write may show either state: a round whose mode read overlaps the switch is the marker-mode round of T3 | the store; W8, G10 and F2 keep caches and earlier requests out | proxies and caches between a server and the store |
 | A3 | A conditional delete removes only the named incarnation | the capability probe (`CA/Backend/CasProbe.cpp:47`); contract at `CA/Backend/CasBackend.h:120-139` | the probe samples; it does not certify non-recurrence (`:137-139`) |
 | A4 | `HEAD` attributes are coherent: size, token and `Content-Type` describe one incarnation, and `Content-Type` is what the publication of that incarnation sent | the mark probe samples it per mount; the integration suite covers the multipart paths per store ([§6.2](#mark-rules)) | a store or proxy that synthesizes, retains or rewrites the type on a path neither exercises, for another server's client, or after a later change of the store. The probe samples one client at one mount |
 | A5 | One token dialect and one spelling per pool, across clients | `token_dialect` in `_pool_meta`, checked by every actor that uses an identity ([§6.1](#identity)); canonical identity | two clients that render one tag with different bytes beyond the quote pair |
 | A6 | A staging object holds the bytes hashed at staging | the staging key is 32 random characters under the writer's epoch (`X:950`), written once, known to one transaction | corruption inside the store; hash collisions |
 | A7 | Cuts are complete: every live or precommit edge is in a cut that authorizes a delete | `frontier_complete` suppresses destruction otherwise (`G:3548-3551`) | unchanged, not re-proved here |
 | A8 | No older build starts protocol work after the switch | operator precondition ([§7.2](#procedure), step 3); floor, latch and declarations enforce and diagnose. A pool created by this build never had an older member ([§7.4](#fresh-pool)) | [§7.8](#transition-risks), X1 |
-| A9 | Control objects are not deleted or rolled back | — | external manipulation is unsupported |
+| A9 | Control objects are not deleted, rolled back or copied between pools | — | external manipulation is unsupported. A foreign `_pool_meta` with `created_generation` would make an upgraded pool read as created by this build, which drops the slot check and the mark guard |
 
 This dependence is a shipping contract. A store whose tokens can recur must not host a pool under this protocol.
 
@@ -441,9 +445,9 @@ drop or after a restart. The contract comment that calls these tokens a never-re
   merge two incarnations.
 - **Raw token**: the value as the store returned it. Used only as `If-Match` (`G:593`).
 - **Used for:** intent keys; W2 against W5; row matching at G4 and G7; fsck F2. New `Etag::canonical`, and
-  `sameIncarnation(row token, live token)`, which compares canonical identities. Rows keep the token as captured;
-  both sides are canonicalised at compare time. Marker mode keeps `PersistedEtag::matches`, a textual compare
-  (`CA/Backend/CasEtag.h:85-88`).
+  `sameIncarnation(row token, live token)`, which compares canonical identities: a token that does not canonicalise
+  equals nothing. Rows keep the token as captured; both sides are canonicalised at compare time. Marker mode keeps
+  `PersistedEtag::matches`, a textual compare (`CA/Backend/CasEtag.h:85-88`).
 - **Grammar, two levels.**
   - `isIncarnationValue` (`CA/Backend/CasEtag.cpp:10-32`), which `CasRequests::tryMint` applies to every
     observation of every key (`Q:337-342`): unchanged.
@@ -452,7 +456,7 @@ drop or after a restart. The contract comment that calls these tokens a never-re
     unmatched or inner double quote; a control byte; leading or trailing whitespace; `*`; a comma; an opaque tag
     over 128 bytes. For `generation`: anything but canonical positive decimal of at most 20 digits.
   - **A token that does not canonicalise is not an identity.** Nobody compares it, builds a key from it,
-    deletes on it or throws for it. The writer publishes fresh (W3, W5), GC ends the row
+    deletes on it or throws for it. The writer publishes fresh (W3, W5), GC ends the row or supersedes it
     ([§3.6](#failure-contract)), `cas-fsck` reports `intent_unread` (F2). The cost is in [§8.2](#residuals).
 - **Why the grammar is not tightened in `tryMint`.** `tryMint` sees no pool state. A tighter grammar there would
   change the result of every `HEAD` and `GET` at the binary swap: a store that returns a now-rejected form would
@@ -474,7 +478,7 @@ compares no canonical identity and touches no intent until a read of its own sho
 |---|---|
 | Writable mount of a switched pool | the mount is refused |
 | Learning, on a mount that was up before the switch | not learned for the life of the mount; one ERROR ([§3.1](#learned)) |
-| Each GC round | the round fails and the mount leaves GC (G1) |
+| Each GC round; `SYSTEM CAS GC REBUILD` | the round fails and the mount leaves GC (G1); the rebuild is refused |
 | Every `cas-fsck` run, and `cas-gc-dryrun`, on a read-only open too | the run stops (F0) |
 | The switch command and the sequence of [§7.4](#fresh-pool), when `_pool_meta` already records another dialect | refused; the sequence fails the mount |
 
@@ -495,7 +499,11 @@ no identity.
   AWS S3, GCS and Ceph are not tested. The staging object, the copy request and the multipart create all use the
   one mark bit, so the result is the same either way. The copy stays on the default directive: no
   `object_metadata` is passed (`src/IO/S3/copyS3File.cpp:737-740`).
-- **Emulated and in-memory backends** keep a mark per object and replace it with the body ([§11](#open), Q3).
+- **Emulated backend over local files:** one permission bit of the object file, such as `0640` marked and `0644`
+  unmarked. The publish path sets the mode explicitly, whatever the `umask`, on the temporary file before the atomic
+  rename (`B:513-560`); `HEAD` reads it with `stat` (`B:732-749`). No file-system feature is needed, and a rename
+  replaces the mark with the body. A copy that does not preserve modes loses it: one upload per blob. The in-memory
+  backend keeps a mark per object.
 
 **Plumbing.** The bit travels through these signatures and no others.
 
@@ -534,13 +542,13 @@ needs no knob in shared code: every object is far below the single-part and sing
 - **Preservation or token-form failure:** the mount never learns: it publishes unmarked and never adopts. WARNING
   at mount, `blob_mark_probe` in `system.cas_mounts`. The switch command refuses on this disk; the sequence of
   [§7.4](#fresh-pool) fails the mount.
-- **False presence:** the switch command refuses, the sequence fails the mount, and a writable mount of a
-  switched pool fails ([§7.5](#builds)).
+- **False presence:** on an upgraded pool the switch command refuses and a writable mount of a switched pool
+  fails ([§7.5](#builds)); on a pool created by this build it is a WARNING and the mount learns ([§7.4](#fresh-pool)).
 - Only P2 and P5 guard I7: an unmarked publication must never read marked. P3 and P6 overwrite a marked object,
-  which exists only after the switch, so the new token has no marker authority. They refuse all the same: a store
-  that keeps a replaced object's type is outside A4.
-- `skip_access_check` skips the probe (`CA/Pool/CasPool.cpp:526`, `:550`): the mount never learns and cannot
-  create a pool ([§7.4](#fresh-pool)).
+  which exists only after the switch, so the new token has no marker authority. On an upgraded pool they refuse
+  all the same: a store that keeps a replaced object's type is outside A4.
+- `skip_access_check` skips the probe (`CA/Pool/CasPool.cpp:526`, `:550`): on an upgraded pool the mount never
+  learns and the command refuses; on a pool created by this build the mark is assumed ([§7.4](#fresh-pool)).
 
 **Paths and where each is verified.**
 
@@ -591,7 +599,7 @@ One-time, upward only, in place, no data copy. Mixed versions on one pool stay u
 |---|---|---|
 | T0 | no mount of this build yet | today's protocol |
 | T1 | floor 4; `blob_protocol` absent | Every delete authority is marker authority. Writers of this build never adopt, publish unmarked, write no marker. No intent and no marked body exists |
-| T2 | `gc/state` at generation 4; on a pool created by this build, from birth ([§7.4](#fresh-pool)) | T1, and no older build can commit a GC round |
+| T2 | `gc/state` at generation 4; on a pool created by this build, from its first GC lease; absent before ([§7.4](#fresh-pool)) | T1, and no older build can commit a GC round |
 | T3 | `blob_protocol = intents` | (a) A marked token is under intent authority only. (b) No writer adopts an unmarked body. (c) No marked body is deleted without I5 |
 
 - **T1 is safe with today's GC and today's writers.** A body without a marker, and a stale `Clean` or `Condemned`
@@ -600,11 +608,12 @@ One-time, upward only, in place, no data copy. Mixed versions on one pool stay u
   (`CA/Gc/CasGcMetaWriter.cpp:48-49`) and graduates on it.
 - **T2 can come early.** A `gc/state` that this build creates has header 4 ([§3.5](#recovery)), so a pool whose
   GC never ran reaches T2 at the first lease of this build. That only removes older GC sooner.
-- **T3 (a).** Marked means published after the switch (I7). Marker authority on `t` needs two committed marker-mode
-  rounds after `t` appeared: one that condemns, a later one that graduates (`N:559`). An older build cannot commit
-  after the stamp, which precedes the switch. A round of this build that graduates took its mode after its lease
-  (G1), so after the switch (A2): intent mode. A round that sampled before the switch can condemn a marked token; the
-  row is a candidate and goes through G3.
+- **T3 (a).** A pool created by this build never has marker authority, so (a) holds there for every token without I7.
+  On an upgraded pool, marked means published after the switch (I7). Marker authority on `t` needs two committed
+  marker-mode rounds after `t` appeared: one that condemns, a later one that graduates (`N:559`). An older build
+  cannot commit after the stamp, which precedes the switch. A round of this build that graduates took its mode after
+  its lease (G1), so after the switch (A2): intent mode. A round that sampled before the switch can condemn a marked
+  token; the row is a candidate and goes through G3.
 - **T3 (b), and marker authority after the switch.** Two kinds of round still delete without an intent after
   the switch: a round of this build that took marker mode before it, and an older round already past its lease
   read. Both delete only rows committed pending before the switch, so only unmarked tokens. No writer adopts an
@@ -635,14 +644,18 @@ For a pool that had a member of an older build. A pool created by this build nee
 
 | Step | Action | Refuses when |
 |---|---|---|
-| 1 | Checks | the disk is not mounted writable; its mark probe did not pass; the pool prefix is too long ([§2.1](#intent-object)); `min_reader_generation < 4`; `_pool_meta` already records another `token_dialect`; a mount slot declares `protocol_generation < 4` or cannot be decoded, unless its owner is a verified retirement. The message names the `server_root_id` |
+| 1 | Checks | the disk is not mounted writable; its mark probe did not pass (false presence included) or was skipped under `skip_access_check`; the pool prefix is too long ([§2.1](#intent-object)); `min_reader_generation < 4`; `_pool_meta` already records another `token_dialect`; a mount slot declares `protocol_generation < 4` or cannot be decoded, unless its owner is a verified retirement. The message names the `server_root_id` |
 | 2 | Stamp: read-modify-write of `gc/state`. Generation 4 or above: no write. Below 4: the same fields with generation 4. Absent: created at generation 4 with `gc_shards` from `_pool_meta` and lease owner 0 | — |
-| 3 | Switch: read-modify-write of `_pool_meta`, decided on the body it reads. No `blob_protocol`: write `intents` and this backend's dialect. `intents` with the same dialect: no write, success. `intents` with another dialect: refused | the stamp is not confirmed |
+| 3 | Switch: read-modify-write of `_pool_meta`, decided on the body it reads. No `blob_protocol`: write `intents` and this backend's dialect. `intents` with the same dialect: no write, success. `intents` with another dialect: refused | the stamp is not confirmed. This applies to the command only: the sequence of [§7.4](#fresh-pool) has no stamp |
 | 4 | This server learns | — |
 
 - **The stamp is confirmed** by an answered write, or by the resolve read of the read-modify-write that shows
   generation 4. A sent request is not a confirmation. If the policy is exhausted the command fails with the
   request error and has written nothing else; a rerun continues.
+- **The switch is confirmed** by an answered write, or by a read of the read-modify-write that shows `intents` with
+  this backend's dialect (`Q:1166-1222`): an unanswered switch is resolved by that exact read, never assumed. Until
+  then this server does not learn. On an exhausted policy the command fails with the request error and the sequence of
+  [§7.4](#fresh-pool) fails the mount; a rerun, or the next mount, decides on the body it reads.
 - **Two commands at once** converge: each read-modify-write decides again on the body the other wrote
   (`CA/Pool/CasPoolMeta.cpp:69-86`). With two dialects, one command wins and the other is refused.
 - Slots are found by exact reads for the server roots the catalog names, and by one `LIST` of `gc/server-roots/`
@@ -664,22 +677,28 @@ A writable mount of a pool that this build created ends with the pool switched, 
 - **No older member, no stamp.** `_pool_meta` is born at floor 4, which no older build decodes
   (`CA/Formats/CasPoolMetaFormat.cpp:155-158`), so A8 holds without anyone's statement. For the same reason no
   `gc/state` below generation 4 can appear: only this build creates one here, always with header 4
-  ([§3.5](#recovery)). T2 holds from birth, and the sequence sends no `gc/state` request. The first GC lease
-  creates it under its own owner, as today (`G:5197-5211`), so a manual round right after creation leads.
+  ([§3.5](#recovery)). The invariant of T2 holds from birth, and the sequence sends no `gc/state` request. The first
+  GC lease creates it under its own owner, as today (`G:5197-5211`), so a manual round right after creation leads.
 - **Creation.** The pool is created unswitched: `_pool_meta` with `min_reader_generation = 4` and
   `created_generation = 4`, no `blob_protocol` (`CA/Pool/CasPool.cpp:583-588`).
-- **Sequence.** A writable `Pool::open` that reads `created_generation = 4` on a pool that is not switched runs
-  the switch and the learning, steps 3 and 4 of [§7.3](#command). It runs after `mountWritable` returns
+- **Sequence.** A writable `Pool::open` that reads `created_generation = 4` on a pool that is not switched runs the
+  switch and the learning, steps 3 and 4 of [§7.3](#command), without the stamp. It runs after `mountWritable` returns
   (`CA/Pool/CasPool.cpp:611`) and before `open` returns: before any writer or GC round of this mount exists.
-  `Pool::openForDecommission` shares `mountWritable` (`:1102`) and runs no probe; it does not run the
-  sequence. There is no slot check.
-- **A failed sequence fails the mount.** It needs a passed mark probe, a pool prefix within the limit
-  ([§2.1](#intent-object)) and a confirmed switch. A failed or skipped probe, an exhausted policy or a refusal
-  at the switch: `Pool::open` throws ([§7.5](#builds), or the request error). No mount is admitted on an
-  unswitched pool of this build, one with `skip_access_check` included. Reason: such a mount would run without
-  reuse, and its GC in marker mode, until some later mount switched the pool, with nothing to show it. So a
-  store that fails preservation or the token form cannot host a new pool, and marker mode never runs on one:
-  before the switch the pool has no body, no `gc/state` and no GC round.
+  `Pool::openForDecommission` shares `mountWritable` (`:1102`) and runs no probe; it does not run the sequence. There
+  is no slot check.
+- **A failed sequence fails the mount.** It needs a pool prefix within the limit ([§2.1](#intent-object)), a
+  confirmed switch ([§7.3](#command)), and a probe that did not fail preservation or the token form. Such a
+  probe failure, an exhausted policy or a refusal at the switch: `Pool::open` throws ([§7.5](#builds), or the
+  request error). No mount is admitted on an unswitched pool of this build. Reason: such a mount would run
+  without reuse, and its GC in marker mode, until some later mount switched the pool, with nothing to show it.
+  So a store whose probe fails preservation or the token form cannot host a new pool, and marker mode never
+  runs on one: before the switch the pool has no body, no `gc/state` and no GC round.
+- **The probe guards only cost here.** Every delete in this pool is under intent authority (I5), so a body that reads
+  marked without having been published marked is adopted safely. Under `skip_access_check` the sequence switches
+  without the probe and the mount learns with the mark assumed: one log line, `blob_mark_probe = 'assumed'`; so does
+  every later mount of this pool whose probe is skipped ([§3.1](#learned)). A probe that runs and finds false presence
+  logs a WARNING and proceeds: skipping admits nothing that running refuses. One that finds the mark not preserved
+  still fails the mount: a pool that silently never reuses is a hidden fallback.
 
 | State | Durable objects | A writable mount that finds it |
 |---|---|---|
@@ -715,11 +734,11 @@ older build does: [§2.4](#older-builds).
 | Any reader of `_pool_meta`, unknown word | `UNKNOWN_FORMAT_VERSION` | `CAS pool meta: blob_protocol '<word>' is not understood by this build` |
 | GC round, `_pool_meta` absent | `INVALID_STATE` | `CAS pool meta '<key>' is absent; the GC round cannot take its mode` |
 | Marker-mode round, a row with `intent` | `CORRUPTED_DATA` | `condemned row carries an intent but the pool is not switched` |
-| Intent-mode round, `gc/state` below 4 | `INVALID_STATE` | `pool uses blob intents but gc/state is at generation <n>; rebuild it with this build` |
+| Intent-mode round, `gc/state` below 4 | `INVALID_STATE` | `pool uses blob intents but gc/state is at generation <n>; run SYSTEM CAS ENABLE BLOB INTENTS again` |
 | The command, a slot below 4 | `INVALID_STATE` | `mount slot of server root '<id>' declares protocol generation <n>, need 4; start that server once on this build or remove the member` |
-| The command and the sequence, probe not passed | `NOT_IMPLEMENTED` | `blob mark probe failed on this disk: <step>`; the step is `skipped` under `skip_access_check` |
-| The command, the sequence, a writable mount of a switched pool; false presence | `NOT_IMPLEMENTED` | `the store reports the blob mark on an object published without it (<step>)` |
-| The same three; pool prefix too long | `BAD_ARGUMENTS` | `pool prefix of <n> bytes leaves no room for blob intent keys; the limit is <m>` |
+| The command: probe not passed or skipped. The sequence: preservation or token form failed | `NOT_IMPLEMENTED` | `blob mark probe failed on this disk: <step>`; for the command the step is `skipped` under `skip_access_check` |
+| The command, and a writable mount of a switched pool without `created_generation`; false presence | `NOT_IMPLEMENTED` | `the store reports the blob mark on an object published without it (<step>)` |
+| The command, the sequence, a writable mount of a switched pool; pool prefix too long | `BAD_ARGUMENTS` | `pool prefix of <n> bytes leaves no room for blob intent keys; the limit is <m>` |
 | Publication, digest differs | `CORRUPTED_DATA` | `payload of <key> does not hash to its key; upload aborted, nothing published` |
 | `cas-fsck --fix legacy-markers`, pool not switched | `BAD_ARGUMENTS` | `markers are protocol state until the pool uses blob intents` |
 
@@ -747,8 +766,8 @@ never re-uploaded and stays unmarked. Its protection is the in-degree, as today.
 
 | Surface | Change |
 |---|---|
-| `system.cas_mounts` (`src/Storages/System/StorageSystemContentAddressedMounts.cpp:40-63`) | `protocol_generation` per slot (0 for an older body); `blob_protocol` (`markers`, `intents`); `blob_mark_probe` for this server (`ok`, the failed step, `skipped`) |
-| Server log | WARNING at the floor raise (exists); one line at the stamp, the switch and when a mount learns; ERROR on a dialect mismatch, when a mount leaves GC, and on a rejected token |
+| `system.cas_mounts` (`src/Storages/System/StorageSystemContentAddressedMounts.cpp:40-63`) | `protocol_generation` per slot (0 for an older body); `blob_protocol` (`markers`, `intents`); `blob_mark_probe` for this server (`ok`, the failed step, `skipped`, `assumed`) |
+| Server log | WARNING at the floor raise (exists); one line at the stamp, the switch, when a mount learns and when it assumes the mark; ERROR on a dialect mismatch, when a mount leaves GC, and on a rejected token |
 | `SYSTEM CAS ENABLE BLOB INTENTS` | one new `ASTSystemQuery` type beside `CAS_FSCK` (`src/Parsers/ASTSystemQuery.h:173-175`): an additive change in the shared parser |
 | `cas-inspect` | renders an intent, a body's mark, `blob_protocol`, `token_dialect`, `created_generation`, a slot's `protocol_generation`, a row's `intent` (`CA/Tools/CasInspect.cpp:417`) |
 | `cas-fsck`, `SYSTEM CAS FSCK` | classes `intent_current`, `intent_stale`, `intent_malformed`, `intent_unread`, `legacy_marker`; lists `blob-intents/` beside `blobs/` (`CA/Tools/CasFsck.cpp:892-913`). Only `cas-fsck` gets the fix options of [§3.4](#fsck-rules) |
@@ -758,7 +777,7 @@ never re-uploaded and stays unmarked. Its protection is the in-degree, as today.
 
 | # | Risk | Exposure |
 |---|---|---|
-| X1 | An older writer works after the switch: an operator mistake, a process paused before claiming a new root, a tool left open, a slot the listing omitted. It adopts a marked body on a stale `Clean` (`W:452`) while intent-mode GC deletes it: a committed ref to a deleted body | keys that still carry a decodable `Clean`; shrinks as G4 (4) and F4 remove markers. Not detected. Not possible on a pool created by this build |
+| X1 | An older writer works after the switch: an operator mistake, a process paused before claiming a new root, a tool left open, a slot the listing omitted. It adopts a marked body on a stale `Clean` (`W:452`) while intent-mode GC deletes it: a committed ref to a deleted body | keys that still carry a decodable `Clean`; shrinks as G4 (4) and F4 remove markers. Not detected. Not possible on a pool created by this build, with one exception of the same class, also unsupported: a process of a dropped pool that still runs against its cleared and reused prefix. An older one can bootstrap `gc/state` (X2) and run marker GC; a new writer whose mark is assumed or false then adopts its unmarked body |
 | X2 | `gc/state` deleted, then an older build bootstraps it (`G:5197-5211`) and runs marker GC over marked bodies | external manipulation, unsupported |
 | X3 | Marked bodies under older control objects: control objects restored from before the switch, or marked bodies copied into an unswitched prefix. A marked token can sit under marker authority. G8 covers committed rows, not a delete already sent | unsupported |
 | X4 | The mark set on a legacy body by a metadata-only operation while marker authority on its token is outstanding | external manipulation |
@@ -784,18 +803,20 @@ never re-uploaded and stays unmarked. Its protection is the in-degree, as today.
 | Residual | Effect | Handling |
 |---|---|---|
 | A body that lands after the fold processed its writer's edge removal has no edge, no row and no intent | bytes leak until the content is written again and dies | existing gap, CAS-33.2, unchanged. This design promises reclamation only of a body whose transition to zero GC observes while the body is present with a token that canonicalises |
-| A body whose token does not canonicalise, on a switched pool. Exposure: a store whose tokens leave the accepted grammar on some path: one P7 does not sample (multipart), a proxy that weakens tags, a later change of the store | never adopted: one upload per reuse. Never condemned: the bytes leak until a writer of that content publishes a body whose token canonicalises | not reclaimed. `CASBlobReuseTokenRejected`, `CASGCIntentTokenRejected` and their ERROR lines show it; F2 reports `intent_unread` |
+| A body whose token does not canonicalise, on a switched pool. Exposure: a store whose tokens leave the accepted grammar on some path: one P7 does not sample (multipart), a proxy that weakens tags, a later change of the store | never adopted: one upload per reuse. Never condemned: the bytes leak until a writer of that content publishes a body whose token canonicalises; a row that still names the old token is then superseded (G7) | not reclaimed. `CASBlobReuseTokenRejected`, `CASGCIntentTokenRejected` and their ERROR lines show it; F2 reports `intent_unread` |
 | Row-less intents: spare of a pending row (by design), a failed round followed by a spare, a late or stale create, a supersede whose intent delete failed, a rebuild | over a live body: one upload by the next writer; over a dead token: under 40 bytes. Their number grows until F3 runs | F3, run by the operator or on a schedule |
 | Legacy markers left under marked bodies | 90 bytes each | F4 |
 | Token form per store is taken from the client library | A5 | P7 at mount; an integration test records it per store ([§10.2](#tests)) |
 
 ## 9. Effects {#effects}
 
+The implementation plan carries the plan-level tables: effects on tasks, test effects per suite, the doc files.
+
 ### 9.1 Decisions {#backlog}
 
 | Decision | How this design answers it |
 |---|---|
-| decision-1, invariant 5 of `docs/superpowers/cas/AGENTS.md` | the `HEAD` before every `PUT` stays. A durable write step is removed and reads are added, as a protocol change with a model, not as an optimization. Record it there |
+| decision-1, invariant 5 of `docs/superpowers/cas/AGENTS.md` | the `HEAD` before every `PUT` stays, and a body is never created conditionally (W6). A durable write step is removed and reads are added, as a protocol change with a model, not as an optimization. Record it there |
 | decision-4 | generation 4 with an in-place upgrade path; older generations stay readable; no downgrade |
 | decision-7 | the body delete stays conditional. The intent delete has no precondition and is typed as a write-once key. The marker delete is `removeCurrent`: conditional on its own `HEAD` |
 
@@ -869,14 +890,14 @@ marker-mode GC tests stay and run on a pool as an older build leaves it: no `cre
 |---|---|---|
 | gtest, writer, on the etag-faithful fakes (`EtagFaithfulPublicationBackend`, `ContentEtagBackend`) | `CASBlobIntentWriter.FirstCreationIsHeadAndOnePut`, `.CleanReuseIsHeadGetHead`, `.IntentPresentPublishesFreshOnce`, `.LegacyBodyIsRepublishedMarkedWithNoMetaRequest`, `.UnlearnedWriterNeverAdoptsAndPublishesUnmarked`, `.ChangedTokenAtSecondHeadPublishesWithoutRestart`, `.BodyGoneAtSecondHeadPublishes`, `.SameTokenInvalidSizeAtSecondHeadIsCorrupted`, `.LandedAmbiguousPublicationIsAdoptedInFourReads`, `.FailedIntentReadIsNotAbsence`, `.WriterNeverMutatesIntents`, `.MarkBitIsSharedByHardlinkCopies`, `.VerbatimCopyIsSelectedOnlyAfterAnAbsentFirstHead`, `.UncanonicalTokenPublishesFreshAndNeverThrows`, `.UncanonicalTokenAtSecondHeadPublishesFresh` | W1 to W7; S1; ledger |
 | gtest, reads reach the store | `CASBlobIntentWriter.AdoptionReadsReachTheStoreAfterAPrimedAbsence`: read `I(B,t)` absent through the same pool, let GC confirm the intent and commit, then write. Assert the backend saw both `HEAD`s and the intent `GET` of this attempt, and that the writer publishes | W8; S12 |
-| gtest, GC | `CASGcIntents.CondemnIsOneHead`, `.GraduationCreatesAndCommitsPending`, `.EqualOccupantConfirms`, `.AbsentOrDivergentOccupantCarries`, `.UnansweredCreateCarries`, `.DeleteIsThreeRequests`, `.IntentDeletesShareABatchRequest`, `.FailedIntentDeleteFailsTheRoundAndTheNextFinishes`, `.RefusedIntentDeleteKeepsTheRowPending`, `.UnansweredBodyDeleteKeepsTheIntent`, `.MismatchDeletesTheOldIntentAndDropsTheRow`, `.SpareLeavesTheIntent`, `.RecondemnationConfirmsOnTheStandingIntent`, `.SupersedeDeletesTheOldIntentOnce`, `.InheritedPendingIsDemotedBeforeAnyDelete`, `.LegacyBodyDeleteRemovesItsMarkerWithHeadAndDelete`, `.RebuildKeepsGenerationFourAndReadsNoIntent`, `.DryRunFollowsTheModeAndShowsNoInheritedDelete`, `.UncanonicalTokenWritesNoRowAndDropsAnInheritedOne`, `.UncanonicalTokenAtTheDeleteHeadDropsTheRowWithNoRequest` | G2 to G10; S3 to S6, S9; 5 requests |
+| gtest, GC | `CASGcIntents.CondemnIsOneHead`, `.GraduationCreatesAndCommitsPending`, `.EqualOccupantConfirms`, `.AbsentOrDivergentOccupantCarries`, `.UnansweredCreateCarries`, `.DeleteIsThreeRequests`, `.IntentDeletesShareABatchRequest`, `.FailedIntentDeleteFailsTheRoundAndTheNextFinishes`, `.RefusedIntentDeleteKeepsTheRowPending`, `.UnansweredBodyDeleteKeepsTheIntent`, `.MismatchDeletesTheOldIntentAndDropsTheRow`, `.SpareLeavesTheIntent`, `.RecondemnationConfirmsOnTheStandingIntent`, `.SupersedeDeletesTheOldIntentOnce`, `.InheritedPendingIsDemotedBeforeAnyDelete`, `.LegacyBodyDeleteRemovesItsMarkerWithHeadAndDelete`, `.RebuildKeepsGenerationFourAndReadsNoIntent`, `.DryRunFollowsTheModeAndShowsNoInheritedDelete`, `.UncanonicalTokenWritesNoRowAndDropsAnInheritedOne`, `.UncanonicalRowTokenIsSupersededByACanonicalBody`, `.UncanonicalTokenAtTheDeleteHeadDropsTheRowWithNoRequest` | G2 to G10; S3 to S6, S9; 5 requests |
 | gtest, GC mode | `CASGcIntentsMode.ModeIsReadAfterTheLeaseInEveryRound`, `.AbsentPoolMetaFailsTheRound`, `.FailedPoolMetaReadFailsTheRound`, `.UnknownProtocolWordFailsTheRound`, `.IntentModeBelowGenerationFourFails`, `.MarkerModeRoundFailsOnARowWithIntent`. Each failing case asserts zero requests after the read. `.StampCreatedStateIsAFreeLease`: a manual round leads at once | G1; S11; [§7.3](#command) |
-| gtest, dialect | `CASBlobIntentDialect.MountOfASwitchedPoolIsRefused`, `.LearningStaysNotLearned`, `.GcRoundFailsAndTheMountLeavesGc` (no later lease write or heartbeat; another member takes the lease), `.FsckOnAReadOnlyOpenStops`, `.FsckStartedBeforeTheSwitchTouchesNoIntent` (the pool is switched in another dialect during the run), `.DryRunStops`, `.SwitchWithAnotherRecordedDialectIsRefused`. Each asserts zero delete and zero intent requests | the dialect rule; F0; S10 |
+| gtest, dialect | `CASBlobIntentDialect.MountOfASwitchedPoolIsRefused`, `.LearningStaysNotLearned`, `.GcRoundFailsAndTheMountLeavesGc` (no later lease write or heartbeat; `SYSTEM CAS GC RUN` and `REBUILD` are refused; another member takes the lease), `.FsckOnAReadOnlyOpenStops`, `.FsckStartedBeforeTheSwitchTouchesNoIntent` (the pool is switched in another dialect during the run), `.DryRunStops`, `.SwitchWithAnotherRecordedDialectIsRefused`. Each asserts zero delete and zero intent requests | the dialect rule; F0; S10 |
 | gtest, identity and formats | canonical identity and each rejected form, with today's grammar unchanged for control keys; a generation over 20 digits; intent key round trip, rejected spellings, key length; `BlobIntent` in the format battery; `gc/state` generation kept by every writer; run row `intent` and the flag byte, each invalid combination; slot and epoch fields; read ceiling 3 rejects each | [§2](#formats), [§3.6](#failure-contract), [§6.1](#identity); S8 |
 | gtest, `_pool_meta` | `blob_protocol`, `token_dialect` and `created_generation` survive `admitOrValidate` and `raiseMinReaderGeneration` (`CA/Pool/CasPoolMeta.cpp:98-123`) and every other read-modify-write; an unknown word, and each invalid pair, fails the decode | [§2.3](#control-formats), [§3.6](#failure-contract) |
-| gtest, source check and probe | `CASBlobPublishDigest.FlippedByteIsRefusedBeforeCompletion`, `.StaleSourceOfASecondAbsentPublisherIsRefused`, `.S3StagedRestreamIsVerified`; one probe test per row P1 to P7 with a fake that fails it; the copy rows are skipped without copy support | [§6.2](#mark-rules), [§6.3](#source-check); S7 |
+| gtest, source check and probe | `CASBlobPublishDigest.FlippedByteIsRefusedBeforeCompletion`, `.StaleSourceOfASecondAbsentPublisherIsRefused`, `.S3StagedRestreamIsVerified`; one probe test per row P1 to P7 with a fake that fails it; the copy rows are skipped without copy support; `CASBlobIntentSwitch.CommandRefusesUnderSkipAccessCheck` | [§6.2](#mark-rules), [§6.3](#source-check); S7 |
 | gtest, fsck | classes; `FixReadsTheIntentBeforeTheBody` with a hook that publishes between the reads; `FailedReadIsNeverStale`; `UncanonicalHeadTokenIsUnread`; `RefusedDeleteStopsTheRun`; `FixRefusesLegacyMarkersOnAnUnswitchedPool`. The failure cases assert that no key outside `intent_stale` was deleted | F0 to F6; S2 |
-| gtest, pool created by this build | `CASBlobIntentNewPool.EndsSwitchedBeforeTheFirstWriter`, `.SequenceSendsNoGcStateRequest`, `.ManualGcRoundLeadsRightAfterCreation`, `.CrashAfterPoolMetaResumes`, `.LostSwitchAnswerResumes`, `.FailedSwitchFailsTheMountAndRestartResumes`, `.FailedOrSkippedProbeFailsTheMount`, `.ConcurrentCreatorsConverge`, `.CreatorWithAnotherDialectIsRefused`, `.DecommissionOpenDoesNotRunTheSequence`, `.UpgradedPoolIsNotSwitchedAutomatically` | [§7.4](#fresh-pool) |
+| gtest, pool created by this build | `CASBlobIntentNewPool.EndsSwitchedBeforeTheFirstWriter`, `.SequenceSendsNoGcStateRequest`, `.ManualGcRoundLeadsRightAfterCreation`, `.CrashAfterPoolMetaResumes`, `.LostSwitchAnswerResumes`, `.FailedSwitchFailsTheMountAndRestartResumes`, `.FailedProbeFailsTheMount`, `.SkippedProbeSwitchesWithTheMarkAssumed`, `.SkippedProbeMountLearnsOnAPoolCreatedByThisBuild`, `.FalsePresenceWarnsAndTheMountLearns`, `.ConcurrentCreatorsConverge`, `.CreatorWithAnotherDialectIsRefused`, `.DecommissionOpenDoesNotRunTheSequence`, `.UpgradedPoolIsNotSwitchedAutomatically` | [§7.4](#fresh-pool) |
 | Stateless (`add-test`) | requests of one `INSERT` of new content (1 `HEAD`, 1 `PUT` per blob, no intent request), of a duplicate (2 `HEAD`, 1 intent `GET`, no `PUT`), and of a duplicate after `DROP` and two GC rounds | ledger |
 | Integration, RustFS and the GCS emulator | the mark on each publication path the store has: single, multipart upload above 32 MiB, multipart copy above 32 MiB; marked reads marked and unmarked reads unmarked; the recorded token form on `HEAD`; an upgrade test like `test_cas_ref_move_compat`: an older image writes, stop, new image, GC rounds in marker mode, the command refuses a slot below 4, switch, an older server is refused, a legacy blob is uploaded once and then reused with three reads; `test_cas_gc_s3`: at most 5 requests per reclaimed blob | [§6.2](#mark-rules), [§7](#transition) |
 | Soak, 2 hours, with process kills | `cas-fsck --fix stale-intents` every 10 minutes while writers and GC run; fsck: zero dangling refs; at the end, with writers and GC stopped, one more fix run and then a report with `intent_stale = 0`; no `CASBlobPublishDigestMismatch` | I8; F3 |
@@ -895,5 +916,4 @@ marker-mode GC tests stay and run on a pool as an older build leaves it: no `cre
 |---|---|---|
 | Q1 | Should the floor raise to 4 wait for the switch command, so the binary upgrade stays reversible until then? | No: every writable mount raises it, as generation 3 does |
 | Q2 | Should the verbatim staged copy carry a source-token precondition (`x-amz-copy-source-if-match`) instead of resting on A6? | No precondition. The copy already reads the staging object with a `HEAD` (`S3:1115`), but `copyS3File` has no source-condition parameter: it would be one more change in shared code |
-| Q3 | Where does the emulated backend over `LocalObjectStorage` keep the mark? It ignores attributes (`src/Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.cpp:575`) | A `user.` extended attribute set on the temporary file before the rename (`B:560`); a file system without it fails P1: an upgraded pool runs there without reuse, a new pool is refused |
-| Q4 | Is `SYSTEM CAS ENABLE BLOB INTENTS` the command name, and is an offline twin needed? | That name; no offline twin, because the command needs the mount's probe result |
+| Q3 | Is `SYSTEM CAS ENABLE BLOB INTENTS` the command name, and is an offline twin needed? | That name; no offline twin, because the command needs the mount's probe result |
