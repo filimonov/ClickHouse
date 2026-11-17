@@ -501,10 +501,9 @@ no identity.
   `object_metadata` is passed (`src/IO/S3/copyS3File.cpp:737-740`).
 - **Emulated backend over local files:** one permission bit of the object file that file creation never sets, an
   execute bit: files are created with mode `0666` under the server `umask` (`src/Daemon/BaseDaemon.cpp:265`). The
-  publish path sets or clears it explicitly on the temporary file before the atomic rename (`B:513-560`); `HEAD` reads
-  it with `stat` (`B:732-749`). No file-system feature is needed, and a rename replaces the mark with the body. A copy
-  that does not preserve modes loses the mark and cannot add it: one upload per blob. The in-memory backend keeps a
-  mark per object.
+  publish path sets or clears it on the temporary file before the atomic rename (`B:513-560`); `HEAD` reads it with
+  `stat` (`B:732-749`). No file-system feature is needed; a rename replaces the mark with the body. A copy that does
+  not preserve modes loses the mark and cannot add it: one upload per blob. In-memory: a mark per object.
 
 **Plumbing.** The bit travels through these signatures and no others.
 
