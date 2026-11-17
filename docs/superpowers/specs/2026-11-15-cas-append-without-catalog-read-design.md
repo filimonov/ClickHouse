@@ -101,13 +101,15 @@ lock at `L:5732`, clear at `L:5735`); another caller can read `Removing` and clo
 | 4 | Presence probe, `namespaceStillLogicallyPresent` (`L:5504`) | `Removing` (`L:5493-5503`) | closed and latched; today open |
 | 5 | `dropNamespaceImpl` (`L:5602`) | `Live` or `Removing` (`L:5558-5600`) | `Live`: open until `L:5634`. `Removing`: closed and latched; today open from `L:5602` to `L:5634` |
 
-- Three readers can see `Removing` without reaching either rule, and change no resident runtime. All three are unchanged:
+- Two readers can see `Removing` without reaching either rule, and change no resident runtime. Both are unchanged:
   - cold read admission returns no runtime for a `Removing` row (`L:796-797`);
-  - cold write admission refuses it, "is Removing" (`L:5387-5390`);
-  - the recovery confirmation (`L:1696-1705`) runs after every walk and uses only the row's presence: a `Removing`
-    row keeps the runtime as it is. Closing there instead is rejected: `namespaceLife` reads the flag before it waits
-    for the recovery (`L:5301-5345`).
-- So a runtime can have an open lane while its row is `Removing`: it was admitted as `Live` and the row turned later.
+  - cold write admission refuses it, "is Removing" (`L:5387-5390`).
+- The recovery confirmation, `confirmRecoveredLifeOrDetach`, runs after every walk. A same-life `Removing` row still
+  confirms the life, so the recovery installs, and it also closes and latches the lane through `latchRemovingLocked`.
+  This catches the write that started the recovery: `appendRefOpsOnRuntime` re-reads the flag under `ref_queue_mutex`
+  after the recovery and before it queues the item.
+- So a runtime can have an open lane while its row is `Removing`: it was admitted as `Live` and the row turned after
+  its recovery's confirmation.
   An own drop closes that runtime before it sends the write (fact 2 of [§2](#safety)). On the GC leader the next GC
   round closes it. What remains is [§4](#residual).
 - An item queued before the lane closes still commits; a drop drains it (`L:5635-5638`), then removes it (`L:5789-5802`).
