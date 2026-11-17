@@ -115,6 +115,7 @@ exact-delete authorization.
 | Model | Proves / gates | Status | Runner |
 |---|---|---|---|
 | `CaBlobPublishCore.tla` | authoritative split `HEAD`/unconditional-publication protocol, envelope identity, late landing, staged reuse, metadata reconciliation, and monotonic publication attempt | CURRENT focused blob-publication gate | `run_blobpublish.sh` |
+| `CaBlobIntentProtocol.tla` | blob publication without a birth marker: the two-read writer (W1 to W7) and GC-owned deletion intents (G2 to G12) of `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md`; results in `CaBlobIntentProtocol_RESULTS.md` | CURRENT (gates the deletion-intents implementation) | TLC command in `CaBlobIntentProtocol_RESULTS.md` |
 | `CaIncarnationCore.tla` | broad incarnation-token writer/GC core (fold → retire → fence → recheck → exact-token delete → cascade → trim); publication actions are atomic abstractions routed to `CaBlobPublishCore` | CURRENT (safety spine; concrete journal/fence structure superseded) | `run_tlc.sh` |
 | `CaBuildRootPrecommit.tla` | adopted-blob dangle fix: precommit-first build-root reachability + fail-closed commit + inline closure recording | CURRENT conclusion (inline-closure + presence-gate mechanisms drifted → lazy-fold+clamp-barrier + owner-liveness) | `run_buildrootprecommit.sh` |
 | `CaGcLeaseCore.tla` | GC leader lease: epoch-fence safety, advisory heartbeat against false steals | CURRENT | `run_gclease.sh` |

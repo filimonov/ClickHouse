@@ -1,165 +1,146 @@
 ---------------------------- MODULE CaBlobIntentProtocol ----------------------------
 (*
-Model of docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md: blob publication
-without a birth marker, GC-owned immutable deletion intents keyed by the body incarnation,
-write-ahead GC, and the one-time transition from the marker protocol.
+Blob publication without a birth marker, with GC-owned deletion intents keyed by the body
+incarnation: the writer rules W1 to W7 and the GC rules G2 to G12 of
+docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md, section 3.
 
-One blob key B. Writers of the new and of the older build, GC actors of the new and of the older
-build that race on one `gc/state`, `cas-fsck`, the operator's stamp and switch.
+One blob key B. Writers and GC actors race on the store and on one `gc/state`. Two GC actors in a
+safety run are a leader and a deposed leader whose requests still land.
 
-Every action names the rule of the specification it stands for (section and rule id). A rule that
-is not in the specification is not in this model; a place where the specification says nothing and
-the model follows the code is marked SILENT. Sabotage switches (`Sab`) each remove exactly one rule.
+With `Sab = {}` the module states the protocol as specified. Each name in `Sab` weakens one rule;
+the comment beside it in `KnownSab` names the rule.
 
-Request granularity. A read (`HEAD`, `GET`) is one atomic observation taken between its send and
-its answer; the answer is used arbitrarily later. A write is three steps: send (the request joins
-`putq` or `req`), apply (the store acts on it, whatever its sender does by now), respond (the
-sender consumes the result). A sender may stop waiting at any moment; with the kind in `Late` the
-request stays in flight and may apply later, otherwise it is never applied.
-
-Abstractions and bounds are listed at the end of the file.
+Requests. A read (`HEAD`, `GET`, `LIST`) is one atomic observation. A write is three steps: send,
+apply (whatever its sender does by now), answer. A sender may stop waiting; with the kind in `Late`
+the request stays in flight and may apply later, otherwise it is never applied.
 *)
 EXTENDS Naturals, FiniteSets, TLC
 
 CONSTANTS
-  Writers,        \* writer slots (model values); a slot is one mount of one server
+  Writers,        \* writer slots (model values)
   GCs,            \* GC actors (model values)
-  OldGCs,         \* the GC actors that run the older build (always marker mode, stopped by the stamp)
   NoG,            \* "nobody waits" (model value)
-  Start,          \* "T3": pool switched and stamped, every writer learned. "T1": floor 4, not stamped, not switched
   Seed,           \* initial objects, see Init
-  Builds,         \* builds a writer slot may run: subset of {"new", "old"}
   TokenKind,      \* "Generation": unique per landing. "Content": derived from the envelope bytes
   MaxPuts,        \* body publications the writers may send in total
-  MaxResends,     \* transport resends of a landed publication (sabotage of A1; 0 = one send)
+  MaxResends,     \* transport resends of a landed publication (0 unless testing A1)
   MaxVer,         \* `gc/state` round commits. 0: unbounded (one GC actor; liveness runs)
   Late,           \* kinds that stay in flight after the sender stopped waiting: "put", "ic", "id", "bd"
   Faults,         \* GC rounds may die at any step and GC requests may stay unanswered
-  Trigger,        \* "any": GC may condemn whenever a cut shows in-degree 0. "zero": only when the cut folds
-                  \* an edge withdrawal no committed round folded yet (the code's trigger; one GC actor)
-  Fsck,           \* cas-fsck --fix stale-intents runs concurrently (section 3.4)
-  Linker,         \* the no-bytes reference path runs (section 4.2, "No-bytes references")
-  StagedCopy,     \* the verbatim staged copy exists and every writer slot is an alias of ONE staging object
-  SourceChanges,  \* a writer's local source may differ from what was hashed at staging (section 6.3)
-  Budget,         \* count the writer's requests (section 1, "Budget")
-  Sab             \* sabotage switches
+  FaultBudget,    \* at most this many GC fault steps (0: unbounded while Faults)
+  Trigger,        \* "any": a round may see a fresh transition and a touched key at any cut (a superset).
+                  \* "zero": exact, from the writers' edge events (one GC actor)
+  Linker,         \* the no-bytes reference path runs (`adoptEvidence`)
+  StagedCopy,     \* the verbatim staged copy exists; every writer slot is an alias of ONE staging object
+  SourceChanges,  \* a writer's local source may differ from what was hashed at staging
+  Rebuild,        \* `gc/state` may lose its row once (`SYSTEM CAS GC REBUILD`); intents stay
+  StaleList,      \* the G9 listing may name an intent that was deleted since
+  OverBudget,     \* a create of G2, G3 or G7 may fall over the round's creation budget
+  Budget,         \* count the writer's requests
+  GBudget,        \* count the requests of each GC round
+  Sab             \* weakened rules, see KnownSab
 
 KnownSab ==
-  {"no_second_head",                 \* W5 removed: adopt after W2 and an absent intent (S1)
-   "alt_adopt_changed_token",        \* W5: adopt the other token it sees (section 4.3, considered and not adopted)
-   "attempted_create_confirms",      \* G3: a sent create counts as a confirmation (S4)
-   "absent_conflict_confirms",       \* G3: a resolve read that finds nothing, or fails, counts as a confirmation
-   "delete_on_graduation_cut",       \* G3/G4: delete in the round that confirmed, on that round's cut
-   "spare_deletes_intent",           \* G6/G9: the intent is deleted on a spare (S3)
-   "ambiguous_delete_cleans_intent", \* G5: an unanswered body DELETE still leads to the intent DELETE (S9)
-   "delete_despite_indegree",        \* G4/G6: a pending row is executed although the cut holds an edge
-   "candidate_from_intent",          \* G9: GC derives a pending row from an intent it reads
-   "writer_deletes_intent",          \* decision 1.1: the writer deletes the intent it met before it publishes
-   "cleanup_head_first",             \* F2: fsck observes the body first, the intent second (S2)
-   "cleanup_raw_spelling",           \* section 6.1: fsck compares raw tokens; one incarnation may render twice (S8)
-   "cleanup_foreign_dialect",        \* F0: a fsck client of another dialect is admitted (S10)
-   "gc_raw_spelling",                \* section 6.1: G4 and G7 compare raw tokens
-   "stale_read",                     \* W8: W4 is answered from an observation made before the edge (S12)
-   "resend_envelope",                \* A1: named for the run; the resend itself is MaxResends > 0
-   "staging_alias_two_copies",       \* A1: the once-only flag of the staged copy is not shared by aliases
-   "unchecked_stream",               \* section 6.3: a streaming publication is not hashed (S7)
-   "adopt_unmarked",                 \* W3: a learned writer runs W4, W5 on an unmarked body
-   "mark_before_learned",            \* section 3.1: the mark bit is set without the learned flag
-   "no_stamp",                       \* section 7.3: the switch does not need the stamp
-   "old_gc_after_stamp",             \* section 2.4: the older GC starts rounds on a stamped `gc/state`
-   "lost_stamp_old_bootstrap",       \* X2: `gc/state` is deleted and an older build bootstraps it
-   "mode_cached",                    \* G1: a GC actor keeps the mode of its first round
-   "mode_on_failed_read",            \* G1: a failed `_pool_meta` read means marker mode (S11)
-   "old_writer_after_switch",        \* A8: a writer of the older build starts a build after the switch (X1)
-   "inherited_executed"}             \* G8: an inherited pending row is executed in intent mode
+  {"delete_on_graduation_cut",   \* G4: the body is deleted in the round that confirmed, on that round's cut (S5)
+   "attempted_create_confirms",  \* confirmation table: a sent create counts as confirmed (S6)
+   "absent_conflict_confirms",   \* confirmation table: a resolve read that finds nothing counts as confirmed
+   "spare_deletes_intent",       \* G6, G11: the intent is deleted on a spare (S4)
+   "id_in_body_job",             \* G8, G11: the intent is deleted in the job that deletes the body (S1)
+   "dfr_despite_indegree",       \* G8: the intent is deleted at positive in-degree (S3)
+   "cut_before_commit",          \* G8: the cut is taken before the lease read of `gc/state` (S2)
+   "adopt_delete_now",           \* G9: the adopted intent is deleted in the adopting round (S7)
+   "ambiguous_delete_standing",  \* G5: an unanswered body DELETE still commits standing(t) (S9)
+   "delete_despite_indegree",    \* G4, G6: a pending row is executed although the cut holds an edge
+   "stale_read",                 \* W7: W4 is answered from an observation made before the edge (S12)
+   "staging_alias_two_copies",   \* A1: the once-only flag of the staged copy is not shared by aliases
+   "unchecked_stream",           \* section 6.2: a streaming publication is not hashed (S10)
+   "no_touched_head",            \* G7: a touched key gets no supersede `HEAD` (G7 only from G4's `HEAD`)
+   "g8_before_g7",               \* G7 order: G8 wins over G7 on a standing row whose `HEAD` shows `u`
+   "g9_before_g2",               \* G9: may adopt in the round whose fold condemns the key (G2)
+   "precut_head",                \* G12: the `HEAD`s of G2 and G7 may be read after the lease, before the cut
+   "precut_g2_only",             \* G12: as precut_head, only G2 uses the early answer
+   "no_g9",                      \* G9 removed (control: an orphan intent is never removed)
+   "keep_standing_on_spare",     \* contrast, G6: a standing row survives a cut with in-degree above 0
+   "g9_at_indegree"}             \* contrast, G9: adopts at in-degree above 0
 
 Has(s) == s \in Sab
 LateOk(k) == k \in Late
-Transition == Start = "T1"
 
-MaxTok == MaxPuts + MaxResends + 2     \* seed token 1, publications, the staged envelope
+MaxTok == MaxPuts + MaxResends + 2     \* seed token, publications, the staged envelope
 StagedEnv == MaxTok                    \* envelope of the one staging object (minted once, A1)
 Tokens == 1..MaxTok
 Good == "P"
 Bad == "X"
 
-NoBody == [present |-> FALSE, tok |-> 0, ser |-> 0, pay |-> "none", mk |-> FALSE]
+NoBody == [present |-> FALSE, tok |-> 0, ser |-> 0, pay |-> "none"]
 
-(* A condemned row of `gc/state` for B. `int` is the row's `intent` flag (section 2.3); a row with
-   `int` is pending. `conf` is ghost: the confirmation of G3 was a real one. *)
-NoEntry == [st |-> "none", tok |-> 0, int |-> FALSE, conf |-> FALSE]
-Cand(t) == [st |-> "cand", tok |-> t, int |-> FALSE, conf |-> FALSE]
-PendI(t, c) == [st |-> "pend", tok |-> t, int |-> TRUE, conf |-> c]
-PendM(t) == [st |-> "pend", tok |-> t, int |-> FALSE, conf |-> FALSE]
+(* A row of `gc/state` for B. `conf` is ghost: the create was confirmed by the confirmation table. *)
+NoEntry == [st |-> "none", tok |-> 0, conf |-> FALSE]
+Cand(t) == [st |-> "cand", tok |-> t, conf |-> FALSE]
+Pend(t, c) == [st |-> "pend", tok |-> t, conf |-> c]
+Stand(t) == [st |-> "stand", tok |-> t, conf |-> TRUE]
 
 VARIABLES
-  body,      \* the object at B: [present, tok, ser, pay, mk]; `ser` names the physical landing, `mk` the mark
+  body,      \* the object at B: [present, tok, ser, pay]; `ser` names the physical landing
   nextSer,   \* landings so far + 1
   gone,      \* ghost: tokens that stopped being the incarnation of B
   intents,   \* tokens t with I(B,t) present
-  meta,      \* the legacy marker `<blob>.meta`: "absent" | "clean" | "cond"
-  pm,        \* `_pool_meta.blob_protocol = intents`
-  wr,        \* per writer slot: the build in progress
-  lrn,       \* per writer slot: learned (section 3.1)
+  wr,        \* per writer slot: the part write in progress
   nextEnv, putq, sentq, nsend, nres,
   copied,    \* writer slots that used the staged copy (the once-only flag, A1)
-  gs,        \* durable `gc/state`: [e : row, ver, gen4]
+  gs,        \* durable `gc/state`: [e : row, ver, rb]
   gc,        \* per GC actor: its round in progress
-  gmode,     \* per GC actor: the mode it cached (only under "mode_cached")
-  req,       \* GC and fsck write requests in flight or applied and not yet consumed
-  fs,        \* cas-fsck: [ph, tok]
-  dirty,     \* the trigger of G2 (N:637-648): an edge was withdrawn and no committed round folded it yet.
-             \* Kept only with Trigger = "zero": set by WAbandon and WDrop, folded by GCommit
-  dseen,     \* the round in progress took its cut after that withdrawal (set by GCut)
-  fRecur, fI4, fOther, fWMut, fAdopt, fMMA   \* ghost violation bits
+  req,       \* GC write requests in flight, or applied and not yet consumed
+  dirty,     \* Trigger = "zero": an edge was withdrawn and no committed round folded it (G2's trigger)
+  dseen,     \* the round in progress took its cut after that withdrawal
+  touched,   \* Trigger = "zero": an edge of B was added or withdrawn and no committed round folded it
+  tpost,     \* Trigger = "zero": an edge event happened after the cut of the round in progress
+  ever,      \* ghost: every token that ever had an intent (the stale G9 listing)
+  nf,        \* GC fault steps so far (FaultBudget > 0)
+  fRecur, fI4, fOther, fAdopt   \* ghost violation bits
 
 bodyVars == <<body, nextSer, gone>>
-sigVars == <<intents, meta>>
 putVars == <<nextEnv, putq, sentq, nsend, nres, copied>>
-gcVars == <<gs, gc, gmode>>
-ghostVars == <<fRecur, fI4, fOther, fWMut, fAdopt, fMMA>>
-trigVars == <<dirty, dseen>>
-vars == <<bodyVars, sigVars, pm, wr, lrn, putVars, gcVars, req, fs, ghostVars, dirty, dseen>>
+ghostVars == <<fRecur, fI4, fOther, fAdopt>>
+trigVars == <<dirty, dseen, touched, tpost, ever, nf>>
+vars == <<bodyVars, intents, wr, putVars, gs, gc, req, ghostVars, trigVars>>
 
-W0 == [ph |-> "Idle", b |-> "new", mk |-> FALSE, seen |-> 0, env |-> 0, landed |-> FALSE, cp |-> FALSE,
+W0 == [ph |-> "Idle", seen |-> 0, env |-> 0, landed |-> FALSE, cp |-> FALSE,
        c404 |-> 0, path |-> "none", rd |-> 0, pt |-> 0, ga |-> 0]
 
-G0 == [ph |-> "Idle", base |-> NoEntry, bver |-> 0, bgen |-> FALSE, ref |-> FALSE, mode |-> "none",
-       next |-> NoEntry]
+Cnt0 == [h |-> 0, ic |-> 0, id |-> 0, bd |-> 0, rr |-> 0]
+(* `ref`: the cut shows in-degree above 0. `fr`: the cut folds a fresh transition to zero (G2).
+   `ts`: the key is touched in this round's window. `g7`: the token whose intent G7 deletes. *)
+G0 == [ph |-> "Idle", base |-> NoEntry, bver |-> 0, ref |-> FALSE, ecut |-> FALSE, fr |-> FALSE,
+       next |-> NoEntry, ct |-> 0, g7 |-> 0, ts |-> FALSE, cnt |-> Cnt0, ra |-> 0, rah |-> FALSE]
 
-Rq(k, o, t, s, ok, auth) ==
-  [k |-> k, o |-> o, tok |-> t, ser |-> s, ok |-> ok, auth |-> auth, ap |-> FALSE, res |-> "none"]
+Rq(k, o, t, s, ok) == [k |-> k, o |-> o, tok |-> t, ser |-> s, ok |-> ok, ap |-> FALSE, res |-> "none"]
 
-Marked == Start = "T3" /\ Seed \in {"orphan", "cand", "pend", "spared"}
-SeedBody == Seed /= "empty"
+(* Seeds. empty: nothing. orphan: body 1, unreferenced, no row. pend: pending(1), I(B,1), body 1.
+   cand: candidate(1), body 1. spared: I(B,1) over body 1, no row (a crash between create and
+   commit). lost: I(B,1), no body, no row. orphans2: I(B,1) and I(B,2) over body 2, no row. *)
+SeedBody == Seed \notin {"empty", "lost"}
+Fresh0 == Trigger = "zero" /\ Seed \in {"orphan", "spared", "orphans2"}
 
 Init ==
-  /\ body = IF SeedBody THEN [present |-> TRUE, tok |-> 1, ser |-> 1, pay |-> Good, mk |-> Marked] ELSE NoBody
-  /\ nextSer = IF SeedBody THEN 2 ELSE 1
-  /\ nextEnv = 2
-  /\ gone = {}
-  /\ intents = IF Seed \in {"pend", "spared"} THEN {1} ELSE {}
-  /\ meta = CASE Seed = "legacy" -> "clean"
-              [] Seed \in {"legacy_cand", "legacy_pend"} -> "cond"
-              [] OTHER -> "absent"
-  /\ pm = (Start = "T3")
+  /\ body = IF SeedBody THEN [present |-> TRUE, tok |-> IF Seed = "orphans2" THEN 2 ELSE 1, ser |-> 1, pay |-> Good]
+            ELSE NoBody
+  /\ nextSer = IF Seed = "orphans2" THEN 3 ELSE IF SeedBody \/ Seed = "lost" THEN 2 ELSE 1
+  /\ nextEnv = IF Seed = "orphans2" THEN 3 ELSE 2
+  /\ gone = IF Seed \in {"lost", "orphans2"} THEN {1} ELSE {}
+  /\ intents = IF Seed \in {"pend", "spared", "lost"} THEN {1} ELSE IF Seed = "orphans2" THEN {1, 2} ELSE {}
   /\ wr = [w \in Writers |-> W0]
-  /\ lrn = [w \in Writers |-> Start = "T3"]
   /\ putq = {} /\ sentq = {} /\ nsend = 0 /\ nres = 0 /\ copied = {}
-  /\ gs = [e |-> CASE Seed \in {"cand", "legacy_cand"} -> Cand(1)
-                   [] Seed = "pend" -> PendI(1, TRUE)
-                   [] Seed = "legacy_pend" -> PendM(1)
-                   [] OTHER -> NoEntry,
-           ver |-> 0, gen4 |-> (Start = "T3")]
+  /\ gs = [e |-> CASE Seed = "cand" -> Cand(1) [] Seed = "pend" -> Pend(1, TRUE) [] OTHER -> NoEntry,
+           ver |-> 0, rb |-> 0]
   /\ gc = [g \in GCs |-> G0]
-  /\ gmode = [g \in GCs |-> "none"]
   /\ req = {}
-  /\ fs = [ph |-> "Idle", tok |-> 0]
-  /\ dirty = (Trigger = "zero" /\ Seed \in {"orphan", "spared", "legacy"}) /\ dseen = FALSE
-  /\ fRecur = FALSE /\ fI4 = FALSE /\ fOther = FALSE /\ fWMut = FALSE /\ fAdopt = FALSE /\ fMMA = FALSE
+  /\ dirty = Fresh0 /\ dseen = FALSE /\ touched = Fresh0 /\ tpost = FALSE
+  /\ ever = intents /\ nf = 0
+  /\ fRecur = FALSE /\ fI4 = FALSE /\ fOther = FALSE /\ fAdopt = FALSE
 
 --------------------------------------------------------------------------------------
-(* Request counters of section 1, "Budget". They are not reset when the writer's loop iterates. *)
+(* Writer request counters. They are not reset when the writer's loop iterates. *)
 Rd(r) == IF Budget THEN [r EXCEPT !.rd = @ + 1] ELSE r
 Pt(r) == IF Budget THEN [r EXCEPT !.pt = @ + 1] ELSE r
 SetPath(r, p) ==
@@ -168,178 +149,110 @@ SetPath(r, p) ==
   ELSE IF r.path = "amb_new" /\ r.ga = 1 /\ p = "reuse" THEN [r EXCEPT !.path = "amb_new_reuse"]
   ELSE [r EXCEPT !.path = "amb"]
 
-(* Canonical identity, section 6.1: every comparison is on the canonical form, so two renderings of
-   one incarnation are equal. The sabotages compare raw tokens: an equal incarnation MAY read as
-   another one. `Differs(sab)` is the set of answers "these two observations name different
-   incarnations" that a comparison of two equal incarnations can give. *)
-RawMayDiffer(sab) == IF Has(sab) THEN {FALSE, TRUE} ELSE {FALSE}
-
 (* An intent DELETE is sent for `t`. Ghost for I4: `t` must not be the incarnation of B. *)
 IdBad(t) == body.present /\ body.tok = t
-IdReq(o, t) == Rq("id", o, t, 0, TRUE, "none")
+IdReq(o, t) == Rq("id", o, t, 0, TRUE)
 
-(* Publications of `w` after `w` stopped waiting. Without "put" in Late an unapplied one is never applied. *)
+(* Publications of `w` after `w` stopped waiting. Without "put" in Late an unapplied one is dropped. *)
 DropPuts(w) == IF LateOk("put") THEN putq ELSE {q \in putq : q.w /= w}
 
-(* A8: no older build starts protocol work after the switch. A build of the older writer whose edge
-   was durable before the switch may go on and commit: the procedure of section 7.2 (step 3) is
-   stricter and stops such a process, which is WAbandon here. The sabotage lets one start. *)
-OldAlive == ~pm \/ Has("old_writer_after_switch")
+(* An edge of B is added or withdrawn: the key is touched in the window of the next cut. *)
+EdgeEv ==
+  /\ touched' = (touched \/ Trigger = "zero") /\ tpost' = (Trigger = "zero")
+  /\ UNCHANGED <<ever, nf>>
 
 --------------------------------------------------------------------------------------
-(* WRITER, section 3.2. *)
+(* WRITER, section 3.1. *)
 
-(* W1: the precommit edge is durable before the first request. The mark bit is decided when the
-   staging sink is created (section 3.1, "Mark bit"): it is the learned flag of that moment. *)
-WPrecommit(w, b) ==
-  /\ wr[w].ph = "Idle" /\ b \in Builds
-  /\ (b = "old" => OldAlive)
-  /\ wr' = [wr EXCEPT ![w] = [W0 EXCEPT !.ph = "H1", !.b = b, !.c404 = wr[w].c404,
-                                         !.mk = (b = "new" /\ (lrn[w] \/ Has("mark_before_learned")))]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+(* W1: the precommit edge is durable before the first request. *)
+WPrecommit(w) ==
+  /\ wr[w].ph = "Idle"
+  /\ wr' = [wr EXCEPT ![w] = [W0 EXCEPT !.ph = "H1", !.c404 = wr[w].c404]]
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars>>
+  /\ UNCHANGED <<dirty, dseen>> /\ EdgeEv
 
-(* Section 3.1: the slot reads `_pool_meta` and finds `intents` with its own dialect, probe passed.
-   Monotone. A failed read is "not learned": the step is simply not taken. *)
-WLearn(w) ==
-  /\ Transition /\ pm /\ ~lrn[w]
-  /\ lrn' = [lrn EXCEPT ![w] = TRUE]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
-
-(* Sabotage of W8: an observation "I(B,t) absent" made before the edge exists is kept and reused. *)
+(* Sabotage of W7: an answer "I(B,t) absent" obtained before the edge exists is kept and reused. *)
 WPrime(w) ==
-  /\ Has("stale_read") /\ wr[w].ph = "Idle" /\ lrn[w]
-  /\ body.present /\ body.mk /\ body.tok \notin intents /\ wr[w].c404 /= body.tok
+  /\ Has("stale_read") /\ wr[w].ph = "Idle"
+  /\ body.present /\ body.tok \notin intents /\ wr[w].c404 /= body.tok
   /\ wr' = [wr EXCEPT ![w].c404 = body.tok]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars, trigVars>>
 
-(* W2: `HEAD B`. Absent -> W6, first-publication form.
-   W3: body unmarked, or writer not learned -> W6, no other request.
-   Older build (W:424-475): present -> read the marker. *)
-WHead1(w) ==
+(* W2: `HEAD B`. Absent -> W5, first-publication form. Present -> W4 for its token. *)
+WHead(w) ==
   /\ wr[w].ph = "H1"
   /\ LET r == Rd(wr[w])
      IN wr' = [wr EXCEPT ![w] =
           IF ~body.present
             THEN [SetPath(r, "new") EXCEPT !.ph = "Pub", !.cp = StagedCopy]
-          ELSE IF r.b = "old"
-            THEN [r EXCEPT !.ph = "M", !.seen = body.tok]
-          ELSE IF lrn[w] /\ (body.mk \/ Has("adopt_unmarked"))
-            THEN [r EXCEPT !.ph = "G", !.seen = body.tok]
-          ELSE [SetPath(r, "legacy") EXCEPT !.ph = "Pub", !.cp = FALSE]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+            ELSE [r EXCEPT !.ph = "G", !.seen = body.tok]]
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars, trigVars>>
 
-(* W4: `GET I(B,t)` for the identity of W2. An object -> W6. An answered 404 -> W5. *)
+(* W4: `GET I(B,t)`, sent after the answer of W2. An object -> W5. An answered 404 -> adopt. *)
 WGetIntent(w) ==
   /\ wr[w].ph = "G"
   /\ LET cached == Has("stale_read") /\ wr[w].c404 = wr[w].seen
          r == IF cached THEN wr[w] ELSE Rd(wr[w])
      IN IF r.seen \in intents /\ ~cached
           THEN /\ wr' = [wr EXCEPT ![w] = [SetPath(r, "condemned") EXCEPT !.ph = "Pub", !.seen = 0, !.cp = FALSE]]
-               /\ IF Has("writer_deletes_intent")
-                    THEN /\ req' = req \cup {IdReq(NoG, r.seen)}
-                         /\ fWMut' = TRUE
-                         /\ fI4' = (fI4 \/ IdBad(r.seen))
-                    ELSE UNCHANGED <<req, fWMut, fI4>>
                /\ UNCHANGED fAdopt
-          ELSE /\ wr' = [wr EXCEPT ![w] =
-                    IF Has("no_second_head")
-                      THEN [SetPath(r, "reuse") EXCEPT !.ph = "Ready", !.seen = 0]
-                      ELSE [r EXCEPT !.ph = "H2"]]
-               /\ fAdopt' = (fAdopt \/ cached \/ Has("no_second_head"))
-               /\ UNCHANGED <<req, fWMut, fI4>>
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, fs, fRecur, fOther, fMMA>>
-  /\ UNCHANGED trigVars
+          ELSE /\ wr' = [wr EXCEPT ![w] = [SetPath(r, "reuse") EXCEPT !.ph = "Ready", !.seen = 0]]
+               /\ fAdopt' = (fAdopt \/ cached)
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, fRecur, fI4, fOther, trigVars>>
 
-(* W5: `HEAD B` again. Same canonical identity -> adopt. Absent or another identity -> W6, once,
-   with no return to W2. I6 (ghost `fAdopt`): an adoption is of a marked body by a learned writer. *)
-WHead2(w) ==
-  /\ wr[w].ph = "H2"
-  /\ LET r == Rd(wr[w])
-         same == body.present /\ body.tok = r.seen
-         alt == Has("alt_adopt_changed_token") /\ body.present /\ body.mk /\ ~same
-     IN /\ wr' = [wr EXCEPT ![w] =
-             IF same \/ alt
-               THEN [SetPath(r, "reuse") EXCEPT !.ph = "Ready", !.seen = 0]
-               ELSE [SetPath(r, "changed") EXCEPT !.ph = "Pub", !.seen = 0, !.cp = FALSE]]
-        /\ fAdopt' = (fAdopt \/ ((same \/ alt) /\ (~body.mk \/ ~lrn[w])))
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, fRecur, fI4, fOther, fWMut, fMMA>>
-  /\ UNCHANGED trigVars
-
-(* Older build: `GET <blob>.meta` after the HEAD. `Clean` adopts (W:446-452); anything else republishes. *)
-WGetMetaOld(w) ==
-  /\ wr[w].ph = "M"
-  /\ wr' = [wr EXCEPT ![w] = IF meta = "clean" THEN [@ EXCEPT !.ph = "Ready", !.seen = 0]
-                                               ELSE [@ EXCEPT !.ph = "Pub", !.seen = 0]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
-
-(* The once-only rule of the verbatim staged copy (A1): hardlink copies of one staging object share
-   the flag. The sabotage gives every alias its own flag. *)
+(* The once-only rule of the verbatim staged copy (A1): aliases of one staging object share it. *)
 CopyAllowed(w) == IF Has("staging_alias_two_copies") THEN w \notin copied ELSE copied = {}
 
-(* W6: one unconditional publication, sent once, marked iff the mark bit is set.
-   Streaming: a fresh envelope per attempt (A1), the payload is hashed (section 6.3): a source that
-   no longer hashes to the key is refused before the object completes, so no request exists (the
-   writer's exception is WAbandon). Verbatim staged copy: only as the first publication of the
-   staging object and only after W2 found no body; it carries the staged envelope, is not hashed and
-   rests on A6. *)
+(* W5: one unconditional publication, sent once. Streaming: a fresh envelope per attempt (A1), the
+   payload is hashed; a source that no longer hashes to the key is refused before the object
+   completes (the writer's exception is WAbandon). Verbatim staged copy: only as the first
+   publication of the staging object and only after W2 answered absent; not hashed, rests on A6. *)
 WSendPut(w) ==
   /\ wr[w].ph = "Pub" /\ nsend < MaxPuts
   /\ \E copy \in (IF wr[w].cp /\ CopyAllowed(w) THEN {TRUE, FALSE} ELSE {FALSE}) :
      \E p \in (IF SourceChanges /\ ~copy /\ Has("unchecked_stream") THEN {Good, Bad} ELSE {Good}) :
        LET e == IF copy THEN StagedEnv ELSE nextEnv
-       IN /\ putq' = putq \cup {[w |-> w, env |-> e, pay |-> p, mk |-> wr[w].mk]}
+       IN /\ putq' = putq \cup {[w |-> w, env |-> e, pay |-> p]}
           /\ nextEnv' = IF copy THEN nextEnv ELSE nextEnv + 1
           /\ copied' = IF copy THEN copied \cup {w} ELSE copied
           /\ wr' = [wr EXCEPT ![w] = [Pt(@) EXCEPT !.ph = "Wait", !.env = e, !.landed = FALSE]]
   /\ nsend' = nsend + 1
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, sentq, nres, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, sentq, nres, gs, gc, req, ghostVars, trigVars>>
 
 TokOf(e) == IF TokenKind = "Generation" THEN nextSer ELSE e
 
-LandBody(e, p, m) ==
+LandBody(e, p) ==
   LET t == TokOf(e)
       stays == body.present /\ body.tok = t
-  IN /\ body' = [present |-> TRUE, tok |-> t, ser |-> nextSer, pay |-> p, mk |-> m]
+  IN /\ body' = [present |-> TRUE, tok |-> t, ser |-> nextSer, pay |-> p]
      /\ nextSer' = nextSer + 1
      /\ fRecur' = (fRecur \/ t \in gone)
      /\ gone' = IF body.present /\ ~stays THEN gone \cup {body.tok} ELSE gone
 
-(* Store: a publication applies, whatever its sender does by now. It replaces the object and its mark. *)
+(* Store: a publication applies, whatever its sender does by now. *)
 PutLand(q) ==
   /\ q \in putq
-  /\ LandBody(q.env, q.pay, q.mk)
+  /\ LandBody(q.env, q.pay)
   /\ putq' = putq \ {q}
   /\ sentq' = IF MaxResends > 0 THEN sentq \cup {q} ELSE sentq
   /\ wr' = IF wr[q.w].ph = "Wait" /\ wr[q.w].env = q.env THEN [wr EXCEPT ![q.w].landed = TRUE] ELSE wr
-  /\ UNCHANGED <<sigVars, pm, lrn, nextEnv, nsend, nres, copied, gcVars, req, fs, fI4, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<intents, nextEnv, nsend, nres, copied, gs, gc, req, fI4, fOther, fAdopt, trigVars>>
 
-(* Sabotage of A1: the transport reissues a request that was already applied. *)
+(* A1 broken on purpose: the transport reissues a request that was already applied. *)
 PutResend(q) ==
   /\ q \in sentq /\ nres < MaxResends
-  /\ LandBody(q.env, q.pay, q.mk)
+  /\ LandBody(q.env, q.pay)
   /\ nres' = nres + 1
-  /\ UNCHANGED <<sigVars, pm, wr, lrn, nextEnv, putq, sentq, nsend, copied, gcVars, req, fs,
-                 fI4, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<intents, wr, nextEnv, putq, sentq, nsend, copied, gs, gc, req, fI4, fOther, fAdopt, trigVars>>
 
-(* W6, answered success -> `Materialized`. W7: no request follows.
-   Older build: it then writes `Clean` (W:368, :542); one step with the answer. *)
+(* W5 answered success -> `Materialized`. W6: no request follows. *)
 WPutOk(w) ==
   /\ wr[w].ph = "Wait" /\ wr[w].landed
   /\ wr' = [wr EXCEPT ![w] = [@ EXCEPT !.ph = "Ready", !.env = 0, !.landed = FALSE]]
-  /\ meta' = IF wr[w].b = "old" THEN "clean" ELSE meta
-  /\ UNCHANGED <<bodyVars, intents, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars, trigVars>>
 
-(* W6, unanswered: the next loop iteration starts at W2. The request may have been applied, and
-   with "put" in Late may still apply. *)
+(* W5 unanswered: the next loop iteration from W2. The request may have applied, and with "put" in
+   Late may still apply. *)
 WPutGiveUp(w) ==
   /\ wr[w].ph = "Wait"
   /\ wr' = [wr EXCEPT ![w] =
@@ -347,326 +260,360 @@ WPutGiveUp(w) ==
                  !.path = IF ~Budget THEN "none" ELSE IF @ = "new" /\ wr[w].ga = 0 THEN "amb_new" ELSE "amb",
                  !.ga = IF Budget /\ @ < 2 THEN @ + 1 ELSE @]]
   /\ putq' = DropPuts(w)
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, nextEnv, sentq, nsend, nres, copied, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, nextEnv, sentq, nsend, nres, copied, gs, gc, req, ghostVars, trigVars>>
 
 (* I3: commit only while the precommit is the live owner. *)
 WCommit(w) ==
   /\ wr[w].ph = "Ready"
   /\ wr' = [wr EXCEPT ![w] = [@ EXCEPT !.ph = "Done", !.rd = 0, !.pt = 0, !.ga = 0,
                                         !.path = IF @ = "reuse" THEN "reuse" ELSE "none"]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars, trigVars>>
 
-(* The build ends before its commit and its edge is withdrawn: an exception at any step, a refused
-   read, a digest mismatch, or the death of the process followed by the cleanup of its precommit.
-   A process that died keeps its edge until this step; a stalled phase stands for that interval. *)
+(* The part write ends before its commit and its edge is withdrawn: an exception at any step, a
+   refused or unanswered read, or the death of the process and the cleanup of its precommit. *)
 WAbandon(w) ==
   /\ wr[w].ph \notin {"Idle", "Done"}
   /\ wr' = [wr EXCEPT ![w] = [W0 EXCEPT !.c404 = wr[w].c404]]
   /\ putq' = DropPuts(w)
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, nextEnv, sentq, nsend, nres, copied, gcVars, req, fs, ghostVars>>
-  /\ dirty' = (dirty \/ Trigger = "zero") /\ dseen' = FALSE
+  /\ UNCHANGED <<bodyVars, intents, nextEnv, sentq, nsend, nres, copied, gs, gc, req, ghostVars>>
+  /\ dirty' = (dirty \/ Trigger = "zero") /\ dseen' = FALSE /\ EdgeEv
 
 (* The committed part is dropped: its edge is withdrawn. *)
 WDrop(w) ==
   /\ wr[w].ph = "Done"
   /\ wr' = [wr EXCEPT ![w] = [W0 EXCEPT !.c404 = wr[w].c404]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ dirty' = (dirty \/ Trigger = "zero") /\ dseen' = FALSE
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars>>
+  /\ dirty' = (dirty \/ Trigger = "zero") /\ dseen' = FALSE /\ EdgeEv
 
-(* Section 4.2, "No-bytes references" (`adoptEvidence`): an edge is added with no request while a
-   source edge is live. The source is a committed ref of another slot. *)
+(* `adoptEvidence`: an edge is added with no request while a source edge (a committed ref of
+   another slot) is live. *)
 WLink(w) ==
   /\ Linker /\ wr[w].ph = "Idle"
   /\ \E v \in Writers \ {w} : wr[v].ph = "Done"
   /\ wr' = [wr EXCEPT ![w] = [W0 EXCEPT !.ph = "Done", !.path = "link", !.c404 = wr[w].c404]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, putVars, gs, gc, req, ghostVars>>
+  /\ UNCHANGED <<dirty, dseen>> /\ EdgeEv
 
 --------------------------------------------------------------------------------------
-(* GC, section 3.3. One round: lease (read `gc/state`), mode (G1), cut, the fold and the delete
-   batch, one commit by compare-and-swap. Deletes are sent before the commit. An actor whose commit
-   loses is the deposed leader; what it sent stays sent. *)
+(* GC, section 3.2. One round: lease (read `gc/state`), cut, the fold (every decision and every
+   `HEAD` and create), the delete batch, one commit by compare-and-swap. An actor whose commit loses
+   is a deposed leader; what it sent stays sent. One key: a round takes at most one decision for B. *)
 
 HasEdge == \E w \in Writers : wr[w].ph /= "Idle"
-IsOld(g) == g \in OldGCs
 OwnReq(g) == {q \in req : q.o = g}
-NoOwned(g) == OwnReq(g) = {}
 
-(* The sender stops waiting. An applied request is done; an unapplied one stays in flight only with
-   its kind in Late, otherwise it is never applied. *)
 StopWaiting(g, k) ==
   {q \in req : q.o /= g}
     \cup (IF LateOk(k) THEN {[q EXCEPT !.o = NoG] : q \in {x \in OwnReq(g) : ~x.ap}} ELSE {})
 
-(* The lease read-modify-write of `gc/state` starts the round. The older build cannot decode a
-   stamped state (section 2.4): no round starts. *)
+Inc(r, f) == IF GBudget THEN [r EXCEPT !.cnt[f] = @ + 1] ELSE r
+IncIf(r, f, c) == IF c THEN Inc(r, f) ELSE r
+
+FaultOk == Faults /\ (FaultBudget = 0 \/ nf < FaultBudget)
+FaultStep == nf' = IF FaultBudget = 0 THEN nf ELSE nf + 1
+NoTrig == UNCHANGED trigVars
+KeepTrigFault == UNCHANGED <<dirty, dseen, touched, tpost, ever>> /\ FaultStep
+
+(* The lease read-modify-write of `gc/state` starts the round. *)
 GStart(g) ==
-  /\ gc[g].ph = "Idle"
-  /\ (IsOld(g) => (~gs.gen4 \/ Has("old_gc_after_stamp")))
-  /\ gc' = [gc EXCEPT ![g] = [G0 EXCEPT !.ph = IF Transition THEN "Mode" ELSE "Read",
-                                         !.mode = IF Transition THEN "none" ELSE "intent",
-                                         !.base = gs.e, !.bver = gs.ver, !.bgen = gs.gen4]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ gc[g].ph = IF Has("cut_before_commit") THEN "Pre" ELSE "Idle"
+  /\ gc' = [gc EXCEPT ![g] = [G0 EXCEPT !.ph = "Read", !.ecut = gc[g].ecut, !.base = gs.e, !.bver = gs.ver]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars, trigVars>>
 
-(* G1: after the lease and before any other step the round reads `_pool_meta`. No `blob_protocol`
-   -> marker mode for this round. `intents` -> intent mode; it requires `gc/state` at generation 4,
-   else the round fails. A failed read fails the round (GAbort). The older build never reads it.
-   A marker-mode round that reads a row with `intent` fails (section 3.6). *)
-GMode(g) ==
-  /\ gc[g].ph = "Mode"
-  /\ \E m \in (IF IsOld(g) THEN {"marker"}
-               ELSE IF Has("mode_cached") /\ gmode[g] /= "none" THEN {gmode[g]}
-               ELSE IF pm THEN (IF Has("mode_on_failed_read") THEN {"intent", "marker"} ELSE {"intent"})
-               ELSE {"marker"}) :
-       /\ gc' = [gc EXCEPT ![g] =
-            IF (m = "intent" /\ ~gc[g].bgen) \/ (m = "marker" /\ gc[g].base.int)
-              THEN G0                                       \* the round fails; the next one reads again
-              ELSE [@ EXCEPT !.ph = "Read", !.mode = m]]
-       /\ gmode' = IF Has("mode_cached") THEN [gmode EXCEPT ![g] = m] ELSE gmode
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+(* Sabotage "cut_before_commit": G8 decides on a cut taken before the lease read. *)
+GPreCut(g) ==
+  /\ Has("cut_before_commit") /\ gc[g].ph = "Idle"
+  /\ gc' = [gc EXCEPT ![g] = [G0 EXCEPT !.ph = "Pre", !.ecut = HasEdge]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars, trigVars>>
 
-(* The round's complete reference cut (A7), after the lease and the mode. *)
+(* Sabotage of G12: a `HEAD B` read after the lease and before the cut. *)
+PreCut == Has("precut_head") \/ Has("precut_g2_only")
+GReadAhead(g) ==
+  /\ PreCut /\ gc[g].ph = "Read" /\ ~gc[g].rah
+  /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.rah = TRUE, !.ra = IF body.present THEN body.tok ELSE 0]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars, trigVars>>
+
+(* The round's complete reference cut (A7), after the lease. With Trigger = "zero" the fresh
+   transition and the touched flag are exact; with "any" each is a free choice per round. *)
 GCut(g) ==
   /\ gc[g].ph = "Read"
-  /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Work", !.ref = HasEdge]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ dseen' = dirty /\ UNCHANGED dirty
+  /\ \E ts \in (IF Trigger = "zero" THEN {touched} ELSE BOOLEAN) :
+     \E fr \in (IF Trigger = "zero" THEN {dirty} ELSE BOOLEAN) :
+       gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Work", !.ref = HasEdge, !.ts = ts, !.fr = fr]]
+  /\ dseen' = dirty /\ tpost' = FALSE
+  /\ UNCHANGED <<dirty, touched, ever, nf>>
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
 
-IntentMode(g) == gc[g].mode = "intent"
-(* G8: in intent mode a pending row without `intent` is a candidate. *)
-Demoted(g) == IntentMode(g) /\ gc[g].base.st = "pend" /\ ~gc[g].base.int /\ ~Has("inherited_executed")
-IsCand(g) == gc[g].base.st = "cand" \/ Demoted(g)
-IsPend(g) == gc[g].base.st = "pend" /\ ~Demoted(g)
+IsPend(g) == gc[g].base.st = "pend"
+Zero(g) == ~gc[g].ref
 
-(* G2: no row, the cut shows in-degree 0. `HEAD B`: present -> a non-pending row with the observed
-   token; absent -> no row. Marker mode also writes `Condemned` (G:2227).
-   Sabotage of G9: a row is derived from an intent the round reads. *)
+(* G7, G12: a row gets a `HEAD B` in this round iff it is pending (G4 step 1) or its key is touched
+   (the supersede `HEAD`), sent after the cut. A row at zero whose `HEAD` shows `u` takes G7. *)
+HeadSent(g) == (gc[g].ts /\ ~Has("no_touched_head")) \/ IsPend(g)
+SupTok(g) ==
+  IF gc[g].rah /\ ~IsPend(g) /\ ~Has("precut_g2_only") THEN gc[g].ra
+  ELSE IF body.present THEN body.tok ELSE 0
+G7Cond(g) ==
+  /\ gc[g].base.st /= "none" /\ Zero(g) /\ HeadSent(g)
+  /\ SupTok(g) /= 0 /\ SupTok(g) /= gc[g].base.tok
+
+(* G2: no row, zero, a fresh transition, a body present. *)
+G2Obs(g) == IF gc[g].rah THEN gc[g].ra ELSE IF body.present THEN body.tok ELSE 0
+G2Cond(g) == Zero(g) /\ gc[g].fr /\ G2Obs(g) /= 0
+(* G9: one `LIST` page nominates the intents of B. A stale listing may name one deleted since. *)
+Listable == IF StaleList THEN ever ELSE intents
+G9Able(g) ==
+  /\ ~Has("no_g9") /\ Listable /= {}
+  /\ Zero(g) \/ Has("g9_at_indegree")
+  /\ ~G2Cond(g) \/ Has("g9_before_g2")
+
+(* G2: `HEAD B` (in G2Obs), then the create of I(B,t) in the fold (GCreateSendFold). Absent: no row.
+   A row-less key with nothing to condemn and nothing to adopt ends the round for B. *)
 GCondemn(g) ==
   /\ gc[g].ph = "Work" /\ gc[g].base.st = "none"
-  /\ IF ~gc[g].ref /\ body.present /\ (Trigger = "any" \/ dseen)
-       THEN /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next =
-                        IF Has("candidate_from_intent") /\ IntentMode(g) /\ body.tok \in intents
-                          THEN PendI(body.tok, TRUE) ELSE Cand(body.tok)]]
-            /\ meta' = IF IntentMode(g) THEN meta ELSE "cond"
-       ELSE /\ gc' = [gc EXCEPT ![g] = G0]
-            /\ meta' = meta
-  /\ UNCHANGED <<bodyVars, intents, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ IF G2Cond(g)
+       THEN gc' = [gc EXCEPT ![g] = [Inc(@, "h") EXCEPT !.ph = "ICr", !.next = Cand(G2Obs(g)), !.ct = G2Obs(g)]]
+       ELSE /\ ~G9Able(g)
+            /\ gc' = [gc EXCEPT ![g] = G0]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ NoTrig
 
-(* G6: a row whose cut shows in-degree above 0 is dropped. No request; an intent stays (G9). *)
+(* G9: one listed intent of a key with no row, at zero, that G2 does not condemn in this round.
+   `HEAD B` after the `LIST` and the cut: same identity -> candidate; absent or another identity ->
+   standing. Deletes nothing. *)
+GAdoptOrphan(g) ==
+  /\ gc[g].ph = "Work" /\ gc[g].base.st = "none" /\ G9Able(g)
+  /\ \E t \in Listable :
+       LET r == Inc(gc[g], "h") IN
+       IF body.present /\ body.tok = t
+         THEN /\ gc' = [gc EXCEPT ![g] = [r EXCEPT !.ph = "Commit", !.next = Cand(t)]]
+              /\ UNCHANGED <<req, fI4>>
+       ELSE IF Has("adopt_delete_now")
+         THEN /\ req' = req \cup {IdReq(g, t)}
+              /\ gc' = [gc EXCEPT ![g] = [Inc(r, "id") EXCEPT !.ph = "IdWait", !.next = NoEntry]]
+              /\ fI4' = (fI4 \/ IdBad(t))
+       ELSE /\ gc' = [gc EXCEPT ![g] = [r EXCEPT !.ph = "Commit", !.next = Stand(t)]]
+            /\ UNCHANGED <<req, fI4>>
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
+
+(* G6: at in-degree above 0 every row is dropped, with no request; an intent stays. *)
 GSpare(g) ==
   /\ gc[g].ph = "Work" /\ gc[g].base.st /= "none" /\ gc[g].ref
   /\ ~(Has("delete_despite_indegree") /\ IsPend(g))
+  /\ ~(gc[g].base.st = "stand" /\ (Has("keep_standing_on_spare") \/ Has("dfr_despite_indegree")))
   /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = NoEntry]]
-  /\ IF Has("spare_deletes_intent") /\ gc[g].base.int
+  /\ IF Has("spare_deletes_intent") /\ gc[g].base.st /= "cand"
        THEN /\ req' = req \cup {IdReq(NoG, gc[g].base.tok)}
             /\ fI4' = (fI4 \/ IdBad(gc[g].base.tok))
        ELSE UNCHANGED <<req, fI4>>
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
 
-(* G7: a touched row at in-degree 0 whose `HEAD` shows another canonical identity `u` becomes a
-   candidate for (B,u). If the old row had `intent`: one delete of I(B,t), best effort (it is in
-   flight and nobody waits; it may never apply).
-   SILENT: G7 names only "another identity". A row whose `HEAD` shows no body, or the same identity,
-   is settled by the other rules, as in the code (N:612-631). *)
+(* Contrast "keep_standing_on_spare": a standing row at in-degree above 0 is carried, no commit. *)
+GStandKeep(g) ==
+  /\ Has("keep_standing_on_spare") /\ gc[g].ph = "Work" /\ gc[g].base.st = "stand" /\ gc[g].ref
+  /\ gc' = [gc EXCEPT ![g] = G0]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ NoTrig
+
+(* G7: a row of `t` (any state) at zero whose `HEAD` of this round shows `u`: `PUT I(B,u)` in the
+   fold as in G2 (GCreateSendFold), then `DELETE I(B,t)` in the delete batch (GG7Delete), then one
+   commit of pending(u) or candidate(u). *)
 GSupersede(g) ==
-  /\ gc[g].ph = "Work" /\ gc[g].base.st /= "none" /\ ~gc[g].ref
-  /\ body.present
-  /\ \E d \in (IF body.tok /= gc[g].base.tok THEN {TRUE} ELSE RawMayDiffer("gc_raw_spelling")) :
-       /\ d
-       /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = Cand(body.tok)]]
-       /\ IF gc[g].base.int /\ IntentMode(g)
-            THEN /\ req' = req \cup {IdReq(NoG, gc[g].base.tok)}
-                 /\ fI4' = (fI4 \/ IdBad(gc[g].base.tok))
-            ELSE UNCHANGED <<req, fI4>>
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ gc[g].ph = "Work" /\ G7Cond(g) /\ ~(Has("g8_before_g7") /\ gc[g].base.st = "stand")
+  /\ gc' = [gc EXCEPT ![g] = [Inc(@, "h") EXCEPT !.ph = "ICr", !.next = Cand(SupTok(g)), !.ct = SupTok(g),
+                                                  !.g7 = gc[g].base.tok]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ NoTrig
 
-(* G3, the create: a row an earlier round committed, not pending (or demoted by G8), in-degree 0 in
-   this round's cut: `PUT I(B,t) If-None-Match: *` is sent. *)
-GCreateSend(g) ==
-  /\ gc[g].ph = "Work" /\ IntentMode(g) /\ IsCand(g) /\ ~gc[g].ref
-  /\ IF Has("attempted_create_confirms")
-       THEN /\ req' = req \cup {Rq("ic", NoG, gc[g].base.tok, 0, TRUE, "none")}
-            /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = PendI(gc[g].base.tok, FALSE)]]
-       ELSE /\ req' = req \cup {Rq("ic", g, gc[g].base.tok, 0, TRUE, "none")}
-            /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "CrWait"]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+(* G3: a candidate read from the adopted state, at zero, no G7: the create again. *)
+GCreateRetry(g) ==
+  /\ gc[g].ph = "Work" /\ gc[g].base.st = "cand" /\ Zero(g) /\ ~G7Cond(g)
+  /\ gc' = [gc EXCEPT ![g] = [IncIf(@, "h", gc[g].ts) EXCEPT !.ph = "ICr", !.ct = gc[g].base.tok]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ NoTrig
 
-(* G3, confirmed: the row gets `pending` and `intent` in this round's commit; nothing is deleted in
-   this round. The sabotage goes on to G4 on this round's cut. *)
+(* After the create, the row's fate: pending if confirmed, else candidate. G7 goes on to the delete
+   of I(B,t). An unconfirmed retry of G3 carries its row: nothing to commit. Sabotage: G4 runs on
+   this round's cut. *)
+AfterCreate(g) == IF gc[g].g7 /= 0 THEN "IdSend" ELSE "Commit"
 Confirmed(g, real) ==
-  [gc[g] EXCEPT !.ph = IF Has("delete_on_graduation_cut") THEN "Work2" ELSE "Commit",
-                !.next = PendI(gc[g].base.tok, real)]
-(* G3, not confirmed: the row is carried unchanged; the round has nothing else to commit for B. *)
-Carried == G0
+  [gc[g] EXCEPT !.ph = IF Has("delete_on_graduation_cut") THEN "Work2" ELSE AfterCreate(g),
+                !.next = Pend(gc[g].ct, real)]
+Carried(g) ==
+  IF gc[g].base.st = "cand" /\ gc[g].base.tok = gc[g].ct /\ gc[g].g7 = 0 THEN G0
+  ELSE [gc[g] EXCEPT !.ph = AfterCreate(g), !.next = Cand(gc[g].ct)]
 
-(* G3, the create answered. Success -> `Committed`: confirmed. A clean refusal -> `Conflict`: the
-   occupant must be read (Q:1118-1119, :1154-1158). *)
+(* The create of G2, G3 or G7: `PUT I(B,ct) If-None-Match: *`, answered before the row is written.
+   Over the creation budget: no request, not confirmed. *)
+GCreateSendFold(g) ==
+  /\ gc[g].ph = "ICr"
+  /\ \E over \in (IF OverBudget THEN BOOLEAN ELSE {FALSE}) :
+       IF over
+         THEN /\ gc' = [gc EXCEPT ![g] = Carried(g)]
+              /\ UNCHANGED req
+       ELSE LET r == Inc(gc[g], "ic") IN
+         IF Has("attempted_create_confirms")
+           THEN /\ req' = req \cup {Rq("ic", NoG, gc[g].ct, 0, TRUE)}
+                /\ gc' = [gc EXCEPT ![g] = [Confirmed(g, FALSE) EXCEPT !.cnt = r.cnt]]
+           ELSE /\ req' = req \cup {Rq("ic", g, gc[g].ct, 0, TRUE)}
+                /\ gc' = [gc EXCEPT ![g] = [r EXCEPT !.ph = "CrWait"]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ NoTrig
+
 GCreateAnswer(g) ==
   /\ gc[g].ph = "CrWait"
   /\ \E q \in OwnReq(g) :
        /\ q.ap
        /\ req' = req \ {q}
        /\ gc' = [gc EXCEPT ![g] = IF q.res = "created" THEN Confirmed(g, TRUE) ELSE [@ EXCEPT !.ph = "CrRes"]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ NoTrig
 
-(* G3, the create unanswered: the attempt is resolved by a read (Q:1127-1128). *)
 GCreateUnanswered(g) ==
-  /\ Faults /\ gc[g].ph = "CrWait"
+  /\ FaultOk /\ gc[g].ph = "CrWait"
   /\ req' = StopWaiting(g, "ic")
   /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "CrRes"]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ KeepTrigFault
 
-(* G3, the resolve read, its own request. An occupant with the canonical bytes confirms.
-   `ProvenAbsent` does not; neither does a read that fails (`NotObserved`, GaveUp). *)
+(* The resolve read: an occupant with the canonical bytes confirms; absence or a failed read does not. *)
 GCreateResolve(g) ==
   /\ gc[g].ph = "CrRes"
-  /\ \E observed \in (IF Faults THEN {TRUE, FALSE} ELSE {TRUE}) :
-       gc' = [gc EXCEPT ![g] =
-         IF observed /\ gc[g].base.tok \in intents THEN Confirmed(g, TRUE)
-         ELSE IF Has("absent_conflict_confirms") THEN Confirmed(g, FALSE)
-         ELSE Carried]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ \E observed \in (IF FaultOk THEN {TRUE, FALSE} ELSE {TRUE}) :
+       LET nx == IF observed /\ gc[g].ct \in intents THEN Confirmed(g, TRUE)
+                 ELSE IF Has("absent_conflict_confirms") THEN Confirmed(g, FALSE)
+                 ELSE Carried(g)
+       IN /\ gc' = [gc EXCEPT ![g] = IF nx.ph = "Idle" THEN nx ELSE Inc(nx, "rr")]
+          /\ IF observed THEN UNCHANGED nf ELSE FaultStep
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ UNCHANGED <<dirty, dseen, touched, tpost, ever>>
 
-(* Marker mode, today's graduation gate (G:2264-2287): a `Condemned` marker read publishes pending;
-   anything else rewrites the marker and carries the row. *)
-GGraduateMarker(g) ==
-  /\ gc[g].ph = "Work" /\ ~IntentMode(g) /\ gc[g].base.st = "cand" /\ ~gc[g].ref
-  /\ IF meta = "cond"
-       THEN gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = PendM(gc[g].base.tok)]] /\ meta' = meta
-       ELSE gc' = [gc EXCEPT ![g] = G0] /\ meta' = "cond"
-  /\ UNCHANGED <<bodyVars, intents, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+(* G7, in the delete batch: `DELETE I(B,t)` for the token the row named. *)
+GG7Delete(g) ==
+  /\ gc[g].ph = "IdSend"
+  /\ req' = req \cup {IdReq(g, gc[g].g7)}
+  /\ gc' = [gc EXCEPT ![g] = [Inc(@, "id") EXCEPT !.ph = "IdWait"]]
+  /\ fI4' = (fI4 \/ IdBad(gc[g].g7))
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
 
-(* G4 (1), (2): a row read with `pending` and `intent` from the adopted state, after this round's
-   cut showed in-degree 0. `HEAD B`. Absent -> `Gone`. Same canonical identity -> `DELETE B If-Match`
-   is sent. Another identity -> `Mismatch`, no body request. (3): after an answered outcome the
-   intent DELETE is sent.
-   Marker mode (today, G:583-640): the same on a pending row, with the marker in place of the intent.
-   Ghosts: `ok` is I5 (confirmed intent, committed pending row, later cut at in-degree 0, this HEAD);
-   `fMMA` is T3 (a): a marked token under marker authority. *)
+(* G4 (1), in the fold: pending read from the adopted state, at zero, no G7. `HEAD B`: same
+   identity -> `DELETE B If-Match t` to the batch; absent -> standing(t), no body request.
+   Work2 is the sabotage's same-round path. *)
 GDelHead(g) ==
-  /\ \/ gc[g].ph = "Work" /\ IsPend(g) /\ (~gc[g].ref \/ Has("delete_despite_indegree"))
+  /\ \/ gc[g].ph = "Work" /\ IsPend(g) /\ (Zero(g) \/ Has("delete_despite_indegree")) /\ ~G7Cond(g)
      \/ gc[g].ph = "Work2"
   /\ LET row == IF gc[g].ph = "Work2" THEN gc[g].next ELSE gc[g].base
-         im == IntentMode(g)
-         okv == gc[g].ph = "Work" /\ row.int /\ row.conf /\ ~gc[g].ref
-     IN \E d \in (IF body.present /\ body.tok = row.tok THEN RawMayDiffer("gc_raw_spelling") ELSE {TRUE}) :
-        IF ~d
-          THEN /\ req' = req \cup {Rq("bd", g, row.tok, body.ser, okv, IF im THEN "intent" ELSE "marker")}
-               /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "DelWait", !.next = row]]
-               /\ fMMA' = (fMMA \/ (body.mk /\ ~(row.int /\ row.conf)))
-               /\ UNCHANGED <<fI4, meta>>
-          ELSE IF im
+         okv == gc[g].ph = "Work" /\ row.conf /\ Zero(g)
+         r == Inc(gc[g], "h")
+     IN IF body.present /\ body.tok = row.tok
+          THEN /\ req' = req \cup {Rq("bd", g, row.tok, body.ser, okv)}
+               /\ gc' = [gc EXCEPT ![g] = [Inc(r, "bd") EXCEPT !.ph = "DelWait", !.next = row]]
+               /\ UNCHANGED fI4
+          ELSE IF Has("id_in_body_job")
             THEN /\ req' = req \cup {IdReq(g, row.tok)}
-                 /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "IdWait", !.next = row]]
+                 /\ gc' = [gc EXCEPT ![g] = [Inc(r, "id") EXCEPT !.ph = "IdWait", !.next = NoEntry]]
                  /\ fI4' = (fI4 \/ IdBad(row.tok))
-                 /\ UNCHANGED <<fMMA, meta>>
-            ELSE /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = NoEntry]]
-                 /\ meta' = IF body.present THEN meta ELSE "absent"
-                 /\ UNCHANGED <<req, fI4, fMMA>>
-  /\ UNCHANGED <<bodyVars, intents, pm, wr, lrn, putVars, gs, gmode, fs, fRecur, fOther, fWMut, fAdopt>>
-  /\ UNCHANGED trigVars
+            ELSE /\ gc' = [gc EXCEPT ![g] = [r EXCEPT !.ph = "Commit", !.next = Stand(row.tok)]]
+                 /\ UNCHANGED <<req, fI4>>
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
 
-(* G4 (2) answered: `Removed`, `Gone` or `Mismatch`. (3): the intent DELETE is sent. (4): a removed
-   unmarked body takes its marker with it, best effort. Marker mode: the marker is deleted and the
-   row dropped. *)
+(* G4 (2): `Removed`, `Gone` and `Mismatch` each record standing(t). *)
 GDelAnswer(g) ==
   /\ gc[g].ph = "DelWait"
   /\ \E q \in OwnReq(g) :
        /\ q.ap
-       /\ IF IntentMode(g)
+       /\ IF Has("id_in_body_job")
             THEN /\ req' = (req \ {q}) \cup {IdReq(g, gc[g].next.tok)}
-                 /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "IdWait"]]
+                 /\ gc' = [gc EXCEPT ![g] = [Inc(@, "id") EXCEPT !.ph = "IdWait", !.next = NoEntry]]
                  /\ fI4' = (fI4 \/ IdBad(gc[g].next.tok))
-                 /\ \E m \in (IF q.res = "removed_unmarked" THEN {meta, "absent"} ELSE {meta}) : meta' = m
             ELSE /\ req' = req \ {q}
-                 /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = NoEntry]]
-                 /\ meta' = IF q.res = "miss" THEN meta ELSE "absent"
+                 /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = Stand(gc[g].next.tok)]]
                  /\ UNCHANGED fI4
-  /\ UNCHANGED <<bodyVars, intents, pm, wr, lrn, putVars, gs, gmode, fs, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
 
-(* G5: a body DELETE without an answer fails the round before its commit; the row stays pending and
-   the intent DELETE is not sent. The sabotage sends it. *)
+(* G5: a refused or unanswered body DELETE fails the round; the row keeps its state. A refused
+   delete is one that never applies, the same step. *)
 GDelUnanswered(g) ==
-  /\ Faults /\ gc[g].ph = "DelWait"
-  /\ IF Has("ambiguous_delete_cleans_intent") /\ IntentMode(g)
-       THEN /\ req' = StopWaiting(g, "bd") \cup {IdReq(g, gc[g].next.tok)}
-            /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "IdWait"]]
-            /\ fI4' = (fI4 \/ IdBad(gc[g].next.tok))
-       ELSE /\ req' = StopWaiting(g, "bd")
-            /\ gc' = [gc EXCEPT ![g] = G0]
-            /\ UNCHANGED fI4
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
+  /\ FaultOk /\ gc[g].ph = "DelWait"
+  /\ req' = StopWaiting(g, "bd")
+  /\ gc' = [gc EXCEPT ![g] = IF Has("ambiguous_delete_standing")
+                               THEN [@ EXCEPT !.ph = "Commit", !.next = Stand(gc[g].next.tok)]
+                               ELSE G0]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ KeepTrigFault
 
-(* G4 (3) answered, an absent key is success. (5): the row leaves the state, in this round's commit. *)
+(* G8: standing(t) read from the adopted state, at zero, no G7 in this round: `DELETE I(B,t)`, no
+   `HEAD` of its own. *)
+GStandWork(g) ==
+  /\ gc[g].ph = "Work" /\ gc[g].base.st = "stand" /\ (~G7Cond(g) \/ Has("g8_before_g7"))
+  /\ IF Has("cut_before_commit") THEN ~gc[g].ecut ELSE Zero(g) \/ Has("dfr_despite_indegree")
+  /\ req' = req \cup {IdReq(g, gc[g].base.tok)}
+  /\ gc' = [gc EXCEPT ![g] = [IncIf(Inc(@, "id"), "h", gc[g].ts) EXCEPT !.ph = "IdWait", !.next = NoEntry]]
+  /\ fI4' = (fI4 \/ IdBad(gc[g].base.tok))
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, fRecur, fOther, fAdopt>>
+  /\ NoTrig
+
+(* An intent DELETE answered (an absent key is success): the round goes on to its commit. *)
 GIdAnswer(g) ==
   /\ gc[g].ph = "IdWait"
   /\ \E q \in OwnReq(g) :
        /\ q.ap
        /\ req' = req \ {q}
-       /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit", !.next = NoEntry]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+       /\ gc' = [gc EXCEPT ![g] = [@ EXCEPT !.ph = "Commit"]]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ NoTrig
 
-(* G5: an intent DELETE without an answer fails the round; the row stays pending. *)
+(* G5: an intent DELETE without an answer fails the round; the row keeps its state. *)
 GIdUnanswered(g) ==
-  /\ Faults /\ gc[g].ph = "IdWait"
+  /\ FaultOk /\ gc[g].ph = "IdWait"
   /\ req' = StopWaiting(g, "id")
   /\ gc' = [gc EXCEPT ![g] = G0]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, ghostVars>>
+  /\ KeepTrigFault
 
-(* An actor that only has its commit left. Once another commit moves the version its
-   compare-and-swap can only fail, and failing has no effect, so the winner's step ends it too. *)
+(* Once another commit moves the version, an actor with only its commit left can only fail. *)
 OnlyCommitLeft(h) == gc[h].ph = "Commit"
 
-(* The round commit: a compare-and-swap of `gc/state` on the body the lease read (G:1326). The stamp
-   rewrites the object, so a round that read the unstamped state loses (section 7.3). An applied
-   commit whose answer is lost has the same effect: the actor starts over from the committed state. *)
+(* The round commit: a compare-and-swap of `gc/state` on the version the lease read. *)
 GCommit(g) ==
-  /\ gc[g].ph = "Commit" /\ gc[g].bver = gs.ver /\ gc[g].bgen = gs.gen4 /\ (MaxVer = 0 \/ gs.ver < MaxVer)
+  /\ gc[g].ph = "Commit" /\ gc[g].bver = gs.ver /\ (MaxVer = 0 \/ gs.ver < MaxVer)
   /\ gs' = [gs EXCEPT !.e = gc[g].next, !.ver = IF MaxVer = 0 THEN 1 - @ ELSE @ + 1]
   /\ gc' = [h \in GCs |-> IF h = g \/ OnlyCommitLeft(h) THEN G0 ELSE gc[h]]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gmode, req, fs, ghostVars>>
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, req, ghostVars>>
   /\ dirty' = (dirty /\ ~dseen) /\ dseen' = FALSE
+  /\ touched' = (touched /\ ~(gc[g].ts /\ ~tpost)) /\ UNCHANGED <<tpost, ever, nf>>
 
-(* The commit loses its compare-and-swap: another round committed, or the stamp rewrote the object.
-   The round ends; what it sent stays sent. *)
 GCommitLost(g) ==
-  /\ gc[g].ph = "Commit" /\ (gc[g].bver /= gs.ver \/ gc[g].bgen /= gs.gen4)
+  /\ gc[g].ph = "Commit" /\ gc[g].bver /= gs.ver
   /\ gc' = [gc EXCEPT ![g] = G0]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars, trigVars>>
 
-(* The round ends without a commit: the process died, the lease was lost, or a read failed (G1, G2,
-   G7 in section 3.6). Requests it sent are still sent. *)
+(* The round ends without a commit: the process died, the lease was lost, or a read failed. *)
 GAbort(g) ==
-  /\ Faults
-  /\ gc[g].ph \in {"Mode", "Read", "Work", "Work2", "CrRes", "Commit"}
+  /\ FaultOk
+  /\ gc[g].ph \in {"Read", "Work", "Work2", "ICr", "CrRes", "IdSend", "Commit"}
   /\ gc' = [gc EXCEPT ![g] = G0]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gs, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gs, req, ghostVars>>
+  /\ KeepTrigFault
+
+(* `SYSTEM CAS GC REBUILD`: `gc/state` is rewritten without the row; intents stay. Once. *)
+RebuildState ==
+  /\ Rebuild /\ gs.rb = 0 /\ gs.e /= NoEntry /\ (MaxVer = 0 \/ gs.ver < MaxVer)
+  /\ gs' = [gs EXCEPT !.e = NoEntry, !.ver = IF MaxVer = 0 THEN 1 - @ ELSE @ + 1, !.rb = 1]
+  /\ UNCHANGED <<bodyVars, intents, wr, putVars, gc, req, ghostVars, trigVars>>
 
 --------------------------------------------------------------------------------------
-(* STORE: a GC or fsck write request applies. *)
+(* STORE: a GC write request applies. *)
 ReqApply(q) ==
   /\ q \in req /\ ~q.ap
   /\ LET hit == q.k = "bd" /\ body.present /\ body.tok = q.tok
          res == CASE q.k = "ic" -> IF q.tok \in intents THEN "refused" ELSE "created"
-                  [] q.k = "bd" -> IF hit THEN (IF body.mk THEN "removed" ELSE "removed_unmarked") ELSE "miss"
+                  [] q.k = "bd" -> IF hit THEN "removed" ELSE "miss"
                   [] OTHER -> "done"
      IN /\ body' = IF hit THEN NoBody ELSE body
         /\ gone' = IF hit THEN gone \cup {body.tok} ELSE gone
@@ -676,140 +623,66 @@ ReqApply(q) ==
                         [] OTHER -> intents
         /\ fI4' = (fI4 \/ (q.k = "id" /\ q.tok \in intents /\ body.present /\ body.tok = q.tok))
         /\ req' = IF q.o = NoG THEN req \ {q} ELSE (req \ {q}) \cup {[q EXCEPT !.ap = TRUE, !.res = res]}
-  /\ UNCHANGED <<nextSer, meta, pm, wr, lrn, putVars, gcVars, fs, fRecur, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
-
---------------------------------------------------------------------------------------
-(* CAS-FSCK, section 3.4. One intent at a time; runs repeat for ever. F1: the listing only nominates. *)
-
-(* The delete of F3: write-once verb, no leadership, nobody waits (F6: a refused or unanswered delete
-   stops the run). Without "id" in Late it applies at once. *)
-FsckDelete(t) ==
-  /\ fI4' = (fI4 \/ IdBad(t))
-  /\ IF LateOk("id")
-       THEN req' = req \cup {IdReq(NoG, t)} /\ intents' = intents
-       ELSE req' = req /\ intents' = intents \ {t}
-
-(* F2, first read: exact `GET` of a listed intent. Gone -> skip (no step). *)
-FsckGetIntent(t) ==
-  /\ Fsck /\ ~Has("cleanup_head_first") /\ fs.ph = "Idle" /\ t \in intents
-  /\ fs' = [ph |-> "H", tok |-> t]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gcVars, req, ghostVars>>
-  /\ UNCHANGED trigVars
-
-(* F2, second read: `HEAD B`, sent after the answer of the `GET`. Same canonical identity ->
-   `intent_current`. Absent or another identity -> `intent_stale`, and F3 deletes it.
-   F0: a client of another dialect is stopped at admission; the sabotage admits it, and to it the
-   same body renders as another identity. *)
-FsckHeadBody ==
-  /\ fs.ph = "H"
-  /\ \E d \in (IF body.present /\ body.tok = fs.tok
-                 THEN (IF Has("cleanup_foreign_dialect") THEN {TRUE} ELSE RawMayDiffer("cleanup_raw_spelling"))
-                 ELSE {TRUE}) :
-       IF d THEN FsckDelete(fs.tok) ELSE UNCHANGED <<req, intents, fI4>>
-  /\ fs' = [ph |-> "Idle", tok |-> 0]
-  /\ UNCHANGED <<bodyVars, meta, pm, wr, lrn, putVars, gcVars, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
-
-(* Sabotage of the order of F2: the body is observed first. *)
-FsckHeadFirst ==
-  /\ Fsck /\ Has("cleanup_head_first") /\ fs.ph = "Idle"
-  /\ fs' = [ph |-> "G", tok |-> IF body.present THEN body.tok ELSE 0]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gcVars, req, ghostVars>>
-  /\ UNCHANGED trigVars
-
-FsckGetAfterHead(t) ==
-  /\ fs.ph = "G" /\ t \in intents
-  /\ IF t /= fs.tok THEN FsckDelete(t) ELSE UNCHANGED <<req, intents, fI4>>
-  /\ fs' = [ph |-> "Idle", tok |-> 0]
-  /\ UNCHANGED <<bodyVars, meta, pm, wr, lrn, putVars, gcVars, fRecur, fOther, fWMut, fAdopt, fMMA>>
-  /\ UNCHANGED trigVars
-
---------------------------------------------------------------------------------------
-(* THE SWITCH, section 7.3. *)
-
-(* Step 2, the stamp: `gc/state` gets generation 4. The object is rewritten: a round in flight
-   loses its commit. *)
-Stamp ==
-  /\ Transition /\ ~gs.gen4
-  /\ gs' = [gs EXCEPT !.gen4 = TRUE]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gc, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
-
-(* Step 3, the switch: refused while the stamp is not confirmed. *)
-Switch ==
-  /\ Transition /\ ~pm
-  /\ (gs.gen4 \/ Has("no_stamp"))
-  /\ pm' = TRUE
-  /\ UNCHANGED <<bodyVars, sigVars, wr, lrn, putVars, gcVars, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
-
-(* X2 (unsupported): `gc/state` is deleted after the switch and an older build bootstraps it. *)
-LoseStamp ==
-  /\ Has("lost_stamp_old_bootstrap") /\ pm /\ gs.gen4
-  /\ gs' = [gs EXCEPT !.gen4 = FALSE, !.e = NoEntry]
-  /\ UNCHANGED <<bodyVars, sigVars, pm, wr, lrn, putVars, gc, gmode, req, fs, ghostVars>>
-  /\ UNCHANGED trigVars
+  /\ ever' = IF q.k = "ic" THEN ever \cup {q.tok} ELSE ever
+  /\ UNCHANGED <<nextSer, wr, putVars, gs, gc, fRecur, fAdopt>>
+  /\ UNCHANGED <<dirty, dseen, touched, tpost, nf>>
 
 --------------------------------------------------------------------------------------
 Next ==
   \/ \E w \in Writers :
-       \/ \E b \in Builds : WPrecommit(w, b)
-       \/ WLearn(w) \/ WPrime(w) \/ WHead1(w) \/ WGetIntent(w) \/ WHead2(w) \/ WGetMetaOld(w)
+       \/ WPrecommit(w) \/ WPrime(w) \/ WHead(w) \/ WGetIntent(w)
        \/ WSendPut(w) \/ WPutOk(w) \/ WPutGiveUp(w) \/ WCommit(w) \/ WAbandon(w) \/ WDrop(w) \/ WLink(w)
   \/ \E q \in putq : PutLand(q)
   \/ \E q \in sentq : PutResend(q)
   \/ \E g \in GCs :
-       \/ GStart(g) \/ GMode(g) \/ GCut(g) \/ GCondemn(g) \/ GSpare(g) \/ GSupersede(g)
-       \/ GCreateSend(g) \/ GCreateAnswer(g) \/ GCreateUnanswered(g) \/ GCreateResolve(g) \/ GGraduateMarker(g)
-       \/ GDelHead(g) \/ GDelAnswer(g) \/ GDelUnanswered(g) \/ GIdAnswer(g) \/ GIdUnanswered(g)
+       \/ GPreCut(g) \/ GStart(g) \/ GReadAhead(g) \/ GCut(g)
+       \/ GCondemn(g) \/ GAdoptOrphan(g) \/ GSpare(g) \/ GStandKeep(g) \/ GSupersede(g) \/ GCreateRetry(g)
+       \/ GCreateSendFold(g) \/ GCreateAnswer(g) \/ GCreateUnanswered(g) \/ GCreateResolve(g) \/ GG7Delete(g)
+       \/ GDelHead(g) \/ GDelAnswer(g) \/ GDelUnanswered(g) \/ GStandWork(g) \/ GIdAnswer(g) \/ GIdUnanswered(g)
        \/ GCommit(g) \/ GCommitLost(g) \/ GAbort(g)
   \/ \E q \in req : ReqApply(q)
-  \/ \E t \in intents : FsckGetIntent(t) \/ FsckGetAfterHead(t)
-  \/ FsckHeadBody \/ FsckHeadFirst
-  \/ Stamp \/ Switch \/ LoseStamp
+  \/ RebuildState
 
 Spec == Init /\ [][Next]_vars
 
-(* Liveness runs: one GC actor, no faults, no symmetry, unbounded rounds. *)
+(* Liveness runs: one GC actor, no symmetry, unbounded rounds. *)
 Fair(A) == WF_vars(A)
 Fairness ==
   /\ \A g \in GCs :
-       /\ Fair(GStart(g)) /\ Fair(GMode(g)) /\ Fair(GCut(g)) /\ Fair(GCondemn(g)) /\ Fair(GSpare(g))
-       /\ Fair(GCreateSend(g)) /\ Fair(GCreateAnswer(g)) /\ Fair(GCreateResolve(g)) /\ Fair(GGraduateMarker(g))
-       /\ Fair(GDelHead(g)) /\ Fair(GDelAnswer(g)) /\ Fair(GIdAnswer(g)) /\ Fair(GCommit(g))
+       /\ Fair(GStart(g)) /\ Fair(GCut(g)) /\ Fair(GCondemn(g)) /\ Fair(GAdoptOrphan(g)) /\ Fair(GSpare(g))
+       /\ Fair(GStandKeep(g)) /\ Fair(GSupersede(g)) /\ Fair(GCreateRetry(g)) /\ Fair(GCreateSendFold(g))
+       /\ Fair(GCreateAnswer(g)) /\ Fair(GCreateResolve(g)) /\ Fair(GG7Delete(g)) /\ Fair(GDelHead(g))
+       /\ Fair(GDelAnswer(g)) /\ Fair(GStandWork(g)) /\ Fair(GIdAnswer(g)) /\ Fair(GCommit(g))
        /\ Fair(GCommitLost(g))
   /\ Fair(\E q \in req : ReqApply(q))
   /\ Fair(\E q \in putq : PutLand(q))
-  /\ \A t \in Tokens : Fair(FsckGetIntent(t))
-  /\ Fair(FsckHeadBody)
 LiveSpec == Spec /\ Fairness
 
-Symm == Permutations(Writers) \cup (IF OldGCs = {} THEN Permutations(GCs) ELSE {})
+Symm == Permutations(Writers) \cup Permutations(GCs)
 
 --------------------------------------------------------------------------------------
-(* INVARIANTS. The number in a name is the number of the specification (section 4.1, 7.1). *)
+(* INVARIANTS, numbered as in section 4.1 of the specification. *)
 
-Entries == [st : {"none", "cand", "pend"}, tok : 0..MaxTok, int : BOOLEAN, conf : BOOLEAN]
+Entries == [st : {"none", "cand", "pend", "stand"}, tok : 0..MaxTok, conf : BOOLEAN]
 
 TypeOK ==
-  /\ Sab \subseteq KnownSab /\ Late \subseteq {"put", "ic", "id", "bd"} /\ Builds \subseteq {"new", "old"}
-  /\ Start \in {"T1", "T3"} /\ TokenKind \in {"Generation", "Content"} /\ OldGCs \subseteq GCs
-  /\ Seed \in {"empty", "orphan", "cand", "pend", "spared", "legacy", "legacy_cand", "legacy_pend"}
-  /\ body \in [present : BOOLEAN, tok : 0..MaxTok, ser : 0..MaxTok, pay : {"none", Good, Bad}, mk : BOOLEAN]
-  /\ intents \subseteq Tokens /\ gone \subseteq Tokens /\ meta \in {"absent", "clean", "cond"}
-  /\ pm \in BOOLEAN /\ nsend \in 0..MaxPuts /\ nres \in 0..MaxResends
+  /\ Sab \subseteq KnownSab /\ Late \subseteq {"put", "ic", "id", "bd"}
+  /\ TokenKind \in {"Generation", "Content"} /\ Trigger \in {"any", "zero"}
+  /\ Seed \in {"empty", "lost", "orphan", "cand", "pend", "spared", "orphans2"}
+  /\ ((Trigger = "zero" \/ MaxVer = 0) => Cardinality(GCs) = 1)
+  /\ body \in [present : BOOLEAN, tok : 0..MaxTok, ser : 0..MaxTok, pay : {"none", Good, Bad}]
+  /\ intents \subseteq Tokens /\ gone \subseteq Tokens /\ ever \subseteq Tokens
+  /\ nsend \in 0..MaxPuts /\ nres \in 0..MaxResends
   /\ \A w \in Writers :
-       /\ wr[w].ph \in {"Idle", "H1", "G", "H2", "M", "Pub", "Wait", "Ready", "Done"}
-       /\ wr[w].b \in {"new", "old"} /\ wr[w].seen \in 0..MaxTok /\ wr[w].rd \in 0..9 /\ wr[w].pt \in 0..3
-  /\ gs.e \in Entries /\ gs.ver \in 0..(IF MaxVer = 0 THEN 1 ELSE MaxVer) /\ (gs.e.int => gs.e.st = "pend")
-  /\ Trigger \in {"any", "zero"} /\ ((Trigger = "zero" \/ MaxVer = 0) => Cardinality(GCs) = 1)
+       /\ wr[w].ph \in {"Idle", "H1", "G", "Pub", "Wait", "Ready", "Done"}
+       /\ wr[w].seen \in 0..MaxTok /\ wr[w].rd \in 0..9 /\ wr[w].pt \in 0..3
+  /\ gs.e \in Entries /\ gs.ver \in 0..(IF MaxVer = 0 THEN 1 ELSE MaxVer)
   /\ \A g \in GCs :
-       /\ gc[g].ph \in {"Idle", "Mode", "Read", "Work", "Work2", "CrWait", "CrRes", "DelWait", "IdWait", "Commit"}
-       /\ gc[g].base \in Entries /\ gc[g].next \in Entries /\ gc[g].mode \in {"none", "marker", "intent"}
+       /\ gc[g].ph \in {"Idle", "Pre", "Read", "Work", "Work2", "ICr", "CrWait", "CrRes", "IdSend",
+                        "DelWait", "IdWait", "Commit"}
+       /\ gc[g].base \in Entries /\ gc[g].next \in Entries
        /\ Cardinality(OwnReq(g)) <= 1
   /\ \A q \in req : q.k \in {"ic", "id", "bd"} /\ q.o \in GCs \cup {NoG}
-  /\ fs.ph \in {"Idle", "H", "G"}
 
 (* I1. Once `t` stops being the incarnation of B, it never is again. *)
 INV_I1_NO_RECURRENCE == ~fRecur
@@ -817,146 +690,112 @@ INV_I1_NO_RECURRENCE == ~fRecur
 (* I2. Every body ever at B has the payload that hashes to B. *)
 INV_I2_KEY_NAMES_PAYLOAD == body.present => body.pay = Good
 
-(* I3. A writer's edge is durable before its first `HEAD B`. Edges are the non-idle slots; the
-   actions that observe the body are enabled only in phases that follow W1. *)
+(* I3. A writer observes B only after its edge is durable (edges are the non-idle slots). *)
 INV_I3_EDGE_BEFORE_OBSERVE ==
-  \A w \in Writers : (wr[w].seen /= 0 \/ wr[w].ph \in {"G", "H2", "M", "Pub", "Wait", "Ready"}) => wr[w].ph /= "Idle"
+  \A w \in Writers : (wr[w].seen /= 0 \/ wr[w].ph \in {"G", "Pub", "Wait", "Ready"}) => wr[w].ph /= "Idle"
 
-(* I4. A delete of I(B,t) is sent only when `t` is gone from B, so an existing I(B,t) stays while
-   `t` is current: no intent DELETE is sent, and none applies on an existing intent, while `t` is
-   the incarnation of B. *)
+(* I4. No intent DELETE is sent, and none applies on an existing intent, while `t` is the
+   incarnation of B. *)
 INV_I4_INTENT_PERMANENT == ~fI4
 
-(* I5 and T3 (c). Every body DELETE of an intent-mode round follows, in this order: a confirmation
-   that I(B,t) exists, the commit of the pending row, a cut taken from that committed state with
-   in-degree 0, a `HEAD B` that shows `t`. *)
-INV_I5_DELETE_EVIDENCE == \A q \in req : (q.k = "bd" /\ q.auth = "intent") => q.ok
+(* I5. Every body DELETE follows a confirmed create, the commit of pending(t), and a cut taken from
+   that committed state with in-degree 0; its `HEAD` showed `t` (the request names that landing). *)
+INV_I5_DELETE_EVIDENCE == \A q \in req : q.k = "bd" => q.ok
 
-(* The exactness of the conditional delete (A3): it removes only the landing its `HEAD` observed. *)
+(* A3: a conditional delete removes only the landing its `HEAD` observed. *)
 INV_A3_DELETE_IS_EXACT == ~fOther
 
-(* I6 and T3 (b). An adoption is of a marked body, by a learned writer, after W4 answered 404 from
-   the store and W5 showed the identity of W2. *)
+(* I6. An adoption follows a W4 answer from the store, sent after the edge. *)
 INV_I6_ADOPTION == ~fAdopt
-
-(* I7 and T1. A marked body, a marked publication and an intent exist only on a switched pool. *)
-INV_I7_MARKED_MEANS_NEW ==
-  ~pm => /\ ~(body.present /\ body.mk)
-         /\ \A q \in putq : ~q.mk
-         /\ intents = {}
-         /\ \A q \in req : q.k /= "ic"
-
-(* T3 (a). A marked token is under intent authority only: no body DELETE is sent for a marked body
-   on a row whose intent was not confirmed. *)
-INV_T3A_MARKED_NEVER_MARKER_AUTHORITY == ~fMMA
 
 (* I8, the goal. A committed ref never names a blob key with no body. *)
 INV_I8_COMMITTED_REF_HAS_BODY == \A w \in Writers : wr[w].ph = "Done" => body.present
 
-(* Decision 1.1. Writers never create, change or delete an intent. *)
-INV_WRITERS_NEVER_MUTATE_INTENTS == ~fWMut
-
-(* Section 1, "Budget", per blob and writer attempt on the successful path. `ga` counts unanswered
-   publications of the attempt; the counters are not reset by them. *)
+(* Writer requests per attempt on the successful path. `ga` counts unanswered publications. *)
 INV_REQUEST_BUDGET ==
   \A w \in Writers :
-    (Budget /\ wr[w].ph = "Ready" /\ wr[w].b = "new") =>
-      CASE wr[w].path = "new" -> wr[w].rd = 1 /\ wr[w].pt = 1            \* first creation
-        [] wr[w].path = "reuse" -> wr[w].rd = 3 /\ wr[w].pt = 0          \* clean reuse
-        [] wr[w].path = "condemned" -> wr[w].rd = 2 /\ wr[w].pt = 1      \* reuse after condemnation
-        [] wr[w].path = "legacy" -> wr[w].rd = 1 /\ wr[w].pt = 1         \* legacy body, or writer not learned
-        [] wr[w].path = "changed" -> wr[w].rd = 3 /\ wr[w].pt = 1        \* W5 saw another token or no body
-        [] wr[w].path = "amb_new_reuse" -> wr[w].rd = 4 /\ wr[w].pt = 1  \* unanswered publication that landed
-        [] OTHER -> wr[w].rd <= 3 * (wr[w].ga + 1) /\ wr[w].pt <= wr[w].ga + 1
+    (Budget /\ wr[w].ph = "Ready") =>
+      CASE wr[w].path = "new" -> wr[w].rd = 1 /\ wr[w].pt = 1
+        [] wr[w].path = "reuse" -> wr[w].rd = 2 /\ wr[w].pt = 0
+        [] wr[w].path = "condemned" -> wr[w].rd = 2 /\ wr[w].pt = 1
+        [] wr[w].path = "amb_new_reuse" -> wr[w].rd = 3 /\ wr[w].pt = 1
+        [] OTHER -> wr[w].rd <= 2 * (wr[w].ga + 1) /\ wr[w].pt <= wr[w].ga + 1
 
-(* Reachability witnesses, each an invariant that must FAIL. *)
-WIT_ADOPTION == \A w \in Writers : ~(wr[w].ph = "Done" /\ wr[w].path = "reuse")
-WIT_PUBLISH_OVER_INTENT ==         \* a writer met I(B,t) and its fresh body replaced `t`
-  ~(\E t \in intents : t \in gone /\ body.present /\ \E w \in Writers : wr[w].ph \in {"Ready", "Done"})
-WIT_SPARE_STANDING_INTENT ==       \* a pending row with `intent` is spared and the intent stays
-  \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.int /\ gc[g].ref /\ gc[g].next.st = "none"
-                    /\ gc[g].base.tok \in intents /\ body.present /\ body.tok = gc[g].base.tok)
-WIT_RECONDEMN_ON_EXISTING_INTENT ==   \* the create is refused by the equal occupant and the read confirms
-  \A g \in GCs : ~(gc[g].ph = "CrRes" /\ gc[g].base.tok \in intents /\ body.present /\ body.tok = gc[g].base.tok
-                    /\ NoOwned(g) /\ \A q \in req : q.k /= "ic")
-WIT_LATE_CREATE_AFTER_ROW_LEFT ==  \* a create applies when no row names its token
-  ~(\E q \in req : q.k = "ic" /\ ~q.ap /\ q.o = NoG /\ gs.e.st = "none" /\ \A g \in GCs : gc[g].ph = "Idle")
-WIT_STALE_INTENT_CLEANED ==        \* fsck is about to delete an intent whose token is gone
-  ~(fs.ph = "H" /\ fs.tok \in intents /\ fs.tok \in gone)
-WIT_LEGACY_REUPLOAD ==             \* a learned writer replaced an unmarked body with a marked one
-  ~(body.present /\ body.mk /\ 1 \in gone /\ Seed \in {"legacy", "legacy_cand", "legacy_pend"})
-WIT_CHANGED_AT_W5 == \A w \in Writers : ~(wr[w].ph = "Pub" /\ wr[w].path = "changed")
-WIT_DEPOSED_DELETE_LANDS ==        \* a body DELETE of an actor whose base is stale is applied as `removed`
-  \A g \in GCs : ~(gc[g].ph = "DelWait" /\ gc[g].bver < gs.ver
-                    /\ \E q \in OwnReq(g) : q.ap /\ q.res \in {"removed", "removed_unmarked"})
-WIT_BODY_DELETED == ~(SeedBody /\ ~body.present /\ nextSer = 2 /\ intents = {} /\ gs.ver >= 2)
-WIT_TWO_ABSENT_PUBLISHERS == ~(Cardinality(putq) = 2 /\ ~body.present /\ nextSer = 1)
-WIT_STAGED_COPY == ~(\E q \in putq : q.env = StagedEnv)
-WIT_SUPERSEDE == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st /= "none" /\ gc[g].next.st = "cand"
-                                   /\ gc[g].next.tok /= gc[g].base.tok)
-WIT_INHERITED_DEMOTED ==           \* an inherited pending row is confirmed by G3 in intent mode
-  \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "pend" /\ ~gc[g].base.int /\ gc[g].next.int)
-WIT_MARKER_ROUND_AFTER_SWITCH ==   \* a round that sampled before the switch works after it
-  \A g \in GCs : ~(g \notin OldGCs /\ gc[g].mode = "marker" /\ pm /\ gc[g].ph = "Work")
-WIT_MARKED_CONDEMNED_BY_MARKER_ROUND ==
-  \A g \in GCs : ~(gc[g].mode = "marker" /\ gc[g].ph = "Commit" /\ gc[g].next.st = "cand" /\ body.present
-                    /\ body.mk /\ body.tok = gc[g].next.tok)
-WIT_LATE_OLD_PUT == ~(pm /\ \E q \in putq : wr[q.w].b = "old" /\ ~q.mk /\ body.present /\ body.mk)
-WIT_LATE_OLD_DELETE == ~(pm /\ \E q \in req : q.k = "bd" /\ q.auth = "marker" /\ ~q.ap)
+(* GC requests of one round for B, at its commit: `h` HEADs, `ic` creates, `id` intent deletes,
+   `bd` body deletes, `rr` resolve reads. *)
+INV_GC_ROUND_BUDGET ==
+  GBudget => \A g \in GCs : gc[g].ph = "Commit" =>
+    LET b == gc[g].base  n == gc[g].next  c == gc[g].cnt IN
+    CASE b.st = "stand" /\ n.st = "none" /\ ~gc[g].ref ->                     \* G8
+           c.id = 1 /\ c.ic = 0 /\ c.bd = 0 /\ c.rr = 0 /\ c.h = (IF gc[g].ts THEN 1 ELSE 0)
+      [] b.st /= "none" /\ n.st \in {"pend", "cand"} /\ n.tok /= b.tok ->     \* G7
+           c.h = 1 /\ c.id = 1 /\ c.ic <= 1 /\ c.bd = 0 /\ c.rr <= 1
+      [] b.st = "none" /\ n.st \in {"pend", "cand"} /\ c.ic = 1 ->             \* G2
+           c.h = 1 /\ c.id = 0 /\ c.bd = 0 /\ c.rr <= 1
+      [] b.st = "none" /\ n.st \in {"cand", "stand"} /\ c.ic = 0 ->            \* G9, or G2 over budget
+           c.h = 1 /\ c.id = 0 /\ c.bd = 0 /\ c.rr = 0
+      [] b.st = "pend" /\ n.st = "stand" ->                                    \* G4
+           c.h = 1 /\ c.bd <= 1 /\ c.ic = 0 /\ c.id = 0
+      [] b.st /= "none" /\ n.st = "none" /\ gc[g].ref ->                       \* G6
+           c = Cnt0
+      [] OTHER -> TRUE
+
+(* WITNESSES: each is an invariant that must FAIL, showing the state is reachable. *)
+WIT_TWO_READ_ADOPT_COMMITTED == \A w \in Writers : ~(wr[w].ph = "Done" /\ wr[w].path = "reuse" /\ gs.ver >= 1)
+(* A writer between its `HEAD` = t and its `GET I(B,t)` while a G8 delete of I(B,t) is in flight. *)
+WIT_TWO_READ_WRITER_AT_G8 ==
+  \A w \in Writers : ~(wr[w].ph = "G" /\ wr[w].seen \in intents /\ wr[w].seen \in gone
+                       /\ \E q \in req : q.k = "id" /\ q.tok = wr[w].seen /\ ~q.ap)
+(* The body is removed by a round that read the commit of the round that condemned it. *)
+WIT_BODY_DELETE_SECOND_ROUND ==
+  ~(\E q \in req : q.k = "bd" /\ q.ap /\ q.res = "removed" /\ gs.ver = 1)
+WIT_G7_FROM_STAND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "stand" /\ gc[g].next.st = "pend"
+                                       /\ gc[g].next.tok /= gc[g].base.tok)
+WIT_G7_FROM_PEND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "pend" /\ gc[g].next.st = "pend"
+                                      /\ gc[g].next.tok /= gc[g].base.tok)
+WIT_G7_FROM_CAND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "cand" /\ gc[g].next.st \in {"pend", "cand"}
+                                      /\ gc[g].next.tok /= gc[g].base.tok)
+WIT_G8_NO_HEAD == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "stand" /\ gc[g].next.st = "none"
+                                    /\ ~gc[g].ref /\ ~gc[g].ts /\ (GBudget => gc[g].cnt.h = 0))
+(* G4 meets `Mismatch` and still records standing(t). *)
+WIT_G4_MISMATCH_STANDING ==
+  \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "pend" /\ gc[g].next.st = "stand"
+                   /\ body.present /\ body.tok /= gc[g].base.tok)
+WIT_G9_CAND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "none" /\ gc[g].next.st = "cand"
+                                 /\ gc[g].cnt.ic = 0 /\ gc[g].next.tok \in intents /\ gs.ver >= 1)
+WIT_G9_STAND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "none" /\ gc[g].next.st = "stand")
+WIT_G8_STALE_LISTED == \A g \in GCs : ~(gc[g].ph = "IdWait" /\ gc[g].base.st = "stand"
+                                         /\ gc[g].base.tok \notin intents /\ gc[g].base.tok \in ever)
+(* G6 drops a standing row over a re-created `u` while I(B,t) stays. *)
+WIT_STANDING_DROPPED ==
+  \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].base.st = "stand" /\ gc[g].ref /\ gc[g].next.st = "none"
+                   /\ body.present /\ body.tok /= gc[g].base.tok /\ gc[g].base.tok \in intents)
+WIT_REUSER_ADOPTS_U_OVER_OLD_INTENT ==
+  \A w \in Writers : ~(wr[w].ph = "Done" /\ wr[w].path = "reuse" /\ body.present /\ body.tok \notin intents
+                        /\ intents /= {})
+WIT_DELETE_MISSES == ~(\E q \in req : q.k = "bd" /\ q.ap /\ q.res = "miss")
 WIT_LINK == \A w \in Writers : ~(wr[w].ph = "Done" /\ wr[w].path = "link")
-WIT_UNLEARNED_AFTER_SWITCH ==      \* a slot that has not learned publishes unmarked on a switched pool
-  ~(pm /\ \E q \in putq : ~q.mk /\ wr[q.w].b = "new")
-WIT_T3_ADOPTION ==                 \* the transition ends in a clean reuse of a marked body
-  \A w \in Writers : ~(Transition /\ wr[w].ph = "Done" /\ wr[w].path = "reuse" /\ wr[w].b = "new")
-WIT_INTENT_DELETE_AFTER_BODY ==    \* the full pipeline: body removed, then its intent
-  ~(\E q \in req : q.k = "id" /\ q.o /= NoG /\ q.ap /\ ~body.present /\ q.tok \in gone)
-WIT_OLD_WRITER_ADOPTS_AFTER_SWITCH ==   \* an older writer whose edge predates the switch adopts a marked body
-  \A w \in Writers : ~(wr[w].b = "old" /\ wr[w].ph = "M" /\ body.present /\ body.mk
-                       /\ wr[w].seen = body.tok /\ meta = "clean")
-WIT_UNANSWERED_PUT_ADOPTED ==      \* the 4 reads, 1 PUT path: an unanswered publication landed and is adopted
-  \A w \in Writers : ~(wr[w].ph = "Ready" /\ wr[w].path = "amb_new_reuse")
-WIT_DELETE_MISSES ==               \* a conditional body DELETE finds another incarnation or none
-  ~(\E q \in req : q.k = "bd" /\ q.ap /\ q.res = "miss")
-WIT_DERIVED_ROW_DELETES ==         \* under "candidate_from_intent": a derived row reaches its body DELETE
-  ~(Seed = "spared" /\ gs.ver = 1 /\ \E q \in req : q.k = "bd" /\ q.ap /\ q.res = "removed")
-WIT_ALT_ADOPT_CHANGED ==           \* under "alt_adopt_changed_token": the other token is adopted and committed
-  \A w \in Writers : ~(wr[w].ph = "Done" /\ wr[w].path = "reuse" /\ 1 \in gone /\ nsend = 1 /\ wr[w].pt = 0
-                       /\ \A v \in Writers \ {w} : wr[v].ph = "Idle")
-WIT_INHERITED_EXECUTED ==          \* under "inherited_executed": an intent-mode round deletes on an inherited row
-  ~(\E q \in req : q.k = "bd" /\ q.auth = "intent" /\ ~q.ok /\ q.ap /\ q.res = "removed_unmarked")
+WIT_OVER_BUDGET_CAND == \A g \in GCs : ~(gc[g].ph = "Commit" /\ gc[g].next.st = "cand" /\ gc[g].cnt.ic = 0
+                                          /\ gc[g].base.st = "none" /\ gc[g].next.tok \notin intents)
 
 --------------------------------------------------------------------------------------
-(* LIVENESS, once the writers are done for good. *)
+(* LIVENESS, once the writers are done for good. Not promised by section 8.2 for a body that lands
+   after its writer's edge removal was folded (the late `PUT`). *)
 Quiet == (\A w \in Writers : wr[w].ph = "Idle") /\ putq = {}
-
-(* Claimed: no row is stuck and, with cas-fsck running, no intent of a dead token is left. *)
-LIVE_ROW_LEAVES_AND_NO_STALE_INTENT ==
-  <>[]Quiet => <>[](gs.e.st = "none" /\ \A t \in intents : body.present /\ body.tok = t)
-(* NOT claimed by the specification (section 8.2): every unreferenced body is deleted. *)
 LIVE_UNREFERENCED_BODY_DELETED == <>[]Quiet => <>[](~body.present)
-(* NOT claimed (section 8.2): no intent is left at all. *)
 LIVE_NO_INTENT_LEFT == <>[]Quiet => <>[](intents = {})
 
 (*
 ABSTRACTIONS AND BOUNDS
-  - One blob key. Batching of intent deletes across rows, budgets, read-ahead and shards are absent.
-  - A read is one atomic observation. A cut is complete and atomic (A7 is assumed, not checked).
-  - Safety runs use Trigger = "any": GC may condemn whenever a cut shows in-degree 0 and a body is
-    present. The code condemns only on a fresh transition to zero; "any" allows more condemnations,
-    never fewer. Liveness runs use Trigger = "zero".
-  - A touched row (G7) is any row: the supersede may fire whenever the `HEAD` shows another token.
-  - A crash of a writer is WAbandon (its requests stay in flight with "put" in Late); the stalled
-    phase before it stands for the time the dead process still owns its edge. A crash of a GC actor
-    is GAbort or one of the `Unanswered` steps.
-  - A writer of the older build may finish, after the switch, a build whose edge was durable before
-    it. Section 7.2 stops such a process; the model does not need that.
-  - The older build's marker protocol is reduced: three marker states, no round stamp, marker writes
-    are one step with the observation that precedes them. It is the environment of the transition,
-    not its subject.
-  - Token spelling: one switch per comparison site ("may read as another incarnation").
-  - Not modelled: sizes and the envelope-length check, malformed intent bytes, a token that does not
-    canonicalise, multipart transport, the mark probe, mount slots and the checks of the command,
-    `SYSTEM CAS GC REBUILD`, more than one switch command at once (see CaBlobIntentFreshPool).
-  - Bounds: |Writers|, |GCs|, MaxPuts publications, MaxVer round commits; builds are unbounded.
+  - One blob key, one row; a round takes at most one decision for it. Several keys, shards, batching
+    across rows and read-ahead are absent.
+  - A read is one atomic observation. A cut is complete and atomic (A7, assumed).
+  - Trigger = "any" (safety): a round may see a fresh transition and a touched key at every cut, a
+    superset of the code. Trigger = "zero" (liveness, one GC actor): both are exact.
+  - A model round commits only when it changes the row; a real round commits every time.
+  - "Destruction suppressed" is not modelled: every cut is complete.
+  - The redelete budget of G4 is a round that ends for B with no commit (GAbort with Faults).
+  - Not modelled: sizes, malformed intent bytes, a token that does not canonicalise, token spelling,
+    multipart transport, `cas-fsck`, the migration.
 *)
 ======================================================================================
