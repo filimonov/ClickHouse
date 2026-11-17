@@ -19,9 +19,8 @@ generation 4, and `clickhouse-disks cas-migrate-pool` moves an older pool once, 
 - **After the switch, Tasks 10 to 14**: orphan adoption, marker code removal, `cas-fsck`, stateless and integration
   tests, measurements.
 
-**Tech Stack:** C++ (`CA/` metadata storage, `programs/disks`), GoogleTest (`unit_tests_dbms`), stateless tests
-(shell), integration tests (pytest; RustFS and the GCS emulator), Markdown docs, Python (`utils/cas-yardstick`,
-`utils/ca-soak` in `M`).
+**Tech Stack:** C++ (`CA/`, `programs/disks`), GoogleTest (`unit_tests_dbms`), stateless and integration tests
+(RustFS, GCS emulator), Markdown, Python (`utils/cas-yardstick`, `utils/ca-soak` in `M`).
 
 **Spec:** `docs/superpowers/specs/2026-11-17-cas-blob-deletion-intents-design.md` on branch `cas-gc-rebuild`, at the
 commit that adds this paragraph. It is binding; "§N" below is a section of it. A conflict between this plan and the
@@ -30,6 +29,12 @@ spec resolves to the spec, except the readings listed in [Spec readings](#spec-r
 **Preconditions, not tasks.** Two model results of §10.1, committed under `M/docs/superpowers/models/` and
 confirmed by the owner: "Required before the migration task" gates Task 8; "Required before the switch task" gates
 Task 9. Tasks 1 to 7 need neither.
+
+**Follow-up outside the product branch**, in `M/docs/superpowers/models/` once Task 11 lands: move
+`CaGcCondemnMarkerGate` and `CaRetiredInRunFoldAbortWitness` to the README's removed models, and add a header note
+to `CaRetiredInRun`, `CaBlobPublishCore`, `CaEdgeBeforeObserve`, `CaGcDestructiveGateCore`, `CaGcAckFloorCore`,
+`CaGcAckFloorZombie`, `CaGcRoundDeferCore`, `CaRefDeltaIntakeCore`, `CaRelinkConfirmCore`, `CaIncarnationCore`,
+`CaGcShardIncarnationCore`, `CaGcRootLocalPartManifestCore`: what each now stands for under intents.
 
 ## Global Constraints {#global-constraints}
 
@@ -84,9 +89,8 @@ hint.
 
 ### Build and test {#build-and-test}
 
-Build directories in `WT`: `build` (release) and `build_asan` (ASan + UBSan). One build at a time, in the
-foreground, `ninja` with no `-j`, output to a log in the build directory. A task that adds a `.cpp` runs
-`cmake . > cmake_<tag>.log 2>&1` in the build directory first.
+Build directories in `WT`: `build` (release), `build_asan` (ASan + UBSan). One foreground build at a time, `ninja`
+without `-j`, output to a log there. A task that adds a `.cpp` first runs `cmake . > cmake_<tag>.log 2>&1` there.
 
 ```bash
 cd $WT/build && ninja unit_tests_dbms > build_<tag>.log 2>&1; \
@@ -98,8 +102,7 @@ grep -a 'NINJA_EXIT' $WT/build/build_<tag>.log
 grep -a '\[  PASSED  \]\|\[  FAILED  \]\|GTEST_EXIT' $WT/build/test_<tag>.log | tail -20
 ```
 
-- A test log counts only if the build log of the same tag ends with `NINJA_EXIT=0`. A log without
-  `[  PASSED  ]` means the binary aborted; the last `[ RUN      ]` names the test.
+- A test log counts only after `NINJA_EXIT=0` of the same tag. No `[  PASSED  ]`: the last `[ RUN      ]` aborted.
 - **Gate** at the end of every task: the filter is EXACTLY `CAS*`, on `build`, on the committed tree. The same
   gate on `build_asan` after Tasks 4, 7, 8, 9, 10, 11 and 12. A red gate is fixed in a further commit; a red test
   the task does not explain is a stop: report the test, the assertion and the log.
@@ -669,9 +672,8 @@ server opens a pool this tool migrated: `G_BUILD` is 3 and refuses floor 4. Test
   `CASRemoveLegacyMarkers`: `DeletesEveryKey`, `RefusedDeleteThrowsWithTheCount`.
 - [ ] **Step 2: Run red.** Filter `CASMigratePool*:CASRemoveLegacyMarkers*`.
 - [ ] **Step 3: Implement.** `cmake .` first.
-- [ ] **Step 4: Run green,** then the gate on `build` and `build_asan`; also run
-  `./programs/clickhouse disks --help` from the release build only if it is already built (do not build `clickhouse`
-  in this task) and note the command listed.
+- [ ] **Step 4: Run green,** then the gate on `build` and `build_asan`; if `clickhouse` is already built (do not
+  build it here), note the command in `./programs/clickhouse disks --help`.
 - [ ] **Step 5: Commit.** Subject: `Add clickhouse-disks cas-migrate-pool for generation 4`
 
 ### Task 9: The switch {#task-9}
@@ -779,7 +781,8 @@ migration and helper files of Tasks 2, 3, 8, `T/gtest_cas_pluggable_hash.cpp:713
     `StandingRemovesTheIntentOnALaterZeroCut`, `SuppressedRoundDeletesNoIntent`,
     `SpareDropsStandingAndLeavesAnOrphanIntent`, `SpareDropsPendingAndKeepsTheIntent`,
     `StandingRowWhoseHeadShowsItsTokenIsCarried` (`ContentEtagBackend` repeats `t` at the key; one ERROR, nothing
-    deleted), `TouchedPendingRowWithAnAbsentBodyGoesStandingWithOneHead`.
+    deleted), `TouchedPendingRowWithAnAbsentBodyGoesStandingWithOneHead`, `IdlePoolFoldsForEachRowState` (only a
+    `candidate`, then only a `standing` row, no deltas: `graduationDueForTest` is true and the next round runs G3, G8).
   - Cut order: `DecisionHeadsAreSentAfterTheCut`. A `HeadHookBackend` hook on the last intake read publishes a body
     for a key at zero after the final ref-log `LIST` and before intake ends. Assert at least one decision `HEAD`,
     every blob `HEAD` after `cut_complete`, and the row naming the landed body's token: a `HEAD` sent before the
@@ -855,8 +858,7 @@ migration and helper files of Tasks 2, 3, 8, `T/gtest_cas_pluggable_hash.cpp:713
     `test_cas_drop_pool_member`, `test_cas_janitor_drain`, `test_cas_early_commit_restart`, `test_cas_ref_snaplog`,
     `test_cas_s3`, `test_cas_gcs`, `tests/queries/0_stateless/05008_cas_gc_snapshot_prune.sh`: graduation counts,
     rounds to reclamation and marker requests move to the new ledger.
-- [ ] **Step 8: Run green,** then the gate on `build` and `build_asan`; `python3 -m py_compile` on each edited
-  `test.py`.
+- [ ] **Step 8: Run green,** then the gate on `build` and `build_asan`; `py_compile` each edited `test.py`.
 - [ ] **Step 9: Commit.** Subject: `Switch CAS writers and GC to deletion intents at generation 4`
 
 ### Task 10: Adopt orphan intents {#task-10}
@@ -950,9 +952,7 @@ Read §9.2. Deletes what Task 9 left unreferenced. The `.meta` codec (`CA/Format
 
 ### Task 12: `cas-fsck` for intents and legacy markers {#task-12}
 
-Read §3.3.
-
-**Files:**
+Read §3.3. **Files:**
 - Modify: `CA/Tools/CasFsck.h:22-120` (classes, report), `:200-210` (`kFsckHardFindings`), `:268` (`runFsck`);
   `CA/Tools/CasFsck.cpp:445-449` (operation), `:890-914` (listing), `:1125-1140` (`sameIncarnation` for the
   `PendingGc` class), `:1204-1222` (pairing deleted)
@@ -1023,8 +1023,7 @@ Task 9 edited; references are predicted.
   `test_head_token_form_per_store` (multipart upload and multipart copy above 32 MiB included).
 - [ ] **Step 3: `test_cas_gc_s3`:** `test_gc_requests_per_reclaimed_blob` asserts that the rounds reclaimed at least
   one blob, then at most 5 requests per reclaimed blob from `system.blob_storage_log`.
-- [ ] **Step 4: Style check** of the new shell test with `ci/jobs/check_style.py` functions; `python3 -m py_compile`
-  on the new `test.py`.
+- [ ] **Step 4: Style check** of the shell test (`ci/jobs/check_style.py` functions); `py_compile` the new `test.py`.
 - [ ] **Step 5: Commit.** Subject: `Add CAS blob intent request and migration tests`. The report lists every predicted value.
 
 ### Task 14: Measurements, soak, defaults {#task-14}
