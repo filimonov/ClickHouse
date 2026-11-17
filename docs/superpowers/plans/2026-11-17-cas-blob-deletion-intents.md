@@ -8,13 +8,14 @@
 `HEAD`, intent `GET`, `HEAD`, and GC alone warns writers with an immutable deletion intent keyed by the body
 incarnation. Ships as format generation 4 with one upward switch per pool.
 
-**Architecture:** Nineteen commits. Tasks 1 to 8 add inert parts: the token identity, the generation 4 control
+**Architecture:** Twenty-one commits. Tasks 1 to 8 add inert parts: the token identity, the generation 4 control
 fields, the intent object, the content type in the shared S3 code, the mark on `publish` and `HEAD`, the learned
-flag, the mark bit and the payload hash check, the test fixtures. Tasks 9 to 13 add the protocol behind the
-pool's `blob_protocol`, which only tests set until Task 14: GC intent mode, the writer rules on a learned mount,
-the switch, the new-pool sequence, the tools. Task 14 switches it on: a pool created by this build records
-`created_generation = 4`, the writer loses its marker path, and the test fleet moves. Tasks 15 to 19 add the SQL
-command, the transition tests, integration and stateless tests, docs and measurements.
+flag, the mark bit and the payload hash check, the test fixtures. Tasks 9 to 14 add the protocol behind the
+pool's `blob_protocol`, which only tests set until Task 15: the GC mode read, GC intent mode, the writer rules on
+a learned mount, the switch, the new-pool sequence, the tools. Task 15 switches it on: a pool created by this
+build records `created_generation = 4`, and a mount that saw the switch without learning never adopts. Task 16
+removes the writer's marker path and moves the writer tests. Tasks 17 to 21 add the SQL command, the transition
+tests, integration and stateless tests, docs and measurements.
 
 **Tech Stack:** C++ (`CA/` metadata storage of the ClickHouse fork, the shared S3 write and copy code),
 GoogleTest (`unit_tests_dbms`), stateless tests (shell), integration tests (pytest, RustFS, the GCS mock),
@@ -25,13 +26,14 @@ at commit `c182f39a138` (binding: a conflict between this plan and the spec reso
 under [Spec items this plan settles](#settled) and the defaults under [Spec questions](#spec-questions)). "§N"
 below is a section of that spec. The plan-level tables the spec dropped are in [Effects](#effects).
 
-**Tasks 9 and 10 are split, GC first.** A tree where the writer follows §3.2 and GC still condemns by marker is
+**GC lands before the writer.** A tree where the writer follows §3.2 and GC still condemns by marker is
 safe on an unswitched pool (§7.1, stage T1), but there the writer never adopts, so every reuse test of the fleet
 would go red until its pool is switched, and a switched pool needs intent-mode GC. So GC intent mode lands first
-and is reachable only on a switched pool. The writer rules land next and apply to a learned mount; a mount that
-is not learned keeps today's marker path for commits 10 to 13, where no production path switches a pool.
-Task 14 removes that path. The reverse order (writer first, or a switched pool with today's writer) is the
-unsafe state X1 of §7.8.
+(Tasks 9 and 10) and is reachable only on a switched pool. The writer rules land next (Task 11) and apply to a
+learned mount. A mount that is not learned keeps today's marker path for commits 11 to 14, where no production
+path switches a pool. Task 15 creates new pools switched and, in the same commit, stops a mount that saw the
+switch without learning from adopting. Task 16 removes the marker path. The reverse order (writer first, or a
+switched pool with today's writer) is the unsafe state X1 of §7.8.
 
 ## Global Constraints {#global-constraints}
 
@@ -56,16 +58,19 @@ the line as a hint. In commands `CA`, `T`, `D`, `Q`, `I` are shell variables wit
 
 ### Before Task 1 (controller) {#before-task-1}
 
-- §10.1 requires `M/CaBlobIntentCore.tla` and `M/CaBlobIntentTransition.tla` with a results file before
-  implementation. The controller records the results file path and its commit in `$R/LEDGER.md`. No task starts
-  before that ([Spec questions](#spec-questions), Q1).
+- §10.1 requires the TLA+ models with a results file before implementation. The model study commits them
+  under `$M/docs/superpowers/models/`: `CaBlobIntentProtocol*.tla` with its configurations, the fresh-pool
+  module `CaBlobIntentFreshPool.tla`, and `CaBlobIntentProtocol*_RESULTS.md`. They carry the content §10.1 lists
+  under the names `CaBlobIntentCore` and `CaBlobIntentTransition`. The controller records the results file path
+  and its commit in `$R/LEDGER.md`. No task starts before that ([Spec questions](#spec-questions), Q1).
 - `git -C $WT status --short` prints nothing. `git -C $WT switch -c work/antalya-26.8/cas-blob-intents a966a374b17`.
 - Build `build` and `build_asan`, run `CAS*` on both, and record the pass counts as `N_rel` and `N_asan` in
-  `$R/LEDGER.md`. Each task report gives the new counts and the number of tests it added and deleted.
+  `$R/LEDGER.md`. Each task report gives the new release count and the number of tests it added and deleted; a
+  milestone report also gives the ASan count.
 
 ### Binding rules {#binding-rules}
 
-- **Worktree.** Modify files only under `WT`; Task 19 alone works in `M`. No push, no pull request. The only
+- **Worktree.** Modify files only under `WT`; Task 21 alone works in `M`. No push, no pull request. The only
   writes outside: the task report and logs under `$R`.
 - **No destructive commands.** No `git clean`, `git reset --hard`, `git checkout -- <file>`, `git stash`,
   `git rebase`, `git commit --amend`. Never delete or re-create a build directory. A hung test binary is stopped
@@ -98,13 +103,17 @@ the line as a hint. In commands `CA`, `T`, `D`, `Q`, `I` are shell variables wit
   grep -a '\[  PASSED  \]\|\[  FAILED  \]\|GTEST_EXIT' $WT/build/test_<tag>.log | tail -20
   ```
 
-  Tags: `t<N>_red`, `t<N>_green`, `t<N>_pre`, `t<N>_gate`, `t<N>_m<k>` (a mutant). A test log is evidence only
-  if the build log of the same tag ends with `NINJA_EXIT=0`. A test log without a `[  PASSED  ]` line means the
-  binary aborted: the last `[ RUN      ]` line names the test.
-- **Gate.** At the end of every task: EXACTLY `--gtest_filter='CAS*'` on `build` and on `build_asan`, on the
-  committed tree, with the `HEAD` marker in both build logs. A red gate after the commit is fixed in a further
-  commit (same staging and trailer rules) and both gates rerun. A red existing test that the task does not name
-  and this plan does not explain is a stop: report the test, the assertion and the log.
+  Tags: `t<N>_red`, `t<N>_green`, `t<N>_pre`, `t<N>_gate`, `t<N>_asan`, `t<N>_m<k>` (a mutant). A test log is
+  evidence only if the build log of the same tag ends with `NINJA_EXIT=0`. A test log without a `[  PASSED  ]`
+  line means the binary aborted: the last `[ RUN      ]` line names the test.
+- **Gate.** At the end of every task: EXACTLY `--gtest_filter='CAS*'` on `build`, on the committed tree, with
+  the `HEAD` marker in the build log (tag `t<N>_gate`). The same filter on `build_asan` (tag `t<N>_asan`) runs
+  at the milestones: after Tasks 3, 8, 10, 11, 13, 14, 16 and 18, and in the [branch gates](#branch-gates).
+  Between milestones, a task that adds a `*DeathTest` twin or a test with a background thread runs its new
+  suites on `build_asan` before its commit (Tasks 2 and 6). A red gate after the commit is fixed in a further
+  commit (same staging and trailer rules) and the gate reruns. A red ASan milestone is traced to its commit by
+  rerunning the red tests on the commits since the last green milestone. A red existing test that the task
+  does not name and this plan does not explain is a stop: report the test, the assertion and the log.
 - **Red first.** Write the tests before the product change and run them. The red run fails on an assertion, not
   on a compile error: a new signature is added first with today's behaviour or a stub. Copy the red log to
   `$R/logs/red_t<N>.log`. A test marked "pin" is green before and after.
@@ -133,8 +142,9 @@ the line as a hint. In commands `CA`, `T`, `D`, `Q`, `I` are shell variables wit
   ```
 
   No other trailer, no session link, no backlog id, none of the words "spec", "plan", "task", "review".
-- **Report.** `$R/reports/task<N>.md`: what changed, red evidence, pass counts on both builds, every existing
-  test that was edited or deleted with the reason, numbers that are predicted and not run, deviations, doubts.
+- **Report.** `$R/reports/task<N>.md`: what changed, red evidence, the pass count on `build` (and on
+  `build_asan` at a milestone), every existing test that was edited or deleted with the reason, numbers that are
+  predicted and not run, deviations, doubts.
 
 ### Shared code changes {#shared-code}
 
@@ -147,9 +157,12 @@ The complete list. Anything else outside `CA/`, `T/`, `Q/`, `I/`, `D/` and `prog
 | 3 | `src/IO/S3/copyS3File.h:48-63`, `.cpp:148`, `:748`, `:1011` | one trailing parameter `const String & content_type = {}` on `copyS3File`, used by the multipart create and by `CopyObject` | 4 | unchanged bytes |
 | 4 | `S3:1122-1137` | `S3ObjectStorage::copyObject` passes the field of its `WriteSettings` | 4 | empty |
 | 5 | `src/IO/S3/getObjectInfo.h:14-23`, `.cpp:87-93`; `src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:128`; `S3:973`, `:1012` | `String content_type` in `S3::ObjectInfo` and `ObjectMetadata`, filled from the `HEAD` response | 4 | no caller reads it |
-| 6 | `src/Common/ProfileEvents.cpp` | new `CAS*` counters (Tasks 3, 7, 9, 10); three removed (Task 14, `:968-970`) | 3, 7, 9, 10, 14 | CAS-only names |
-| 7 | `src/Parsers/ASTSystemQuery.h:172-178`, `ASTSystemQuery.cpp:304-307`, `ParserSystemQuery.cpp:546-558`, `src/Interpreters/InterpreterSystemQuery.{h,cpp}` (`:1164`, `:2792`, `:3670`), `src/Access/Common/AccessType.h:369-375`, `Q/01271_show_privileges.reference:177` | one `SYSTEM` query type beside `CAS_FSCK` | 15 | additive |
+| 6 | `src/Common/ProfileEvents.cpp` | new `CAS*` counters (Tasks 3, 7, 10, 11); three removed (Task 16, `:968-970`) | 3, 7, 10, 11, 16 | CAS-only names |
+| 7 | `src/Parsers/ASTSystemQuery.h:172-178`, `ASTSystemQuery.cpp:304-307`, `ParserSystemQuery.cpp:546-558`, `src/Interpreters/InterpreterSystemQuery.{h,cpp}` (`:1164`, `:2792`, `:3685`), `src/Access/Common/AccessType.h:369-375`, `Q/01271_show_privileges.reference:177` | one `SYSTEM` query type beside `CAS_FSCK` | 17 | additive |
 | 8 | `src/Storages/System/StorageSystemContentAddressedMounts.cpp:40-63` | three columns | 6 | CAS-only table |
+| 9 | `src/IO/S3/tests/CountingS3Server.h` (test-only) | `Request` (`:85-94`) records the request headers; `ObjectStore` (`:270`) keeps the `Content-Type` of a `PutObject` and returns it on `HeadObject` | 4 | additive: its other users (`src/IO/S3/tests/gtest_s3_client_single_attempt_completion.cpp`, `T/gtest_cas_blob_publish_transport.cpp`, `T/gtest_cas_s3_single_attempt_client.cpp`) read no header |
+| 10 | `src/Interpreters/InterpreterSystemQuery.cpp:2637` (`contentAddressedFsckColumns`), `:2688` (`appendContentAddressedFsckRow`) | the result of `SYSTEM CAS FSCK` gains one column per new report counter | 14 | CAS-only columns, appended |
+| 11 | `docs/en/operations/system-tables/cas_mounts.md`, `cas_gc_log.md`, `cas_log.md`; `docs/en/antalya/metrics_and_events.md` | the reference pages of the changed tables and counters | 20 | CAS-only sections |
 
 The Native-format specification is not touched: no task changes the `Native` format.
 
@@ -167,83 +180,101 @@ The Native-format specification is not touched: no task changes the `Native` for
   `writeManifestRaw` (`:539`), `displaceBlobToken` (`:1039`), `writeMetaClean` (`:1133`), `condemnMeta` (`:1144`),
   `seedPoolMetaForRestart` (`:1082`), `runRegularRoundReclaiming` (`:918`), `currentRetiredSet` (`:949`).
 - From Task 8 on, in `T/cas_blob_intent_test_support.h`: `seedUpgradedPoolForTest`, `openSwitchedPoolForTest`,
-  `publishBlobRawForTest`, `ProtocolJournalBackend` (signatures in [Task 8](#task-8)).
+  `publishBlobRawForTest`, `ProtocolJournalBackend`, `DialectOverrideBackend` (signatures in [Task 8](#task-8)).
+- **An unswitched pool** in a test of Tasks 6 to 14 is a pool without `created_generation`: Task 13 switches a
+  pool that records it, and Task 15 makes every plain `Pool::open` of an empty prefix end switched. Tasks 6 and
+  7 seed it by hand; from Task 8 on it is `seedUpgradedPoolForTest`.
 - No `ASSERT_*` in a non-void helper. A test with a parked thread declares, in this order: the guard that clears
   hooks, every `std::future`, the guard that releases the parked thread.
 
 ## Review Focus {#review-focus}
 
-The five failures no single task's own tests exercise by construction. Each is pinned to a test in an owning task.
+The six failures no single task's own tests exercise by construction. Each is pinned to a test in an owning task.
 
-1. **A cache or an earlier request answers an adoption read.** Owner: Task 10,
+1. **A cache or an earlier request answers an adoption read.** Owner: Task 11,
    `CASBlobIntentWriter.AdoptionReadsReachTheStoreAfterAPrimedAbsence` (the journal of the attempt holds both
    `HEAD`s and the intent `GET`, all after the edge, and the writer publishes).
 2. **A GC round takes marker mode from a failed `_pool_meta` read.** Owner: Task 9,
    `CASGcIntentsMode.FailedPoolMetaReadFailsTheRound` and `.AbsentPoolMetaFailsTheRound` (zero requests after
    the read), plus the mutant "a failed read yields marker mode".
 3. **The mark is lost on a multipart path.** Owner: Task 4, `S3ObjectContentType.MultipartCopyCreateCarriesTheSetType`
-   and `.MultipartCreateCarriesTheSetType` (the wire request); Task 17, `test_mark_on_multipart_copy` and
+   and `.MultipartCreateCarriesTheSetType` (the wire request); Task 19, `test_mark_on_multipart_copy` and
    `test_mark_on_multipart_upload` per store.
 4. **One incarnation spelled two ways by two requests.** Owner: Task 1,
-   `CASTokenIdentity.SameIncarnationComparesCanonically`; Task 9, `CASGcIntents.RespelledTokenAtTheDeleteHeadStillDeletes`
-   and `.RespelledTokenIsNotASupersede`; Task 13, `CASFsckIntents.RespelledTokenIsCurrentNotStale`.
-5. **An intent removed while its incarnation is current.** Owner: Task 9, `CASGcIntents.SpareLeavesTheIntent`,
-   `.SupersedeDeletesTheOldIntentOnce`, `.UnansweredBodyDeleteKeepsTheIntent`; Task 13,
+   `CASTokenIdentity.SameIncarnationComparesCanonically`; Task 10, `CASGcIntents.RespelledTokenAtTheDeleteHeadStillDeletes`
+   and `.RespelledTokenIsNotASupersede`; Task 14, `CASFsckIntents.RespelledTokenIsCurrentNotStale`.
+5. **An intent removed while its incarnation is current.** Owner: Task 10, `CASGcIntents.SpareLeavesTheIntent`,
+   `.SupersedeDeletesTheOldIntentOnce`, `.UnansweredBodyDeleteKeepsTheIntent`; Task 14,
    `CASFsckIntents.FixReadsTheIntentBeforeTheBody`.
+6. **A rule wired to an entry point production never runs.** Owner: Task 6,
+   `CASBlobIntentLearning.RenewerRereadsAfterSixtySecondsUntilLearned`, which runs the background renewal
+   worker, plus the mutant "the re-read is called only from `Pool::renewWatermarkOnce`".
 
 ## Task list and pre-flight {#preflight}
 
-Tier: implementer / reviewer. `ca-surgeon` and `ca-review` are the stronger pair; **bold** tasks are protocol or
-GC safety and need it.
+Numbering against the reviewed revision of this plan (`42b93ede3c8`): was 9 -> 9, 10; was 14 -> 15, 16;
+was 10 to 13 -> 11 to 14; was 15 to 19 -> 17 to 21. Tasks run in the order of their numbers.
 
-| # | Task | Product files, lines | Test lines | Risk | Tier |
-|---|---|---|---|---|---|
-| 1 | Token identity | 2, 120 | 250 | low | `ca-impl` / `ca-review` |
-| 2 | Control formats, generation 4 | 14, 350 | 600 | medium | `ca-surgeon` / `ca-review` |
-| 3 | Intent object and key class | 9, 250 | 350 | low | `ca-impl` / `ca-review-lite` |
-| 4 | Shared S3: content type | 8, 80 | 250 | medium | `ca-surgeon` / `ca-review` |
-| 5 | Backend mark and the mark probe | 10, 400 | 500 | medium | `ca-impl` / `ca-review` |
-| 6 | Learning the switch, mount rules, `system.cas_mounts` | 5, 350 | 500 | medium | `ca-impl` / `ca-review` |
-| 7 | Publication: mark bit, payload hash check | 9, 250 | 350 | medium | `ca-surgeon` / `ca-review` |
-| 8 | Test fixtures; marker-mode suites pinned | 0 | 400 | low | `ca-impl` / `ca-review-lite` |
-| **9** | GC intent mode | 9, 900 | 1200 | high | `ca-surgeon` / `ca-review` |
-| **10** | Writer rules on a learned mount | 3, 350 | 700 | high | `ca-surgeon` / `ca-review` |
-| **11** | The switch: checks, stamp, free lease | 4, 350 | 600 | high | `ca-surgeon` / `ca-review` |
-| **12** | New-pool sequence in `Pool::open` | 2, 120 | 450 | high | `ca-surgeon` / `ca-review` |
-| **13** | Tools: `cas-fsck`, `cas-inspect`, `cas-gc-dryrun` | 8, 600 | 700 | high | `ca-surgeon` / `ca-review` |
-| **14** | Switch on; the test fleet | 5, −300 | ±1500 | high | `ca-surgeon` / `ca-review` |
-| 15 | `SYSTEM CAS ENABLE BLOB INTENTS` | 7, 120 | 60 | low | `ca-impl` / `ca-review-lite` |
-| 16 | Transition gtests | 0 | 800 | medium | `ca-impl` / `ca-review` |
-| 17 | Integration and stateless tests | 1, 30 | 900 | medium | `ca-impl` / `ca-review-lite` |
-| 18 | Docs | 12, 600 | — | low | `ca-impl` / `ca-review-lite` |
-| 19 | Yardstick references and soak cards | 10, 300 | — | low | `ca-impl` / `ca-review-lite` |
+Tier: implementer / reviewer. `ca-surgeon` and `ca-review` are the stronger pair; **bold** tasks are protocol or
+GC safety and need it. Task 10 also gets a second, independent review. "ASan" marks a milestone of the
+[gate](#binding-rules).
+
+| # | Task | Product files, lines | Test lines | Risk | Tier | ASan |
+|---|---|---|---|---|---|---|
+| 1 | Token identity | 2, 120 | 250 | low | `ca-impl` / `ca-review` | |
+| 2 | Control formats, generation 4 | 16, 380 | 650 | medium | `ca-surgeon` / `ca-review` | new suites |
+| 3 | Intent object and key class | 9, 250 | 350 | low | `ca-impl` / `ca-review-lite` | yes |
+| 4 | Shared S3: content type | 8, 80 | 300 | medium | `ca-surgeon` / `ca-review` | `S3*:WBS3*` |
+| 5 | Backend mark and the mark probe | 10, 400 | 500 | medium | `ca-impl` / `ca-review` | |
+| 6 | Learning the switch, mount rules, `system.cas_mounts` | 6, 400 | 550 | medium | `ca-impl` / `ca-review` | new suites |
+| 7 | Publication: mark bit, payload hash check | 9, 250 | 350 | medium | `ca-surgeon` / `ca-review` | |
+| 8 | Test fixtures; marker-mode suites pinned | 0 | 450 | low | `ca-impl` / `ca-review-lite` | yes |
+| **9** | GC: the per-round mode read, the dialect check, leaving GC | 5, 200 | 350 | high | `ca-surgeon` / `ca-review` | |
+| **10** | GC intent mode: the fold and the delete batch | 7, 700 | 900 | high | `ca-surgeon` / `ca-review` twice | yes |
+| **11** | Writer rules on a learned mount | 3, 350 | 700 | high | `ca-surgeon` / `ca-review` | yes |
+| **12** | The switch: checks, stamp, free lease | 4, 350 | 650 | high | `ca-surgeon` / `ca-review` | |
+| **13** | New-pool sequence in `Pool::open` | 2, 120 | 450 | high | `ca-surgeon` / `ca-review` | yes |
+| **14** | Tools: `cas-fsck`, `cas-inspect`, `cas-gc-dryrun` | 9, 650 | 700 | high | `ca-surgeon` / `ca-review` | yes |
+| **15** | New pools are created switched | 3, 60 | ±700 | high | `ca-surgeon` / `ca-review` | |
+| **16** | Remove the writer's marker path | 3, −350 | ±900 | high | `ca-surgeon` / `ca-review` | yes |
+| 17 | `SYSTEM CAS ENABLE BLOB INTENTS` | 7, 120 | 60 | low | `ca-impl` / `ca-review-lite` | |
+| 18 | Transition gtests | 0 | 800 | medium | `ca-impl` / `ca-review` | yes |
+| 19 | Integration and stateless tests | 1, 30 | 900 | medium | `ca-impl` / `ca-review-lite` | |
+| 20 | Docs | 16, 700 | — | low | `ca-impl` / `ca-review-lite` | |
+| 21 | Yardstick references and soak cards | 10, 300 | — | low | `ca-impl` / `ca-review-lite` | |
 
 Pairs of tasks that share a file or an interface: what the first produces against what the second consumes.
 
 | Producer → consumer | Interface or file |
 |---|---|
-| 1 → 3, 5, 9, 10, 13 | `CanonicalIdentity`, `canonicalIdentity`, `Etag::canonical`, `sameIncarnation`, `opaqueTagFromHex` (`CA/Backend/CasEtag.h`) |
+| 1 → 3, 5, 10, 11, 14 | `CanonicalIdentity`, `canonicalIdentity`, `Etag::canonical`, `PersistedEtag::canonical`, `sameIncarnation`, `dialectWord`, `dialectFromWord`, `opaqueTagFromHex` (`CA/Backend/CasEtag.h`) |
 | 2 → 3 | `G_BLOB_INTENTS`, `G_BUILD = 4`: the intent record has header 4 |
-| 2 → 6, 9, 11, 12, 13, 14 | `PoolMeta::blob_protocol`, `token_dialect`, `created_generation`, `PoolMeta::switchToBlobIntents` |
-| 2 → 9, 11 | `GcState::generation`; `RetiredEntry::intent`, `CondemnedRow::intent`, `SourceEdgeRecord::intent`, the run header version |
-| 2 → 6, 11 | `MountLease::protocol_generation`; `ServerEpoch::protocol_generation` |
-| 3 → 9, 10, 13 | `Layout::blobIntentKey`, `writeOnceBlobIntentKey`, `parseBlobIntentKey`, `blobIntentsPrefix`, `blobIntentRecord`, `isBlobIntentRecord` |
-| 3 → 6, 11, 12 | `Layout::maxPoolPrefixBytesForBlobIntents` |
-| 4 → 5, 7 | `WriteSettings::object_storage_content_type`, `ObjectMetadata::content_type` |
-| 5 → 6, 11, 12 | `BlobMarkProbeResult`, `runBlobMarkProbe` |
-| 5 → 7, 9, 10, 13 | `Meta::marked`, `BlobPublishRequest::marked`, `kBlobMarkContentType` |
+| 2 → 6, 9, 12, 13, 14, 15 | `BlobProtocol`, `PoolMeta::blob_protocol`, `token_dialect`, `created_generation` |
+| 2 → 8, 12, 13 | `PoolMeta::switchToBlobIntents` → `BlobIntentsSwitch { meta, written }` |
+| 2 → 9, 10, 12 | `GcState::generation`; `RetiredEntry::intent`, `CondemnedRow::intent`, `SourceEdgeRecord::intent`, the run header version |
+| 2 → 6, 12 | `MountLease::protocol_generation` (read through `MountInfo::lease`); `ServerEpoch::protocol_generation` |
+| 3 → 10, 11, 14 | `Layout::blobIntentKey`, `writeOnceBlobIntentKey`, `parseBlobIntentKey`, `blobIntentsPrefix`, `blobIntentRecord`, `isBlobIntentRecord` |
+| 3 → 6, 12, 13 | `Layout::maxPoolPrefixBytesForBlobIntents` |
+| 4 → 5, 7 | `WriteSettings::object_storage_content_type`, `ObjectMetadata::content_type`; the headers of `CountingS3Server` |
+| 5 → 6, 12, 13 | `BlobMarkProbeResult`, `runBlobMarkProbe` |
+| 5 → 7, 10, 11, 14 | `Meta::marked`, `BlobPublishRequest::marked`, `kBlobMarkContentType` |
 | 5, 7 share | `B:` `publish` and `emuPublishBlobAtomically`; `CA/Backend/CasBackend.h:54-78`; `CA/Backend/CasInMemoryBackend.cpp:194-240`; `CA/Backend/CasProbe.cpp` |
-| 6 → 7, 10, 11, 12 | `Pool::blobIntentsLearned`, `applyBlobIntentsObservation`, `refreshBlobIntentsLearning`, `noteMarkedBodyWhileNotLearned`, `blobMarkProbe` |
-| 6, 12, 14 share | `CA/Pool/CasPool.cpp` `Pool::open` (`:440-611`) |
-| 7 → 10 | `BlobSource::marked`, `StreamingBlobPublication::expected_ref` |
-| 7, 10, 14 share | `W:274-570` (`ensureBlobPresent`) |
-| 8 → 9 to 16 | `T/cas_blob_intent_test_support.h` |
-| 9 → 11 | `Gc::acquireOrRenewLease` (`G:5185`): Task 11 adds the owner-0 branch |
-| 9 → 13 | `Gc::readRoundBlobProtocol`, `BlobProtocolMode`: the dry run takes its mode the same way |
-| 9, 13 share | `G:5061` (`previewDeletes`); `CA/Tools/CasInspect.cpp:413-418` reads `CondemnedRow::intent` |
-| 11 → 12, 15, 16 | `Pool::enableBlobIntents`; Task 12 reuses its switch-and-learn step |
-| 13, 14 share | `T/gtest_cas_fsck.cpp` |
-| 14 → 17, 19 | the request ledger of a pool created by this build |
+| 6 → 7, 8, 11, 12, 13, 15, 16 | `Pool::blobIntentsLearned`, `applyBlobIntentsObservation`, `refreshBlobIntentsLearning`, `noteMarkedBodyWhileNotLearned`, `blobMarkProbe`, `observedBlobProtocol` |
+| 6, 13 share | `CA/Pool/CasPool.cpp` `Pool::open` (`:440-611`) |
+| 7 → 8, 11 | `StreamingBlobPublication::expected_ref`, `BlobSource::marked`, `PendingBlob::marked`, `stageBlobPartFile(..., bool marked)` |
+| 7, 11, 15, 16 share | `W:274-570` (`ensureBlobPresent`) |
+| 8 → 9 to 18 | `T/cas_blob_intent_test_support.h`: `seedUpgradedPoolForTest`, `seedNewPoolAtN2ForTest`, `openSwitchedPoolForTest`, `publishBlobRawForTest`, `ProtocolJournalBackend`, `DialectOverrideBackend` |
+| 9 → 10 | the round's `BlobProtocol`; Task 10 replaces the `NOT_IMPLEMENTED` of intent mode with the fold |
+| 9 → 14 | `Gc::readRoundBlobProtocol(op, leased_state)`: consumed by `previewDeletes` only. `runFsck` has no `Gc` and makes its own read |
+| 9, 12 share | `Gc::acquireOrRenewLease` (`G:5185`): Task 12 adds the owner-0 branch |
+| 10 internal | `GraduationReadHints::admit(ref, token)`: its callers in `T/gtest_cas_blob_indegree.cpp:1182`, `:1259` |
+| 10, 14 share | `G:5061` (`previewDeletes`); `CA/Tools/CasInspect.cpp:413-418` reads `CondemnedRow::intent` |
+| 11 → 15, 16 | `BlobPublicationReason`, `PartWriteTxn::ensureBlobPresentByIntents` |
+| 12 → 13, 17, 18 | `Pool::enableBlobIntents`, `EnableBlobIntentsResult`; Task 13 reuses `switchToBlobIntentsAndLearn` |
+| 14 → 17, 20 | `FsckReport` classes, `FsckFix`, `runFsck(..., FsckFix)`; the `SYSTEM CAS FSCK` columns |
+| 14, 16 share | `T/gtest_cas_fsck.cpp` |
+| 15 → 16 | the suites pinned to `seedUpgradedPoolForTest`; the "saw the switch, not learned" branch of `ensureBlobPresent` |
+| 15, 16 → 19, 21 | the request ledger of a pool created by this build |
 
 ---
 
@@ -252,13 +283,13 @@ Pairs of tasks that share a file or an interface: what the first produces agains
 Implementer `ca-impl`. Reviewer `ca-review`. Read §6.1. No behaviour changes: nothing calls the new functions yet.
 
 **Files:**
-- Modify: `CA/Backend/CasEtag.h:10-14` (grammar comment: two levels), `:27-52` (`Etag`), `:79-99` (`PersistedEtag`)
+- Modify: `CA/Backend/CasEtag.h:10-14` (grammar comment: two levels), `:24-51` (`Etag`), `:69-88` (`PersistedEtag`)
 - Modify: `CA/Backend/CasEtag.cpp:10-32` (`isIncarnationValue` stays byte for byte; new functions after it)
 - Create: `T/gtest_cas_token_identity.cpp`
 
 **Interfaces:**
 - Consumes: `enum class Dialect { ETag = 1, Generation = 2, Emulated = 3 }` (`CA/Primitives/CasTypes.h:269`);
-  the words of `Etag::render` (`CA/Backend/CasEtag.h:55-64`).
+  the words of `Etag::render` (`CA/Backend/CasEtag.h:53-62`).
 - Produces, all in `CA/Backend/CasEtag.h`:
 
   ```cpp
@@ -291,7 +322,7 @@ Implementer `ca-impl`. Reviewer `ca-review`. Read §6.1. No behaviour changes: n
     `CA/Backend/CasObjectStorageBackend.h:175-182`). The tag is the digit string.
   - `sameIncarnation` is true only when both sides have an identity and the identities are equal. Two equal raw
     values that do not canonicalise are not the same incarnation.
-  - `PersistedEtag::matches` (`:96-99`) stays: marker mode keeps the textual compare.
+  - `PersistedEtag::matches` (`:85-88`) stays: marker mode keeps the textual compare.
 
 - [ ] **Step 1: Write the failing tests,** suite `CASTokenIdentity`. A live `Etag` comes from a file-local
   `FixedTokenBackend(Dialect, String value)` (an `InMemoryBackend` whose `dialect` and `head` value are fixed).
@@ -337,12 +368,15 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
   `:198-205`, `:280-311`
 - Modify: `CA/Gc/CasBlobInDegree.h:27-44`, `:78-96`; `N:262-290` (packed row), `:320-327` (run view), `:490-498`
   (`toRetiredEntry`), `:655-664` (run writer append)
-- Modify: `CA/Formats/CasServerRootFormats.h:53-60`, `:66-83`; `CA/Formats/CasServerRootFormats.cpp` (the epoch
-  and mount-lease encoders and decoders, `:128-152`, `:155-`, `:205-225`); `allocateWriterEpoch` (locate by
-  symbol; callers `CA/Pool/CasPool.cpp:704`, `:827`, `:890`)
+- Modify: `CA/Formats/CasServerRootFormats.h:53-60` (`ServerEpoch`), `:66-96` (`MountLease`, `fencedCopy`);
+  `CA/Formats/CasServerRootFormats.cpp:112-152` (the epoch codec), `:155-225` (the mount-lease codec)
+- Modify: `CA/Pool/CasServerRoot.h:220`, `CA/Pool/CasServerRoot.cpp:817` (`allocateWriterEpoch`; callers
+  `CA/Pool/CasPool.cpp:704`, `:827`, `:890`, `:1589` are not edited), `:658-664` (the rejoin body), `:912-926`
+  (`makeMountBody`), `:1704-1722` (`MountLeaseRenewer::encodeBody`), `:2187-2190` (`MountLeaseRenewer::terminate`)
 - Test: `T/gtest_cas_pool_meta.cpp`, `T/gtest_cas_gc_state_format.cpp`, `T/gtest_cas_record_stream_format.cpp`,
   `T/gtest_cas_blob_indegree.cpp`, `T/gtest_cas_server_root_format.cpp`, `T/gtest_cas_gc_round.cpp`,
-  `T/gtest_cas_format.cpp`, `T/gtest_cas_format_battery.cpp`, `T/cas_format_test_battery.h`
+  `T/gtest_cas_mount.cpp`, `T/gtest_cas_format.cpp`, `T/gtest_cas_format_battery.cpp`,
+  `T/cas_format_test_battery.h`, and every test file that Step 4 edits (the commit lists each by name)
 
 **Interfaces:**
 - Consumes (existing): `rmwPoolMeta` (`CA/Pool/CasPoolMeta.cpp:69-86`); `writeHeaderLine(out, id, version)`
@@ -365,9 +399,11 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
       bool switched() const { return blob_protocol == BlobProtocol::Intents; }
       /// Monotone. No `blob_protocol`: writes `intents` and `backend_dialect` in one write. `intents` with the
       /// same dialect: no write. `intents` with another dialect: BAD_ARGUMENTS, the dialect text of §7.5.
-      /// Returns the meta as last read, so an unanswered write is settled by the read of the retry.
-      static PoolMeta switchToBlobIntents(CasOperation & op, const Layout & layout, Dialect backend_dialect);
+      /// `meta` is the body as last read, so an unanswered write is settled by the read of the retry.
+      /// `written` is true iff the last decision of this call was a write and that write was answered.
+      static BlobIntentsSwitch switchToBlobIntents(CasOperation & op, const Layout & layout, Dialect backend_dialect);
   };
+  struct BlobIntentsSwitch { PoolMeta meta; bool written = false; };
   /// CA/Formats/CasGcStateFormat.h, in GcState
   uint32_t generation = G_BLOB_INTENTS;     /// the header `v`; a decode is the only source of a lower value
   /// CA/Formats/CasRecordStreamFormat.h
@@ -378,7 +414,7 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
   struct RetiredEntry { /* existing */ bool intent = false; };
   struct CondemnedRow { /* existing */ bool intent = false; };   /// packed flag value 4; in operator== too
   /// CA/Formats/CasServerRootFormats.h
-  struct MountLease { /* existing */ uint64_t protocol_generation = 0; };       /// what the body declared
+  struct MountLease { /* existing */ uint64_t protocol_generation = 0; };       /// what the body declares; 0 = no key
   struct ServerEpoch { /* existing */ std::optional<uint64_t> protocol_generation; };
   ```
 
@@ -389,7 +425,7 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
     `intents`, `CORRUPTED_DATA`; unknown dialect word `UNKNOWN_FORMAT_VERSION`; `created_generation` below 4
     `CORRUPTED_DATA`, above 4 through `checkCompatibility`; both `created_generation` checks run after the floor
     check (`CA/Formats/CasPoolMetaFormat.cpp:155-158`). `createOrValidate` does not write `created_generation`
-    yet (Task 14 does).
+    yet (Task 15 does).
   - `encodeGcState` writes `writeHeaderLine(out, FormatId::GcState, state.generation)`. `decodeGcState` sets
     `generation` from the header. Every rewrite keeps what it read: the renew (`G:5220-5226`), the steal
     (`G:5263-5268`), the round commit (`G:1300`). The bootstrap (`G:5204-5211`) constructs, so it writes 4.
@@ -399,10 +435,15 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
     non-condemned record, `intent` without `pending`: `CORRUPTED_DATA`. Header below 4 reads `intent = false`.
   - Packed row: flag 4 is `intent`; `flags > 7`, or 4 without 1: `CORRUPTED_DATA` (`N:266`, `:287`). `intent`
     rides `SourceEdgeRunView::next` (`N:320-327`), `toRetiredEntry` (`N:490-498`) and the append at `N:661-664`.
-  - Mount slot: the encoder always writes `protocol_generation = G_BLOB_INTENTS`; the struct field is what a
-    decode found, 0 when the key is absent ([Spec questions](#spec-questions), Q3).
+  - Mount slot: the slot holder writes its own generation, and a fence never raises another server's
+    ([Spec questions](#spec-questions), Q3). `encodeMountLease` writes the key `protocol_generation` iff the
+    field is not 0; a decode sets the field from the key, 0 when it is absent. Every body its holder builds sets
+    `G_BLOB_INTENTS`: `makeMountBody`, `MountLeaseRenewer::encodeBody`, `MountLeaseRenewer::terminate`, the
+    rejoin body. `MountLease::fencedCopy` keeps the decoded value, as it keeps `write_attempt_id`: a GC fence
+    over an older server's slot still declares 0, and the switch command still names that root. A holder site
+    that forgets the field declares 0, which blocks the command and deletes nothing.
   - Epoch counter: `allocateWriterEpoch` writes the critical key `!protocol_generation` = 4 with each allocation.
-    The decoder reads it and passes the value to `checkCompatibility`.
+    The decoder reads it and passes the value to `checkCompatibility` under the name `server-epoch`.
   - What an older build does with each field: the §2.4 table, row by row. Quote the row in the code comment of
     each field as a reason, not as a reference.
 
@@ -415,33 +456,49 @@ pool to floor 4 and a `gc/state` this build creates has header 4; nothing reads 
     `SwitchWritesIntentsAndDialectInOneWrite`; `SwitchIsANoOpOnTheSameDialect` (no write in the journal);
     `ReadCeilingThreeRejectsFloorFour` (text of §7.5, first row).
   - `CASBlobIntentDialect.SwitchWithAnotherRecordedDialectIsRefused`: `BAD_ARGUMENTS`, the dialect text, no write.
-  - `CASGcStateFormat`: `ConstructedStateEncodesHeaderFour`; `DecodedGenerationIsKeptByTheEncoder` (headers 1, 3,
+  - `CASGCStateFormat`: `ConstructedStateEncodesHeaderFour`; `DecodedGenerationIsKeptByTheEncoder` (headers 1, 3,
     4); `ReadCeilingThreeRejectsHeaderFour` (text of §7.5, second row).
-  - `CASGcRound.LeaseAndCommitKeepTheGcStateGeneration`: a seeded header-1 `gc/state` is still header 1 after a
+  - `CASGCRound.LeaseAndCommitKeepTheGcStateGeneration`: a seeded header-1 `gc/state` is still header 1 after a
     renew and a committed round; an absent `gc/state` is created with header 4.
-  - `CASRecordStreamFormat`: `IntentRowRoundTripsAtHeaderFour`; `IntentKeyBelowHeaderFourIsCorrupted`;
+  - `CASRecordStream`: `IntentRowRoundTripsAtHeaderFour`; `IntentKeyBelowHeaderFourIsCorrupted`;
     `MissingIntentAtHeaderFourIsCorrupted`; `IntentWithoutPendingIsCorrupted`;
     `IntentOnANonCondemnedRecordIsCorrupted`; `HeaderBelowFourReadsIntentFalse`;
     `ReadCeilingThreeRejectsARunAtHeaderFour`; the split pair `WriterBelowHeaderFourRefusesAnIntentRow` and
-    `CASRecordStreamFormatDeathTest.WriterBelowHeaderFourRefusesAnIntentRow`.
+    `CASRecordStreamDeathTest.WriterBelowHeaderFourRefusesAnIntentRow`.
   - `CASBlobInDegree`: `PackedFlagFourRoundTrips`; `PackedFlagsAboveSevenAreCorrupted`;
     `PackedIntentWithoutPendingIsCorrupted`; `RunViewCarriesIntent`.
-  - `CASServerRootFormat`: `MountLeaseDeclaresProtocolGenerationFour`; `MountLeaseWithoutTheKeyDecodesZero`;
-    `EpochCarriesTheCriticalProtocolKey` (the encoded body contains `"!protocol_generation"`);
-    `EpochProtocolGenerationAboveTheCeilingIsRefused`.
+  - `CASMountLeaseFormat`: `ProtocolGenerationRoundTrips`; `BodyWithoutTheKeyDecodesZero`;
+    `ZeroEncodesNoKey`; `FencedCopyKeepsTheDeclaredGeneration` (0 stays 0, 4 stays 4).
+  - `CASServerEpochFormat`: `EpochCarriesTheCriticalProtocolKey` (the encoded body contains
+    `"!protocol_generation"`); `ProtocolGenerationAboveTheCeilingIsRefused`; `UnknownCriticalKeyFailsTheDecode`
+    (pin: a body with a key `!x` that this build does not know fails with the critical-key text of §7.5).
+  - `CASMount`: `HolderBodiesDeclareProtocolGenerationFour` (the slot after the claim, after one renew and after
+    the farewell); `GcFenceOverAnOlderSlotKeepsItsDeclaration` (a slot written without the key, then fenced by
+    the heartbeat-floor pass: the fenced body has no key).
+  - The other dialect in these tests is an argument: `switchToBlobIntents(op, layout, Dialect::ETag)` on an
+    `InMemoryBackend`. No second backend is needed in this task.
 - [ ] **Step 2: Run red.** Add the fields and the constructor parameter first; encoders and decoders unchanged.
-  Filter `CASPoolMeta*:CASGcStateFormat*:CASRecordStreamFormat*:CASBlobInDegree*:CASServerRootFormat*:CASBlobIntentDialect*`.
+  Filter `CASPoolMeta*:CASGCStateFormat*:CASGCRound*:CASRecordStream*:CASBlobInDegree*:CASMountLeaseFormat*:CASServerEpochFormat*:CASMount.*:CASBlobIntentDialect*`.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t2_pre`). Existing tests that pin generation 3 (62 lines
-  in 24 files; find them with
-  `grep -n 'min_reader_generation\|G_BUILD\|mount_reader_floor\|G_REF_CHAIN\|ScopedReadCeiling' $T/gtest_cas_*.cpp $T/cas_*.h`)
-  and tests that pin `gc/state` header bytes: replace the literal by the named constant or by 4; do not change
-  what the test proves. List each in the report. Any other red test is a stop.
-- [ ] **Step 5: Two mutants,** tags `t2_m1`, `t2_m2`: (1) `encodeGcState` writes `G_BLOB_INTENTS` always: expect
-  `DecodedGenerationIsKeptByTheEncoder` and `LeaseAndCommitKeepTheGcStateGeneration` to fail; (2) `toRetiredEntry`
-  drops `intent`: expect `RunViewCarriesIntent` or a round-trip test to fail. If (2) passes, add the missing
-  carrier test first.
-- [ ] **Step 6: Commit,** then the gate. Subject: `Add generation 4 control fields for CAS blob intents`
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t2_pre`). Existing tests that pin generation 3: 127
+  lines in 26 files; find them with
+  `grep -n 'min_reader_generation\|G_BUILD\|mount_reader_floor\|G_REF_CHAIN\|ScopedReadCeiling' $T/gtest_cas_*.cpp $T/cas_*.h`.
+  - A literal 3 that means "this build" or "the mount floor", and a pinned `gc/state` header byte: replace it by
+    the named constant or by 4.
+  - `ScopedReadCeiling c(3)`, 51 scopes: a no-op today (`G_BUILD` is 3, `CA/Formats/CasFormat.h:16`) and a
+    lowered ceiling under `G_BUILD = 4`. A test that opens a floor-4 pool or decodes a header-4 object inside
+    one is then refused (`CASGCRebuild.RebuildFollowsASkippedEpoch`, `T/gtest_cas_gc_rebuild.cpp:758`). Drop
+    the scope, or pass `G_BUILD`, unless the test means an older reader.
+  - `ScopedReadCeiling c(2)` scopes mean an older reader: leave them.
+
+  Do not change what a test proves. List each edit in the report. Any other red test is a stop.
+- [ ] **Step 5: Three mutants,** tags `t2_m1` to `t2_m3`: (1) `encodeGcState` writes `G_BLOB_INTENTS` always:
+  expect `DecodedGenerationIsKeptByTheEncoder` and `LeaseAndCommitKeepTheGcStateGeneration` to fail;
+  (2) `toRetiredEntry` drops `intent`: expect `RunViewCarriesIntent` or a round-trip test to fail. If (2)
+  passes, add the missing carrier test first; (3) `fencedCopy` sets `protocol_generation = G_BLOB_INTENTS`:
+  expect `FencedCopyKeepsTheDeclaredGeneration` and `GcFenceOverAnOlderSlotKeepsItsDeclaration` to fail.
+- [ ] **Step 6:** Run the filter of Step 2 plus `CASRecordStreamDeathTest*` on `build_asan` (tag `t2_asan`).
+- [ ] **Step 7: Commit,** then the gate. Subject: `Add generation 4 control fields for CAS blob intents`
 
 ### Task 3: Intent object and key class {#task-3}
 
@@ -515,13 +572,13 @@ Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §2.1. Nothing creates an
   `classifyCasNs` unchanged). Filter `CASBlobIntentKey*:CASBlobIntentFormat*:CASObservability*`.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t3_pre`). No existing test changes.
-- [ ] **Step 5: Commit,** then the gate. Subject:
+- [ ] **Step 5: Commit,** then the gate and the ASan milestone. Subject:
   `Add the CAS blob intent object, its key layout and request class`
 
 ### Task 4: Shared S3 code: an optional content type on write, copy and `HEAD` {#task-4}
 
 Implementer `ca-surgeon`. Reviewer `ca-review`. Read §6.2 ("Plumbing" rows 6 to 9). This task holds no CAS
-logic and no CAS name. It is rows 1 to 5 of [Shared code changes](#shared-code) and nothing else.
+logic and no CAS name. It is rows 1 to 5 and 9 of [Shared code changes](#shared-code) and nothing else.
 
 **Files:**
 - Modify: `src/IO/WriteSettings.h:105` (new field after it); `src/IO/WriteBufferFromS3.cpp:442`, `:775`
@@ -529,7 +586,12 @@ logic and no CAS name. It is rows 1 to 5 of [Shared code changes](#shared-code) 
   parameter into the copy helper); `S3:1122-1137`
 - Modify: `src/IO/S3/getObjectInfo.h:14-23`, `src/IO/S3/getObjectInfo.cpp:87-93`;
   `src/Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h:128-142`; `S3:968-975`, `:1009-1014`
-- Test: `src/Disks/tests/gtest_s3_object_creation_requests.cpp` (the wire-level harness of that file)
+- Modify (test-only): `src/IO/S3/tests/CountingS3Server.h:85-94` (`Request` gains
+  `Poco::Net::NameValueCollection headers`, filled where the handler builds the request, `:116-121`),
+  `:270-345` (`ObjectStore` keeps the `Content-Type` of a `PutObject` per key and sends it on `HeadObject`;
+  an object seeded into the store without a type sends no header)
+- Test: `T/gtest_s3_object_creation_requests.cpp`, over `T/S3ObjectCreationTestStorage.h` and the
+  `CountingS3Server` above
 
 **Interfaces:**
 - Produces:
@@ -547,13 +609,16 @@ logic and no CAS name. It is rows 1 to 5 of [Shared code changes](#shared-code) 
 - Rules: the four requests that define an object's type use the field: `PutObject` (`WriteBufferFromS3.cpp:775`),
   `CreateMultipartUpload` (`:442`), `CopyObject` (`copyS3File.cpp:748`), the multipart-copy create (`:148`).
   `UploadPart` (`WriteBufferFromS3.cpp:546`, `copyS3File.cpp:596`) and the buffered-copy `PutObject`
-  (`copyS3File.cpp:506`) keep `binary/octet-stream`. The copy keeps the default metadata directive: no
+  (`copyS3File.cpp:506`) keep `binary/octet-stream`. The multipart create at `:148` is in the upload helper
+  that `copyDataToS3File` shares (`:439-454`, `:908`): that caller passes `{}`, so its bytes do not change.
+  The copy keeps the default metadata directive: no
   `object_metadata` is added. `copyS3FileRange` and every other caller of `copyS3File`
   (`src/Backups/BackupIO_S3.cpp:506`, `:656`, `:702`, `S3:1043`,
   `src/Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.cpp:367`) are not edited.
 
 - [ ] **Step 1: Write the failing tests,** suite `S3ObjectContentType`, each asserting the `Content-Type` header of
-  the recorded wire request:
+  the recorded wire request (`Request::headers`). Extend `CountingS3Server` first; its existing users must
+  build and pass unchanged:
   - `DefaultWriteKeepsBinaryOctetStream`, `DefaultCopyKeepsBinaryOctetStream`, `UploadPartKeepsBinaryOctetStream`
     (pins).
   - `PutObjectCarriesTheSetType`, `MultipartCreateCarriesTheSetType`, `CopyObjectCarriesTheSetType`,
@@ -565,7 +630,8 @@ logic and no CAS name. It is rows 1 to 5 of [Shared code changes](#shared-code) 
 - [ ] **Step 4: Run green,** then `--gtest_filter='S3*:WBS3*'` on `build` and `build_asan` (tag `t4_s3`), then
   `CAS*` on `build` (tag `t4_pre`). No existing test changes.
 - [ ] **Step 5: Commit,** then the gate. The body says: one optional field, default bytes unchanged, pinned by
-  three tests. Subject: `Let an S3 write, copy and HEAD carry an object content type`
+  three tests; the test server records headers. Subject:
+  `Let an S3 write, copy and HEAD carry an object content type`
 
 ### Task 5: Backend mark and the mark probe {#task-5}
 
@@ -580,9 +646,15 @@ publication can set it; every publication still passes `marked = false`.
 - Modify: `CA/Backend/CasInMemoryBackend.h:205` (`Object`), `CA/Backend/CasInMemoryBackend.cpp:99-109`, `:194-240`
 - Modify: `CA/Backend/CasInstrumentedBackend.h`, `CA/Backend/CasThrottlingBackend.h` (forward the predicate)
 - Modify: `CA/Backend/CasProbe.h`, `CA/Backend/CasProbe.cpp` (new function after `runCapabilityProbe`, `:47`)
-- Test: create `T/gtest_cas_blob_mark.cpp`; modify the test backends that derive from `Backend` directly
-  (`T/gtest_cas_decommission.cpp:973`, `T/gtest_cas_part_write.cpp:186`, `:232`, `:983`, `:1077`, `:1672`) and the
-  generation fakes (`T/gtest_cas_backend_generation.cpp:101`, `:429`)
+- Test: create `T/gtest_cas_blob_mark.cpp` and `T/cas_blob_mark_test_support.h` (`MarkLiarBackend`: an
+  `InMemoryBackend` whose `HEAD` misreports the mark, or returns a token outside the grammar, for the one
+  probe row it is given; Tasks 6, 12 and 13 use it); modify the ten test backends that derive from `Backend` directly
+  (`T/gtest_cas_decommission.cpp:973`; `T/gtest_cas_part_write.cpp:186`, `:232`, `:983`, `:1077`, `:1672`;
+  `T/gtest_cas_pool.cpp:73` `WriteCountingBackend`, `:250` `ProbeWatchingBackend`, `:338` `ForwardingBackend`,
+  `:1510` `FenceInAdoptWindowBackend`) and the generation fakes (`T/gtest_cas_backend_generation.cpp:101`,
+  `:429`). The native tests run an `ObjectStorageBackend` over the `S3ObjectStorage` of
+  `T/S3ObjectCreationTestStorage.h` against `CountingS3Server` (`src/IO/S3/tests/CountingS3Server.h`, with the
+  headers Task 4 added)
 
 **Interfaces:**
 - Consumes (Task 4): `WriteSettings::object_storage_content_type`, `ObjectMetadata::content_type`. (Task 1):
@@ -618,6 +690,9 @@ publication can set it; every publication still passes `marked = false`.
     ([settled](#settled), S1). `emuPublishBlobAtomically` sets or clears it on the temporary file with
     `std::filesystem::permissions` after `out->finalize` and before the rename (`B:560`). `headUnder` reads it
     from `std::filesystem::status` of the resolved path, under `emu_mutex`. No other write path sets it.
+    The emulated `HEAD` is then three file-system reads under one lock (size `B:740`, token `B:748`, mode), not
+    one response; `emu_mutex` excludes only this process. Say so in the comment at the read and in the report.
+    The writer's second `HEAD` reads all three again before it adopts.
   - In-memory: `Object::marked`. A streaming publication and a verbatim copy both store `request.marked`
     ([Spec questions](#spec-questions), Q5); `write` stores `false`.
   - `supportsVerbatimStagedPublication`: `ObjectStorageBackend`: native mode and
@@ -633,10 +708,10 @@ publication can set it; every publication still passes `marked = false`.
   - `CASBlobMark`: `InMemoryPublishSetsAndClearsTheMark`; `InMemoryUnmarkedPublishOverAMarkedObjectReadsUnmarked`;
     `InMemoryCopyTakesTheMarkOfTheRequest`; `PlainWriteIsNeverMarked`; `EmulatedLocalMarkIsTheOwnerExecuteBit`
     (publish marked, then `stat`: mode `& 0100`); `EmulatedLocalRenameReplacesTheMark`;
-    `EmulatedLocalObjectWrittenAnyOtherWayIsUnmarked`; `NativeHeadTakesTokenSizeAndMarkFromOneResponse` (the S3
-    fake records one `HeadObject`); `NativePublishSendsTheMarkTypeOnPutAndOnCopy`;
+    `EmulatedLocalObjectWrittenAnyOtherWayIsUnmarked`; `NativeHeadTakesTokenSizeAndMarkFromOneResponse` (the
+    server records one `HeadObject`); `NativePublishSendsTheMarkTypeOnPutAndOnCopy`;
     `NativeUnmarkedPublishSendsBinaryOctetStream`; `AnyOtherContentTypeIsUnmarked`.
-  - `CASBlobMarkProbe`, with a file-local `MarkLiarBackend` that fails one row: `PassesOnTheInMemoryBackend`;
+  - `CASBlobMarkProbe`, with `MarkLiarBackend`, which fails one row: `PassesOnTheInMemoryBackend`;
     `P1LostMarkIsAPreservationFailure`; `P2FalseMarkIsFalsePresence`; `P3KeptMarkIsFalsePresence`;
     `P4LostMarkOnCopyIsAPreservationFailure`; `P5FalseMarkOnCopyIsFalsePresence`;
     `P6KeptMarkOnCopyIsFalsePresence`; `P7UncanonicalTokenIsATokenFormFailure`;
@@ -646,7 +721,8 @@ publication can set it; every publication still passes `marked = false`.
   `CASBlobMark*`.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t5_pre`). Existing tests change only by the new pure
-  virtual (the listed test backends) and by brace initialisers of `RawMeta`, `Meta` or `BlobPublishRequest`.
+  virtual (the listed test backends; a compile error names any that the list misses) and by brace
+  initialisers of `RawMeta`, `Meta` or `BlobPublishRequest`.
 - [ ] **Step 5: One mutant,** tag `t5_m1`: `nativeHead` compares the content type by prefix. Expected:
   `AnyOtherContentTypeIsUnmarked` fails.
 - [ ] **Step 6: Commit,** then the gate. Subject: `Carry the CAS blob mark through publish and HEAD, and probe it`
@@ -657,37 +733,46 @@ Implementer `ca-impl`. Reviewer `ca-review`. Read §3.1, §6.1 ("The dialect rul
 probe table), §7.5, §7.7. No pool is switched in production yet; the rules are exercised on seeded pools.
 
 **Files:**
-- Modify: `CA/Pool/CasPool.h` (members near `:790`, `:837`), `CA/Pool/CasPool.cpp:297` (`refreshAdmittedAlgos` is
-  the model of an exact re-read), `:526-560` (the probe call and the skip branch), `:583-611` (rules between
-  `createOrValidate` and `mountWritable`), `:1745` (`renewWatermarkOnce`)
-- Modify: `Cas::listMounts` and `Cas::MountInfo` (locate by symbol; used at
-  `src/Storages/System/StorageSystemContentAddressedMounts.cpp:185`): `MountInfo::protocol_generation`
-- Modify: `src/Storages/System/StorageSystemContentAddressedMounts.cpp:40-63` and the row fill
+- Modify: `CA/Pool/CasPool.h` (members near `:790`, `:837`), `CA/Pool/CasPool.cpp:282` (the runtime is built
+  with the new callback), `:297` (`refreshAdmittedAlgos` is the model of an exact re-read), `:526-560` (the
+  probe call and the skip branch), `:583-611` (rules between `createOrValidate` and `mountWritable`)
+- Modify: `CA/Pool/CasMountRuntime.h:165-177` (constructor), `CA/Pool/CasMountRuntime.cpp:65-74`, `:626-664`
+  (`renewRenewerOnce`: the callback after a committed renew)
+- Modify: `src/Storages/System/StorageSystemContentAddressedMounts.cpp:40-63` and the row fill (`:185`)
 - Test: create `T/gtest_cas_blob_intent_learning.cpp`
 
 **Interfaces:**
 - Consumes (Task 2): `PoolMeta::switched`, `token_dialect`, `created_generation`,
-  `MountLease::protocol_generation`. (Task 3): `Layout::maxPoolPrefixBytesForBlobIntents`. (Task 5):
-  `runBlobMarkProbe`, `BlobMarkProbeResult`.
-- Produces, in `CA/Pool/CasPool.h`:
+  `MountLease::protocol_generation`, which `Cas::listMounts` already returns in `MountInfo::lease`
+  (`CA/Pool/CasServerRoot.h:512-524`; that file is not edited). (Task 3):
+  `Layout::maxPoolPrefixBytesForBlobIntents`. (Task 5): `runBlobMarkProbe`, `BlobMarkProbeResult`,
+  `MarkLiarBackend` (`T/cas_blob_mark_test_support.h`). Existing: `Retry::once` (`CA/Backend/CasRetry.h`),
+  `MountRenewOutcome::Committed` (`CA/Pool/CasServerRoot.h:44`).
+- Produces:
 
   ```cpp
-  static constexpr uint64_t blob_intents_reread_ms = 60'000;               /// renewer re-read while not learned
+  /// CA/Pool/CasPool.h
+  static constexpr uint64_t blob_intents_reread_ms = 60'000;               /// renewer re-read while not switched
   static constexpr uint64_t blob_intents_marked_body_reread_ms = 10'000;   /// re-read asked by a writer
   bool blobIntentsLearned() const noexcept;        /// monotone: once true, never false, never re-read
   /// The one rule of "learned", applied to a `_pool_meta` this mount read itself. Returns the new state.
   bool applyBlobIntentsObservation(const PoolMeta & observed);
-  bool refreshBlobIntentsLearning();               /// one exact GET of `_pool_meta`, then the rule
+  /// One exact GET of `_pool_meta`, then the rule. Throws what the read throws.
+  bool refreshBlobIntentsLearning(const Retry & policy = Retry::standard());
   void noteMarkedBodyWhileNotLearned();            /// at most one re-read per 10 s
   BlobMarkProbeResult blobMarkProbe() const;
   BlobProtocol observedBlobProtocol() const;       /// the last value this mount read
+  /// CA/Pool/CasMountRuntime.h: one more constructor parameter, after `remount_attempt_`.
+  /// Called on the renewing thread after each renew that ended `Committed`, from the background worker and
+  /// from `renewWatermarkOnce`, without `driver_mutex`. Never throws.
+  std::function<void()> after_renew_committed_
   ```
 
 - Rules the signatures do not state:
   - `created` below means `observed.created_generation == 4`. Learned iff `observed.switched()` and
-    `*observed.token_dialect == backend dialect` and (`probe == Ok`, or `created` and the probe is `Skipped`,
-    `FalsePresence` or `FailedTokenForm`). A skipped probe on a `created` pool is stored as `Assumed`
-    ([settled](#settled), S2).
+    `*observed.token_dialect == backend dialect` and (`probe == Ok`, or `created` and the probe is `Skipped` or
+    `FalsePresence`). A skipped probe on a `created` pool is stored as `Assumed`. A token-form failure never
+    learns, on any pool.
   - Probe: `runBlobMarkProbe` runs right after `runCapabilityProbe` (`CA/Pool/CasPool.cpp:546`), with the same
     per-mount prefix. Under `skip_access_check` (`:550`) the result is `Skipped`. A read-only open runs no probe.
   - Writable `Pool::open`, on the `_pool_meta` that `createOrValidate` returned (`:583-588`), before
@@ -697,44 +782,73 @@ probe table), §7.5, §7.7. No pool is switched in production yet; the rules are
     |---|---|---|
     | switched | recorded dialect differs | `BAD_ARGUMENTS`, the dialect text of §7.5 |
     | switched | prefix over 668 bytes | `BAD_ARGUMENTS`, the prefix text of §7.5 |
+    | switched | probe `Ok` | mounts, learned, one log line |
     | switched, not `created` | probe `FalsePresence` | `NOT_IMPLEMENTED`, the false-presence text of §7.5 |
-    | switched | probe `FailedPreservation`; or not `created` and `FailedTokenForm` or `Skipped` | mounts, not learned, WARNING naming the step |
-    | switched, `created` | probe `FalsePresence` or `FailedTokenForm` | mounts, learned, WARNING |
+    | switched | probe `FailedPreservation` or `FailedTokenForm`; or not `created` and `Skipped` | mounts, not learned, WARNING naming the step |
+    | switched, `created` | probe `FalsePresence` | mounts, learned, WARNING |
     | switched, `created` | probe `Skipped` | mounts, learned, one INFO line, `Assumed` |
     | not switched | — | mounts, not learned |
 
-  - Read points: the mount; while the pool was not switched at the last read, a re-read inside
-    `renewWatermarkOnce` when 60 s passed since the last one (the mount's boot clock);
-    `noteMarkedBodyWhileNotLearned`. A failed or undecodable read leaves the state and the next point retries. A
-    read that shows another dialect: not learned for the life of the mount, one ERROR with the dialect text, no
-    further re-read.
+  - Read points: the mount; the renewer; `noteMarkedBodyWhileNotLearned`. A failed or undecodable read leaves
+    the state and the next point retries. A read that shows another dialect: not learned for the life of the
+    mount, one ERROR with the dialect text, no further re-read.
+  - **The renewer re-read runs on the production path.** `Pool` passes the callback when it builds
+    `mount_runtime`; `CasMountRuntime::renewRenewerOnce` calls it after `consumeRenewResult` when the result is
+    `Committed` and the call is the worker's or the direct one (not the startup and remount re-anchors). So
+    `renewalLoop` (`CA/Pool/CasMountRuntime.cpp:760`) and `renewWatermarkOnce` (`:251`) both run it.
+    `Pool::renewWatermarkOnce` (`CA/Pool/CasPool.cpp:1745`) gets no re-read of its own.
+  - The callback: nothing while the last read showed the switch, the dialect latch is set, or less than 60 s
+    passed on the mount's boot clock since the last read or attempt. Otherwise one
+    `refreshBlobIntentsLearning` with `Retry::once` and a window of half `mount_renew_period`. It catches
+    every exception, logs it once per mount at WARNING, and returns: a failed read never fails a renew, is not
+    retried before the next 60 s, and adds no wait to the renewal loop.
   - A read-only open applies no rule and is not refused on another dialect.
-  - `system.cas_mounts`: `protocol_generation` (`UInt64`, per slot, 0 for an older body), `blob_protocol`
-    (`String`, `markers` or `intents`, this server's last read), `blob_mark_probe` (`Nullable(String)`,
-    `BlobMarkProbeResult::text`, filled for this server's own slot).
+  - `system.cas_mounts`: `protocol_generation` (`UInt64`, per slot, from `MountInfo::lease.protocol_generation`,
+    0 for an older body), `blob_protocol` (`String`, `markers` or `intents`, this server's last read),
+    `blob_mark_probe` (`Nullable(String)`, `BlobMarkProbeResult::text`, filled for this server's own slot).
   - Log: one line when a mount learns, one when it assumes the mark.
 
 - [ ] **Step 1: Write the failing tests.** Pools are seeded by hand: `encodePoolMeta` of a `PoolMeta` with the
-  wanted fields, written with `op.create`, plus `CasRefCatalog::initializeEmptyForNewPool`.
+  wanted fields, written with `op.create`, plus `CasRefCatalog::initializeEmptyForNewPool`. A pool "switched in
+  another dialect" is a hand-written `_pool_meta` with `token_dialect = etag` under an `InMemoryBackend`
+  (`emulated`); no second backend is needed. An unswitched pool has no `created_generation`.
   - `CASBlobIntentDialect.MountOfASwitchedPoolIsRefused`; `CASBlobIntentDialect.LearningStaysNotLearned` (mounted
     before the switch, switched in another dialect: one ERROR, the second refresh sends no request).
   - `CASBlobIntentLearning`: `UnswitchedPoolIsNotLearned`; `SwitchSeenAtMountLearns`;
-    `RenewerRereadsAfterSixtySecondsUntilLearned` (`FakeClock`: no `_pool_meta` `GET` before 60 s, one after, none
-    once learned); `MarkedBodyTriggerIsLimitedToOncePerTenSeconds`; `LearnedIsNeverUnlearned`;
-    `FailedReadLeavesNotLearnedAndTheNextPointRetries`; `UndecodableMetaLeavesNotLearned`;
-    `SkippedProbeOnAnUpgradedPoolNeverLearns`; `FalsePresenceFailsTheMountOfASwitchedUpgradedPool`;
-    `LostMarkMountsUnlearnedWithAWarning`; `TokenFormFailureOnAnUpgradedPoolMountsUnlearned`;
-    `TokenFormFailureOnAPoolCreatedByThisBuildWarnsAndLearns`; `LongPrefixRefusesTheMountOfASwitchedPoolOnly`;
+    `RenewerRereadsAfterSixtySecondsUntilLearned`; `DirectRenewAlsoRereads`;
+    `FailedRenewerRereadLeavesTheRenewCommitted`; `MarkedBodyTriggerIsLimitedToOncePerTenSeconds`;
+    `LearnedIsNeverUnlearned`; `FailedReadLeavesNotLearnedAndTheNextPointRetries`;
+    `UndecodableMetaLeavesNotLearned`; `SkippedProbeOnAnUpgradedPoolNeverLearns`;
+    `FalsePresenceFailsTheMountOfASwitchedUpgradedPool`; `LostMarkMountsUnlearnedWithAWarning`;
+    `TokenFormFailureOnAnUpgradedPoolMountsUnlearned`;
+    `TokenFormFailureOnAPoolCreatedByThisBuildMountsUnlearned`; `LongPrefixRefusesTheMountOfASwitchedPoolOnly`;
     `ReadOnlyOpenIsNotRefusedOnAnotherDialect`.
+  - `RenewerRereadsAfterSixtySecondsUntilLearned` runs the background worker, never
+    `Pool::renewWatermarkOnce`: `background_watermark = true`, `mount_renew_period` of 50 ms,
+    `mount_lease_ttl_ms` of 10 minutes, the boot clock a `FakeClock` through `PoolConfig::boot_ms_fn` and
+    `wait_sleep_fn` (the form of `T/gtest_cas_pool.cpp:3060-3085`). The test advances the clock in steps of
+    1 s and waits, bounded, for the mount-slot write of each renew on a counting backend. Before 60 s: several
+    committed renews and no `_pool_meta` `GET`. Past 60 s: exactly one `GET` after the next renew. The pool is
+    then switched by hand: the next due re-read learns, and no `GET` follows.
+  - `FailedRenewerRereadLeavesTheRenewCommitted`: the `_pool_meta` `GET` throws. The renew of that tick is
+    committed, the next renew is sent on its period, and no second `GET` is sent before another 60 s.
   - `CASBlobIntentNewPool.SkippedProbeMountLearnsOnAPoolCreatedByThisBuild` and
     `.FalsePresenceWarnsAndTheMountLearns` (both on a pool seeded switched with `created_generation = 4`).
-- [ ] **Step 2: Run red.** Add the members with `blobIntentsLearned` always false and no rule in `open`.
+- [ ] **Step 2: Run red.** Add the members with `blobIntentsLearned` always false, the callback parameter
+  unused, and no rule in `open`.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t6_pre`). No existing test changes: every existing pool
-  is unswitched.
-- [ ] **Step 5: One mutant,** tag `t6_m1`: the rule drops the dialect comparison. Expected:
-  `CASBlobIntentDialect.LearningStaysNotLearned` fails.
-- [ ] **Step 6: Commit,** then the gate. Subject:
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t6_pre`). Existing tests change in one way only: a
+  writable `Pool::open` without `skip_access_check` now sends the probe's requests (the publications, `HEAD`s
+  and deletes of P1 to P7 under `_probe/`; on the in-memory backend the copy rows run too). A test that counts
+  the requests of an open moves by exactly that; list each in the report. No test changes for a learning
+  reason: every existing pool is unswitched.
+- [ ] **Step 5: Two mutants,** tags `t6_m1`, `t6_m2`: (1) the rule drops the dialect comparison: expect
+  `CASBlobIntentDialect.LearningStaysNotLearned` to fail; (2) the re-read is called from
+  `Pool::renewWatermarkOnce` instead of the runtime callback: expect
+  `RenewerRereadsAfterSixtySecondsUntilLearned` to fail while `DirectRenewAlsoRereads` passes.
+- [ ] **Step 6:** Run `CASBlobIntentLearning*:CASBlobIntentDialect*:CASBlobIntentNewPool*:CASMount*` on
+  `build_asan` (tag `t6_asan`): the worker test runs a background thread.
+- [ ] **Step 7: Commit,** then the gate. Subject:
   `Learn the CAS blob intent switch per mount and show it in cas_mounts`
 
 ### Task 7: Publication: the mark bit and the payload hash check {#task-7}
@@ -750,8 +864,10 @@ hash check is active for every pool from this task on; the mark bit is false eve
 - Modify: `CA/Backend/CasBackend.h:54-59` (`StreamingBlobPublication`), `:86-110` (the bounded copy);
   `B:505-560`, `:902-952`; `CA/Backend/CasInMemoryBackend.cpp:194-232`; `CA/Backend/CasProbe.cpp` (the probe
   publishes with a matching ref); `src/Common/ProfileEvents.cpp` (`CASBlobPublishDigestMismatch`)
-- Test: create `T/gtest_cas_blob_publish_digest.cpp`; modify `T/gtest_cas_s3_staging.cpp`; the test backends that
-  implement `publish` themselves build with the new field (`grep -n 'void publish(const' $T/*.cpp`: 12 sites)
+- Test: create `T/gtest_cas_blob_publish_digest.cpp`, `T/gtest_cas_blob_intent_writer.cpp`; modify
+  `T/gtest_cas_s3_staging.cpp` (`FakeNativeCopyObjectStorage`, `:91-130`); the test backends that implement
+  `publish` themselves build with the new field (`grep -n 'void publish(const' $T/*.cpp $T/*.h`: 19 sites in
+  10 `.cpp` files and one in `T/cas_test_helpers.h:1941`)
 
 **Interfaces:**
 - Consumes (Task 5): `BlobPublishRequest::marked`, `kBlobMarkContentType`. (Task 6): `Pool::blobIntentsLearned`.
@@ -795,10 +911,20 @@ hash check is active for every pool from this task on; the mark bit is false eve
     payload of equal length after staging); `S3StagedRestreamIsVerified` (on `EtagFaithfulPublicationBackend`,
     a second publication of an S3-staged blob streams and is checked); `MatchingPayloadPublishes` (pin);
     `VerbatimCopyIsNotHashed` (pin: a copy sends no payload read).
-  - `CASBlobIntentWriter.MarkBitIsSharedByHardlinkCopies`: two parts over one staged blob on a learned mount
-    (seeded switched pool): both publications carry `marked = true`; staged on a mount that is not learned: both
-    `false`, also when the mount learns before the upload.
+  - `CASBlobIntentWriter.MarkBitIsSharedByHardlinkCopies`: two parts over one staged blob on a learned mount:
+    both publications carry `marked = true`; staged on a mount that is not learned: both `false`, also when the
+    mount learns before the upload. The fixtures of Task 8 do not exist yet, so the pools are seeded as Task 6
+    seeds them. Learned: a hand-written `_pool_meta` with `blob_protocol = intents`, `token_dialect = emulated`
+    and `created_generation = 4`, plus the empty catalog, then `Pool::open` on an `InMemoryBackend` (the probe
+    passes); assert `blobIntentsLearned`. Learns later: a pool without `created_generation`, opened unswitched;
+    after staging, the test replaces `_pool_meta` with the switched body and calls
+    `refreshBlobIntentsLearning`. The test asserts the `marked` field of the publish requests a recording
+    backend saw, not the writer's request sequence.
   - `CASS3Staging.StagingObjectCarriesTheMarkType` (the staging `writeObject` got the content type iff learned).
+    `FakeNativeCopyObjectStorage` is a `LocalObjectStorage` and drops the type, so P1 of the probe would fail
+    and the mount would never learn. Extend the fake: it keeps `WriteSettings::object_storage_content_type` per
+    path on `writeObject`, gives a copy destination the type of its source, and reports it as
+    `ObjectMetadata::content_type`.
 - [ ] **Step 2: Run red.** Add the fields and the parameter; no check, `marked` never set.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t7_pre`). Existing tests that publish a payload under a
@@ -848,60 +974,138 @@ existing test stays green before and after: today every pool is unswitched, so p
   std::vector<String> ProtocolJournalBackend::journal() const;
   std::vector<String> ProtocolJournalBackend::journalFor(std::string_view key_substring) const;
   void ProtocolJournalBackend::clearJournal();
+  /// A second client of one store that speaks another token dialect: forwards every call to `inner` and
+  /// overrides `dialect` only. Tokens keep the inner backend's values.
+  class DialectOverrideBackend;      /// DialectOverrideBackend(BackendPtr inner, Dialect dialect)
   ```
 
-- Rule: `seedUpgradedPoolForTest` encodes its `PoolMeta` by hand and writes it with `op.create`; no product
-  function gains a test parameter.
+- Rules:
+  - `seedUpgradedPoolForTest` encodes its `PoolMeta` by hand and writes it with `op.create`; no product
+    function gains a test parameter.
+  - `PoolMeta::createOrValidate` returns an existing `_pool_meta` unchanged and `Pool::open` then takes
+    `gc_shards` from it (`CA/Pool/CasPool.cpp:588`). So a seed with the default `gc_shards = 1` silently
+    turns a sharded test into an unsharded one, and the pass count cannot show it. Every pin passes the
+    test's own prefix and `gc_shards`.
 
 - [ ] **Step 1: Write the tests** (`CASBlobIntentFixtures`): `UpgradedSeedMountsUnswitchedAtFloorFour`;
   `UpgradedSeedHasNoCreatedGeneration`; `SwitchedPoolIsLearned`; `RawPublicationReadsMarkedOrUnmarked`;
-  `JournalRecordsEachVerbInOrder`. Red: the header does not exist; add it with stubs that throw.
+  `JournalRecordsEachVerbInOrder`; `UpgradedSeedKeepsTheShardCountOfTheTest` (seeded with `gc_shards = 4`:
+  the opened pool reports 4); `DialectOverrideChangesOnlyTheDialect`. Red: the header does not exist; add it
+  with stubs that throw.
 - [ ] **Step 2: Implement the fixtures.** Run green.
 - [ ] **Step 3: Pin the marker-mode suites.** In each file of the list, the pool setup calls
-  `seedUpgradedPoolForTest(*backend, <prefix>)` before `Pool::open`. A fixture that calls
-  `seedPoolMetaForRestart` (`T/cas_test_helpers.h:1082`) calls the new function instead. Write the list of pinned
-  tests, by file and count, into the report.
-- [ ] **Step 4:** `CAS*` on `build` (tag `t8_pre`): the same pass count as before the task plus the five new
+  `seedUpgradedPoolForTest(*backend, config.pool_prefix, config.gc_shards)` before `Pool::open`, with the
+  values of the `PoolConfig` that the open gets. A fixture that calls `seedPoolMetaForRestart`
+  (`T/cas_test_helpers.h:1082`) calls the new function instead, with the same arguments. Fixtures that set
+  `gc_shards` above 1 today: `T/gtest_cas_gc_round.cpp:723`, `:1188`, `:1915`;
+  `T/gtest_cas_gc_redelete_concurrency.cpp:184-191`; `T/gtest_cas_gc_read_ahead.cpp:1008`; find the rest with
+  `grep -n 'gc_shards' <file>`. Write into the report, per pinned fixture: the file, the count of tests, and
+  that `store->poolConfig().gc_shards` after the open equals the configured value.
+- [ ] **Step 4:** `CAS*` on `build` (tag `t8_pre`): the same pass count as before the task plus the seven new
   tests. A test that turns red is a stop: the pin must be neutral.
-- [ ] **Step 5: Commit,** then the gate. Subject: `Add test fixtures for upgraded and switched CAS pools`
+- [ ] **Step 5: Commit,** then the gate and the ASan milestone. Subject:
+  `Add test fixtures for upgraded and switched CAS pools`
 
-### Task 9: GC intent mode {#task-9}
+### Task 9: GC: the per-round mode read, the dialect check, leaving GC {#task-9}
 
-Implementer `ca-surgeon`. Reviewer `ca-review`. Read §3.3 whole, §3.5, §3.6, §4, §7.6. After this task a round
-reads its mode from `_pool_meta`; on an unswitched pool it runs today's code plus that one read.
+Implementer `ca-surgeon`. Reviewer `ca-review`. Read §3.3 (G1, G10, "A mount with another dialect leaves GC"),
+§3.5, §3.6. After this task a round reads its mode from `_pool_meta`; on an unswitched pool it runs today's
+code plus that one read. On a switched pool the round stops after the read: the intent-mode fold is Task 10.
+Only test pools are switched, so no production round reaches that stop.
 
 **Files:**
-- Modify: `CA/Gc/CasGc.h` (`RedeleteIo` `:763-767`, new members), `G:541-556` (`removeChunkWriteOnceOrOneByOne`,
-  reused), `:583-595` (`performRedeleteIo`), `:597-641` (`applyRedeleteOutcome`), `:659-762` (`redeleteBlobs`),
-  `:765-793` (round start), `:1276-1283` (`meta_pool_wait`), `:2183-2229` (`head_blob`), `:2247-2254`
-  (`peek_head`), `:2264-2287` (the marker gate), `:3667-3700` (graduation hints), `:3727`, `:3772` (fold calls),
-  `:4488`, `:4660` (`rebuildBaseline`)
-- Modify: `CA/Gc/CasBlobInDegree.h:105-118` (`GraduationReadHints`), `:446-468` (fold signature); `N:431`,
-  `:520-583` (`settleEntry`), `:586-664` (`closeBlob`); `CA/Gc/CasGcShardPlan.cpp:57`
-- Modify: `CA/Gc/CasGcReadAhead.h:53-57`, `CA/Gc/CasGcReadAhead.cpp` (a create verb)
-- Modify: `CA/Gc/CasGcScheduler.cpp:358-366` (manual round), `:516-528` (heartbeat loop), the round loop;
-  `CA/Pool/CasPool.h` (the flag below); `src/Common/ProfileEvents.cpp` (nine counters)
+- Modify: `CA/Gc/CasGc.h` (new member), `G:765-793` (round start), `:4488`, `:4660` (`rebuildBaseline`)
+- Modify: `CA/Gc/CasGcScheduler.cpp:358-366` (manual round), `:516-528` (heartbeat loop), the round loop
+- Modify: `CA/Pool/CasPool.h`, `CA/Pool/CasPool.cpp` (the flag below)
 - Test: create `T/gtest_cas_gc_intents.cpp`; modify `T/gtest_cas_gc_round.cpp`, `T/gtest_cas_gc_read_ahead.cpp`,
   `T/gtest_cas_gc_log.cpp` (the one new request and phase per round)
 
 **Interfaces:**
-- Consumes (Task 1): `sameIncarnation`, `Etag::canonical`, `PersistedEtag::canonical`. (Task 2): `PoolMeta`
-  fields, `GcState::generation`, `RetiredEntry::intent`, the run header version. (Task 3):
-  `Layout::blobIntentKey`, `writeOnceBlobIntentKey`, `blobIntentRecord`, `isBlobIntentRecord`. (Task 5):
-  `Meta::marked`. (Task 8): the fixtures. Existing: `CasOperation::create` (`Q:1154`; a clean refusal is
-  `Conflict`, `Q:1118-1119`), `removeManyWriteOnce` (`Q:634`), `removeCurrent` (`Q:656`),
+- Consumes (Task 2): `BlobProtocol`, `PoolMeta` fields, `GcState::generation`. (Task 8): the fixtures,
+  `DialectOverrideBackend`. Existing: `Gc::acquireOrRenewLease` (`G:5185`), `decodePoolMeta`.
+- Produces:
+
+  ```cpp
+  /// CA/Gc/CasGc.h
+  /// One exact GET of `_pool_meta`, sent after the lease. Throws; never returns a default.
+  BlobProtocol Gc::readRoundBlobProtocol(CasOperation & op, const GcState & leased_state);
+  /// CA/Pool/CasPool.h
+  void markGcLeftForDialect(Dialect recorded, Dialect own);    /// once per mount; logs the ERROR of §3.3
+  bool gcLeftForDialect() const noexcept;
+  ```
+
+  The mode is the `BlobProtocol` of Task 2. No second enum names the same two values.
+- Rules the signatures do not state (G1 of §3.3 is the authority; these are the placements):
+  - **G1.** `runRegularRound` calls `readRoundBlobProtocol` right after the `lease` phase (`G:786-793`), in a new
+    phase `blob_protocol_mode` (metrics `intents` 0 or 1, `gc_state_generation`), before `on_lease_acquired` and
+    every other step. Outcomes: decoded without `blob_protocol`: `Markers`. `intents` with the backend's dialect:
+    `Intents`, and `leased_state.generation < 4` throws the `INVALID_STATE` text of §7.5. `intents` with another
+    dialect: `markGcLeftForDialect`, then `BAD_ARGUMENTS` with the dialect text. Absent: `INVALID_STATE`, `CAS pool
+    meta '<key>' is absent; the GC round cannot take its mode`. A refused or unanswered read, a decode failure:
+    the exception propagates. No `catch` on this path yields a mode. Nothing caches the mode across rounds.
+  - **Intent mode, in this task only.** A round whose read returned `Intents` throws `NOT_IMPLEMENTED`, `CAS gc:
+    intent mode needs the intent fold`, right after the phase, with no further request. Task 10 removes the
+    throw. Marker mode is today's code.
+  - **Leaving GC.** When `gcLeftForDialect`: the scheduler loop starts no round and sends no heartbeat
+    (`CA/Gc/CasGcScheduler.cpp:516-528`); `runOneRoundNow` (`:358-366`) and `Gc::rebuildBaseline` throw
+    `BAD_ARGUMENTS` with the dialect text before any `gc/state` request. `rebuildBaseline` also makes the G1
+    dialect check on its own `_pool_meta` read before its lease (`G:4660`), and never lowers `blob_protocol`.
+    The flag lives on `Pool`: it outlives a `Gc` object.
+
+- [ ] **Step 1: Write the failing tests** in `T/gtest_cas_gc_intents.cpp`, over a `ProtocolJournalBackend`.
+  - `CASGcIntentsMode`: `ModeIsReadAfterTheLeaseInEveryRound` (an upgraded pool: in each of three rounds the
+    `_pool_meta` `GET` follows the `gc/state` write and precedes every other request);
+    `AbsentPoolMetaFailsTheRound`; `FailedPoolMetaReadFailsTheRound`; `UnknownProtocolWordFailsTheRound`;
+    `IntentModeBelowGenerationFourFails` (a switched pool whose `gc/state` is seeded at header 3);
+    `IntentModeStopsUntilTheFoldExists` (`openSwitchedPoolForTest`: `NOT_IMPLEMENTED`; Task 10 deletes this
+    test). Each failing case asserts the code, the text, and zero requests after the read.
+  - `CASBlobIntentDialect.GcRoundFailsAndTheMountLeavesGc`: the second member opens the same store through a
+    `DialectOverrideBackend`. After its failed round, no further `gc/state` write and no heartbeat from that
+    mount; its `runOneRoundNow` and `rebuildBaseline` throw the dialect text; the member with the recorded
+    dialect takes the lease after its two observations.
+- [ ] **Step 2: Run red.** Add the signatures with `readRoundBlobProtocol` returning `Markers` after its read.
+  Expected: the mode tests fail on "the round did not fail".
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run green,** filter `CASGc*:CASGC*:CASBlobIntentDialect*`, then `CAS*` on `build` (tag `t9_pre`).
+  Existing tests change in one way only: a round sends one more request, the exact `GET` of `_pool_meta` after
+  the lease, and emits the phase `blob_protocol_mode`. A test that counts a round's requests, `CASOtherGet`, or
+  the phases of `cas_gc_log` moves by exactly that. Any other red test is a stop.
+- [ ] **Step 5: Two mutants,** tags `t9_m1`, `t9_m2`: (1) a failed `_pool_meta` read yields `Markers`: expect
+  `FailedPoolMetaReadFailsTheRound` to fail; (2) the scheduler ignores `gcLeftForDialect`: expect
+  `GcRoundFailsAndTheMountLeavesGc` to fail.
+- [ ] **Step 6: Commit,** then the gate. Subject: `Read the CAS blob protocol of each GC round from the pool meta`
+
+### Task 10: GC intent mode: the fold and the delete batch {#task-10}
+
+Implementer `ca-surgeon`. Reviewers: `ca-review`, then a second independent `ca-review` that gets the diff and
+the spec, not the first report. Read §3.3 whole, §3.5, §3.6, §4, §7.6. After this task a round on a switched
+pool condemns, graduates by intent and deletes under G2 to G10.
+
+**Files:**
+- Modify: `CA/Gc/CasGc.h` (`RedeleteIo` `:763-767`), `G:541-556` (`removeChunkWriteOnceOrOneByOne`, reused),
+  `:583-595` (`performRedeleteIo`), `:597-641` (`applyRedeleteOutcome`), `:659-762` (`redeleteBlobs`),
+  `:765-793` (the throw of Task 9 goes), `:1276-1283` (`meta_pool_wait`), `:2183-2229` (`head_blob`),
+  `:2247-2254` (`peek_head`), `:2264-2287` (the marker gate), `:3667-3700` (graduation hints), `:3727`, `:3772`
+  (fold calls)
+- Modify: `CA/Gc/CasBlobInDegree.h:105-118` (`GraduationReadHints`), `:446-468` (fold signature); `N:431`,
+  `:520-583` (`settleEntry`), `:586-664` (`closeBlob`); `CA/Gc/CasGcShardPlan.cpp:57`
+- Modify: `CA/Gc/CasGcReadAhead.h:53-57`, `CA/Gc/CasGcReadAhead.cpp` (a create verb)
+- Modify: `src/Common/ProfileEvents.cpp` (nine counters)
+- Test: `T/gtest_cas_gc_intents.cpp`; `T/gtest_cas_blob_indegree.cpp` (`acceptAllHints`, `:1182`, and the hints
+  at `:1259` build `GraduationReadHints`, whose `admit` gains the row token)
+
+**Interfaces:**
+- Consumes (Task 1): `sameIncarnation`, `Etag::canonical`, `PersistedEtag::canonical`. (Task 2):
+  `RetiredEntry::intent`, the run header version. (Task 3): `Layout::blobIntentKey`,
+  `writeOnceBlobIntentKey`, `blobIntentRecord`, `isBlobIntentRecord`. (Task 5): `Meta::marked`. (Task 8): the
+  fixtures. (Task 9): the round's `BlobProtocol`. Existing: `CasOperation::create` (`Q:1154`; a clean refusal
+  is `Conflict`, `Q:1118-1119`), `removeManyWriteOnce` (`Q:634`), `removeCurrent` (`Q:656`),
   `Gc::bulkDeleteChunkKeys` (`G:576`).
 - Produces:
 
   ```cpp
   /// CA/Gc/CasGc.h
-  enum class BlobProtocolMode : uint8_t { Markers, Intents };
-  /// One exact GET of `_pool_meta`, sent after the lease. Throws; never returns a default.
-  BlobProtocolMode Gc::readRoundBlobProtocol(CasOperation & op, const GcState & leased_state);
   struct RedeleteIo { String blob_key; Removal del = Removal::Gone; bool token_rejected = false; bool removed_unmarked = false; };
-  /// CA/Pool/CasPool.h
-  void markGcLeftForDialect(Dialect recorded, Dialect own);    /// once per mount; logs the ERROR of §3.3
-  bool gcLeftForDialect() const noexcept;
   /// CA/Gc/CasBlobInDegree.h
   struct IntentModeFold                    /// null in marker mode
   {
@@ -920,18 +1124,7 @@ reads its mode from `_pool_meta`; on an unswitched pool it runs today's code plu
   WriteResult takeCreate(const String & key, const String & bytes);    /// issues the create now if it was not hinted
   ```
 
-- Rules the signatures do not state (G1 to G10 of §3.3 are the authority; these are the placements):
-  - **G1.** `runRegularRound` calls `readRoundBlobProtocol` right after the `lease` phase (`G:786-793`), in a new
-    phase `blob_protocol_mode` (metrics `intents` 0 or 1, `gc_state_generation`), before `on_lease_acquired` and
-    every other step. Outcomes: decoded without `blob_protocol`: `Markers`. `intents` with the backend's dialect:
-    `Intents`, and `leased_state.generation < 4` throws the `INVALID_STATE` text of §7.5. `intents` with another
-    dialect: `markGcLeftForDialect`, then `BAD_ARGUMENTS` with the dialect text. Absent: `INVALID_STATE`, `CAS pool
-    meta '<key>' is absent; the GC round cannot take its mode`. A refused or unanswered read, a decode failure:
-    the exception propagates. No `catch` on this path yields a mode. Nothing caches the mode across rounds.
-  - **Leaving GC.** When `gcLeftForDialect`: the scheduler loop starts no round and sends no heartbeat
-    (`CA/Gc/CasGcScheduler.cpp:516-528`); `runOneRoundNow` (`:358-366`) and `Gc::rebuildBaseline` throw
-    `BAD_ARGUMENTS` with the dialect text before any `gc/state` request. `rebuildBaseline` also makes the G1
-    dialect check on its own `_pool_meta` read before its lease (`G:4660`), and never lowers `blob_protocol`.
+- Rules the signatures do not state (G2 to G10 of §3.3 are the authority; these are the placements):
   - **Marker mode** passes `intent_mode = nullptr` and is today's code. A row with `intent` met by a marker-mode
     fold: `CORRUPTED_DATA`, `condemned row carries an intent but the pool is not switched`.
   - **Intent mode, fold.** `confirm_condemned_marker` is not passed and the marker pool is not used; the phase
@@ -956,7 +1149,8 @@ reads its mode from `_pool_meta`; on an unswitched pool it runs today's code plu
     bytes at the key add one ERROR per round. Counters `CASGCIntentCreated`, `CASGCIntentConfirmedExisting`.
   - **Read-ahead.** `GraduationReadHints::admit` gets the row token (`N:559-571` passes `e.token`). In intent mode
     the hint is `hintCreate(blobIntentKey(ref, identity), record)` and only `offer` may issue it ahead: a carried
-    row that no delta or retirement of this round touches (`G:3690-3697`).
+    row that no delta or retirement of this round touches (`G:3690-3697`). An inherited pending row is demoted
+    before read-ahead picks its keys, so it gets a create hint, never a delete.
   - The seal's `CondemnedSummary` (`CA/Formats/CasFoldSealFormat.h:174-180`) does not change: a row with
     `pending` counts in `pending_total` with or without `intent`, so `graduationDue` (`G:4373`) forces the fold
     that demotes an inherited row. A shard carried without a fold keeps its older run, header and rows.
@@ -971,17 +1165,15 @@ reads its mode from `_pool_meta`; on an unswitched pool it runs today's code plu
     best effort, counted `CASGCLegacyMarkerDeleted`. Counter `CASGCIntentDeleted` per key; `CASGCIntentDeleteFailed`
     for a failed supersede delete.
   - Phase metrics on `pending_deletes`: `intent_deletes`, `intent_delete_requests`, `legacy_marker_deletes`,
-    `token_rejected`.
+    `token_rejected`. Every `token_rejected` call counts `CASGCIntentTokenRejected`; one ERROR per round.
   - Tests drive references through manifests and raw helpers (`writeManifestRaw`, `publishBlobRawForTest`,
     `displaceBlobToken`), never through writer adoption, which changes in the next task.
 
 - [ ] **Step 1: Write the failing tests** in `T/gtest_cas_gc_intents.cpp`, on `openSwitchedPoolForTest` over a
-  `ProtocolJournalBackend` unless stated.
-  - `CASGcIntentsMode`: `ModeIsReadAfterTheLeaseInEveryRound` (in each of three rounds the `_pool_meta` `GET`
-    follows the `gc/state` write and precedes every other request; an upgraded pool does the same);
-    `AbsentPoolMetaFailsTheRound`; `FailedPoolMetaReadFailsTheRound`; `UnknownProtocolWordFailsTheRound`;
-    `IntentModeBelowGenerationFourFails`; `MarkerModeRoundFailsOnARowWithIntent`. Each failing case asserts the
-    code, the text, and zero requests after the read.
+  `ProtocolJournalBackend` unless stated. Delete `CASGcIntentsMode.IntentModeStopsUntilTheFoldExists`.
+  - `CASGcIntentsMode`: `ModeIsReadAfterTheLeaseInEveryRound` gains the switched pool (three intent-mode
+    rounds, the same order); `MarkerModeRoundFailsOnARowWithIntent` (an upgraded pool whose run, written by
+    hand at header 4, holds a row with `intent`: the code, the text, zero requests after the fold met it).
   - `CASGcIntents`, the names of §10.2: `CondemnIsOneHead`, `GraduationCreatesAndCommitsPending`,
     `EqualOccupantConfirms`, `AbsentOrDivergentOccupantCarries`, `UnansweredCreateCarries`,
     `DeleteIsThreeRequests`, `IntentDeletesShareABatchRequest`,
@@ -996,38 +1188,35 @@ reads its mode from `_pool_meta`; on an unswitched pool it runs today's code plu
     blob in the delete round is `HEAD`, `DELETE` body, one bulk or single `DELETE` of the intent, in this order;
     the total over the three rounds is 5. `SpareLeavesTheIntent`: the intent key still holds the record and the
     journal has no request on it. `UnansweredBodyDeleteKeepsTheIntent`: no intent delete follows, the round
-    fails, the row stays pending.
+    fails, the row stays pending. `InheritedPendingIsDemotedBeforeAnyDelete`: with read-ahead on, the journal of
+    the demoting round holds no `HEAD` and no `DELETE` of that body before its intent create.
   - Plan-named: `RespelledTokenAtTheDeleteHeadStillDeletes` (a backend that returns the token bare at condemn and
     quoted at the delete: the body is deleted); `RespelledTokenIsNotASupersede`;
     `IntentModeSendsNoMetaRequestForAMarkedBody`; `ReadAheadCreateIsOnlyForAnUntouchedCarriedRow`;
     `IntentModeRunHasHeaderFour`.
-  - `CASBlobIntentDialect.GcRoundFailsAndTheMountLeavesGc`: after the failed round, no further `gc/state` write
-    and no heartbeat from this mount; `runOneRoundNow` and `rebuildBaseline` throw the dialect text; a second
-    member with the recorded dialect takes the lease after its two observations.
-- [ ] **Step 2: Run red.** Add the signatures with marker behaviour (the `intent_mode` parameter ignored,
-  `readRoundBlobProtocol` returning `Markers` after its read). Expected: the mode tests fail on "the round did
-  not fail", the intent tests on marker requests in the journal.
+- [ ] **Step 2: Run red.** Add the signatures with marker behaviour (the `intent_mode` parameter ignored) and
+  remove the throw of Task 9. Expected: the intent tests fail on marker requests in the journal.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** filter `CASGc*:CASBlobIntentDialect*`, then `CAS*` on `build` (tag `t9_pre`).
-  Existing tests change in one way only: a round sends one more request, the exact `GET` of `_pool_meta` after
-  the lease, and emits the phase `blob_protocol_mode`. A test that counts a round's requests, `CASOtherGet`, or
-  the phases of `cas_gc_log` moves by exactly that. Any other red test is a stop.
-- [ ] **Step 5: Three mutants,** tags `t9_m1` to `t9_m3`: (1) a failed `_pool_meta` read yields `Markers`: expect
-  `FailedPoolMetaReadFailsTheRound` to fail; (2) the spare branch deletes the intent: expect
-  `SpareLeavesTheIntent` to fail; (3) `confirm_intent` returns true for `Conflict` with `ProvenAbsent`: expect
-  `AbsentOrDivergentOccupantCarries` to fail.
-- [ ] **Step 6: Commit,** then the gate. Subject: `Add the intent mode of CAS blob GC`
+- [ ] **Step 4: Run green,** filter `CASGc*:CASGC*:CASBlobInDegree*:CASBlobIntentDialect*`, then `CAS*` on `build`
+  (tag `t10_pre`). Existing tests change in one way only: the brace initialisers of `GraduationReadHints` in
+  `T/gtest_cas_blob_indegree.cpp`. Any other red test is a stop.
+- [ ] **Step 5: Four mutants,** tags `t10_m1` to `t10_m4`: (1) the spare branch deletes the intent: expect
+  `SpareLeavesTheIntent` to fail; (2) `confirm_intent` returns true for `Conflict` with `ProvenAbsent`: expect
+  `AbsentOrDivergentOccupantCarries` to fail; (3) read-ahead offers an inherited pending row before the G8
+  demotion: expect `InheritedPendingIsDemotedBeforeAnyDelete` to fail; (4) the intent delete runs for a row
+  whose body job threw: expect `UnansweredBodyDeleteKeepsTheIntent` to fail.
+- [ ] **Step 6: Commit,** then the gate and the ASan milestone. Subject: `Add the intent mode of CAS blob GC`
 
-### Task 10: Writer rules on a learned mount {#task-10}
+### Task 11: Writer rules on a learned mount {#task-11}
 
 Implementer `ca-surgeon`. Reviewer `ca-review`. Read §3.2 whole, §4.2 ("Adoption"), §4.3 (S1, S12). After this
 task `ensureBlobPresent` follows W1 to W8 when the mount is learned. A mount that is not learned keeps today's
-body unchanged; Task 14 removes it.
+body unchanged; Task 15 narrows that path and Task 16 removes it.
 
 **Files:**
 - Modify: `CA/Pool/CasPartWriteTxn.h:84-105` (`BlobPublicationReason`), `:351`; `W:274-570`
 - Modify: `src/Common/ProfileEvents.cpp` (four counters, near `:834`)
-- Test: create `T/gtest_cas_blob_intent_writer.cpp`
+- Test: `T/gtest_cas_blob_intent_writer.cpp` (created by Task 7)
 
 **Interfaces:**
 - Consumes (Task 1): `Etag::canonical`, `sameIncarnation`. (Task 3): `Layout::blobIntentKey`. (Task 5):
@@ -1091,19 +1280,22 @@ body unchanged; Task 14 removes it.
 - [ ] **Step 2: Run red.** Add the dispatch line with `ensureBlobPresentByIntents` calling today's body. Expected:
   journals show a `.meta` `GET` and `PUT`.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t10_pre`). No existing test changes: no existing test
-  runs a writer on a learned mount except those of Tasks 7 and 9, which do not use writer adoption.
-- [ ] **Step 5: Three mutants,** tags `t10_m1` to `t10_m3`: (1) adopt after the intent `GET` without the second
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t11_pre`). One existing test may change:
+  `CASBlobIntentWriter.MarkBitIsSharedByHardlinkCopies` (Task 7) runs a writer on a learned mount, so its
+  request sequence moves to the new path; its assertions on `marked` must hold unchanged. If they do not, stop.
+  No other existing test runs a writer on a learned mount: the GC tests of Tasks 9 and 10 use raw helpers.
+- [ ] **Step 5: Three mutants,** tags `t11_m1` to `t11_m3`: (1) adopt after the intent `GET` without the second
   `HEAD`: expect `ChangedTokenAtSecondHeadPublishesWithoutRestart` and `BodyGoneAtSecondHeadPublishes` to fail;
   (2) a failed intent `GET` is read as absent: expect `FailedIntentReadIsNotAbsence` to fail; (3) the second
   `HEAD` compares raw text: expect a respelled-token case to fail; if none exists in this file, add
   `RespelledTokenAtSecondHeadAdopts` first.
-- [ ] **Step 6: Commit,** then the gate. Subject: `Reuse a CAS blob after HEAD, intent GET, HEAD on a learned mount`
+- [ ] **Step 6: Commit,** then the gate and the ASan milestone. Subject:
+  `Reuse a CAS blob after HEAD, intent GET, HEAD on a learned mount`
 
-### Task 11: The switch: checks, stamp, free lease {#task-11}
+### Task 12: The switch: checks, stamp, free lease {#task-12}
 
 Implementer `ca-surgeon`. Reviewer `ca-review`. Read §7.2, §7.3, §7.5. This is the body of the operator command
-as a `Pool` function; the SQL wiring is Task 15. Nothing calls it in production yet.
+as a `Pool` function; the SQL wiring is Task 17. Nothing calls it in production yet.
 
 **Files:**
 - Modify: `CA/Pool/CasPool.h`, `CA/Pool/CasPool.cpp` (new function, near `raiseReaderFloor`, `:628-640`)
@@ -1111,10 +1303,12 @@ as a `Pool` function; the SQL wiring is Task 15. Nothing calls it in production 
 - Test: create `T/gtest_cas_blob_intent_switch.cpp`
 
 **Interfaces:**
-- Consumes (Task 2): `PoolMeta::switchToBlobIntents`, `GcState::generation`, `MountLease::protocol_generation`.
-  (Task 3): `Layout::maxPoolPrefixBytesForBlobIntents`. (Task 5, 6): `blobMarkProbe`,
-  `applyBlobIntentsObservation`, `MountInfo::protocol_generation`. Existing: `Cas::listMounts`,
-  `CasOperation::readModifyWrite` (`Q:1166`), the catalog's server roots.
+- Consumes (Task 2): `PoolMeta::switchToBlobIntents` and its `BlobIntentsSwitch`, `GcState::generation`,
+  `MountLease::protocol_generation`. (Task 3): `Layout::maxPoolPrefixBytesForBlobIntents`. (Task 6):
+  `blobMarkProbe`, `applyBlobIntentsObservation`. (Task 5): `MarkLiarBackend`. (Task 8): the fixtures,
+  `DialectOverrideBackend`. Existing:
+  `Cas::listMounts` and `MountInfo::lease` (`CA/Pool/CasServerRoot.h:512-524`), `CasOperation::readModifyWrite`
+  (`Q:1166`), the catalog's server roots.
 - Produces:
 
   ```cpp
@@ -1122,14 +1316,17 @@ as a `Pool` function; the SQL wiring is Task 15. Nothing calls it in production 
   /// Checks, stamp, switch, learn. Every step is monotone; a rerun completes it.
   EnableBlobIntentsResult Pool::enableBlobIntents();
   /// Steps 3 and 4 alone: the switch and the learning. Shared with the new-pool sequence.
-  bool Pool::switchToBlobIntentsAndLearn();        /// true iff this call wrote the switch
+  bool Pool::switchToBlobIntentsAndLearn();        /// `BlobIntentsSwitch::written` of its switch
   ```
+
+  `switch_written` is `BlobIntentsSwitch::written`: a switch that the retry's read resolved reports false.
 
 - Rules the signatures do not state:
   - Checks, in this order, each a refusal that writes nothing: read-only mount (`INVALID_STATE`); probe not `Ok`
-    (`NOT_IMPLEMENTED`: `blob mark probe failed on this disk: <step>`, with `skipped` under `skip_access_check`;
-    for `FalsePresence` the false-presence text); prefix over the limit; `min_reader_generation < 4`
-    (`INVALID_STATE`); a fresh exact read of `_pool_meta` that records another dialect; a mount slot that declares
+    (`NOT_IMPLEMENTED`: `blob mark probe failed on this disk: <step>`; a skipped probe gives the step `skipped`,
+    also when the mount stores it as `Assumed`; for `FalsePresence` the false-presence text); prefix over the
+    limit; a fresh exact read of `_pool_meta` with `min_reader_generation < 4` (`INVALID_STATE`) or with another
+    recorded dialect (`BAD_ARGUMENTS`, the dialect text; no stamp is written); a mount slot that declares
     `protocol_generation < 4` or does not decode, unless its owner is a verified retirement (`INVALID_STATE`, the
     slot text of §7.5, naming the `server_root_id`). Slots: exact reads for the roots the catalog names, plus one
     `LIST` of `gc/server-roots/`. Texts without a §7.5 row: [Spec questions](#spec-questions), Q6.
@@ -1153,36 +1350,42 @@ as a `Pool` function; the SQL wiring is Task 15. Nothing calls it in production 
     `SlotOfARootWithoutNamespacesIsFoundByTheList`; `UnconfirmedStampWritesNothingElse`;
     `StampResolvedByReadIsConfirmed` (`LandedButAckLostOnceBackend`); `LostSwitchAnswerIsResolvedByRead`;
     `TwoCommandsConverge`; `StampKeepsEveryOtherFieldOfGcState`; `StampOverGenerationFourWritesNothing`;
-    `RoundInFlightLosesItsCommitAndTheNextKeepsGenerationFour`. Each refusal asserts zero writes.
+    `RoundInFlightLosesItsCommitAndTheNextKeepsGenerationFour`; `RefusesOnAReadOnlyMount`;
+    `RefusesBelowReaderGenerationFour` (the floor of `_pool_meta` is rewritten to 3 by hand after the mount);
+    `RecordedOtherDialectIsRefusedBeforeTheStamp` (the journal holds no `gc/state` write);
+    `TwoCommandsWithTwoDialectsOneWins` (the second mount opens the store through a `DialectOverrideBackend`;
+    both run the command: one switch is written, the other command gets the dialect text, and `_pool_meta`
+    records the winner's dialect); `SwitchResolvedByReadReportsNotWritten`. Each refusal asserts zero writes.
   - `CASGcIntentsMode.StampCreatedStateIsAFreeLease`: on a pool whose `gc/state` the stamp created, a manual
     round (`allow_steal = false`) leads at once.
 - [ ] **Step 2: Run red.** Add the function throwing `NOT_IMPLEMENTED`.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t11_pre`). No existing test changes.
-- [ ] **Step 5: Two mutants,** tags `t11_m1`, `t11_m2`: (1) the switch runs before the stamp: expect
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t12_pre`). No existing test changes.
+- [ ] **Step 5: Two mutants,** tags `t12_m1`, `t12_m2`: (1) the switch runs before the stamp: expect
   `StampsThenSwitchesThenLearns` and `UnconfirmedStampWritesNothingElse` to fail; (2) the owner-0 branch is
   removed: expect `StampCreatedStateIsAFreeLease` to fail.
 - [ ] **Step 6: Commit,** then the gate. Subject: `Add the pool step that switches a CAS pool to blob intents`
 
-### Task 12: New-pool sequence in `Pool::open` {#task-12}
+### Task 13: New-pool sequence in `Pool::open` {#task-13}
 
 Implementer `ca-surgeon`. Reviewer `ca-review`. Read §7.4. The sequence runs for a pool that records
-`created_generation = 4`. No creation records it until Task 14, so tests seed state N2.
+`created_generation = 4`. No creation records it until Task 15, so tests seed state N2.
 
 **Files:**
 - Modify: `CA/Pool/CasPool.cpp:607-613` (after `mountWritable` returns, before `open` returns)
 - Test: create `T/gtest_cas_blob_intent_new_pool.cpp`
 
 **Interfaces:**
-- Consumes (Task 11): `Pool::switchToBlobIntentsAndLearn`. (Task 6): the probe result and the rule. (Task 8):
-  `seedNewPoolAtN2ForTest`, `seedUpgradedPoolForTest`.
+- Consumes (Task 12): `Pool::switchToBlobIntentsAndLearn`. (Task 6): the probe result and the rule. (Task 8):
+  `seedNewPoolAtN2ForTest`, `seedUpgradedPoolForTest`. (Task 5): `MarkLiarBackend`
+  (`T/cas_blob_mark_test_support.h`).
 - Rules:
   - A writable `Pool::open` that read `created_generation == 4` on a pool that is not switched runs, after
     `mountWritable` returned: the prefix check (`BAD_ARGUMENTS`, the prefix text); the probe check: a
-    `FailedPreservation` result throws `NOT_IMPLEMENTED` with `blob mark probe failed on this disk: <step>`;
-    `Skipped` proceeds as `Assumed` with one INFO line; `FalsePresence` and `FailedTokenForm` proceed with a
-    WARNING ([settled](#settled), S2); then `switchToBlobIntentsAndLearn`. No stamp, no slot check, no `gc/state`
-    request.
+    `FailedPreservation` or `FailedTokenForm` result throws `NOT_IMPLEMENTED` with `blob mark probe failed on
+    this disk: <step>` (a store on which every reuse uploads again and nothing is reclaimed must not come up
+    silently); `Skipped` proceeds as `Assumed` with one INFO line; `FalsePresence` proceeds with a WARNING;
+    then `switchToBlobIntentsAndLearn`. No stamp, no slot check, no `gc/state` request.
   - Any failure throws out of `open`. The `PoolPtr` is destroyed by the exception, so the mount says its normal
     farewell. No mount is admitted on an unswitched pool with `created_generation = 4`.
   - `Pool::openForDecommission` (`CA/Pool/CasPool.cpp:1102`) does not run the sequence.
@@ -1191,27 +1394,32 @@ Implementer `ca-surgeon`. Reviewer `ca-review`. Read §7.4. The sequence runs fo
 - [ ] **Step 1: Write the failing tests,** suite `CASBlobIntentNewPool`: `CrashAfterPoolMetaResumes` (seeded N2:
   the open ends switched and learned); `LostSwitchAnswerResumes`; `FailedSwitchFailsTheMountAndRestartResumes`
   (the first open throws the request error and leaves no admitted pool; the second ends switched);
-  `FailedProbeFailsTheMount` (preservation); `TokenFormFailureWarnsAndTheMountLearns`;
+  `FailedProbeFailsTheMount` (two cases: a preservation step, and the token form P7; each throws
+  `NOT_IMPLEMENTED` naming the step and leaves `_pool_meta` unswitched);
   `SkippedProbeSwitchesWithTheMarkAssumed` (`blobMarkProbe().text() == "assumed"`);
   `SequenceSendsNoGcStateRequest` (the journal has no `gc/state` key); `LongPrefixFailsTheMount`;
   `DecommissionOpenDoesNotRunTheSequence`; `UpgradedPoolIsNotSwitchedAutomatically`.
 - [ ] **Step 2: Run red.** Expected: the pool stays unswitched after `open`.
 - [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t12_pre`). No existing test changes.
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t13_pre`). No existing test changes.
   `openSwitchedPoolForTest` now finds the pool switched by the open; its own switch step is a no-op.
-- [ ] **Step 5: One mutant,** tag `t12_m1`: a failed switch is logged and the open returns. Expected:
+- [ ] **Step 5: One mutant,** tag `t13_m1`: a failed switch is logged and the open returns. Expected:
   `FailedSwitchFailsTheMountAndRestartResumes` fails.
-- [ ] **Step 6: Commit,** then the gate. Subject:
+- [ ] **Step 6: Commit,** then the gate and the ASan milestone. Subject:
   `Switch a CAS pool created at generation 4 on its first writable mount`
 
-### Task 13: Tools: `cas-fsck`, `cas-inspect`, `cas-gc-dryrun` {#task-13}
+### Task 14: Tools: `cas-fsck`, `cas-inspect`, `cas-gc-dryrun` {#task-14}
 
 Implementer `ca-surgeon`. Reviewer `ca-review`. Read §3.4, §7.7. `cas-fsck` gets its first mutating options;
 they delete only what F3 and F4 allow.
 
 **Files:**
-- Modify: `CA/Tools/CasFsck.h:92-184` (`FsckReport`), `:268` (`runFsck`), `CA/Tools/CasFsck.cpp:443-448`,
-  `:888-914` (listing), `:1206-1222` (pairing); `programs/disks/CommandFsck.cpp:22-58`
+- Modify: `CA/Tools/CasFsck.h:92-184` (`FsckReport`), `:194-250` (the hard-findings comment), `:268`
+  (`runFsck`), `CA/Tools/CasFsck.cpp:443-448`, `:888-914` (listing), `:1206-1222` (pairing), `:1323`
+  (`formatFsckSummary`); `programs/disks/CommandFsck.cpp:22-58`
+- Modify: `src/Interpreters/InterpreterSystemQuery.cpp:2637` (`contentAddressedFsckColumns`), `:2688`
+  (`appendContentAddressedFsckRow`): row 10 of [Shared code changes](#shared-code); `Q/05020_cas_fsck.reference`
+  if it prints the columns (predicted, not run)
 - Modify: `CA/Tools/CasInspect.cpp:413-418`, `:558-564`, and its renderers of `_pool_meta`, the mount slot and a
   body
 - Modify: `G:5061` (`previewDeletes`), `CA/Gc/CasGc.h:497-513`; `programs/disks/CommandCaGcDryRun.cpp:42-44`
@@ -1220,10 +1428,11 @@ they delete only what F3 and F4 allow.
 - Test: create `T/gtest_cas_fsck_intents.cpp`; modify `T/gtest_cas_fsck.cpp`, `T/gtest_cas_inspect.cpp`
 
 **Interfaces:**
-- Consumes (Task 1): `sameIncarnation`, `Etag::canonical`. (Task 2): `PoolMeta` fields. (Task 3):
+- Consumes (Task 1): `sameIncarnation`, `Etag::canonical`. (Task 2): `BlobProtocol`, `PoolMeta` fields. (Task 3):
   `blobIntentsPrefix`, `parseBlobIntentKey`, `writeOnceBlobIntentKey`, `isBlobIntentRecord`. (Task 9):
-  `Gc::readRoundBlobProtocol`, `removeChunkWriteOnceOrOneByOne` (`G:541`). Existing: the tool's own operation
-  (`CA/Tools/CasFsck.cpp:447`), `CasOperation::removeCurrent` (`Q:656`).
+  `Gc::readRoundBlobProtocol`, for `previewDeletes` only. (Task 8): the fixtures, `DialectOverrideBackend`.
+  Existing: `removeChunkWriteOnceOrOneByOne` (`G:541`), the tool's own operation (`CA/Tools/CasFsck.cpp:447`),
+  `CasOperation::removeCurrent` (`Q:656`).
 - Produces:
 
   ```cpp
@@ -1239,7 +1448,9 @@ they delete only what F3 and F4 allow.
 - Rules the signatures do not state (F0 to F6 of §3.4 are the authority):
   - F0: one exact `GET` of `_pool_meta` before any listing or read of an intent; a failed read stops the run. The
     admission is decided once: a run admitted on an unswitched pool lists, reads and deletes no intent for its
-    whole life. `intents` with another dialect stops the run with the dialect text.
+    whole life. `intents` with another dialect stops the run with the dialect text. `runFsck` makes this read
+    itself, through the tool's own operation: it has no `Gc` and no lease, and it must not call
+    `Gc::readRoundBlobProtocol`, whose dialect branch marks the mount as having left GC.
   - F2: per listed key: exact `GET` of the intent, and only after its answer `HEAD` of the body. Classes as in
     §3.4. A respelled token of the same incarnation is `intent_current`.
   - F3: a fix deletes only `intent_stale` keys, each on the two reads of this run in that order, with the
@@ -1249,12 +1460,19 @@ they delete only what F3 and F4 allow.
     is `legacy_marker`; intents count in the class totals.
   - F6: a fix run sends deletes and no write, on the read-only open. A refused or unanswered delete stops the run
     with the error and the count deleted so far.
-  - `SYSTEM CAS FSCK` reports the new classes and has no fix.
+  - **Every new class is advisory.** `intent_current`, `intent_stale`, `intent_malformed`, `intent_unread` and
+    `legacy_marker` are not hard findings: `kFsckHardFindings` keeps its 5 rows (`CA/Tools/CasFsck.h:243`),
+    `FsckReport::clean` and the exit set of `CommandFsck::executeImpl` do not change. Reason: each is a state
+    the protocol leaves by design or a read that proved nothing. Say so in the comment of each field. The
+    counts appear on the two rendering surfaces: the `formatFsckSummary` line and the `SYSTEM CAS FSCK` row.
+  - `SYSTEM CAS FSCK` reports the new counters, one `UInt64` column each, appended after the existing columns,
+    and has no fix.
   - `cas-inspect`: renders an intent key (`parseBlobIntentKey`, record valid or not), a body's mark, the three
     `_pool_meta` fields, a slot's `protocol_generation`, a row's `intent`; the "unrecognized key layout" text
     lists `blob-intents`.
-  - `previewDeletes`: takes its mode as G1 does and stops on the same failures. In intent mode it previews only
-    rows with `pending` and `intent` as `delete_pending`; an inherited pending row is `awaiting_graduation`.
+  - `previewDeletes`: calls `readRoundBlobProtocol(op, state)` with the `gc/state` it decoded (`G:5061-5068`)
+    and stops on the same failures as G1. In intent mode it previews only rows with `pending` and `intent` as
+    `delete_pending`; an inherited pending row is `awaiting_graduation`.
 
 - [ ] **Step 1: Write the failing tests.** Intents are made by GC rounds on `openSwitchedPoolForTest`.
   - `CASFsckIntents`: `ClassesCurrentStaleMalformedUnread`; `FixReadsTheIntentBeforeTheBody` (a hook publishes a
@@ -1268,82 +1486,148 @@ they delete only what F3 and F4 allow.
     switched in another dialect during the run); `DryRunStops`. Each asserts zero delete and zero intent
     requests.
   - `CASGcIntents.DryRunFollowsTheModeAndShowsNoInheritedDelete`.
+  - `CASFsckSummary.IntentClassesAreAdvisoryAndRendered`: a report with each new counter set is `clean`, and
+    the summary line names each counter.
   - `CASInspect`: `RendersAnIntentKey`, `RendersTheBlobProtocolFields`, `RendersARowIntent`.
 - [ ] **Step 2: Run red.** Add the report fields, the parameter and the option, with no behaviour.
 - [ ] **Step 3: Implement.** In `T/gtest_cas_fsck.cpp`, `BodyWithoutMetaIsBenign` and
   `MetaWithoutBodyIsAdvisoryNotHard` move to `seedUpgradedPoolForTest`.
-- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t13_pre`).
-- [ ] **Step 5: Two mutants,** tags `t13_m1`, `t13_m2`: (1) the fix reads the body before the intent: expect
+- [ ] **Step 4: Run green,** then `CAS*` on `build` (tag `t14_pre`).
+- [ ] **Step 5: Two mutants,** tags `t14_m1`, `t14_m2`: (1) the fix reads the body before the intent: expect
   `FixReadsTheIntentBeforeTheBody` to fail; (2) a failed `HEAD` classifies as stale: expect
   `FailedReadIsNeverStale` to fail.
-- [ ] **Step 6: Commit,** then the gate. Subject: `Teach cas-fsck, cas-inspect and the GC dry run about blob intents`
+- [ ] **Step 6: Commit,** then the gate and the ASan milestone. The body says why the shared interpreter file
+  changes: the result columns of `SYSTEM CAS FSCK`. Subject:
+  `Teach cas-fsck, cas-inspect and the GC dry run about blob intents`
 
-### Task 14: Switch on; the test fleet {#task-14}
+### Task 15: New pools are created switched {#task-15}
 
-Implementer `ca-surgeon`. Reviewer `ca-review`. Read §1, §3.2 (last bullet), §7.1, §7.4, and
-[Effects on tests](#test-effects). After this task a pool created by this build ends switched, and a writer that
-is not learned publishes fresh and never adopts.
+Implementer `ca-surgeon`. Reviewer `ca-review`. Read §1, §3.1, §3.2 (last bullet), §7.1, §7.4, and
+[Effects on tests](#test-effects). After this task a pool created by this build ends switched, and a mount that
+saw the switch without learning never adopts. The writer's marker path stays for a mount whose last read showed
+no switch; Task 16 removes it.
 
 **Files:**
 - Modify: `CA/Pool/CasPoolMeta.cpp:169-174` (the mint sets `created_generation`)
-- Modify: `W:274-570` (the marker path goes: `loadMeta`, `reconcileMetaClean`, `validateMetaSize`, `meta_key`),
-  `CA/Pool/CasPartWriteTxn.h:84-105` (`Condemned` goes, `NotLearned` comes), includes of `CA/Pool/CasBlobMeta.h`
-  in the writer
-- Modify: `src/Common/ProfileEvents.cpp:968-970` (remove `CASMetaCreateClean`, `CASMetaAbsentRepublish`,
-  `CASMetaResurrectClean`) and their increments
+- Modify: `W:274-281` (the dispatch of `ensureBlobPresent`), `CA/Pool/CasPartWriteTxn.h:84-105` (`NotLearned`
+  comes; `Condemned` stays)
 - Test: `T/gtest_cas_blob_intent_writer.cpp`, `T/gtest_cas_blob_intent_new_pool.cpp`, and the fleet below
 
 **Interfaces:**
-- Consumes: everything of Tasks 1 to 13.
+- Consumes (Task 6): `Pool::blobIntentsLearned`, `observedBlobProtocol`. (Task 11): `BlobPublicationReason`,
+  `ensureBlobPresentByIntents`. (Task 13): the new-pool sequence. (Task 5): `MarkLiarBackend`. (Task 8): the
+  fixtures.
+- Produces: `BlobPublicationReason::NotLearned` (event word `not_learned`).
 - Rules:
   - `createOrValidate` mints `_pool_meta` with `created_generation = G_BLOB_INTENTS` on every mint. A test helper
-    that mints through it (`seedPoolMetaForRestart`) therefore makes a pool of this build.
-  - `ensureBlobPresent` is `ensureBlobPresentByIntents` for every mount. Not learned: after W2, a present body
-    goes to W6 with reason `NotLearned` (word `not_learned`), unmarked (the bit was false at staging), and a
-    marked body also calls `noteMarkedBodyWhileNotLearned`. The writer has no `.meta` request on any path.
+    that mints through it (`seedPoolMetaForRestart`, `T/cas_test_helpers.h:1082`) therefore makes a pool of this
+    build, and the first writable `Pool::open` switches it.
+  - `ensureBlobPresent` after W1, in this order: a learned mount: `ensureBlobPresentByIntents`. A mount that is
+    not learned and whose `observedBlobProtocol` is `Intents`: W2 (`HEAD` and the size checks); a present or an
+    absent body both go to W6, one publication, unmarked (the bit was false at staging), reason `NotLearned`
+    for a present body and `Absent` otherwise. It never adopts and sends no `.meta` and no intent request.
+    Any other mount: today's marker path.
+  - Why in this commit: from here a production pool can be switched. A later mount of it whose probe fails
+    preservation is not learned (Task 6); on the marker path it would adopt a body on a `Clean` marker while
+    intent-mode GC deletes that body.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `CASBlobIntentWriter.UnlearnedWriterNeverAdoptsAndPublishesUnmarked` (on `seedUpgradedPoolForTest`: over a
-    present body with a `Clean` marker the journal is `HEAD`, `PUBLISH unmarked`; no `.meta` request);
-    `.UnlearnedWriterMeetingAMarkedBodyAsksForARereadOnce`.
   - `CASBlobIntentNewPool`: `EndsSwitchedBeforeTheFirstWriter` (an empty prefix: after `open` the pool is switched
     and learned, and the journal holds no blob key); `ManualGcRoundLeadsRightAfterCreation`;
-    `ConcurrentCreatorsConverge`; `CreatorWithAnotherDialectIsRefused`.
-- [ ] **Step 2: Run red,** then `CAS*` on `build` once with the product change applied (tag `t14_fleet`) and save
-  the list of red tests to `$R/logs/t14_fleet_red.txt`.
+    `ConcurrentCreatorsConverge`; `CreatorWithAnotherDialectIsRefused` (the second creator opens the store
+    through a `DialectOverrideBackend`).
+  - `CASBlobIntentWriter.SwitchSeenButNotLearnedNeverAdopts`: a pool created and switched by one mount; a second
+    mount over a `MarkLiarBackend` that fails P1 is not learned. Its writer over a present marked body: the
+    journal is `HEAD`, `PUBLISH unmarked`; no `.meta` request, no intent request, reason `not_learned`.
+- [ ] **Step 2: Run red,** then `CAS*` on `build` once with the product change applied (tag `t15_fleet`) and save
+  the list of red tests to `$R/logs/t15_fleet_red.txt`.
 - [ ] **Step 3: Classify before editing.** Write a table into the report: every red test, its file, its class,
   the action. Classes and actions:
 
   | Class | Sign | Action |
   |---|---|---|
-  | A. Writer marker test | asserts a `Clean` create, an absent-marker republish, a resurrect over `Condemned`, or one of the three removed counters | delete it if a `CASBlobIntentWriter` test covers the rule; else re-target it to the intent rule and say which |
-  | B. Request shape | counts `HEAD`, `PUT`, `GET` on a blob or `.meta` key, or attempts | edit to the ledger of §1: new content `HEAD`, `PUT`; clean reuse `HEAD`, intent `GET`, `HEAD` |
-  | C. Marker-mode GC, not yet pinned | a GC test whose assertion names a marker | pin it with `seedUpgradedPoolForTest`, unchanged otherwise |
-  | D. Marker-mode GC that needs writer reuse | pinned, and expects a writer to adopt or to resurrect through the marker | re-target to intent mode on a default pool as a twin, or delete with the covering `CASGcIntents` test named |
+  | P. Writer suite | a red test of one of the six writer files below | pin its pool with `seedUpgradedPoolForTest(*backend, config.pool_prefix, config.gc_shards)`, nothing else. It must turn green: the pool is upgraded and the marker path exists |
+  | C. Marker-mode GC, not yet pinned | a GC test whose assertion names a marker | pin it the same way, unchanged otherwise |
+  | H. GC shape on a default pool | counts a round's requests, phases or counters and names no marker: the phase `meta_pool_wait` is gone, `CASGCMetaOps` stops moving, a reclaimed blob costs 5 requests where it cost 8 | edit to intent mode: phases without `meta_pool_wait`; `HEAD`; intent `PUT`; `HEAD`, body `DELETE`, intent `DELETE` |
+  | R. Restart seed | seeds through `seedPoolMetaForRestart` (about 55 call sites in 20 files) and then fails at the mode read or at the sequence | the pool is now of this build. A raw `gc/state` it seeds must have header 4 (`encodeGcState` of a constructed `GcState`), else the round fails with the generation text of §7.5. If the test's point is marker mode, pin it as class C |
+  | B. Request shape outside the writer suites | counts `HEAD`, `PUT`, `GET` on a blob or `.meta` key, or attempts | edit to the ledger of §1: new content `HEAD`, `PUT`; clean reuse `HEAD`, intent `GET`, `HEAD` |
   | E. Object census | counts objects or keys under `blobs/`, or expects a `.meta` beside a body | edit: no `.meta` on a pool of this build; intents exist only for condemned bodies |
   | F. Pool bootstrap | expects a new pool unswitched, or its first `_pool_meta` bytes | edit: a new pool ends switched; states N0 to N3 |
   | G. Anything else | — | stop and report; do not edit |
 
-  Expected files (marker references counted at the base): `T/gtest_cas_part_write.cpp` (70),
-  `T/gtest_cas_gc_ack_floor.cpp` (30), `T/gtest_cas_upload_detached.cpp` (28), `T/gtest_cas_upload_fanout.cpp`
-  (26), `T/gtest_cas_s3_staging.cpp` (11), `T/gtest_cas_protocol_scenarios.cpp` (11), `T/gtest_cas_pool.cpp`,
-  `T/gtest_cas_bootstrap_ordering.cpp`, `T/gtest_cas_observability.cpp`, `T/gtest_cas_pluggable_hash.cpp`,
-  `T/gtest_cas_ref_writer.cpp`, `T/gtest_cas_fence_generation.cpp`, `T/gtest_cas_blob_publish_transport.cpp`.
-  `T/gtest_cas_blob_meta.cpp` and `T/gtest_cas_blob_meta_format.cpp` do not change: the codec stays.
-  `T/gtest_cas_s3_staging.cpp`: the test of the copy over a present marker-less body is class A (that case ends,
-  §3.2 "Verbatim staged copy").
-- [ ] **Step 4: Apply the table.** Then filter the edited files, then `CAS*` on `build` (tag `t14_pre`).
+  The six writer files, with tests and marker references at the base (`grep -c
+  'blobMetaKey\|MetaState\|loadMetaForTest\|writeMetaClean\|condemnMeta\|CASMeta\|CASGCMeta\|CASGCCondemnMarker\|\.meta'`):
+  `T/gtest_cas_part_write.cpp` (73, 73), `T/gtest_cas_gc_ack_floor.cpp` (35, 33),
+  `T/gtest_cas_upload_detached.cpp` (14, 29), `T/gtest_cas_upload_fanout.cpp` (17, 28),
+  `T/gtest_cas_s3_staging.cpp` (33, 13), `T/gtest_cas_protocol_scenarios.cpp` (15, 11). Other expected files,
+  classes B, E, F, H and R: `T/gtest_cas_pool.cpp`, `T/gtest_cas_bootstrap_ordering.cpp`,
+  `T/gtest_cas_observability.cpp`, `T/gtest_cas_pluggable_hash.cpp`, `T/gtest_cas_ref_writer.cpp`,
+  `T/gtest_cas_fence_generation.cpp`, `T/gtest_cas_blob_publish_transport.cpp`, `T/gtest_cas_gc_log.cpp`, and
+  the GC suites that Task 8 did not pin. `T/gtest_cas_blob_meta.cpp` and `T/gtest_cas_blob_meta_format.cpp` do
+  not change: the codec stays.
+- [ ] **Step 4: Apply the table.** Then filter the edited files, then `CAS*` on `build` (tag `t15_pre`). Write
+  the list of class P pins into the report by file and test: Task 16 removes them.
+- [ ] **Step 5: Two mutants,** tags `t15_m1`, `t15_m2`: (1) a mount that saw the switch without learning takes
+  the marker path: expect `SwitchSeenButNotLearnedNeverAdopts` to fail; (2) the mint omits
+  `created_generation`: expect `EndsSwitchedBeforeTheFirstWriter` to fail.
+- [ ] **Step 6: Commit,** then the gate. Subject: `Create CAS pools switched to blob intents`
+
+### Task 16: Remove the writer's marker path {#task-16}
+
+Implementer `ca-surgeon`. Reviewer `ca-review`. Read §1, §3.2 whole, §7.1 (stage T1), and
+[Effects on tests](#test-effects). After this task the writer has no `.meta` request on any path, and a writer
+that is not learned publishes fresh and never adopts.
+
+**Files:**
+- Modify: `W:274-570` (the marker path goes: `loadMeta`, `reconcileMetaClean`, `validateMetaSize`, `meta_key`),
+  `CA/Pool/CasPartWriteTxn.h:84-105` (`Condemned` goes), includes of `CA/Pool/CasBlobMeta.h` in the writer
+- Modify: `src/Common/ProfileEvents.cpp:968-970` (remove `CASMetaCreateClean`, `CASMetaAbsentRepublish`,
+  `CASMetaResurrectClean`) and their increments
+- Test: `T/gtest_cas_blob_intent_writer.cpp` and the writer suites below
+
+**Interfaces:**
+- Consumes (Task 15): the branch of a mount that saw the switch without learning; its report's list of class P
+  pins. (Task 6): `noteMarkedBodyWhileNotLearned`. (Task 11): `ensureBlobPresentByIntents`.
+- Rules:
+  - `ensureBlobPresent` is `ensureBlobPresentByIntents` for a learned mount and the not-learned branch of
+    Task 15 for every other mount, whatever its last read showed. A not-learned mount whose last read showed no
+    switch and that meets a marked body also calls `noteMarkedBodyWhileNotLearned`.
+  - The writer contains no marker code: no `.meta` read, write or key on any path.
+  - GC keeps its marker mode for pools that are not switched; `CA/Pool/CasBlobMeta.{h,cpp}` and the GC marker
+    writer stay.
+
+- [ ] **Step 1: Write the failing tests.**
+  `CASBlobIntentWriter.UnlearnedWriterNeverAdoptsAndPublishesUnmarked` (on `seedUpgradedPoolForTest`: over a
+  present body with a `Clean` marker the journal is `HEAD`, `PUBLISH unmarked`; no `.meta` request);
+  `.UnlearnedWriterMeetingAMarkedBodyAsksForARereadOnce` (two marked bodies inside 10 s: one `_pool_meta` `GET`).
+- [ ] **Step 2: Run red.** Then remove every class P pin of Task 15 from the six writer files: those tests go
+  back to a default pool, which is switched and learned. Apply the product change and run `CAS*` on `build`
+  once (tag `t16_fleet`); save the list of red tests to `$R/logs/t16_fleet_red.txt`.
+- [ ] **Step 3: Classify before editing.** Write a table into the report: every red test, its file, its class,
+  the action.
+
+  | Class | Sign | Action |
+  |---|---|---|
+  | A. Writer marker test | asserts a `Clean` create, an absent-marker republish, a resurrect over `Condemned`, or one of the three removed counters | delete it if a `CASBlobIntentWriter` test covers the rule, and name that test; else re-target it to the intent rule and say which |
+  | B. Request shape | counts `HEAD`, `PUT`, `GET` on a blob or `.meta` key, or attempts | edit to the ledger of §1: new content `HEAD`, `PUT`; clean reuse `HEAD`, intent `GET`, `HEAD` |
+  | D. Marker-mode GC that needs writer reuse | pinned in Task 8, and expects a writer to adopt or to resurrect through the marker | re-target to intent mode on a default pool as a twin, or delete with the covering `CASGcIntents` test named |
+  | G. Anything else | — | stop and report; do not edit |
+
+  A deletion is reviewable only with its cover: the table names, per deleted test, the rule it proved and the
+  test that proves it now. `T/gtest_cas_s3_staging.cpp`: the test of the copy over a present marker-less body
+  is class A (that case ends, §3.2 "Verbatim staged copy").
+- [ ] **Step 4: Apply the table.** Then filter the edited files, then `CAS*` on `build` (tag `t16_pre`).
 - [ ] **Step 5: Stateless references.** `Q/05386` to `Q/05389` (`*_cas_publish_counts_*`) and
   `Q/05485_cas_ref_append_requests` select no blob counter: their references are expected unchanged; do not edit
   them. Report any stateless test under `Q/*_cas_*` that selects a removed counter
   (`grep -ln 'CASMetaCreateClean\|CASMetaAbsentRepublish\|CASMetaResurrectClean' $WT/$Q/*`).
-- [ ] **Step 6: Two mutants,** tags `t14_m1`, `t14_m2`: (1) a writer that is not learned adopts on an absent
-  intent: expect `UnlearnedWriterNeverAdoptsAndPublishesUnmarked` to fail; (2) the mint omits
-  `created_generation`: expect `EndsSwitchedBeforeTheFirstWriter` to fail.
-- [ ] **Step 7: Commit,** then the gate. The body lists the three removed counters. Subject:
-  `Publish CAS blobs without a birth marker; new pools use blob intents`
+- [ ] **Step 6: Two mutants,** tags `t16_m1`, `t16_m2`: (1) a writer that is not learned adopts on an absent
+  intent: expect `UnlearnedWriterNeverAdoptsAndPublishesUnmarked` to fail; (2) the marked-body trigger is not
+  called: expect `UnlearnedWriterMeetingAMarkedBodyAsksForARereadOnce` to fail.
+- [ ] **Step 7: Commit,** then the gate and the ASan milestone. The body lists the three removed counters.
+  Subject: `Publish CAS blobs without a birth marker`
 
-### Task 15: `SYSTEM CAS ENABLE BLOB INTENTS` {#task-15}
+### Task 17: `SYSTEM CAS ENABLE BLOB INTENTS` {#task-17}
 
 Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §7.2, §7.3. Row 7 of [Shared code changes](#shared-code).
 
@@ -1352,12 +1636,12 @@ Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §7.2, §7.3. Row 7 of [S
   `src/Parsers/ASTSystemQuery.cpp:304-307`, `src/Parsers/ParserSystemQuery.cpp:546-558` (the case list of
   `CAS_FSCK`: the disk is required)
 - Modify: `src/Interpreters/InterpreterSystemQuery.h:81`, `src/Interpreters/InterpreterSystemQuery.cpp:1164-1169`,
-  `:2792` (a sibling of `runContentAddressedFsck`), `:3670-3677` (required access)
+  `:2792` (a sibling of `runContentAddressedFsck`), `:3685-3688` (required access, beside the `CAS_FSCK` case)
 - Modify: `src/Access/Common/AccessType.h:372` (new line after it), `Q/01271_show_privileges.reference:177`
 - Test: `add-test cas_enable_blob_intents.sh`
 
 **Interfaces:**
-- Consumes (Task 11): `Pool::enableBlobIntents`.
+- Consumes (Task 12): `Pool::enableBlobIntents`.
 - Produces: `ASTSystemQuery::Type::CAS_ENABLE_BLOB_INTENTS`; access type
   `M(SYSTEM_CAS_ENABLE_BLOB_INTENTS, "SYSTEM CAS ENABLE BLOB INTENTS", GLOBAL, SYSTEM)`;
   `BlockIO InterpreterSystemQuery::runContentAddressedEnableBlobIntents(const String & disk_name)`.
@@ -1367,25 +1651,31 @@ Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §7.2, §7.3. Row 7 of [S
   (`UInt8`). Exceptions of the pool step propagate unchanged.
 
 - [ ] **Step 1: Write the stateless test** (a CAS disk over local object storage, as
-  `Q/05485_cas_ref_append_requests.sh:17`): the first run's output is discarded (whether it writes the stamp
-  depends on whether a GC round already created `gc/state`); a rerun prints `0	0`;
-  `SELECT blob_protocol, blob_mark_probe FROM system.cas_mounts` prints `intents	ok` (predicted, not run:
-  `assumed` if the test disk skips the access check); the command on a disk that is not content-addressed
-  fails with `BAD_ARGUMENTS`; `clickhouse-format` round-trips the query.
+  `Q/05485_cas_ref_append_requests.sh:17`). The disk is created by this build, so it is already switched: a
+  stateless test cannot show the transition, which the gtests of Task 12 and the upgrade test of Task 19 cover.
+  It pins the surface:
+  - On a disk that does not set `skip_access_check`: the command prints `0	0` on the first run and on a
+    rerun; `SELECT blob_protocol, blob_mark_probe FROM system.cas_mounts` prints `intents	ok`.
+  - On a second disk with `skip_access_check`: the command fails with `NOT_IMPLEMENTED` and
+    `blob mark probe failed on this disk: skipped`; `blob_mark_probe` is `assumed`.
+  - The command on a disk that is not content-addressed fails with `BAD_ARGUMENTS`; `clickhouse-format`
+    round-trips the query.
+
+  Every printed value is "predicted, not run".
 - [ ] **Step 2: Implement.** Build `unit_tests_dbms` on `build` (the parser and interpreter compile into it) and
-  run `CAS*` (tag `t15_pre`).
+  run `CAS*` (tag `t17_pre`).
 - [ ] **Step 3: Commit,** then the gate. Subject: `Add SYSTEM CAS ENABLE BLOB INTENTS`
 
-### Task 16: Transition gtests {#task-16}
+### Task 18: Transition gtests {#task-18}
 
-Implementer `ca-impl`. Reviewer `ca-review`. Test code only. Read §7 whole and §2.4. These are the unit-level
-echoes of the model rows `safe_transition` to `safe_late_old_requests` of §10.1.
+Implementer `ca-impl`. Reviewer `ca-review`. Tests, plus at most one test hook in `Gc`. Read §7 whole and §2.4.
+These are the unit-level echoes of the model rows `safe_transition` to `safe_late_old_requests` of §10.1.
 
 **Files:**
 - Create: `T/gtest_cas_blob_intent_transition.cpp`; modify `T/cas_blob_intent_test_support.h`
 
 **Interfaces:**
-- Consumes: the fixtures (Task 8), `Pool::enableBlobIntents` (Task 11), `ScopedReadCeiling`.
+- Consumes: the fixtures (Task 8), `Pool::enableBlobIntents` (Task 12), `ScopedReadCeiling`.
 - Produces, in the support header:
 
   ```cpp
@@ -1406,7 +1696,14 @@ echoes of the model rows `safe_transition` to `safe_late_old_requests` of §10.1
     `OlderWriterRepublishesAMarkerlessBodyOnce`; `MarkerRoundCondemnsOnAnAbsentMarkerAndGraduates`.
   - Stage T2: `StampRefusesTheLeaseReadOfAnOlderBuild` (`ScopedReadCeiling(3)`: the text of §7.5, second row);
     `OlderBuildIsRefusedAtTheFloor`; `OlderRoundPastItsLeaseReadFailsItsCommit`;
-    `SlotRewrittenWithoutTheKeyBlocksTheCommand`; `EpochLatchRefusesAnOlderAllocation` (the critical-key text).
+    `SlotRewrittenWithoutTheKeyBlocksTheCommand`; `EpochLatchRefusesAnOlderAllocation`. This build knows the key
+    `!protocol_generation`, so `ScopedReadCeiling(3)` cannot make it fail as an older build does. The test
+    asserts two things: under `ScopedReadCeiling(3)` the allocation on a latched root is refused with the
+    `checkCompatibility` text (`CAS server-epoch: object requires reader generation 4 but this build supports
+    at most 3`); and the stored epoch body, read key by key with a `JsonObjectReader` that knows only
+    `next_writer_epoch` and `allocation_nonce` and passes the rest to `skipUnknown`
+    (`CA/Formats/CasTextFormat.cpp:315-322`), throws the critical-key text of §7.5. The second is what an
+    older build runs.
   - Stage T3: `RoundThatSampledBeforeTheSwitchCondemnsAMarkedTokenAsACandidate`;
     `MarkerAuthorityDeleteAfterTheSwitchMissesARepublishedBody` (a parked marker-mode round holds a pending row of
     an unmarked token; a learned writer meets the body, publishes over it; the delete answers `Mismatch`);
@@ -1416,13 +1713,14 @@ echoes of the model rows `safe_transition` to `safe_late_old_requests` of §10.1
   - Each test ends with a `runFsck` report: zero dangling refs.
 - [ ] **Step 2: Run.** Every test is expected green: the product rules exist. A red test is a product finding:
   stop and report it with the journal; do not edit the product in this task.
-- [ ] **Step 3: One mutant per stage,** tags `t16_m1` to `t16_m3`, to prove the tests can fail: (1) the G8
+- [ ] **Step 3: One mutant per stage,** tags `t18_m1` to `t18_m3`, to prove the tests can fail: (1) the G8
   demotion is skipped: expect `PendingRowLeftByAMarkerRoundIsDemotedNotExecuted` to fail; (2) the stamp is
   skipped by the switch: expect `StampRefusesTheLeaseReadOfAnOlderBuild` to fail; (3) the mark bit is read at
   upload time: expect `BlobStagedBeforeLearningIsPublishedUnmarked` to fail.
-- [ ] **Step 4: Commit,** then the gate. Subject: `Test the CAS marker to intent transition with mixed actors`
+- [ ] **Step 4: Commit,** then the gate and the ASan milestone. Subject:
+  `Test the CAS marker to intent transition with mixed actors`
 
-### Task 17: Integration and stateless tests {#task-17}
+### Task 19: Integration and stateless tests {#task-19}
 
 Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §10.2 (rows "Stateless", "Integration"), §6.2 ("Paths and
 where each is verified"). Written, not run; every number is "predicted, not run".
@@ -1468,12 +1766,13 @@ where each is verified"). Written, not run; every number is "predicted, not run"
 - [ ] **Step 3: Commit,** then the gate (`ninja` has no work; the run records the tree). Subject:
   `Test the CAS blob mark per store, the upgrade and the request ledger`
 
-### Task 18: Docs {#task-18}
+### Task 20: Docs {#task-20}
 
 Implementer `ca-impl`. Reviewer `ca-review-lite`. Read §1, §3, §7, §8.2, and [Effects on docs](#doc-effects).
 User docs state present behaviour in plain words: no invariant tags, no rule numbers.
 
-**Files** (all under `D/`; the spec's `operations/bucket-requirements.md` is `D/bucket-requirements.md`):
+**Files** (under `D/` unless a full path is given; the spec's `operations/bucket-requirements.md` is
+`D/bucket-requirements.md`):
 - `architecture/blob-protocol.md`: the publication sequence, the reuse rule (two `HEAD`s and the intent read),
   the writer-versus-GC race, the request budget table of §1; the section on the `.meta` sidecar becomes the
   note on pools that are not switched.
@@ -1493,15 +1792,30 @@ User docs state present behaviour in plain words: no invariant tags, no rule num
   `operations/troubleshooting.md` (a pool that never reuses: `blob_mark_probe`, `CASBlobReuseLegacyRepublish`
   that keeps growing, `CASBlobReuseTokenRejected`; a mount that left GC), `operations/debugging.md`
   (`cas-fsck --fix stale-intents`, `--fix legacy-markers`, the intent classes, `cas-inspect` on an intent key).
+- Four reference pages outside `D/`, row 11 of [Shared code changes](#shared-code):
+  - `docs/en/operations/system-tables/cas_mounts.md`: the columns `protocol_generation`, `blob_protocol`,
+    `blob_mark_probe` and their values (§7.7).
+  - `docs/en/operations/system-tables/cas_gc_log.md`: the phase `blob_protocol_mode` in every round;
+    `meta_pool_wait` (its row at `:85` and the caveat at `:129`) in rounds of a pool that is not switched only;
+    the `pending_deletes` metrics `intent_deletes`, `intent_delete_requests`, `legacy_marker_deletes`,
+    `token_rejected`.
+  - `docs/en/operations/system-tables/cas_log.md`: the `publication_reason` words `absent`, `intent_present`,
+    `legacy_body`, `not_learned`, `token_rejected`, `changed_at_second_head`.
+  - `docs/en/antalya/metrics_and_events.md`: the 18 new counters (4 `CASBlobIntent*` request counters, 4
+    `CASBlobReuse*`, `CASBlobPublishDigestMismatch`, 9 `CASGC*`), each with the description of its
+    `ProfileEvents.cpp` entry; the rows of `CASMetaCreateClean` (`:284`), `CASMetaAbsentRepublish` and
+    `CASMetaResurrectClean` go.
 - `$WT/docs/superpowers/cas/AGENTS.md` is not in this worktree: the decision-1 note goes to the controller's
   list in [Effects on backlog tasks](#backlog-effects).
 
 - [ ] **Step 1:** Write the changes.
-- [ ] **Step 2:** `grep -n '^#' <each changed file> | grep -v '{#'` prints nothing.
-  `grep -n 'I[1-8]\b\|W[1-8]\b\|G[0-9]\+\b\|F[0-6]\b' <each changed file>` shows no rule tag.
+- [ ] **Step 2:** `grep -n '^#' <each changed file> | grep -v '{#'` prints nothing new (a heading this task did
+  not add keeps its form). `grep -n 'I[1-8]\b\|W[1-8]\b\|G[0-9]\+\b\|F[0-6]\b' <each changed file>` shows
+  no rule tag. `grep -c 'CASBlobIntent\|CASBlobReuse\|CASBlobPublishDigestMismatch\|CASGCIntent\|CASGCInherited\|CASGCLegacyMarker'
+  docs/en/antalya/metrics_and_events.md` prints at least 18: one row per new counter.
 - [ ] **Step 3: Commit,** then the gate. Subject: `Document CAS blob publication with deletion intents`
 
-### Task 19: Yardstick references and soak cards {#task-19}
+### Task 21: Yardstick references and soak cards {#task-21}
 
 Implementer `ca-impl`. Reviewer `ca-review-lite`. Works in `M` on branch `cas-gc-rebuild`; the commit rules are
 the same, with `git -C $M`. Read §10.2 (row "Soak"), §10.3.
@@ -1521,7 +1835,7 @@ the same, with `git -C $M`. Read §10.2 (row "Soak"), §10.3.
   run on the finished branch ([Gates](#branch-gates)).
 
 - [ ] **Step 1:** Edit the cards and the unit tests of the yardstick. Run
-  `cd $M/utils/cas-yardstick && python3 -m pytest tests -q > $R/logs/t19_yardstick.log 2>&1`.
+  `cd $M/utils/cas-yardstick && python3 -m pytest tests -q > $R/logs/t21_yardstick.log 2>&1`.
 - [ ] **Step 2:** `python3 -m py_compile` on each changed soak file.
 - [ ] **Step 3: Commit** in `M` by exact file list. Never `git add -A`: `utils/ca-soak` holds run artifacts.
   Subject: `Move the yardstick cards and soak checks to blob intents`
@@ -1536,8 +1850,8 @@ In this order, each on the exact tree of the last commit, each log with its buil
 2. `--gtest_filter='S3*:WBS3*'` on both builds (the shared S3 change).
 3. The stateless `*_cas_*` set (129 tests at the base plus the new ones) in three setups: tests that create
    their own CAS disk on an ordinary server; CAS as the default disk over local object storage; CAS as the
-   default disk over S3. Every "predicted, not run" number of Tasks 14, 15 and 17 is checked here; a difference
-   is a finding, not a reference edit.
+   default disk over S3. Every "predicted, not run" number of Tasks 14, 16, 17 and 19 is checked here; a
+   difference is a finding, not a reference edit.
 4. Fast-test compile (`build_fast`, no S3) and the style check (`ci/jobs/check_style.py`), including
    `failpoint_tests_are_isolated`.
 5. Integration: `test_cas_blob_intents`, `test_cas_blob_intents_upgrade`, `test_cas_s3`, `test_cas_gcs`,
@@ -1547,7 +1861,7 @@ In this order, each on the exact tree of the last commit, each log with its buil
    duplicate content; the yardstick cards with a new reference; a wide insert like the stand's (marker `PUT`s to
    0, upload thread time, wall time); a fully duplicated second insert on a legacy pool and a third; GC requests
    per reclaimed blob in both modes; CPU of the publication hash on a large body.
-7. A 2-hour soak with process kills and the periodic fix step of Task 19: zero dangling refs, `intent_stale = 0`
+7. A 2-hour soak with process kills and the periodic fix step of Task 21: zero dangling refs, `intent_stale = 0`
    at the end, no `CASBlobPublishDigestMismatch`.
 
 ## Effects {#effects}
@@ -1583,36 +1897,39 @@ edits the backlog.
 
 | Suite | Deleted | Changed | Added | Task |
 |---|---|---|---|---|
-| Writer gtests (`T/gtest_cas_part_write.cpp`, `gtest_cas_upload_detached.cpp`, `gtest_cas_upload_fanout.cpp`, `gtest_cas_s3_staging.cpp`) | `Clean` create, absent-marker republish, marker counters, the copy over a present marker-less body | adopt and republish fixtures, request shapes, attempt counts | `CASBlobIntentWriter.*` | 10, 14 |
-| GC gtests (`gtest_cas_gc_meta_writer.cpp`, `gtest_cas_gc_round.cpp`, `gtest_cas_gc_read_ahead.cpp`, marker tests of `gtest_cas_gc_ack_floor.cpp` and the others of Task 8) | none: marker mode stays | each runs on a pool as an older build leaves it and serves the mode read of each round | `CASGcIntents.*`, `CASGcIntentsMode.*` | 8, 9 |
+| Writer gtests (`T/gtest_cas_part_write.cpp`, `gtest_cas_upload_detached.cpp`, `gtest_cas_upload_fanout.cpp`, `gtest_cas_s3_staging.cpp`) | `Clean` create, absent-marker republish, marker counters, the copy over a present marker-less body | adopt and republish fixtures, request shapes, attempt counts | `CASBlobIntentWriter.*` | 11, 15, 16 |
+| GC gtests (`gtest_cas_gc_meta_writer.cpp`, `gtest_cas_gc_round.cpp`, `gtest_cas_gc_read_ahead.cpp`, marker tests of `gtest_cas_gc_ack_floor.cpp` and the others of Task 8) | none: marker mode stays | each runs on a pool as an older build leaves it and serves the mode read of each round | `CASGcIntents.*`, `CASGcIntentsMode.*` | 8, 9, 10 |
 | `gtest_cas_blob_meta*.cpp` | none | pinned to the upgraded pool | — | 8 |
-| `gtest_cas_fsck.cpp` | — | `BodyWithoutMetaIsBenign`, `MetaWithoutBodyIsAdvisoryNotHard` run on an upgraded pool | `CASFsckIntents.*` | 13 |
-| Pool bootstrap gtests (`gtest_cas_pool.cpp`, `gtest_cas_bootstrap_ordering.cpp`, `gtest_cas_pool_meta.cpp`) | — | a new pool ends switched; floor 4 | states N0 to N3, `CASBlobIntentNewPool.*` | 2, 12, 14 |
+| `gtest_cas_fsck.cpp` | — | `BodyWithoutMetaIsBenign`, `MetaWithoutBodyIsAdvisoryNotHard` run on an upgraded pool; the summary line and the `SYSTEM CAS FSCK` row gain the advisory counters | `CASFsckIntents.*` | 14 |
+| Pool bootstrap gtests (`gtest_cas_pool.cpp`, `gtest_cas_bootstrap_ordering.cpp`, `gtest_cas_pool_meta.cpp`) | — | a new pool ends switched; floor 4 | states N0 to N3, `CASBlobIntentNewPool.*` | 2, 13, 15 |
 | Format gtests | — | generation pins 3 to 4 | the fields of §2.3 | 2, 3 |
-| Integration | — | `test_cas_s3`, `test_cas_gcs`, `test_cas_gc_s3` | upgrade test; mark per path and store | 17 |
-| Stateless | — | none expected (`05386` to `05389`, `05485` select no blob counter) | request ledger; `system.cas_mounts` columns; the command | 14, 15, 17 |
-| `utils/cas-yardstick`, `utils/ca-soak` | — | cards `cycle`, `wide_insert`, `mutation`, `dup_content`, `attach_200` and the reference; soak cards S16 and S41 | a periodic `cas-fsck --fix stale-intents` step | 19 |
+| Integration | — | `test_cas_s3`, `test_cas_gcs`, `test_cas_gc_s3` | upgrade test; mark per path and store | 19 |
+| Stateless | — | none expected (`05386` to `05389`, `05485` select no blob counter) | request ledger; `system.cas_mounts` columns; the command | 16, 17, 19 |
+| GC request, phase and counter shape on a pool created by this build (`gtest_cas_gc_log.cpp`, the GC suites Task 8 did not pin) | — | no `meta_pool_wait` phase, `CASGCMetaOps` does not move, 5 requests per reclaimed blob where there were 8 | — | 15 |
+| Fixtures seeded with `seedPoolMetaForRestart` (about 55 call sites in 20 files) | — | the pool is of this build and ends switched; a raw `gc/state` seed has header 4, or the test is pinned | — | 15 |
+| `utils/cas-yardstick`, `utils/ca-soak` | — | cards `cycle`, `wide_insert`, `mutation`, `dup_content`, `attach_200` and the reference; soak cards S16 and S41 | a periodic `cas-fsck --fix stale-intents` step | 21 |
 
 ### Effects on docs {#doc-effects}
 
-The file list is in [Task 18](#task-18). Corrections to the earlier list: `bucket-requirements.md` and
+The file list is in [Task 20](#task-20). Corrections to the earlier list: `bucket-requirements.md` and
 `configuration.md` are directly under `D/`; `operations/troubleshooting.md` is added; the migration section
-states both points of no return and that a pool created by this build needs no command.
+states both points of no return and that a pool created by this build needs no command. Four reference pages
+outside `D/` are added: the three `system.cas_*` table pages and `docs/en/antalya/metrics_and_events.md`.
 
 ## Spec items this plan settles {#settled}
 
 | # | Item | Settlement |
 |---|---|---|
 | S1 | The mode bit of the emulated local mark (§6.2 leaves "an execute bit") | owner execute, `S_IXUSR` (`0100`). File creation uses mode `0666` (`src/IO/WriteBufferFromFile.h:37`) under the server `umask` `027` (`src/Daemon/BaseDaemon.cpp:265`), so no `umask` yields an execute bit; `chmod` ignores the `umask`, so the set is exact; the owner bit survives a tool that strips group and other bits |
-| S2 | A token-form probe failure (P7) on a pool created by this build. §6.2 and §7.4 fail the mount; a skipped probe admits the same store | a WARNING and the mount learns, in the creating sequence and on every later mount: a token outside the grammar costs an upload per reuse and is never adopted or deleted (§8.2). `blob_mark_probe` shows `P7`. The command on an upgraded pool still refuses. `.FailedProbeFailsTheMount` covers preservation only; `.TokenFormFailureWarnsAndTheMountLearns` is added |
-| S3 | A later mount of a switched pool created by this build whose probe finds the mark not preserved | mounts not learned with a WARNING and `blob_mark_probe` naming the step (§6.2 as written); only the creating sequence fails on it |
+| S2 | A token-form probe failure (P7) on a pool created by this build | withdrawn: the spec holds (§6.2, §7.4). A probe that runs and fails the token form fails the creating mount, as a preservation failure does: on such a store every reuse uploads again and nothing is reclaimed. Only false presence is a WARNING there |
+| S3 | A later mount of a switched pool created by this build whose probe fails preservation or the token form | mounts not learned with a WARNING and `blob_mark_probe` naming the step (§6.2 as written); only the creating sequence fails on it |
 | S4 | `blob_mark_probe` values (§7.7: "the failed step") | `ok`, `skipped`, `assumed`, or `P1` to `P7` |
-| S5 | "The lease renewer every 60 s" against a renew period of 10 s (`CA/Pool/CasPool.h:229`) | a 60 s limit inside `renewWatermarkOnce` on the mount's clock; 10 s for the writer's trigger |
+| S5 | "The lease renewer every 60 s" against a renew period of 10 s (`CA/Pool/CasPool.h:229`) | a 60 s limit on the mount's boot clock, checked by a callback that `CasMountRuntime` runs after each committed renew of the background worker and of the direct call; 10 s for the writer's trigger |
 | S6 | Where the "left GC" state lives (§3.3 names no owner) | on `Pool`: it outlives a `Gc` object and is read by the scheduler, the manual round and the rebuild |
-| S7 | `cas_gc_log` phases | new phase `blob_protocol_mode` in every round; `meta_pool_wait` in marker mode only; the `pending_deletes` metrics of Task 9 |
+| S7 | `cas_gc_log` phases | new phase `blob_protocol_mode` in every round; `meta_pool_wait` in marker mode only; the `pending_deletes` metrics of Task 10 |
 | S8 | Publication reason words for events | `absent`, `intent_present`, `legacy_body`, `not_learned`, `token_rejected`, `changed_at_second_head` |
 | S9 | Probe classification when several rows fail | preservation, then token form, then false presence |
-| S10 | When `created_generation` is first written | by the mint of `createOrValidate`, from Task 14; before it the sequence is tested on seeded N2 pools |
+| S10 | When `created_generation` is first written | by the mint of `createOrValidate`, from Task 15; before it the sequence is tested on seeded N2 pools |
 
 ## Spec questions {#spec-questions}
 
@@ -1621,15 +1938,16 @@ task named.
 
 | # | Question | Default taken | Task |
 |---|---|---|---|
-| Q1 | §10.1 requires the two TLA+ models "before implementation". May Tasks 1 to 8, which add no protocol behaviour, start before the model results exist? | No: no task starts before the results file is recorded | all |
-| Q2 | Commits 10 to 13 keep today's marker path for a mount that is not learned, which §7.1 (T1) does not describe | Accepted inside the branch history only: no production path switches a pool before Task 14, and Task 14 removes the path | 10, 14 |
-| Q3 | §2.3: the slot carries "4 in every body this build writes". Does a slot that this build's GC fences over an older build's body declare 4? | Yes, the encoder always writes 4. The fenced owner must remount, and the floor refuses an older build | 2 |
+| Q1 | §10.1 requires the TLA+ models "before implementation". May Tasks 1 to 8, which add no protocol behaviour, start before the model results exist? | No: no task starts before the results file is recorded under `$M/docs/superpowers/models/` ([Before Task 1](#before-task-1)) | all |
+| Q2 | Commits 11 to 15 keep today's marker path for a mount that is not learned, which §7.1 (T1) does not describe | Accepted inside the branch history only: no production path switches a pool before Task 15; Task 15 stops a mount that saw the switch from adopting; Task 16 removes the path | 11, 15, 16 |
+| Q3 | §2.3: the slot carries "4 in every body this build writes". Does a slot that this build's GC fences over an older build's body declare 4? | No. The slot holder writes its own `protocol_generation`; a fence copies the value it decoded, as it copies `write_attempt_id`, and never raises it. So the declaration keeps telling the owner's build, and the command keeps naming that root | 2 |
 | Q4 | §2.1 names four `CASBlobIntent*` counters; the instrumented backend has 11 operation classes per namespace | The mapping of Task 3; operations never sent on an intent key count as `CASOther*` | 3 |
 | Q5 | §6.2 lists no copy for the in-memory backend, but `InMemoryBackend::publish` has a verbatim branch (`CA/Backend/CasInMemoryBackend.cpp:235`) | The copy stores the mark of the request, as the multipart copy takes the type of its create | 5 |
-| Q6 | §7.5 is the only registry of refusal texts and has none for "the disk is not mounted writable" and "`min_reader_generation < 4`" | `INVALID_STATE`: `SYSTEM CAS ENABLE BLOB INTENTS needs a writable mount of disk '<disk>'`; `INVALID_STATE`: `pool is at reader generation <n>, need 4` | 11 |
-| Q7 | §7.3 writes the disk as a quoted literal; `SYSTEM CAS FSCK` and its siblings take the disk through `parseQueryWithOnClusterAndTarget` | The grammar of `SYSTEM CAS FSCK`, `ON CLUSTER` included: each server's run is monotone and two runs converge | 15 |
+| Q6 | §7.5 is the only registry of refusal texts and has none for "the disk is not mounted writable" and "`min_reader_generation < 4`" | `INVALID_STATE`: `SYSTEM CAS ENABLE BLOB INTENTS needs a writable mount of disk '<disk>'`; `INVALID_STATE`: `pool is at reader generation <n>, need 4` | 12 |
+| Q7 | §7.3 writes the disk as a quoted literal; `SYSTEM CAS FSCK` and its siblings take the disk through `parseQueryWithOnClusterAndTarget` | The grammar of `SYSTEM CAS FSCK`, `ON CLUSTER` included: each server's run is monotone and two runs converge | 17 |
 | Q8 | The offline `cas-gc-rebuild` under another dialect is not specified; only `SYSTEM CAS GC REBUILD` is | Both call `Gc::rebuildBaseline`, which makes the check | 9 |
-| Q9 | §3.2 does not name a counter for "present body, writer not learned" | None added; the event reason `not_learned` carries it | 14 |
-| Q10 | §7.4 does not say what happens to the lease when the sequence throws after `mountWritable` | The exception destroys the `PoolPtr`; the mount says its normal farewell | 12 |
-| Q11 | §9.2 and the earlier doc list name `D/operations/bucket-requirements.md`; the file is `D/bucket-requirements.md` | The existing file | 18 |
-| Q12 | §10.2 puts the GCS paths on "the GCS emulator"; `I/test_cas_gcs` uses a Python mock that must be taught to keep `Content-Type` | Extend the mock and say in the test that it verifies the client side only | 17 |
+| Q9 | §3.2 does not name a counter for "present body, writer not learned" | None added; the event reason `not_learned` carries it | 15 |
+| Q10 | §7.4 does not say what happens to the lease when the sequence throws after `mountWritable` | The exception destroys the `PoolPtr`; the mount says its normal farewell | 13 |
+| Q11 | §9.2 and the earlier doc list name `D/operations/bucket-requirements.md`; the file is `D/bucket-requirements.md` | The existing file | 20 |
+| Q12 | §10.2 puts the GCS paths on "the GCS emulator"; `I/test_cas_gcs` uses a Python mock that must be taught to keep `Content-Type` | Extend the mock and say in the test that it verifies the client side only | 19 |
+| Q13 | §3.4 and §7.7 add five `cas-fsck` classes. `CA/Tools/CasFsck.h:194-250` requires each new class to be declared a hard finding or an advisory one | Advisory, all five: `kFsckHardFindings` keeps 5 rows and the exit code does not change; the counts show in the summary line and in the `SYSTEM CAS FSCK` row | 14 |
