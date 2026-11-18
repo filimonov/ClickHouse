@@ -83,9 +83,9 @@ uses the final G6. Time is TLC's run time.
 | `safe_base_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 3, faults unbounded | green | green | 107536428 | 767s |
 | `safe_pend` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, faults unbounded | green | green (complete, no time cut; a 902 s run was cut at 123,708,382) | 150,074,834 | 18min 43s |
 | `safe_pend_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, faults unbounded | green | green | 93970217 | 663s |
-| `safe_late_intent_delete` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | cut at 122,189,711 states, no violation | 122,189,711 | 906s |
-| `safe_late_intent_delete_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | cut at 118,056,575 states, no violation | 118,056,575 | 906s |
-| `safe_rebuild_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, faults unbounded, Rebuild | green | cut at 111,950,009 states, no violation | 111,950,009 | 900s |
+| `safe_late_intent_delete` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | cut at about 361,500,000 states after 3000 s, no violation (a 906 s run was cut at 122,189,711) | 361,528,651 | 3000s |
+| `safe_late_intent_delete_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | green (complete, no time cut; a 906 s run was cut at 118,056,575) | 233,225,735 | 32min 59s |
+| `safe_rebuild_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, faults unbounded, Rebuild | green | green (complete, no time cut; a 900 s run was cut at 111,950,009) | 209,567,078 | 24min 43s |
 | `safe_p1_base` | 2W 2G, content, seed orphan, MaxPuts 1, MaxVer 3, faults unbounded | green | green | 11528263 | 82s |
 | `safe_p1_base_generation` | 2W 2G, generation, seed orphan, MaxPuts 1, MaxVer 3, faults unbounded | green | green | 11528263 | 138s |
 | `safe_p1_pend` | 2W 2G, content, seed pend, MaxPuts 1, MaxVer 3, faults unbounded | green | green | 9383859 | 66s |
@@ -123,8 +123,8 @@ uses the final G6. Time is TLC's run time.
 | `sab_staging_alias_two_copies` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, Sab staging_alias_two_copies | red | red: `INV_I1_NO_RECURRENCE` | 23068032 | 130s |
 | `safe_pub_integrity_1gc` | 2W 1G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green | 821698 | 4s |
 | `safe_pub_integrity_1gc_generation` | 2W 1G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green | 556370 | 3s |
-| `safe_pub_integrity` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | cut at 84,219,868 states, no violation | 84,219,868 | 600s |
-| `safe_pub_integrity_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | cut at 81,987,738 states, no violation | 81,987,738 | 600s |
+| `safe_pub_integrity` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green (complete, no time cut; a 600 s run was cut at 84,219,868) | 156,710,931 | 19min 20s |
+| `safe_pub_integrity_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green (complete, no time cut; a 600 s run was cut at 81,987,738) | 104,831,232 | 11min 31s |
 | `sab_unchecked_stream` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, SourceChanges, Sab unchecked_stream | red | red: `INV_I2_KEY_NAMES_PAYLOAD` | 2120 | 0s |
 | `sab_unchecked_stream_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, SourceChanges, Sab unchecked_stream | red | red: `INV_I2_KEY_NAMES_PAYLOAD` | 2663 | 0s |
 | `sab_resend_envelope` | 2W 2G, content, seed orphan, MaxPuts 2, MaxResends 1, MaxVer 2, faults unbounded | red | red: `INV_I1_NO_RECURRENCE` | 25354 | 0s |
@@ -211,3 +211,5 @@ The `sab_*` traces are the schedules S1 to S7 and S9 of §4.3 of the specificati
 - Not run: `safe_p1_late_create_generation`, `safe_p1_stale_list_generation`, `safe_3writers_p1_generation` (with
   `MaxPuts = 1` both dialects give the same state graph: `safe_p1_adopt_lost` and its generation form match state
   for state). `safe_late_create`, `safe_late_create_generation`, `safe_late_body_delete`, `safe_late_body_delete_generation`, `safe_adopt_lost`, `safe_adopt_lost_generation`, `safe_adopt_spared`, `safe_adopt_spared_generation`, `safe_lost_commit`, `safe_lost_commit_generation`, `safe_stale_list`, `safe_3writers`, `safe_over_budget`, `safe_linker`, `safe_budget`, `safe_maxver4_base`, `safe_maxver4_base_generation`, `safe_maxver4_pend`, `safe_maxver4_pend_generation`, `safe_maxver4_late_intent_delete`, `safe_maxver4_late_intent_delete_generation`, `safe_v2_late_intent_delete`, `live_pend_late_fault2`, `live_ctl_keep_standing_on_spare`, `live_ctl_g9_at_indegree`, `ctl_keep_standing_on_spare`, `ctl_g9_at_indegree`.
+
+Long runs of two configurations that are not in the table above, each stopped by a 3000 s limit with no violation: `safe_late_create` at about 369,700,000 distinct states and `safe_lost_commit` at about 367,600,000 (2 writers, 2 GC actors, content tokens, MaxPuts 2, MaxVer 3). They are cut runs, not complete ones.
