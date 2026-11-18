@@ -79,9 +79,9 @@ uses the final G6. Time is TLC's run time.
 
 | Configuration | Bounds | Expected | Verdict | Distinct states | Time |
 |---|---|---|---|---|---|
-| `safe_base` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 3, faults unbounded | green | cut at 125,471,854 states, no violation | 125,471,854 | 903s |
+| `safe_base` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 3, faults unbounded | green | green (complete, no time cut; a 903 s run was cut at 125,471,854) | 167,830,952 | 21min 04s |
 | `safe_base_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 3, faults unbounded | green | green | 107536428 | 767s |
-| `safe_pend` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, faults unbounded | green | cut at 123,708,382 states, no violation | 123,708,382 | 902s |
+| `safe_pend` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, faults unbounded | green | green (complete, no time cut; a 902 s run was cut at 123,708,382) | 150,074,834 | 18min 43s |
 | `safe_pend_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, faults unbounded | green | green | 93970217 | 663s |
 | `safe_late_intent_delete` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | cut at 122,189,711 states, no violation | 122,189,711 | 906s |
 | `safe_late_intent_delete_generation` | 2W 2G, generation, seed pend, MaxPuts 2, MaxVer 3, late id, faults unbounded | green | cut at 118,056,575 states, no violation | 118,056,575 | 906s |
