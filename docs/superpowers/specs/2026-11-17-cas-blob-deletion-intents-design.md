@@ -224,7 +224,8 @@ A row is in one of three states. "Zero" below means: this round's cut shows in-d
 |---|---|
 | F0 | **Admission.** The dialect check of the open ([§6.1](#identity)); it holds on a read-only open, which is how `cas-fsck` opens the pool (`programs/disks/CommandFsck.cpp:53-56`) |
 | F1 | `cas-fsck` lists `blob-intents/`. A key that `parseBlobIntentKey` rejects is `intent_malformed` |
-| F2 | For a listed intent: exact `GET` of the intent, then `HEAD B`. Bytes other than the canonical record → `intent_malformed`. Same canonical identity → `intent_current`. Another canonical identity → `intent_replaced`. Absent → `intent_body_gone`. A read that is refused, unanswered or fails on a malformed token, or a `HEAD` token that does not canonicalise → `intent_unread` |
+| F2 | Only under `cas-fsck --verify-intents` (two requests per intent; not in `SYSTEM CAS FSCK`): for a listed intent, exact `GET` of the intent, then `HEAD B`. Bytes other than the canonical record → `intent_malformed`. Same canonical identity → `intent_current`. Another canonical identity → `intent_replaced`. Absent → `intent_body_gone`. A read that is refused, unanswered or fails on a malformed token, or a `HEAD` token that does not canonicalise → `intent_unread`: the report is unclean, the summary shows the first reason, and the CLI exits non-zero. A default scan classifies intents from the listing alone |
+| F6 | **A `pending` row needs its intent.** For every `pending` row: exact `GET` of the row's intent. Absent → `HEAD B`: the row's token is current → `pending_without_intent`, a hard finding (GC deletes a pending body without re-reading the intent, so no writer is warned); absent or another token → informational. `gc/state` is re-read before a hard finding is reported. A `standing` row whose body shows the row's token is reported in its own class, advisory |
 | F3 | Every `.meta` is `legacy_marker`: debris that no actor reads. `cas-fsck --fix legacy-markers` deletes each with `op.removeCurrent` (`Q:656`): a `HEAD`, then a delete conditional on what it saw |
 | F4 | Intents are accounted objects in every class total. `body_without_meta` and `meta_without_body` (`CA/Tools/CasFsck.cpp:1206-1222`) are removed |
 | F5 | **A fix run stays on the read-only open.** It sends its deletes through its own operation (`CA/Tools/CasFsck.cpp:447`): no mount, no lease, no probe. It deletes `.meta` keys under F3 and writes nothing. A refused or unanswered delete stops the run with an error and the count deleted so far; a rerun continues |
@@ -380,9 +381,11 @@ One-time, offline, upward only, in place. Existing bodies are adopted by the ord
 
 ### 7.1 The tool {#tool}
 
-`clickhouse-disks cas-migrate-pool [--grace-seconds N] [--intents-for-all-bodies] [--dry-run]`, on a disk configured
-read-only like the other offline tools (`programs/disks/CommandCaGcRebuild.cpp:55-59`). It is the only code of this
-build that opens a pool below generation 4 (`Pool::openForMigration`): no mount, no slot of its own, no writer, no GC.
+`clickhouse-disks cas-migrate-pool [--grace-seconds N] [--intents-for-all-bodies] [--dry-run]`, on the disk as
+the server configures it; the tool is the only command of its query. Its process defers the open of every CAS disk, so
+nothing is mounted: no slot of its own, no lease, no writer, no GC; that, not a read-only flag, is what keeps the tool
+from acting as a pool member. It is the only code of this build that opens a pool below generation 4
+(`Pool::openForMigration`).
 The operator stops every server and tool of the pool, runs it, then starts the servers on this build.
 
 | # | Step | Writes | Refuses or fails when |
