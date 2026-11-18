@@ -34,6 +34,8 @@ CONSTANTS
   Anomaly,        \* clauses of `Consistent` dropped: "marker" (cases (a) to (c)), "ref" (R3),
                   \* "listing" (case (d)), "recur" (case (e))
   AllBodies,      \* --intents-for-all-bodies
+  SeedFloor,      \* `min_reader_generation` of `_pool_meta` at the start: 1 to 3 (below 3: an older GC
+                  \* with no graduation gate may have run, so the marker clause of `Consistent` is dropped)
   Faults,         \* a tool intent create may stay unanswered (and land later, or never)
   Linker,         \* the no-bytes reference path of this build (section 4.2)
   MaxCrash,       \* tool crashes in total
@@ -50,11 +52,15 @@ KnownSab ==
    "unconfirmed_create",      \* S13: M5 accepts a create it could not confirm
    "no_recheck",              \* M7 passes without reading
    "gc_state_not_rewritten",  \* M6 is skipped
-   "rows_only"}               \* M5 ignores the markers M4 read
+   "rows_only",               \* M5 ignores the markers M4 read
+   "no_row_token_intent",     \* M5 creates no intent for a pending row's own token
+   "raise_before_m5"}         \* M6's raise of a floor below 3 runs right after M1
 
 Has(s) == s \in Sab
 LateOk(k) == k \in Late
 Anom(a) == a \in Anomaly
+\* Case (a): below floor 3 the older GC may lack the graduation gate; its rows are not trusted.
+MarkerAnom == Anom("marker") \/ SeedFloor < 3
 
 \* Tokens: 1 is the seed body, 2 an older token already replaced, fresh tokens from 3 (A1).
 MaxTok == 3 + MaxNewPuts + MaxOldPuts
@@ -65,11 +71,13 @@ Row(st, t, c) == [st |-> st, tok |-> t, conf |-> c]
 NoRow == Row("none", 0, FALSE)
 
 \* The tool's steps in the order of section 7.1, "Order"; the sabotages permute them.
+\* "M5p" is the create for a pending row's own token; "M6r" is M6's raise of a floor below 3.
 Ord ==
-  IF Has("floor_before_intents") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M8", "M5", "M6", "M7", "M9">>
-  ELSE IF Has("floor_before_gc_state") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M8", "M6", "M7", "M9">>
-  ELSE IF Has("markers_before_floor") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M6", "M7", "M9", "M8">>
-  ELSE <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M6", "M7", "M8", "M9">>
+  IF Has("floor_before_intents") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M8", "M5", "M5p", "M6r", "M6", "M7", "M9">>
+  ELSE IF Has("floor_before_gc_state") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M5p", "M8", "M6r", "M6", "M7", "M9">>
+  ELSE IF Has("markers_before_floor") THEN <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M5p", "M6r", "M6", "M7", "M9", "M8">>
+  ELSE IF Has("raise_before_m5") THEN <<"M1", "M6r", "M2a", "M2b", "M3", "M4", "M5", "M5p", "M6", "M7", "M8", "M9">>
+  ELSE <<"M1", "M2a", "M2b", "M3", "M4", "M5", "M5p", "M6r", "M6", "M7", "M8", "M9">>
 NextOf(s) == LET i == CHOOSE j \in 1..Len(Ord) : Ord[j] = s IN IF i = Len(Ord) THEN "Done" ELSE Ord[i + 1]
 
 VARIABLES
@@ -77,6 +85,7 @@ VARIABLES
   meta, mver,           \* `<blob>.meta`: "absent" | "clean" | "cond"; its version (the If-Match token)
   intents,              \* tokens t with I(B,t) present
   pm,                   \* `_pool_meta` floor 4 (section 2.2)
+  fl,                   \* `_pool_meta` floor while below 4: 1 to 3
   gs,                   \* `gc/state`: [row, ver (its token), hdr (3 | 4), lp (the lease pair)]
   hb,                   \* `gc/hb` pair
   slot,                 \* the mount slot of the older member's root: [st : none|live|fenced, v]
@@ -94,18 +103,20 @@ VARIABLES
   ng,                   \* the GC of this build, its round
   om, osusp, olease,    \* older member: "off"|"readpm"|"mounted"|"dead"; suspended; lease valid on its clock
   ow, oput, og,         \* its writer, publications, its GC round
-  fEvid, fI4, fToolDel, fRecur   \* ghost violation bits
+  fEvid, fI4, fToolDel, fRecur,  \* ghost violation bits
+  hitTok                \* ghost: the token the last body removal took; an older delete: t; G4 of this build: 100 + t
 
-storeV == <<body, nextTok, gone, meta, mver, intents, pm, gs, hb, slot>>
+storeV == <<body, nextTok, gone, meta, mver, intents, pm, fl, gs, hb, slot>>
 lateV == <<odel, lput, lmeta, lgc, tcr>>
 toolV == <<tl, toolConf, crashes, runs>>
 newV == <<nw, nput, lnk, oldRef, ng>>
 oldV == <<om, osusp, olease, ow, oput, og>>
-ghostV == <<fEvid, fI4, fToolDel, fRecur>>
+ghostV == <<fEvid, fI4, fToolDel, fRecur, hitTok>>
 vars == <<storeV, lateV, toolV, newV, oldV, ghostV>>
 
 T0 == [ph |-> "Idle", s0 |-> [st |-> "none", v |-> 0], lp0 |-> 0, hb0 |-> 0, sl |-> [st |-> "none", v |-> 0],
-       e0 |-> 0, e6 |-> 0, row |-> NoRow, mc |-> "none", mv |-> 0, bl |-> FALSE, ht |-> 0]
+       e0 |-> 0, e6 |-> 0, row |-> NoRow, mc |-> "none", mv |-> 0, bl |-> FALSE, ht |-> 0,
+       ab |-> FALSE, h5 |-> 0, after |-> "Idle"]
 NW0 == [ph |-> "Idle", seen |-> 0, adopted |-> FALSE]
 OW0 == [ph |-> "Idle", seen |-> 0]
 NG0 == [ph |-> "Idle", base |-> NoRow, bver |-> 0, ref |-> FALSE, next |-> NoRow]
@@ -123,8 +134,8 @@ Auth(row, del, t) == t \in del \/ (row.st = "pend" /\ row.tok = t)
 \* adopted `t` (it adopts only on `Clean`, W:446-452).
 Consistent(b, m, row, del, lm, ref) ==
   b.p /\ Auth(row, del, b.t) =>
-    /\ (m = "cond" \/ Anom("marker"))
-    /\ (lm.k \in {"clean_swap", "del"} /\ lm.v = 1 => Anom("marker"))
+    /\ (m = "cond" \/ MarkerAnom)
+    /\ (lm.k \in {"clean_swap", "del"} /\ lm.v = 1 => MarkerAnom)
     /\ (ref => Anom("ref"))
 
 SeedLmeta ==
@@ -162,7 +173,7 @@ Init ==
           /\ (ref => bp)
           /\ body = b /\ meta = m /\ gs = [row |-> row, ver |-> 0, hdr |-> 3, lp |-> 0]
           /\ odel = del /\ lput = lp /\ lmeta = lm /\ oldRef = ref /\ lgc = gcr
-  /\ nextTok = 3 /\ gone = {2} /\ mver = 1 /\ intents = {} /\ pm = FALSE /\ hb = 0
+  /\ nextTok = 3 /\ gone = {2} /\ mver = 1 /\ intents = {} /\ pm = FALSE /\ fl = SeedFloor /\ hb = 0
   /\ slot = IF OldMember \in {"suspended_mounted", "suspended_gc_leader"} THEN [st |-> "live", v |-> 1]
             ELSE [st |-> "none", v |-> 0]
   /\ tl = [x \in Tools |-> T0] /\ tcr = {} /\ toolConf = {} /\ crashes = 0 /\ runs = 0
@@ -177,7 +188,7 @@ Init ==
   /\ og = IF OldMember = "suspended_gc_leader"
             THEN [ph |-> "Cut", base |-> gs.row, bver |-> 0, ref |-> FALSE, next |-> NoRow]
             ELSE NG0
-  /\ fEvid = FALSE /\ fI4 = FALSE /\ fToolDel = FALSE /\ fRecur = FALSE
+  /\ fEvid = FALSE /\ fI4 = FALSE /\ fToolDel = FALSE /\ fRecur = FALSE /\ hitTok = 0
 
 --------------------------------------------------------------------------------------
 (* STORE helpers. *)
@@ -201,8 +212,8 @@ HasEdge ==
 LateDelLand(t) ==
   /\ t \in odel
   /\ odel' = odel \ {t}
-  /\ IF body.p /\ body.t = t THEN Unland ELSE UNCHANGED <<body, gone>>
-  /\ UNCHANGED <<nextTok, meta, mver, intents, pm, gs, hb, slot, lput, lmeta, lgc, tcr, toolV, newV, oldV,
+  /\ IF body.p /\ body.t = t THEN Unland /\ hitTok' = t ELSE UNCHANGED <<body, gone, hitTok>>
+  /\ UNCHANGED <<nextTok, meta, mver, intents, pm, fl, gs, hb, slot, lput, lmeta, lgc, tcr, toolV, newV, oldV,
                  fEvid, fI4, fToolDel, fRecur>>
 
 \* Writer body PUT: a new incarnation (A1 held in that build), or the recurring token (case (e)).
@@ -210,7 +221,7 @@ LatePutLand ==
   /\ lput /= "none"
   /\ IF lput = "recur" THEN Land(2) /\ UNCHANGED nextTok ELSE Land(nextTok) /\ nextTok' = nextTok + 1
   /\ lput' = "none"
-  /\ UNCHANGED <<meta, mver, intents, pm, gs, hb, slot, odel, lmeta, lgc, tcr, toolV, newV, oldV, fEvid, fI4, fToolDel>>
+  /\ UNCHANGED <<meta, mver, intents, pm, fl, gs, hb, slot, odel, lmeta, lgc, tcr, toolV, newV, oldV, fEvid, fI4, fToolDel, hitTok>>
 
 \* Marker requests: the writer's `Clean` create (If-None-Match) or `Condemned` to `Clean` swap
 \* (If-Match), W:352-404; the GC marker write (MW:45-51) or delete (If-Match, MW:57-63).
@@ -224,7 +235,7 @@ LateMetaLand ==
        [] lmeta.k = "del" ->
             IF meta /= "absent" /\ mver = lmeta.v THEN meta' = "absent" /\ mver' = mver + 1 ELSE UNCHANGED <<meta, mver>>
   /\ lmeta' = [k |-> "none", v |-> 0]
-  /\ UNCHANGED <<body, nextTok, gone, intents, pm, gs, hb, slot, odel, lput, lgc, tcr, toolV, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, intents, pm, fl, gs, hb, slot, odel, lput, lgc, tcr, toolV, newV, oldV, ghostV>>
 
 \* `gc/state` commit or lease write, If-Match the token it read (G:1326, G:5194). Refused after any
 \* other write of `gc/state`, M6 included (section 7.4).
@@ -235,14 +246,14 @@ LateGcLand ==
                              !.lp = IF lgc.k = "lease" THEN @ + 1 ELSE @, !.ver = @ + 1]
        ELSE UNCHANGED gs
   /\ lgc' = [k |-> "none", v |-> 0, row |-> NoRow]
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, hb, slot, odel, lput, lmeta, tcr, toolV, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, hb, slot, odel, lput, lmeta, tcr, toolV, newV, oldV, ghostV>>
 
 \* A tool intent create applies (If-None-Match: an equal occupant stays).
 ToolCreateLand(q) ==
   /\ q \in tcr
   /\ tcr' = tcr \ {q}
   /\ intents' = intents \cup {q.t}
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, pm, gs, hb, slot, odel, lput, lmeta, lgc, toolV, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, pm, fl, gs, hb, slot, odel, lput, lmeta, lgc, toolV, newV, oldV, ghostV>>
 
 --------------------------------------------------------------------------------------
 (* THE TOOL, section 7.1. *)
@@ -269,10 +280,11 @@ TCrash(x) ==
   /\ crashes' = crashes + 1
   /\ UNCHANGED <<storeV, lateV, toolConf, runs, newV, oldV, ghostV>>
 
-\* M1: floor 4 -> M9 (the code of F4); else the probe, which the model does not refuse.
+\* M1: floor 4 -> M9 (the code of F4); else the probe, which the model does not refuse. A floor below 3
+\* forces --intents-for-all-bodies for this run.
 TM1(x) ==
   /\ tl[x].ph = "M1"
-  /\ Go(x, [tl[x] EXCEPT !.ph = IF pm THEN "M9f" ELSE NextOf("M1")])
+  /\ Go(x, [tl[x] EXCEPT !.ph = IF pm THEN "M9f" ELSE NextOf("M1"), !.ab = AllBodies \/ fl < 3])
   /\ UNCHANGED <<storeV, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M2, first observation: every slot, the lease pair of `gc/state`, the pair of `gc/hb`.
@@ -294,7 +306,7 @@ TM2b(x) ==
   \* A slot silent for the observation threshold, measured with the member's `mount_lease_ttl_ms`
   \* (M2), means its lease also expired on its own clock, unless that clock stood still (R2 row 1).
   /\ olease' = (olease /\ (StoodClock \/ slot' = slot))
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, gs, hb, lateV, toolConf, crashes, runs, newV,
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, gs, hb, lateV, toolConf, crashes, runs, newV,
                  om, osusp, ow, oput, og, ghostV>>
 
 \* M3: `gc/state` with its token e0; every condemned row.
@@ -315,15 +327,27 @@ TM4(x) ==
   /\ UNCHANGED <<storeV, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M5: for a marker that is not `Clean`, a condemned row, or (option) a listed body: `HEAD B`;
-\* absent -> nothing; else `PUT I(B,t)` If-None-Match for the current t.
+\* absent -> nothing; else `PUT I(B,t)` If-None-Match for the current t. `h5`: what the `HEAD` showed.
 TM5(x) ==
   /\ tl[x].ph = "M5"
-  /\ LET need == (tl[x].mc = "notclean" /\ ~Has("rows_only")) \/ tl[x].row.st /= "none" \/ (AllBodies /\ tl[x].bl)
+  /\ LET need == (tl[x].mc = "notclean" /\ ~Has("rows_only")) \/ tl[x].row.st /= "none" \/ (tl[x].ab /\ tl[x].bl)
+         h == IF need /\ body.p THEN body.t ELSE 0
      IN IF need /\ body.p
           THEN /\ tcr' = tcr \cup {[x |-> x, t |-> body.t]}
-               /\ Go(x, [tl[x] EXCEPT !.ph = "M5w", !.ht = body.t])
-          ELSE /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M5")])
+               /\ Go(x, [tl[x] EXCEPT !.ph = "M5w", !.ht = body.t, !.h5 = h, !.after = "M5p"])
+          ELSE /\ Go(x, [tl[x] EXCEPT !.ph = "M5p", !.h5 = h])
                /\ UNCHANGED tcr
+  /\ UNCHANGED <<storeV, odel, lput, lmeta, lgc, toolConf, crashes, runs, newV, oldV, ghostV>>
+
+\* M5, an inherited pending row whose body was absent at the `HEAD` or had another token:
+\* `PUT I(B, row token)` If-None-Match.
+TM5p(x) ==
+  /\ tl[x].ph = "M5p"
+  /\ IF tl[x].row.st = "pend" /\ tl[x].row.tok /= tl[x].h5 /\ ~Has("no_row_token_intent")
+       THEN /\ tcr' = tcr \cup {[x |-> x, t |-> tl[x].row.tok]}
+            /\ Go(x, [tl[x] EXCEPT !.ph = "M5w", !.ht = tl[x].row.tok, !.after = NextOf("M5p")])
+       ELSE /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M5p")])
+            /\ UNCHANGED tcr
   /\ UNCHANGED <<storeV, odel, lput, lmeta, lgc, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M5, the create answered: `Committed`, or `Conflict` with an equal occupant (the bytes are
@@ -331,7 +355,7 @@ TM5(x) ==
 TM5Answer(x) ==
   /\ tl[x].ph = "M5w"
   /\ [x |-> x, t |-> tl[x].ht] \notin tcr /\ tl[x].ht \in intents
-  /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M5")])
+  /\ Go(x, [tl[x] EXCEPT !.ph = tl[x].after])
   /\ toolConf' = toolConf \cup {tl[x].ht}
   /\ UNCHANGED <<storeV, lateV, crashes, runs, newV, oldV, ghostV>>
 
@@ -341,10 +365,17 @@ TM5Unanswered(x) ==
   /\ Faults /\ tl[x].ph = "M5w"
   /\ [x |-> x, t |-> tl[x].ht] \in tcr
   /\ IF tl[x].ht \in intents
-       THEN Go(x, [tl[x] EXCEPT !.ph = NextOf("M5")]) /\ toolConf' = toolConf \cup {tl[x].ht}
-       ELSE /\ Go(x, [tl[x] EXCEPT !.ph = IF Has("unconfirmed_create") THEN NextOf("M5") ELSE "Failed"])
+       THEN Go(x, [tl[x] EXCEPT !.ph = tl[x].after]) /\ toolConf' = toolConf \cup {tl[x].ht}
+       ELSE /\ Go(x, [tl[x] EXCEPT !.ph = IF Has("unconfirmed_create") THEN tl[x].after ELSE "Failed"])
             /\ UNCHANGED toolConf
   /\ UNCHANGED <<storeV, lateV, crashes, runs, newV, oldV, ghostV>>
+
+\* M6, first write: a floor below 3 is raised to 3 (`Pool::raiseReaderFloor`; only that field).
+TM6r(x) ==
+  /\ tl[x].ph = "M6r"
+  /\ fl' = IF fl < 3 THEN 3 ELSE fl
+  /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M6r")])
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, gs, hb, slot, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M6: replace `gc/state` If-Match e0 with header 4, every field as read. Header 4 already: skipped
 \* (section 7.2). A conflict restarts the run at M2.
@@ -356,7 +387,7 @@ TM6(x) ==
          THEN /\ gs' = [gs EXCEPT !.hdr = 4, !.ver = @ + 1]
               /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M6"), !.e6 = gs.ver + 1])
          ELSE Go(x, [tl[x] EXCEPT !.ph = IF gs.ver = tl[x].e0 THEN "M6" ELSE "M2a"]) /\ UNCHANGED gs
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, hb, slot, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, hb, slot, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M7: right before M8, read every slot and both GC pairs again; anything moved refuses.
 TM7(x) ==
@@ -371,7 +402,7 @@ TM8(x) ==
   /\ tl[x].ph = "M8"
   /\ pm' = TRUE
   /\ Go(x, [tl[x] EXCEPT !.ph = NextOf("M8")])
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, gs, hb, slot, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, fl, gs, hb, slot, lateV, toolConf, crashes, runs, newV, oldV, ghostV>>
 
 \* M9: delete the marker read at M4, If-Match the version of that read; one that changed is left to F4.
 \* "M9f" is the rerun of a migrated pool: the code of F4 (a `HEAD`, a delete conditional on it).
@@ -381,8 +412,8 @@ TM9(x) ==
      IN /\ IF del THEN meta' = "absent" /\ mver' = mver + 1 ELSE UNCHANGED <<meta, mver>>
         /\ fToolDel' = (fToolDel \/ (del /\ ~pm))
   /\ Go(x, [tl[x] EXCEPT !.ph = IF tl[x].ph = "M9f" THEN "Done" ELSE NextOf("M9")])
-  /\ UNCHANGED <<body, nextTok, gone, intents, pm, gs, hb, slot, lateV, toolConf, crashes, runs, newV, oldV,
-                 fEvid, fI4, fRecur>>
+  /\ UNCHANGED <<body, nextTok, gone, intents, pm, fl, gs, hb, slot, lateV, toolConf, crashes, runs, newV, oldV,
+                 fEvid, fI4, fRecur, hitTok>>
 
 --------------------------------------------------------------------------------------
 (* THIS BUILD, after the floor. Section 2.3: every open below generation 4 is refused, so nothing
@@ -394,32 +425,25 @@ NWStart ==
   /\ nw' = [NW0 EXCEPT !.ph = "H1"]
   /\ UNCHANGED <<storeV, lateV, toolV, nput, lnk, oldRef, ng, oldV, ghostV>>
 
-\* W2: `HEAD B`. Absent -> W6.
+\* W2: `HEAD B`. Absent -> W5.
 NWHead1 ==
   /\ nw.ph = "H1"
   /\ nw' = IF body.p THEN [nw EXCEPT !.ph = "G", !.seen = body.t] ELSE [nw EXCEPT !.ph = "Pub"]
   /\ UNCHANGED <<storeV, lateV, toolV, nput, lnk, oldRef, ng, oldV, ghostV>>
 
-\* W4: `GET I(B,t)`. An object -> W6; an answered 404 -> W5.
+\* W4: `GET I(B,t)`. An object -> W5; an answered 404 -> adopt.
 NWGet ==
   /\ nw.ph = "G"
-  /\ nw' = [nw EXCEPT !.ph = IF nw.seen \in intents THEN "Pub" ELSE "H2"]
+  /\ nw' = IF nw.seen \in intents THEN [nw EXCEPT !.ph = "Pub"] ELSE [nw EXCEPT !.ph = "Ready", !.adopted = TRUE]
   /\ UNCHANGED <<storeV, lateV, toolV, nput, lnk, oldRef, ng, oldV, ghostV>>
 
-\* W5: `HEAD B` again. The same identity -> adopt; else W6.
-NWHead2 ==
-  /\ nw.ph = "H2"
-  /\ nw' = IF body.p /\ body.t = nw.seen THEN [nw EXCEPT !.ph = "Ready", !.adopted = TRUE]
-           ELSE [nw EXCEPT !.ph = "Pub"]
-  /\ UNCHANGED <<storeV, lateV, toolV, nput, lnk, oldRef, ng, oldV, ghostV>>
-
-\* W6: one unconditional publication under a fresh envelope. Answered (late publications of this
+\* W5: one unconditional publication under a fresh envelope. Answered (late publications of this
 \* build are the subject of CaBlobIntentProtocol).
 NWPub ==
   /\ nw.ph = "Pub" /\ nput < MaxNewPuts
   /\ Land(nextTok) /\ nextTok' = nextTok + 1 /\ nput' = nput + 1
   /\ nw' = [nw EXCEPT !.ph = "Ready"]
-  /\ UNCHANGED <<meta, mver, intents, pm, gs, hb, slot, lateV, toolV, lnk, oldRef, ng, oldV, fEvid, fI4, fToolDel>>
+  /\ UNCHANGED <<meta, mver, intents, pm, fl, gs, hb, slot, lateV, toolV, lnk, oldRef, ng, oldV, fEvid, fI4, fToolDel, hitTok>>
 
 NWCommit ==
   /\ nw.ph = "Ready"
@@ -458,8 +482,9 @@ NGStart ==
   /\ UNCHANGED <<storeV, lateV, toolV, nw, nput, lnk, oldRef, oldV, ghostV>>
 
 \* The fold and the delete batch for B, one step: G2 condemn, G6 spare, G7 supersede, G3 graduate
-\* (create answered; the faults of G3 are the subject of CaBlobIntentProtocol), G4 delete.
-\* Ghost I5: a body DELETE needs a confirmed intent (G3's, or M5's for the token, G8) on a row read
+\* (create answered; the faults of G3 are the subject of CaBlobIntentProtocol), G4 delete, G8 intent
+\* delete. G4 keeps the intent and commits standing(t); only a later round's cut at in-degree 0 deletes it.
+\* Ghost I5: a body DELETE needs a confirmed intent (G3's, or M5's for the token) on a row read
 \* pending from the committed state, this round's cut at in-degree 0, and the `HEAD` showing `t`.
 NGWork ==
   /\ ng.ph = "Work"
@@ -468,30 +493,37 @@ NGWork ==
             /\ IF ~ng.ref /\ body.p
                  THEN ng' = [ng EXCEPT !.ph = "Commit", !.next = Row("cand", body.t, FALSE)]   \* G2
                  ELSE ng' = NG0
-            /\ UNCHANGED <<body, gone, intents, fEvid, fI4>>
+            /\ UNCHANGED <<body, gone, intents, fEvid, fI4, hitTok>>
        [] r.st /= "none" /\ ng.ref ->                                                           \* G6
             /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = NoRow]
-            /\ UNCHANGED <<body, gone, intents, fEvid, fI4>>
+            /\ UNCHANGED <<body, gone, intents, fEvid, fI4, hitTok>>
        [] r.st = "cand" ->
             IF body.p /\ body.t /= r.tok
               THEN /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = Row("cand", body.t, FALSE)]   \* G7
-                   /\ UNCHANGED <<body, gone, intents, fEvid, fI4>>
+                   /\ UNCHANGED <<body, gone, intents, fEvid, fI4, hitTok>>
               ELSE /\ intents' = intents \cup {r.tok}                                           \* G3
                    /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = Row("pend", r.tok, TRUE)]
-                   /\ UNCHANGED <<body, gone, fEvid, fI4>>
-       [] OTHER ->                                                                              \* pending
+                   /\ UNCHANGED <<body, gone, fEvid, fI4, hitTok>>
+       [] r.st = "pend" ->
             IF body.p /\ body.t = r.tok
               THEN /\ Unland                                                                    \* G4 Removed
                    /\ fEvid' = (fEvid \/ ~(r.conf \/ r.tok \in toolConf))
-                   /\ intents' = intents \ {r.tok}
-                   /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = NoRow]
-                   /\ UNCHANGED fI4
-              ELSE \E sup \in (IF body.p THEN {FALSE, TRUE} ELSE {FALSE}) :                      \* G4 Gone or Mismatch, or G7
-                   /\ intents' = intents \ {r.tok}
-                   /\ fI4' = (fI4 \/ (r.tok \in intents /\ body.p /\ body.t = r.tok))
-                   /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = IF sup THEN Row("cand", body.t, FALSE) ELSE NoRow]
-                   /\ UNCHANGED <<body, gone, fEvid>>
-  /\ UNCHANGED <<nextTok, meta, mver, pm, gs, hb, slot, lateV, toolV, nw, nput, lnk, oldRef, oldV, fToolDel, fRecur>>
+                   /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = Row("stand", r.tok, TRUE)]
+                   /\ hitTok' = 100 + r.tok
+                   /\ UNCHANGED <<intents, fI4>>
+              ELSE \E sup \in (IF body.p THEN {FALSE, TRUE} ELSE {FALSE}) :                      \* G4 absent or Mismatch, or G7
+                   /\ intents' = IF sup THEN intents \ {r.tok} ELSE intents
+                   /\ fI4' = fI4
+                   /\ ng' = [ng EXCEPT !.ph = "Commit",
+                                       !.next = IF sup THEN Row("cand", body.t, FALSE) ELSE Row("stand", r.tok, TRUE)]
+                   /\ UNCHANGED <<body, gone, fEvid, hitTok>>
+       [] OTHER ->                                                                              \* standing
+            \E sup \in (IF body.p /\ body.t /= r.tok THEN {FALSE, TRUE} ELSE {FALSE}) :         \* G7 on a touched key, else G8
+              /\ intents' = intents \ {r.tok}
+              /\ fI4' = (fI4 \/ (body.p /\ body.t = r.tok))
+              /\ ng' = [ng EXCEPT !.ph = "Commit", !.next = IF sup THEN Row("cand", body.t, FALSE) ELSE NoRow]
+              /\ UNCHANGED <<body, gone, fEvid, hitTok>>
+  /\ UNCHANGED <<nextTok, meta, mver, pm, fl, gs, hb, slot, lateV, toolV, nw, nput, lnk, oldRef, oldV, fToolDel, fRecur>>
 
 \* The round commit: compare-and-swap on the token its lease read, header 4 (G:1326).
 NGCommit ==
@@ -500,7 +532,7 @@ NGCommit ==
        THEN gs' = [gs EXCEPT !.row = ng.next, !.ver = @ + 1]
        ELSE UNCHANGED gs
   /\ ng' = NG0
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, hb, slot, lateV, toolV, nw, nput, lnk, oldRef, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, hb, slot, lateV, toolV, nw, nput, lnk, oldRef, oldV, ghostV>>
 
 --------------------------------------------------------------------------------------
 (* OLDER MEMBERS, section 7.4 R2 and R4. A reduced older build: the marker writer and the marker GC. *)
@@ -521,7 +553,7 @@ OMClaim ==
   /\ (OldMember = "start_before_recheck" => ~pm /\ \A x \in Tools : tl[x].ph /= "M8")
   /\ slot' = [st |-> "live", v |-> slot.v + 1]
   /\ om' = "mounted" /\ olease' = TRUE
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, gs, hb, lateV, toolV, newV, osusp, ow, oput, og, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, gs, hb, lateV, toolV, newV, osusp, ow, oput, og, ghostV>>
 
 \* Resume after a suspension. Its mount plane checks the lease on its boot clock before every attempt
 \* (CasMountRuntime.cpp:156-170): after a long pause it starts nothing until it renews, unless that
@@ -541,13 +573,13 @@ OMRenew ==
        ELSE /\ om' = "dead" /\ olease' = FALSE /\ og' = NG0
             /\ ow' = IF ow.ph = "Done" THEN ow ELSE OW0
             /\ UNCHANGED slot
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, gs, hb, lateV, toolV, newV, osusp, oput, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, gs, hb, lateV, toolV, newV, osusp, oput, ghostV>>
 
 \* The GC leader's heartbeat on `gc/hb`.
 OMHeartbeat ==
   /\ OldWorks /\ hb < 2
   /\ hb' = hb + 1
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, gs, slot, lateV, toolV, newV, oldV, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, gs, slot, lateV, toolV, newV, oldV, ghostV>>
 
 \* Older writer: edge, `HEAD B`, `GET .meta`: `Clean` adopts (W:446-452); else a body PUT (W:509) and
 \* a `Clean` write (W:368, :542).
@@ -575,7 +607,7 @@ OWStep ==
      \/ /\ ow.ph = "Done"
         /\ ow' = OW0
         /\ UNCHANGED <<body, nextTok, gone, meta, mver, oput, fRecur>>
-  /\ UNCHANGED <<intents, pm, gs, hb, slot, lateV, toolV, newV, om, osusp, olease, og, fEvid, fI4, fToolDel>>
+  /\ UNCHANGED <<intents, pm, fl, gs, hb, slot, lateV, toolV, newV, om, osusp, olease, og, fEvid, fI4, fToolDel, hitTok>>
 
 \* Older GC. A round starts with its lease read-modify-write of `gc/state`; header 4 throws (G:5214),
 \* so no round starts. Then the cut.
@@ -583,7 +615,7 @@ OGStart ==
   /\ OldWorks /\ og.ph = "Idle" /\ gs.hdr = 3 /\ gs.ver < MaxVer
   /\ gs' = [gs EXCEPT !.ver = @ + 1, !.lp = @ + 1]
   /\ og' = [NG0 EXCEPT !.ph = "Cut", !.base = gs.row, !.bver = gs.ver + 1]
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, hb, slot, lateV, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, hb, slot, lateV, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
 
 OGCut ==
   /\ OldWorks /\ og.ph = "Cut"
@@ -616,7 +648,7 @@ OGWork ==
         /\ odel' = (IF body.p /\ body.t = r.tok THEN odel \cup {r.tok} ELSE odel)
         /\ og' = [og EXCEPT !.ph = "Commit", !.next = NoRow]
         /\ UNCHANGED <<meta, mver>>
-  /\ UNCHANGED <<body, nextTok, gone, intents, pm, gs, hb, slot, lput, lmeta, lgc, tcr, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, intents, pm, fl, gs, hb, slot, lput, lmeta, lgc, tcr, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
 
 OGCommit ==
   /\ OldWorks /\ og.ph = "Commit"
@@ -624,7 +656,7 @@ OGCommit ==
        THEN gs' = [gs EXCEPT !.row = og.next, !.ver = @ + 1]
        ELSE UNCHANGED gs
   /\ og' = NG0
-  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, hb, slot, lateV, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
+  /\ UNCHANGED <<body, nextTok, gone, meta, mver, intents, pm, fl, hb, slot, lateV, toolV, newV, om, osusp, olease, ow, oput, ghostV>>
 
 --------------------------------------------------------------------------------------
 Next ==
@@ -633,8 +665,8 @@ Next ==
   \/ \E q \in tcr : ToolCreateLand(q)
   \/ \E x \in Tools :
        \/ TStart(x) \/ TCrash(x) \/ TM1(x) \/ TM2a(x) \/ TM2b(x) \/ TM3(x) \/ TM4(x) \/ TM5(x)
-       \/ TM5Answer(x) \/ TM5Unanswered(x) \/ TM6(x) \/ TM7(x) \/ TM8(x) \/ TM9(x)
-  \/ NWStart \/ NWHead1 \/ NWGet \/ NWHead2 \/ NWPub \/ NWCommit \/ NWDrop
+       \/ TM5p(x) \/ TM5Answer(x) \/ TM5Unanswered(x) \/ TM6r(x) \/ TM6(x) \/ TM7(x) \/ TM8(x) \/ TM9(x)
+  \/ NWStart \/ NWHead1 \/ NWGet \/ NWPub \/ NWCommit \/ NWDrop
   \/ \E k \in {"old", "obs", "om"} : LinkFrom(k)
   \/ LinkDrop \/ OldRefDrop
   \/ NGStart \/ NGWork \/ NGCommit
@@ -645,7 +677,8 @@ Spec == Init /\ [][Next]_vars
 \* Liveness: the tool's own steps and the store's answers are weakly fair; crashes and reruns are
 \* bounded by MaxCrash and MaxRuns.
 ToolSteps(x) ==
-  TStart(x) \/ TM1(x) \/ TM2a(x) \/ TM2b(x) \/ TM3(x) \/ TM4(x) \/ TM5(x) \/ TM5Answer(x) \/ TM6(x)
+  TStart(x) \/ TM1(x) \/ TM2a(x) \/ TM2b(x) \/ TM3(x) \/ TM4(x) \/ TM5(x) \/ TM5p(x) \/ TM5Answer(x)
+    \/ TM6r(x) \/ TM6(x)
     \/ TM7(x) \/ TM8(x) \/ TM9(x)
 LiveSpec == Spec /\ \A x \in Tools : WF_vars(ToolSteps(x)) /\ WF_vars(\E q \in tcr : ToolCreateLand(q))
 
@@ -662,7 +695,9 @@ TypeOK ==
                     "suspended_gc_leader"}
   /\ body.p \in BOOLEAN /\ body.t \in 0..MaxTok /\ intents \subseteq Tokens /\ odel \subseteq Tokens
   /\ meta \in {"absent", "clean", "cond"} /\ gs.hdr \in {3, 4} /\ gs.ver \in 0..MaxVer
-  /\ \A x \in Tools : tl[x].ph \in {"Idle", "M1", "M2a", "M2b", "M3", "M4", "M5", "M5w", "M6", "M7", "M8", "M9", "M9f",
+  /\ SeedFloor \in 1..3 /\ fl \in 1..3
+  /\ \A x \in Tools : tl[x].ph \in {"Idle", "M1", "M2a", "M2b", "M3", "M4", "M5", "M5p", "M5w", "M6r", "M6", "M7", "M8",
+                                     "M9", "M9f",
                                      "Done", "Refused", "Failed"}
   /\ om \in {"off", "readpm", "mounted", "dead"}
 
@@ -670,7 +705,7 @@ TypeOK ==
 INV_COMMITTED_REF_HAS_BODY ==
   (oldRef \/ nw.ph = "Done" \/ lnk /= "none" \/ ow.ph = "Done") => body.p
 
-\* I8 as qualified in section 4.1: a ref this build commits by observation (W2 to W6), and a copy of
+\* I8 as qualified in section 4.1: a ref this build commits by observation (W2 to W5), and a copy of
 \* one, never names a key with no body.
 INV_REF_BY_OBSERVATION_HAS_BODY == (nw.ph = "Done" \/ lnk = "obs") => body.p
 
@@ -686,6 +721,19 @@ INV_TOOL_DESTROYS_NOTHING_BEFORE_FLOOR == ~fToolDel
 
 \* A8 as M2, M7 and the fence enforce it: on a migrated pool no older member holds a live slot.
 INV_NO_LIVE_OLD_SLOT_AFTER_FLOOR == pm => ~(om = "mounted" /\ slot.st = "live")
+
+\* Section 7.1, M1 and M6: on a pool that started below floor 3, a seed body still current after the
+\* migration has a confirmed intent (the forced --intents-for-all-bodies), whatever crashed and reran.
+INV_FORCED_OPTION_COVERS_SEED_BODY == (pm /\ SeedFloor < 3 /\ body.p /\ body.t = 1) => 1 \in toolConf
+
+LostRef == (oldRef \/ nw.ph = "Done" \/ lnk /= "none" \/ ow.ph = "Done") /\ ~body.p
+
+\* Every loss of a committed ref's body is case (e) of R1 as written: an older delete removed the recurring
+\* token 2. Checked with the anomalies of R1 (a) to (d), R3 and the older members off.
+INV_LOSS_IS_R1E == LostRef => hitTok = 2
+
+\* Every such loss removed the recurring token 2, by an older delete or by G4 of this build.
+INV_LOSS_IS_RECURRED_TOKEN == LostRef => hitTok \in {2, 102}
 
 \* I1 (diagnostic; red only under case (e)).
 INV_I1_NO_RECURRENCE == ~fRecur
@@ -712,6 +760,8 @@ WIT_LATE_DELETE_MISSES == ~(odel = {} /\ pm /\ body.p /\ body.t >= 3 /\ nw.ph = 
 WIT_M9_LEAVES_CHANGED_MARKER == \A x \in Tools : ~(tl[x].ph = "Done" /\ meta /= "absent" /\ pm)
 WIT_OLD_GC_ROUND == ~(og.ph = "Commit")
 WIT_OPTION_INTENT_ON_CLEAN == ~(AllBodies /\ 1 \in toolConf /\ gs.row.st = "none" /\ meta = "absent" /\ pm)
+WIT_ROW_TOKEN_INTENT == \A x \in Tools : ~(tl[x].ph = "M5w" /\ tl[x].ht = tl[x].row.tok /\ tl[x].ht /= tl[x].h5)
+WIT_RERUN_AFTER_RAISE == ~(pm /\ SeedFloor < 3 /\ crashes >= 1 /\ \E x \in Tools : tl[x].ph = "Done" /\ ~tl[x].ab)
 WIT_TWO_RUNS_DONE == ~(\A x \in Tools : tl[x].ph = "Done") \/ Cardinality(Tools) < 2
 
 (*
