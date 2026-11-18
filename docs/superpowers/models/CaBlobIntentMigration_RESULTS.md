@@ -15,8 +15,8 @@ Step and rule ids (M1 to M9, W2 to W5, G1 to G8, I4 to I8, R1 to R4, S12, S13) a
 
 ## Verdict {#verdict}
 
-**The migration passes at floors 1 to 3, except under case (e). Case (e) loses a blob on a schedule §7.4 does not
-name: this build's own G4 deletes a recurred token.**
+**The migration passes at floors 1 to 3. Every red maps to a named residual; case (e) reaches further than the
+text of §7.4 at `d16ec5f5eec` says, and R1 (e) is widened to cover it.**
 
 - **Green with every older member stopped**, at floor 3 and at floor 1: every seed the argument of §7.4 admits (at
   floor 1 without the marker clause, case (a)), each kind of late older request, a crash after every step with
@@ -27,10 +27,13 @@ name: this build's own G4 deletes a recurred token.**
   first run's M5. Raising the floor before M5 loses a blob: see [Sabotages](#sabotage-traces).
 - **M5 covers a pending row's own token.** Case (e) no longer lets G4 delete a token with no confirmed intent:
   `mig_row_token_recur_i5` is green on I5, and red without the rule (`sab_mig_no_row_token_intent`).
-- **Case (e), unnamed loss.** With one delayed token-repeating copy and no older delete, a ref this build commits
-  by publishing loses its body to G4 of this build. See [Case (e), G4 of this build](#r1-recur-g4).
-- **Case (e) also breaks I4.** G8 sends no `HEAD`, so a token restored between G4 and G8 loses its intent while
-  current. The loss that follows is the one R1 (e) names.
+- **Case (e), G4 of this build: R1 (e) as widened.** With one delayed token-repeating copy and no older delete, a
+  ref this build commits by publishing loses its body to G4 of this build. See [Case (e), G4 of this
+  build](#r1-recur-g4). Precondition: an older writer's copy still in flight after M8.
+- **Case (e) and I4: R1 (e) as widened.** G8 sends no `HEAD`, so a token restored between G4 and G8 loses its
+  intent while current. Precondition: an older writer's copy still in flight after M8.
+- **No older request in flight, no loss.** The same seeds with case (e) on and `Late = {}` are green on every
+  invariant (`res_r1_recur_no_late`).
 - **Admitted residuals are red when allowed:** R1 (a) to (e), R3, R4, and R2 (resumed inside the mount sequence; a
   mounted writer whose clock stood still).
 - **Sabotages.** Every tool sabotage is red. `markers_before_floor` (M9 before M8) is red only on the invariant that
@@ -140,10 +143,11 @@ Each is run against `INV_COMMITTED_REF_HAS_BODY` alone (the `_by_observation` ro
 | `res_r2_suspended_writer_stood_clock` | R2 row 1 | a mounted member suspended; its clock stood still | RED `INV_COMMITTED_REF_HAS_BODY` | 2,208,474 | 26 |
 | `res_floor1_recur` | R1 (e) at floor 1 | every late kind, case (e); `INV_LOSS_IS_RECURRED_TOKEN` with I5 and the forced option | cut at 60,619,702 states, no violation | 60,619,702 | — |
 | `res_floor1_recur_crash` | R1 (e) at floor 1 | the same, 1 crash, 2 runs, faults | cut at 96,383,779 states, no violation | 96,383,779 | — |
-| `res_r1_recur_loss_is_r1e` | case (e) at floor 3, unnamed | late delete and `PUT`; `INV_LOSS_IS_R1E` alone: [trace](#r1-recur-g4) | RED `INV_LOSS_IS_R1E` | 113,972 | 22 |
+| `res_r1_recur_loss_is_r1e` | R1 (e) as widened | late delete and `PUT`; `INV_LOSS_IS_R1E` alone: [trace](#r1-recur-g4) | RED `INV_LOSS_IS_R1E` | 113,972 | 22 |
 | `res_floor1_recur_i8` | R1 (e) at floor 1 | late delete and `PUT`, case (e); I8 alone | RED `INV_COMMITTED_REF_HAS_BODY` | 1,291 | 3 |
 | `res_r1_recur_loss_is_recurred_token` | case (e) at floor 3 | late delete and `PUT`; `INV_LOSS_IS_RECURRED_TOKEN` alone: every loss removed the recurring token | green | 5,619,671 | 51 |
-| `res_r1_recur_i4` | case (e) and I4 | late delete and `PUT`, no older ref; I5, I4 and the order invariant | RED `INV_I4_INTENT_PERMANENT` | 64,773 | 21 |
+| `res_r1_recur_i4` | R1 (e) as widened | late delete and `PUT`, no older ref; I5, I4 and the order invariant | RED `INV_I4_INTENT_PERMANENT` | 64,773 | 21 |
+| `res_r1_recur_no_late` | none | case (e) seeds, `Late = {}`; every invariant | green | 120,574 | 48 |
 | `res_floor1_r3` | R3 at floor 1 | an older ref on a token under a late delete; I8 alone | RED `INV_COMMITTED_REF_HAS_BODY` | 263 | 2 |
 | `res_floor1_r3_by_observation` | R3 at floor 1, refs of this build | the same; every invariant but I8 | green | 586,554 | 48 |
 
@@ -237,8 +241,8 @@ the delete removes `t2`, and the writer's committed ref names no body.
 6. The writer commits its ref.
 7. The round's G4: `HEAD` shows `t2`, the row's token; `DELETE If-Match t2` removes it. The ref names no body.
 
-I5 holds: the intent was confirmed before the cut. R1 (e) of §7.4 names a loss by an older GC's delayed delete;
-this one needs only the delayed copy.
+I5 holds: the intent was confirmed before the cut. Precondition: the older copy is still in flight after M8. R1 (e)
+as widened names it.
 
 **Case (e) and I4** (`res_r1_recur_i4`): row `pending(t2)`, no body. M5 confirms `I(B,t2)`. G4 finds no body and
 commits `standing(t2)`. The delayed copy lands `t2`. The next round's G8 deletes `I(B,t2)` with no `HEAD`, while
@@ -293,10 +297,9 @@ M7 with a lease its stopped clock still counts valid, and runs steps 5 to 7 befo
 
 ## Specification corrections {#corrections}
 
-- **Case (e), G4 of this build.** §7.4 R1 (e) names only a loss by an older GC's delete. G4 of this build also
-  deletes a recurred token over a body a writer of this build published ([trace](#r1-recur-g4)), with one delayed
-  older request. Smallest text correction: R1 (e) also lists this schedule. The model shows no fix.
-- **Case (e) and I4.** I4 does not hold under case (e): G8 sends no `HEAD`. The loss that follows is inside R1 (e).
+- **R1 (e) widened.** One delayed token-repeating copy of an older writer is enough; the deleter can be G4 of this
+  build on a confirmed intent ([trace](#r1-recur-g4)), or G8 removing `I(B,t)` while a restored `t` is current.
+  §7.4 at `d16ec5f5eec` names only an older GC's delete.
 - The Q8 rule is not needed for I8 (see [Sabotages](#sabotages)); its reason is the restart table's first row.
 - R3 and R1 coincide when the older anomaly left a `Clean` marker; the option protects new adoptions of that token,
   not the existing ref. §7.1 says the option "does not cover a ref that already exists (R3)"; the model agrees.
