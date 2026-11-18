@@ -24,18 +24,26 @@ java -Xmx16g -XX:+UseParallelGC -cp ../../../tmp/tla2tools.jar tlc2.TLC -noGener
 
 - **Safety, complete, content dialect:** green with 2 writers, 2 GC actors, one publication in total
   (`MaxPuts = 1`), 3 round commits: base, pending seed, late intent delete, late body delete, rebuild. Also
-  green: pending seed with `MaxPuts = 2`, 2 round commits; 3 writers, 1 GC actor, `MaxPuts = 3`, 3 commits.
+  green: pending seed with `MaxPuts = 2`, 2 round commits; 3 writers, 1 GC actor, `MaxPuts = 3`, 3 commits;
+  3 writers, 2 GC actors, `MaxPuts = 1`, 3 commits.
 - **Safety, complete, generation dialect:** green with 2 writers, 2 GC actors, `MaxPuts = 2`, 3 commits: base
   and pending seed. Green with `MaxPuts = 1`: the same five runs as the content dialect. With one publication
   the two dialects give the same state graph (one landing, one token).
 - **Cut by the 900 s timeout, no violation:** content dialect with `MaxPuts = 2`, 3 commits (base, pending,
   late intent delete); late intent delete and rebuild on the generation dialect.
+- **Publication integrity (§6.2, A1):** green on both dialects with the verbatim staged copy and a source that
+  changes after staging, 2 writers, 1 GC actor, `MaxPuts = 2`, 2 commits. With 2 GC actors both dialects were cut
+  at 600 s, about 82 M states, no violation. A streamed publication left unhashed is red on
+  `INV_I2_KEY_NAMES_PAYLOAD`, both dialects. A transport resend of a landed publication is red on
+  `INV_I1_NO_RECURRENCE` with content tokens; with generation tokens a resend is a new landing and a new token, so
+  no recurrence (cut at 300 s, no violation).
+- **Also green, complete, `MaxPuts = 1`:** a lost intent adopted with a late intent delete, both dialects; a stale
+  G9 listing with a late intent delete.
 - **Sabotages:** every schedule S1 to S7 and S9 is red on `INV_I8_COMMITTED_REF_HAS_BODY`, both dialects.
 - **Liveness:** green, also with one fault and late creates, intent deletes and body deletes. Red when G9 may win
   over G2, when a decision `HEAD` is read before the cut, without the supersede `HEAD` on a touched key, and
   with G8 before G7. The late `PUT` of §8.2 is red, as the spec accepts.
-- **Witnesses:** all reached but one, `WIT_REUSER_ADOPTS_U_OVER_OLD_INTENT`, whose run lacked the `Budget`
-  switch it needs; it was not re-run.
+- **Witnesses:** all reached.
 - **Spec and model:** no difference found. Every run used the final G6: every row kind is dropped at in-degree
   above 0. The old shape exists only as the contrast `keep_standing_on_spare`, which did not run.
 
@@ -113,6 +121,19 @@ uses the final G6. Time is TLC's run time.
 | `sab_absent_conflict_confirms` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 4, faults unbounded, Sab absent_conflict_confirms | red | red: `INV_I5_DELETE_EVIDENCE` | 2034 | 0s |
 | `sab_stale_read` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 4, faults unbounded, Sab stale_read | red | red: `INV_I6_ADOPTION` | 189 | 0s |
 | `sab_staging_alias_two_copies` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, Sab staging_alias_two_copies | red | red: `INV_I1_NO_RECURRENCE` | 23068032 | 130s |
+| `safe_pub_integrity_1gc` | 2W 1G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green | 821698 | 4s |
+| `safe_pub_integrity_1gc_generation` | 2W 1G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | green | 556370 | 3s |
+| `safe_pub_integrity` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | cut at 84,219,868 states, no violation | 84,219,868 | 600s |
+| `safe_pub_integrity_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, StagedCopy, SourceChanges | green | cut at 81,987,738 states, no violation | 81,987,738 | 600s |
+| `sab_unchecked_stream` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, SourceChanges, Sab unchecked_stream | red | red: `INV_I2_KEY_NAMES_PAYLOAD` | 2120 | 0s |
+| `sab_unchecked_stream_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxVer 2, faults unbounded, SourceChanges, Sab unchecked_stream | red | red: `INV_I2_KEY_NAMES_PAYLOAD` | 2663 | 0s |
+| `sab_resend_envelope` | 2W 2G, content, seed orphan, MaxPuts 2, MaxResends 1, MaxVer 2, faults unbounded | red | red: `INV_I1_NO_RECURRENCE` | 25354 | 0s |
+| `sab_resend_envelope_generation` | 2W 2G, generation, seed orphan, MaxPuts 2, MaxResends 1, MaxVer 2, faults unbounded | green: a resend lands a new token | cut at 43,587,461 states, no violation | 43,587,461 | 300s |
+| `safe_p1_adopt_lost` | 2W 2G, content, seed lost, MaxPuts 1, MaxVer 3, late id, faults unbounded | green | green | 3856415 | 31s |
+| `safe_p1_adopt_lost_generation` | 2W 2G, generation, seed lost, MaxPuts 1, MaxVer 3, late id, faults unbounded | green | green | 3856415 | 30s |
+| `safe_p1_stale_list` | 2W 2G, content, seed pend, MaxPuts 1, MaxVer 3, late id, faults unbounded, StaleList | green | green | 17502063 | 135s |
+| `safe_3writers_p1` | 3W 2G, content, seed pend, MaxPuts 1, MaxVer 3, faults unbounded | green | green | 26586577 | 332s |
+| `safe_p1_late_create` | 2W 2G, content, seed orphan, MaxPuts 1, MaxVer 3, late ic, faults unbounded | green | cut at 33,790,620 states, no violation | 33,790,620 | 400s |
 | `wit_two_read_writer_at_g8` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_TWO_READ_WRITER_AT_G8` | 46769 | 0s |
 | `wit_g7_from_stand` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_G7_FROM_STAND` | 450037 | 3s |
 | `wit_g7_from_pend` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_G7_FROM_PEND` | 32147 | 0s |
@@ -124,7 +145,7 @@ uses the final G6. Time is TLC's run time.
 | `wit_g9_stand` | 2W 2G, content, seed lost, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_G9_STAND` | 164 | 0s |
 | `wit_g8_stale_listed` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded, StaleList | red | red: `WIT_G8_STALE_LISTED` | 8276 | 0s |
 | `wit_standing_dropped` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_STANDING_DROPPED` | 34186 | 0s |
-| `wit_reuser_adopts_u_over_old_intent` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded (run without `Budget`, which the witness needs to see `path = "reuse"`; the committed cfg sets it, not re-run) | red | NOT REACHED: cut at 120,714,307 states | 120,714,307 | 901s |
+| `wit_reuser_adopts_u_over_old_intent` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded, Budget | red | red: `WIT_REUSER_ADOPTS_U_OVER_OLD_INTENT` | 1326 | 0s |
 | `wit_two_read_adopt_committed` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_TWO_READ_ADOPT_COMMITTED` | 2490 | 0s |
 | `wit_delete_misses` | 2W 2G, content, seed pend, MaxPuts 2, MaxVer 4, faults unbounded | red | red: `WIT_DELETE_MISSES` | 2909 | 0s |
 | `wit_over_budget_cand` | 2W 2G, content, seed orphan, MaxPuts 2, MaxVer 4, faults unbounded, OverBudget | red | red: `WIT_OVER_BUDGET_CAND` | 244 | 0s |
@@ -183,4 +204,10 @@ The `sab_*` traces are the schedules S1 to S7 and S9 of §4.3 of the specificati
 ## Runs not made {#not-run}
 
 - `safe_rebuild` (content, `MaxPuts = 2`): stopped by hand at 19,611,237 distinct states, no violation.
-- Not run: `safe_late_create`, `safe_late_create_generation`, `safe_late_body_delete`, `safe_late_body_delete_generation`, `safe_adopt_lost`, `safe_adopt_lost_generation`, `safe_adopt_spared`, `safe_adopt_spared_generation`, `safe_lost_commit`, `safe_lost_commit_generation`, `safe_stale_list`, `safe_3writers`, `safe_over_budget`, `safe_linker`, `safe_budget`, `safe_maxver4_base`, `safe_maxver4_base_generation`, `safe_maxver4_pend`, `safe_maxver4_pend_generation`, `safe_maxver4_late_intent_delete`, `safe_maxver4_late_intent_delete_generation`, `safe_v2_late_intent_delete`, `sab_unchecked_stream`, `sab_resend_envelope`, `live_pend_late_fault2`, `live_ctl_keep_standing_on_spare`, `live_ctl_g9_at_indegree`, `ctl_keep_standing_on_spare`, `ctl_g9_at_indegree`.
+- Cut, no violation, and not re-run with smaller bounds: `safe_base`, `safe_pend`, `safe_late_intent_delete`,
+  `safe_late_intent_delete_generation`, `safe_rebuild_generation` (900 s, `MaxPuts = 2`; their `MaxPuts = 1`
+  forms are green); `safe_pub_integrity`, `safe_pub_integrity_generation` (2 GC actors; green with 1);
+  `safe_p1_late_create`.
+- Not run: `safe_p1_late_create_generation`, `safe_p1_stale_list_generation`, `safe_3writers_p1_generation` (with
+  `MaxPuts = 1` both dialects give the same state graph: `safe_p1_adopt_lost` and its generation form match state
+  for state). `safe_late_create`, `safe_late_create_generation`, `safe_late_body_delete`, `safe_late_body_delete_generation`, `safe_adopt_lost`, `safe_adopt_lost_generation`, `safe_adopt_spared`, `safe_adopt_spared_generation`, `safe_lost_commit`, `safe_lost_commit_generation`, `safe_stale_list`, `safe_3writers`, `safe_over_budget`, `safe_linker`, `safe_budget`, `safe_maxver4_base`, `safe_maxver4_base_generation`, `safe_maxver4_pend`, `safe_maxver4_pend_generation`, `safe_maxver4_late_intent_delete`, `safe_maxver4_late_intent_delete_generation`, `safe_v2_late_intent_delete`, `live_pend_late_fault2`, `live_ctl_keep_standing_on_spare`, `live_ctl_g9_at_indegree`, `ctl_keep_standing_on_spare`, `ctl_g9_at_indegree`.
