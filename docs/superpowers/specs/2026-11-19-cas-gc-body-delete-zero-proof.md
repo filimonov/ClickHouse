@@ -99,11 +99,13 @@ The veto is per blob. One vetoed blob does not suppress the round.
 - **Parent validation.** After the last intake read and before the reduce the round sends one uncached `HEAD` of
   `gc/state` and requires the exact version it leased. It is sent when the adopted state holds a `pending` or a
   `standing` row and the round is not already suppressed; other rounds send nothing. Any other answer (another
-  version, absent, no answer) suppresses every destructive step of the round that depends on the cut: the body
-  delete and the intent deletes of `standing` and spared rows. The reason is reported as `parent_unconfirmed`. The
-  round is not aborted: a deposed leader's conditional commit fails anyway. The transition's intent delete of a
-  `candidate` row is not behind this read and needs none: it follows a `HEAD` that shows another incarnation.
-  Manifest deletes, ref-object cleanup and the sweeps run after the commit. This closes D4.
+  version, absent, no answer) sets the round's one destructive suppression, with the reason `parent_unconfirmed`.
+  That flag stops every destructive step of the round: body deletes, the intent deletes of `standing` and spared
+  rows, manifest deletes, ref-object cleanup, the sweeps, the prune of superseded generations and the hand-off
+  reclaim. The check itself does not fail the round; a round whose `gc/state` moved or vanished then fails at its
+  conditional commit. A round with no `pending` or `standing` row in its adopted state skips the read, so the
+  transition's intent delete of a `candidate` row can run without it. That delete needs none: it follows a `HEAD`
+  that shows another incarnation. This closes D4.
 
 ## Rebuild {#rebuild}
 
@@ -126,9 +128,11 @@ A refused rebuild gives back the GC lease it claimed: one conditional write rest
 value before the claim, so a later attempt, which takes a new GC identity, can start. This holds for every refusal
 after the claim.
 
-Repair of an undercounted baseline is not provided by this change. A rebuild does not start while another GC
-leader's lease is held, and that includes the lease a stopped leader left behind. `cas-migrate-pool` keeps the lease
-as it reads it, so a migrated pool whose GC ever ran is in the same position. This is an [open point](#open).
+Repair of an undercounted baseline is not provided by this change. The rebuild command takes a new GC identity on
+every call and never takes over a lease, so it starts only on an absent `gc/state` or a lease nobody ever held. A
+pool whose GC loop ever held the lease refuses it, a running server included. `cas-migrate-pool` keeps the lease as
+it reads it. This is an [open point](#open). The GC loop is different: it takes over a lease whose owner, sequence
+and heartbeat stayed unchanged over one observation window.
 
 ## Rollout {#rollout}
 
@@ -232,11 +236,9 @@ source. D3: `pending(u)` is committed; the writer's activation is in the next at
   with per-namespace cuts (D4 is closed by argument and by the parent validation); a life created inside a round
   (argued from the code: a first fold starts at the first record). Bounds are small.
 - Repair of a baseline that an older rebuild may have undercounted. Today the rebuild does not start on a pool
-  whose GC lease is held. Options: the rebuild takes over a held lease by the observation rule the GC loop uses;
-  the offline migration tool resets the lease; an audit of owners against stored edges shows whether a pool is
-  affected.
-- Whether the catalog read follows the lease in the code today, and whether the walk reaches lives that the
-  stream listing omits.
+  whose GC loop ever held the lease. Decision: the rebuild becomes an exclusive `clickhouse-disks` command (every
+  server stopped, mount slots fenced, the lease taken without observation) and `SYSTEM CAS GC REBUILD` is removed
+  from SQL. A separate change.
 - A kept (not dropped) spared row is safe under this rule in the model without an extra rule. It is not part of
   this change.
 - `loadOutdatedDataParts` removes duplicate parts without a table lock: whether it can overlap a `RENAME TABLE` is
