@@ -18,8 +18,8 @@ The change has four code parts and one requirement to verify:
 5. Requirement: the walk covers every namespace life that can hold an edge at the catalog read ([Intake](#intake)).
    The code is believed to meet it; the implementation verifies it and adds tests.
 
-No on-store format changes. No request is added per blob. Added requests: one `gc/state` `GET` per round that has a
-destructive step; a decision `HEAD` per vetoed row per round; whatever the source confirmation of a copy needs
+No on-store format changes. No request is added per blob. Added requests: one `HEAD` of `gc/state` per round whose
+adopted state holds a `pending` or `standing` row; a decision `HEAD` per vetoed row per round; whatever the source confirmation of a copy needs
 ([Copies](#copies)).
 
 ## Defect {#defect}
@@ -39,11 +39,11 @@ The marker protocol needs three consecutive zero results and is spared by one ha
 body there too (model `zp2_o4`, `zp3_o4`); two namespaces suffice when pass 2 flips their read order. This is a model
 result; no test was built on the marker code.
 
-Two related defects, found by reading the code, not yet reproduced by a test:
+Two related defects, found by reading the code and then reproduced by unit tests:
 
 | Id | Defect |
 |---|---|
-| D4 | A deposed leader reads a false end of a ref log. It takes `expected = p + 1` from `ref_fold_memo` with no read and collects its listing witnesses once, before pass 1. While it is paused, a newer leader folds, commits and removes log records above `p` (`cleanupRefObjects`). The stale leader then reads `p + 1` absent and treats the life as proven. |
+| D4 | A deposed leader reads a false end of a ref log. It takes `expected = p + 1` from `ref_fold_memo` with no read and collects its listing witnesses once, before pass 1. While it is paused, a newer leader folds, commits and removes log records above `p` (`cleanupRefObjects`). The stale leader then reads `p + 1` absent and treats the life as proven. With an honest listing this needs the writer's record to be the last listed record of its life and the key the stale leader expects next; a later listed record already holds the life (`witnessAbove`). |
 | D5 | `Gc::rebuildBaseline` loses the edges of a live precommit whose manifest is unreadable ([Rebuild](#rebuild)). |
 
 ## Terms {#terms}
@@ -96,10 +96,14 @@ The veto is per blob. One vetoed blob does not suppress the round.
   suppresses destruction. When the manifest appears, the original activation is replayed and sets `saw_add`.
 - **Slice, budget, abort.** A remaining expected key, an omitted probe, a hold or a discarded transaction proves
   no end.
-- **Parent validation.** After the intake and before the reduce the attempt reads `gc/state` once, uncached, and
-  requires the exact parent version it leased (`Gc::fold` already receives it as `state_etag`). On a mismatch the
-  attempt is discarded. The result feeds the round-wide destructive gate: it guards the body delete and every
-  intent delete, not the body delete alone. This closes D4.
+- **Parent validation.** After the last intake read and before the reduce the round sends one uncached `HEAD` of
+  `gc/state` and requires the exact version it leased. It is sent when the adopted state holds a `pending` or a
+  `standing` row and the round is not already suppressed; other rounds send nothing. Any other answer (another
+  version, absent, no answer) suppresses every destructive step of the round that depends on the cut: the body
+  delete and the intent deletes of `standing` and spared rows. The reason is reported as `parent_unconfirmed`. The
+  round is not aborted: a deposed leader's conditional commit fails anyway. The transition's intent delete of a
+  `candidate` row is not behind this read and needs none: it follows a `HEAD` that shows another incarnation.
+  Manifest deletes, ref-object cleanup and the sweeps run after the commit. This closes D4.
 
 ## Rebuild {#rebuild}
 
@@ -118,15 +122,13 @@ event's `clamped_shards` or a comparison of current owners with the stored edges
 lies below `p[i]`, so neither the parent count nor `saw_add` reveals the owner: the rule above does not protect such
 a pool.
 
-Repair of such a baseline:
+A refused rebuild gives back the GC lease it claimed: one conditional write restores the lease fields to their
+value before the claim, so a later attempt, which takes a new GC identity, can start. This holds for every refusal
+after the claim.
 
-- **A pool that migrates to generation 4.** `cas-migrate-pool` keeps the stored edges, so an undercount survives the
-  migration. The tool leaves a GC lease that was never held, which a rebuild can claim. Order: migrate, rebuild once
-  with this build, start the servers. The migration page states it as a required step for a pool whose state was
-  ever rebuilt, or whose history cannot show that it was not.
-- **A pool whose GC lease is held by a stopped leader.** `SYSTEM CAS GC REBUILD` and `cas-gc-rebuild` take a new GC
-  identity and do not steal a held lease, so the rebuild cannot start. This change does not add a lease hand-over.
-  It is an [open point](#open).
+Repair of an undercounted baseline is not provided by this change. A rebuild does not start while another GC
+leader's lease is held, and that includes the lease a stopped leader left behind. `cas-migrate-pool` keeps the lease
+as it reads it, so a migrated pool whose GC ever ran is in the same position. This is an [open point](#open).
 
 ## Rollout {#rollout}
 
@@ -216,7 +218,7 @@ source. D3: `pending(u)` is committed; the writer's activation is in the next at
 ## Cost and liveness {#cost}
 
 - One boolean per current blob in `foldDeltasIntoGeneration`, set on each `BlobDelta` with `remove == false`.
-- One `gc/state` `GET` per attempt that has a destructive step.
+- One `HEAD` of `gc/state` per round whose adopted state holds a `pending` or `standing` row.
 - A vetoed row gets its decision `HEAD` again in each round until it is deleted, spared or moved.
 - A blob whose edges are added and removed in every round is not reclaimed while that lasts. After the last drop
   one round carries the row; the next round that is complete, not suppressed and has delete budget deletes.
@@ -229,9 +231,10 @@ source. D3: `pending(u)` is committed; the writer's activation is in the next at
   rounds, and the single-cut model with a deposed leader and late requests. Not modelled: a deposed leader together
   with per-namespace cuts (D4 is closed by argument and by the parent validation); a life created inside a round
   (argued from the code: a first fold starts at the first record). Bounds are small.
-- The repair step for a baseline that an older build may have rebuilt: a rebuild for every migrated pool, or an
-  audit of owners against stored edges.
-- A lease hand-over for a rebuild on a pool whose GC lease is held by a stopped leader.
+- Repair of a baseline that an older rebuild may have undercounted. Today the rebuild does not start on a pool
+  whose GC lease is held. Options: the rebuild takes over a held lease by the observation rule the GC loop uses;
+  the offline migration tool resets the lease; an audit of owners against stored edges shows whether a pool is
+  affected.
 - Whether the catalog read follows the lease in the code today, and whether the walk reaches lives that the
   stream listing omits.
 - A kept (not dropped) spared row is safe under this rule in the model without an extra rule. It is not part of
