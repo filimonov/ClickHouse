@@ -273,8 +273,8 @@ closes that gap as part of the same work.
 
 - **Facility.** A fold test hook that runs a callback at a chosen point of a round: after the catalog read, between
   the reads of two named namespaces (both walk orders, pass 1 and pass 2), after the intake and before the reduce,
-  after the request batch and before the `gc/state` commit. Test code only; the product gains no seam beyond the
-  store-answer hooks the fakes already have.
+  after the request batch and before the `gc/state` commit. The product gains one seam for it, `Gc::setRoundPointHookForTest`: one check of an empty function at five
+  places, each reached once per round or once per namespace, never per blob. Nothing in production sets it.
 - **Matrix, unit level.** {copy path: `createHardLink` across namespaces, `republishRef`, relink} × {source dropped:
   before the round, inside the intake, after the round} × {row of the blob: none, `candidate`, `pending`,
   `standing`} × {one hop, a relay of two hops, a destination created inside the round}. Each cell asserts: the body
