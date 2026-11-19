@@ -116,3 +116,37 @@
 - [ ] **Step 2: Docs:** in `garbage-collection.md` the body-delete rule gains its condition in plain words (the round folded no record of the blob) and the reason; in `blob-protocol.md` replace the sentence that a live source edge is counted by the cut with the zero-owner argument in four sentences; a line in the monitoring page for the new suppression reason of Task 2. Follow `/home/mfilimonov/.claude/skills/tech-prose/STYLE.md`; no rule ids; keep anchors.
 - [ ] **Step 3: Gates:** `CAS*` on both builds; `ninja clickhouse` in `build`.
 - [ ] **Step 4: Commit**: `Test the CAS GC intake requirements of the body-delete proof`, `Document why a CAS body delete needs an untouched zero`.
+
+### Task 6: A hook inside the round and the copy matrix
+
+**Files:**
+- Modify: `src/Disks/tests/cas_test_helpers.h` (the hook facility)
+- Create: `src/Disks/tests/gtest_cas_gc_round_interleave.cpp`
+- Modify: `src/Disks/tests/gtest_cas_gc_intents.cpp` (move the hand-made hooks of Tasks 1 and 2 onto the facility)
+
+**Interfaces:**
+- Consumes: Tasks 1, 2 and 4 (the cells assert the fixed behaviour).
+- Produces: `RoundInterleavePoint` with the values `AfterCatalogRead`, `BetweenNamespaces`, `AfterIntake`, `AfterRequestsBeforeCommit`, and a helper `runRoundWithCallback(gc, point, selector, callback)` where `selector` names the two namespaces and the pass for `BetweenNamespaces`. Built on the store-answer hooks of the existing fakes; no product seam. If one of the four points cannot be reached without a product seam, STOP on that point and report which answer is missing.
+
+- [ ] **Step 1: The facility with its own tests:** each point fires exactly once, at the stated place in the request journal, in both walk orders and in pass 2.
+- [ ] **Step 2: The matrix** as a parameterized suite with instantiation prefix `CASInterleave`: {copy path: `createHardLink` across namespaces, `republishRef`, relink} × {source dropped: before the round, inside the intake, after the round} × {row: none, `candidate`, `pending`, `standing`} × {one hop, a relay of two hops, a destination namespace created inside the round}. Assertions per cell: the body is present while a committed part names it; no body `DELETE` was sent for it; `cas-fsck` reports no dangling reference. A cell that cannot occur is skipped by an explicit list with a one-line reason in the test, and the test prints the count of run and skipped cells; the report gives both numbers.
+- [ ] **Step 3: Show the matrix can fail:** revert the Task 1 rule line in the working tree, run the suite, record which cells go red (expected: the `pending` cells with the source dropped inside the intake), restore the line and verify with `git diff` that the product file is unchanged. Paste the red list in the report.
+- [ ] **Step 4: Other events inside a round, one test each:** a namespace removed and re-created between the reads; a ref-log snapshot that covers an unread add and drop (the round takes no destructive step for that blob); an intake slice cut by the time budget so that one namespace is read over two rounds; a leader change between the intake and the commit; a state rebuild between the two rounds of a relay.
+- [ ] **Step 5: Gates:** `CAS*` on `build` and `build_asan`; the new suite 30 times on both.
+- [ ] **Step 6: Commit** (two commits): `Add a CAS GC test hook for events inside a round`, `Test CAS copies between tables against every row state inside a round`.
+
+### Task 7: Statements under a running GC, the soak endings and a scenario card
+
+**Files:**
+- Create: `tests/integration/test_cas_cross_table_copy_gc/` (`test.py`, `configs/`), in `cas-pr1`
+- Modify (checkout `/home/mfilimonov/workspace/ClickHouse/master`, harness only, unstaged): `tmp/intents/soak/driver.py`, `utils/ca-soak/scenarios/cards/` (one new card), `utils/ca-soak/scenarios/README.md`
+
+**Interfaces:**
+- Consumes: the fixed binary of Tasks 1 to 4.
+- Produces: an integration suite and harness changes; no product change. A failing oracle is a product-defect candidate: keep the evidence and report first.
+
+- [ ] **Step 1: Integration suite.** One test per statement: `MOVE PARTITION TO TABLE`, `ATTACH PARTITION FROM`, `REPLACE PARTITION`, `CREATE TABLE ... CLONE AS` followed by `DROP` of the source, a `RENAME TABLE` that changes the namespace, a fetch by relink on a second replica followed by a drop on the first. Each test: insert content, drop it, re-insert the same content (so the blobs carry GC rows), run the statement while GC rounds run in a loop with a short period, repeat 50 times with different timing offsets; oracle after each iteration: a full read with a checksum equals the recorded one; at the end `SYSTEM CAS FSCK` shows no dangling reference and the server logs hold no `LOGICAL_ERROR`. Model the suite on `tests/integration/test_cas_shared_pool`.
+- [ ] **Step 2: Run** the suite with `tmp/intents/testrun/run_integ.sh test_cas_cross_table_copy_gc/test.py zp7_xcopy 3600` on the fixed binary; then once on the binary of the plan base (`tmp/intents/bench/clickhouse.intents-5da79206a72`, by pointing the runner at it) and record whether any iteration shows a dangling reference there (the window is milliseconds: a clean run on the old binary is expected and is not evidence of safety; say so).
+- [ ] **Step 3: Soak endings.** In `tmp/intents/soak/driver.py` add the operation endings `ATTACH PARTITION FROM`, `MOVE PARTITION TO TABLE` and `CLONE AS` + drop of the source to the writer loop, with their own counters in `run.log`, and a pause of one second after a failed statement (the driver retried without a pause before). Run `soak.sh 1800 <fixed binary>` on a quiet machine; read `run.done` and the log tail before any statement about the result.
+- [ ] **Step 4: Scenario card** `S48`: cross-table copies of re-inserted content under GC at the suite's dev and ci scales, verdicts: data oracle, fsck hard findings, no body left dangling, counts of each statement executed. Register it; run it at dev scale; add its line to the README.
+- [ ] **Step 5: Commit** in `cas-pr1`: `Test CAS copies between tables under a running GC`. The harness edits in `master` stay unstaged and are listed in the report.

@@ -259,3 +259,31 @@ source. D3: `pending(u)` is committed; the writer's activation is in the next at
   records were removed by a newer leader (D4), for the body delete and for the intent delete of a `standing` row.
 - A hardlink build whose source is dropped after the destination precommit: the build is abandoned. `republishRef`
   with a source dropped by another writer: the call does not report success.
+
+## Coverage of events inside a round {#coverage}
+
+The defects above passed every existing test because no test places an event between two steps of a GC round, and
+none combines a copy without reading the body, a drop of its source and a row that is already `pending`. This change
+closes that gap as part of the same work.
+
+- **Facility.** A fold test hook that runs a callback at a chosen point of a round: after the catalog read, between
+  the reads of two named namespaces (both walk orders, pass 1 and pass 2), after the intake and before the reduce,
+  after the request batch and before the `gc/state` commit. Test code only; the product gains no seam beyond the
+  store-answer hooks the fakes already have.
+- **Matrix, unit level.** {copy path: `createHardLink` across namespaces, `republishRef`, relink} × {source dropped:
+  before the round, inside the intake, after the round} × {row of the blob: none, `candidate`, `pending`,
+  `standing`} × {one hop, a relay of two hops, a destination created inside the round}. Each cell asserts: the body
+  is present while any committed part names it, no body delete was sent for it, `cas-fsck` reports no dangling
+  reference. A parameterized suite; cells that cannot occur are listed with the reason, not silently omitted.
+- **Other events inside a round**, one test each: a namespace removed and re-created; a ref-log snapshot that
+  covers an unread add and drop; an intake slice cut by the time budget so that one namespace is read over two
+  rounds; a leader change between the intake and the commit; a state rebuild between two rounds of a relay.
+- **Statements, integration level.** `MOVE PARTITION TO TABLE`, `ATTACH PARTITION FROM`, `REPLACE PARTITION`,
+  `CREATE TABLE ... CLONE AS`, a `RENAME TABLE` that changes the namespace, and a fetch by relink, each on content
+  that was dropped and re-inserted shortly before, with GC rounds running continuously; the oracle is a full read
+  with a checksum and `cas-fsck`. No test of `CLONE AS` or of a cross-namespace `RENAME` exists today.
+- **Soak and scenario.** The overlap soak gets operation endings that copy between tables (`ATTACH PARTITION FROM`,
+  `MOVE PARTITION TO TABLE`, `CLONE AS` followed by a drop of the source); one scenario card does the same at the
+  suite's scales.
+- **Model.** The model of record gains a second namespace with its own frontier; the per-namespace model used for
+  this fix is kept with its configurations and results next to the other models.
