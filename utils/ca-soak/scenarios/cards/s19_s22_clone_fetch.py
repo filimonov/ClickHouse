@@ -363,8 +363,8 @@ class S20(Scenario):
             k: int(v) for k, v in sorted(follower_delta.items()) if str(k).startswith("CAS") and v}
         result.observations["follower_fetch_counters"] = {
             k: int(follower_delta.get(k, 0)) for k in (
-                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap",
-                "CASBlobHead")}
+                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootPut",
+                "CASRefBatchFlushes", "CASBlobHead")}
         result.observations["total_fetch_counters"] = {
             k: int(total_delta.get(k, 0)) for k in (
                 "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap")}
@@ -386,22 +386,19 @@ class S20(Scenario):
             "" if ok else
             "the follower re-uploaded large blob bodies on fetch — fetch should relink shared content "
             "(dedup), not duplicate payload per replica; investigate the fetch/relink path"))
-        follower_root_cas = int(follower_delta.get("CASRootCompareSwap", 0))
-        if follower_root_cas > 0:
-            result.add(Verdict("follower publishes its own refs",
-                               "follower CASRootCompareSwap > 0 (own refs/sidecars) without body duplication",
-                               follower_root_cas, "pass"))
-        else:
-            # CASRootCompareSwap=0 on the follower node may mean the counter is not scoped per-node
-            # (the CAS is attributed to the leader node that initiated the write). This is not
-            # a correctness issue; the "follower relinks without re-uploading big blobs" verdict
-            # above already proves no body re-upload. Record as inconclusive (not a FAIL).
-            result.add(Verdict.inconclusive(
-                "follower publishes its own refs",
-                "follower CASRootCompareSwap > 0 (own refs/sidecars)",
-                "follower CASRootCompareSwap=0 — counter may not be scoped per-node; "
-                "cannot distinguish 'no ref published' from 'ref attributed to leader node'; "
-                "correctness covered by the no-body-re-upload verdict above"))
+        # `CASRootCompareSwap` is declared in `ProfileEvents.cpp` but nothing increments it: the backend
+        # wrapper (`CasInstrumentedBackend.cpp`, `incrementCasEvent`) only ever passes `CasOp::Put`, so
+        # every conditional ref write counts as `CASRootPut`. A follower's own ref publication shows up as
+        # `CASRootPut` (ref/sidecar objects under `cas/ns/`) and `CASRefBatchFlushes` (ref-log batches).
+        follower_root_put = int(follower_delta.get("CASRootPut", 0))
+        follower_ref_flushes = int(follower_delta.get("CASRefBatchFlushes", 0))
+        result.add(Verdict.check(
+            "follower publishes its own refs",
+            "follower CASRootPut > 0 and CASRefBatchFlushes > 0 (own refs/sidecars) without body duplication",
+            f"follower CASRootPut={follower_root_put} CASRefBatchFlushes={follower_ref_flushes}",
+            follower_root_put > 0 and follower_ref_flushes > 0,
+            "the follower published no ref objects although its fetch completed: the relink did not write "
+            "refs of its own"))
 
         # --- pool grows by metadata, not a full payload per replica -------------------------------
         pool_after_fetch = observe.pool_shape(timeout_s=120)

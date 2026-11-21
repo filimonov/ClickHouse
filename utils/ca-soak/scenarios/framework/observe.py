@@ -23,6 +23,7 @@ suite passed vacuously; BACKLOG.md `{#gc-observation-vacuous-2026-07-25}`).
 
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -68,7 +69,14 @@ BAD_EVENT_TYPES = (
 # Pool prefixes reported in every run (README §"Common observations"). Layout-aware buckets from
 # `classify_pool_path` (per-server-tree relocation): `_manifests` = `cas/manifests/`, `refs` =
 # `cas/refs/`. Key NAMES kept from the pre-relocation era — cards consume them.
-POOL_PREFIXES = ("blobs", "_manifests", "refs", "roots", "_files", "gc", "_pool_meta")
+#
+# Generation 4 adds `blob_intents` (`blob-intents/<algo>/<hex[0:2]>/<hex>/<dialect>/<tag-hex>`, the
+# deletion intents) and `legacy_meta` (a `.meta` object under `blobs/`, the retired marker protocol:
+# a fresh generation 4 pool must hold none). `refs` also covers the namespace tree `cas/ns/` and
+# `cas/ref_catalog`; before 2026-11 only the retired `cas/refs/` landed there and the real ref
+# objects were reported as `other`.
+POOL_PREFIXES = ("blobs", "_manifests", "refs", "roots", "_files", "gc", "_pool_meta",
+                 "blob_intents", "legacy_meta")
 
 
 # ClickHouse error code UNKNOWN_TABLE (Common/ErrorCodes.cpp). `SystemLog<>`-backed tables
@@ -102,6 +110,9 @@ def _is_benign_probe_gap(exc: BaseException) -> bool:
     return is_transport_error(exc) or _is_missing_table(exc)
 
 
+_LEGACY_MARKER_SEGMENT = re.compile(r"^[0-9a-f]{16,}\.meta$")
+
+
 def classify_pool_path(key: str) -> str:
     """Bucket a pool object key by the CURRENT per-server-tree layout (2026-07 relocation):
     `blobs/<aa>/<hash>`, `cas/manifests/<srid>/...`, `cas/refs/<srid>/...`, `roots/<srid>/...`,
@@ -114,10 +125,10 @@ def classify_pool_path(key: str) -> str:
     manifest as bookkeeping — a real manifest leak would have PASSED "no unbounded leftovers"."""
     segs = [s for s in key.split("/") if s not in ("", ".")]
     for i, s in enumerate(segs):
-        if s in ("blobs", "roots", "gc") or s.startswith("_pool_meta"):
+        if s in ("blobs", "blob-intents", "roots", "gc") or s.startswith("_pool_meta"):
             segs = segs[i:]
             break
-        if s == "cas" and i + 1 < len(segs) and segs[i + 1] in ("manifests", "refs"):
+        if s == "cas" and i + 1 < len(segs) and segs[i + 1] in ("manifests", "refs", "ns", "ref_catalog"):
             segs = segs[i:]
             break
     if not segs:
@@ -126,9 +137,16 @@ def classify_pool_path(key: str) -> str:
         return "_files"
     head = segs[0]
     if head == "blobs":
-        return "blobs"
+        # `pool_shape` walks RustFS's data directory, where every object is a directory holding
+        # `xl.meta` (+ `<uuid>/part.N`). A marker `<hex>.meta` is such a directory, so test the path
+        # SEGMENTS, never the last one, and never the store's own `xl.meta`.
+        # RustFS also keeps `part.<n>.meta` next to the parts of a multipart object; a marker is
+        # exactly `<hex digest>.meta`.
+        return "legacy_meta" if any(_LEGACY_MARKER_SEGMENT.match(x) for x in segs[1:]) else "blobs"
+    if head == "blob-intents":
+        return "blob_intents"
     if head == "cas":
-        if len(segs) > 1 and segs[1] in ("manifests", "refs"):
+        if len(segs) > 1 and segs[1] in ("manifests", "refs", "ns", "ref_catalog"):
             return "_manifests" if segs[1] == "manifests" else "refs"
         return "other"
     if head == "roots":
@@ -412,7 +430,8 @@ def gc_log_rows(node, since_event_time: str | None = None, *,
     # `ContentAddressedGarbageCollectionLog`'s columns must be mirrored here in the same commit.
     cols = ("event_time", "gc_id", "trigger", "round", "outcome", "candidates_marked",
             "objects_deleted", "objects_absent", "objects_replaced", "objects_spared",
-            "manifests_deleted", "entries_condemned", "entries_graduated", "entries_redeleted",
+            "manifests_deleted", "entries_condemned", "entries_intent_confirmed", "entries_bodies_deleted",
+            "entries_body_delete_failed",
             "fence_outs", "anomalies", "duration_ms", "error")
     tries = max(1, int(poll_tries))
     for attempt in range(tries):

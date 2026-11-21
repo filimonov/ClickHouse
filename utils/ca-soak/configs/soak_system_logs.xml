@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- Mounted by the profile runs only (`soak/stand.py`). Bounds what a 12 h run keeps inside a container:
+         the logs rotate at 500 MB x 6 files per server (the error log rotates the same way but holds only
+         warnings and errors), and `cas_log`, which writes tens of MB per minute on a churning pool, gets ten-minute partitions
+         that the run's janitor drops once they leave its retention window. -->
+    <logger>
+        <size>500M</size>
+        <count>6</count>
+    </logger>
+    <cas_log>
+        <partition_by>toStartOfTenMinutes(event_time)</partition_by>
+    </cas_log>
+</clickhouse>

@@ -7,6 +7,14 @@ independent, focused runs where each scenario stresses one hard condition and pr
 The goal is not only "the query result is right". Each scenario must also show that resource use, object
 store operation counts, and `GC` behavior are predictable under pressure.
 
+## Binary under test
+
+Every compose file mounts one host binary over `/usr/bin/clickhouse` of `clickhouse/clickhouse-server:25.8`.
+Select it with `CA_SOAK_CLICKHOUSE_BINARY=<absolute path>` (default `../../build/programs/clickhouse` relative to
+`utils/ca-soak`); `CA_SOAK_CLICKHOUSE_ASAN_BINARY` and `CA_SOAK_CLICKHOUSE_TSAN_BINARY` feed the `-asan` and
+`-tsan` override files. Host ports that clash with other work can be moved with `CA_SOAK_S41_PORT` (S41's
+HTTP port, default 18123) and `CA_SOAK_CH10_NATIVE_PORT` (S12's tenth native port, default 9010).
+
 ## Common run contract
 
 Every scenario should be runnable independently against a fresh object-storage pool:
@@ -65,7 +73,7 @@ Collect these for every run:
 
 - Configuration: ClickHouse binary revision, branch, pool prefix, `gc_shards`,
   `expect_continue_min_bytes`, replica count, object store version, and seed.
-- Pool shape: object count and bytes by prefix: `blobs`, `roots`, `_manifests`, `_files`, and `gc`.
+- Pool shape: object count and bytes by prefix: `blobs`, `blob_intents` (`blob-intents/`), `legacy_meta` (must be 0), `roots`, `_manifests`, `refs`, `_files`, and `gc`.
 - `system.cas_gc_log`: round, outcome, candidates, deleted, absent,
   replaced, spared, duration, and per-round `ProfileEvents`.
 - `system.cas_log`: event counts by `event_type`, `object_kind`, `outcome`, and joins by
@@ -307,7 +315,9 @@ Expected:
 - If it fails, no ref is published and `fsck` is clean after `GC`.
 - Reading a subset of columns should not require fetching every large blob body.
 
-### S07: manifest cap fail-closed
+### S07: manifest cap fail-closed (retired)
+
+Retired: the caps cannot be reached by a user (SQL, settings, operator actions); the card returns a skipped verdict and the caps are covered by unit tests (`gtest_cas_part_write.cpp`, `gtest_cas_part_manifest_format.cpp`).
 
 Purpose: prove that manifest limits fail before a visible owner transition exists.
 
@@ -719,6 +729,21 @@ Cycles (`--param cycles=...`, default `A,K1,K2,K3,K4,K5,K6,N`):
 
 Every cycle ends with GC rounds, a restart of the victim that must rejoin empty and accept inserts, a check
 of content the survivor shares with the victim, and fsck. The soak oracle on ch1/ch2 is the final verdict.
+
+### S48: copies between tables of re-inserted content under GC
+
+Purpose: `MOVE PARTITION TO TABLE`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM` and `CREATE TABLE ... CLONE AS`,
+each followed by the drop of the source, on content that was dropped and re-inserted a few rounds earlier, while a
+background thread issues `SYSTEM CAS GC RUN`.
+
+```bash
+python3 -m scenarios.run --scenario S48 --seed 48 --scale dev
+```
+
+Verdicts: every destination reads back the checksum recorded from its source, right after the statement and after the
+pool drained; the end checkpoint's fsck has no dangling reference or other hard finding; the counts of each statement
+executed, refused with `NO_REPLICA_HAS_PART` and retried, and given up are reported. A dev run may meet no refusal.
+Tables are plain `MergeTree` on the first node. Integration counterpart: `tests/integration/test_cas_cross_table_copy_gc`.
 
 ## P2 scenario cards
 

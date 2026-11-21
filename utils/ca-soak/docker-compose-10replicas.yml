@@ -51,7 +51,7 @@ services:
     image: clickhouse/clickhouse-server:25.8
     entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file", "/etc/clickhouse-keeper/keeper.xml"]
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
     expose:
       - "9181"
@@ -67,9 +67,9 @@ services:
         condition: service_started
       createbucket:
         condition: service_completed_successfully
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
@@ -101,9 +101,9 @@ services:
         condition: service_completed_successfully
       ch1:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node2.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -134,9 +134,9 @@ services:
         condition: service_completed_successfully
       ch2:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch3.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node3.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -167,9 +167,9 @@ services:
         condition: service_completed_successfully
       ch3:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch4.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node4.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -200,9 +200,9 @@ services:
         condition: service_completed_successfully
       ch4:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch5.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node5.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -233,9 +233,9 @@ services:
         condition: service_completed_successfully
       ch5:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch6.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node6.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -266,9 +266,9 @@ services:
         condition: service_completed_successfully
       ch6:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch7.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node7.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -299,9 +299,9 @@ services:
         condition: service_completed_successfully
       ch7:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch8.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node8.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -332,9 +332,9 @@ services:
         condition: service_completed_successfully
       ch8:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch9.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node9.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -365,9 +365,9 @@ services:
         condition: service_completed_successfully
       ch9:
         condition: service_healthy
-    mem_limit: 8g
+    mem_limit: ${CA_SOAK_CH10_MEM_LIMIT:-8g}
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_10replicas_ch10.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node10.xml:/etc/clickhouse-server/config.d/macros.xml:ro
@@ -377,4 +377,4 @@ services:
       - ./logs/ch10:/var/log/clickhouse-server
     ports:
       - "8132:8123"
-      - "9010:9000"
+      - "${CA_SOAK_CH10_NATIVE_PORT:-9010}:9000"

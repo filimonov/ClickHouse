@@ -1,14 +1,14 @@
 """S40: acked-then-lost INSERT under an S3 outage + replica kill (dedup phantom regression gate).
 
 Reproduces the 2026-07-17 CRITICAL data loss: continuous byte-identical-retry
-sync inserts while RustFS is paused past the CAS write budget (90s) and the second replica is
+sync inserts while RustFS is paused past the CAS request window (`cas_request_window_ms`, 120s) and the second replica is
 killed mid-outage. Before the renameParts durability fix, an insert whose Keeper multi committed
 the block_id but whose disk commit then failed left a PHANTOM dedup znode; the client retry
 "already exists on other replicas ... ignoring it"-dedup'ed against it and was acked with zero
 rows written. The gate: every id the server ever acked (HTTP 200) must be present after recovery.
 
 Fault mechanics are copied from the proven build/dl_probe.py: raw docker pause/unpause of rustfs
-(105s > 90s budget) + kill/start of ch2 inside the pause window; inserts run through the whole
+(135s > 120s window) + kill/start of ch2 inside the pause window; inserts run through the whole
 window so some are guaranteed mid-commit when the fault bites.
 """
 
@@ -37,15 +37,16 @@ class S40(Scenario):
     priority = "P0"
     expect_exception = True   # inserts DO fail loudly during the outage; CA-log exception rows are expected
 
-    # The pause must exceed the 90s CAS write budget, so there is no meaningfully faster dev preset.
+    # The pause must exceed the 120s CAS request window (it was a fixed 90s before `cas_request_window_ms`
+    # became a setting), so there is no meaningfully faster dev preset.
     # min_acked: anti-vacuity floor for the primary verdict (the dl_probe baseline acked ~1300 in
     # 150s with 8 writers; 200 is a safe lower bound even on a slow host).
     param_table = {
-        "dev": {"insert_window_s": 150, "pause_s": 105, "kill_after_s": 16, "ch2_down_s": 50,
+        "dev": {"insert_window_s": 210, "pause_s": 135, "kill_after_s": 16, "ch2_down_s": 50,
                 "writers": 6, "payload_bytes": 20000, "min_acked": 200},
-        "ci": {"insert_window_s": 150, "pause_s": 105, "kill_after_s": 16, "ch2_down_s": 50,
+        "ci": {"insert_window_s": 210, "pause_s": 135, "kill_after_s": 16, "ch2_down_s": 50,
                "writers": 8, "payload_bytes": 20000, "min_acked": 200},
-        "full": {"insert_window_s": 300, "pause_s": 105, "kill_after_s": 16, "ch2_down_s": 50,
+        "full": {"insert_window_s": 360, "pause_s": 135, "kill_after_s": 16, "ch2_down_s": 50,
                  "writers": 8, "payload_bytes": 20000, "min_acked": 400},
     }
 
@@ -141,7 +142,7 @@ class S40(Scenario):
         result.add(Verdict.check(
             "outage disturbed inserts", "insert_failures > 0",
             f"insert_failures={insert_failures[0]}", insert_failures[0] > 0,
-            "zero failed inserts across a 105s S3 pause + replica kill means the fault never bit"))
+            "zero failed inserts across a 135s S3 pause + replica kill means the fault never bit"))
         result.add(Verdict.check(
             "meaningful acked volume", f"acked >= {int(p['min_acked'])}",
             f"acked={len(acked)}", len(acked) >= int(p["min_acked"]),

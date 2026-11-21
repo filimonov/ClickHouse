@@ -54,11 +54,11 @@ CAS_SIGNAL_EVENT_NOTES = (
      "Ref-log append lanes that exhausted retries after an UNCERTAIN put. Ref-log progress may be "
      "stalled on that lane."),
     ("CASGCClampSuppressedPasses",
-     "GC passes that deferred graduation and deletion because reachability was uncertain — GC held "
+     "GC passes that deferred row decisions and deletion because reachability was uncertain — GC held "
      "back. Fail-closed behaviour, but a steady rate means GC is not converging."),
-    ("CASGCCondemnMarkerUnconfirmedCarry",
-     "Retirements delayed because a durable condemn marker could not be confirmed. Safe (deletion is "
-     "postponed) but points at marker write/read failures."),
+    ("CASGCIntentUnconfirmedCarry",
+     "Deletion-intent creates GC could not confirm: the blob stays a candidate and the create is retried "
+     "next round. Safe (deletion is postponed) but points at `blob-intents/` write/read failures."),
 )
 
 # The late-PUT-loses invariant, as counters. Two families, and the difference between them is the

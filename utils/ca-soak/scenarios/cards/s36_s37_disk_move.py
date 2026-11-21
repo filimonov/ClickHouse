@@ -306,16 +306,15 @@ class S36(Scenario):
 
         # OFF-CA drops the CAS refs the two moved parts held; deferred GC must reclaim that content
         # (no permanent orphans). Mirrors checkpoint.end_checkpoint's two-step drive: a bounded
-        # residual after forced_gc_to_fixpoint is typically CONDEMNED content (fsck pending-gc) that
-        # only graduates once the ack floor advances via each server's periodic retired-view sync
-        # (~mount_renew_period) -- which forced_gc_to_fixpoint's faster poll can outrun, reporting a
-        # "stable" but nonzero residual as if it were the true fixpoint. drain_condemned_pipeline
-        # drives that graduation to completion; only a residual that survives BOTH steps is a real
-        # leak.
+        # residual after forced_gc_to_fixpoint is typically CONDEMNED content (fsck pending-gc): GC
+        # reclaims a blob over three rounds (intent, body delete, intent delete), which
+        # forced_gc_to_fixpoint's faster poll can outrun, reporting a "stable" but nonzero residual as if
+        # it were the true fixpoint. drain_condemned_pipeline drives the rounds to completion; only a
+        # residual that survives BOTH steps is a real leak.
         residual, history = gc_mod.forced_gc_to_fixpoint(
             cl, lifecycle.unreachable_probe(), log_fn=ctx.log)
         if residual and residual > 0:
-            ctx.log(f"S36: draining condemned graduation pipeline after OFF-CA move (residual={residual})")
+            ctx.log(f"S36: draining the intent deletion pipeline after OFF-CA move (residual={residual})")
             residual, drain_hist = gc_mod.drain_condemned_pipeline(
                 cl, lifecycle.unreachable_probe(), log_fn=ctx.log)
             history = history + drain_hist
@@ -583,6 +582,18 @@ class S37(Scenario):
         # local1 and those legs passed by accident on a broken feature. Issue it on node1 only -- it
         # is a replicated ALTER, so a second REMOVE TTL on node2 would fail (BAD_ARGUMENTS: nothing to
         # remove) once node1's removal replicates.
+        # The MATERIALIZE TTL mutation above is still a queue entry on the other replica until that
+        # replica executes it; a REMOVE TTL replicated first makes the entry fail for good (Code 80, "no
+        # TTL set", stock MergeTree behaviour) and the final quiesce then waits on it forever. Wait for
+        # the mutation to finish on every replica before removing the TTL.
+        _deadline = time.monotonic() + 180
+        while True:
+            _open = [int(n.scalar(f"SELECT count() FROM system.mutations WHERE table = '{ttl_table}' "
+                                  f"AND NOT is_done").strip() or 0) for n in cl.nodes()]
+            if not any(_open) or time.monotonic() > _deadline:
+                break
+            time.sleep(0.5)
+        result.observations["ttl_mutation_open_before_remove"] = _open
         cl.node1.command(f"ALTER TABLE {ttl_table} REMOVE TTL", timeout=120)
 
         # "back": explicit MOVE off the CA volume (same both-direction lifecycle as S36, but this

@@ -37,7 +37,7 @@ services:
     image: clickhouse/clickhouse-server:25.8
     entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file", "/etc/clickhouse-keeper/keeper.xml"]
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
     expose:
       - "9181"
@@ -55,7 +55,7 @@ services:
         condition: service_completed_successfully
     mem_limit: 28g
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_gc_shards2_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
@@ -89,7 +89,7 @@ services:
         condition: service_healthy
     mem_limit: 28g
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_gc_shards2_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro

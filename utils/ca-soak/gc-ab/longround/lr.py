@@ -19,7 +19,7 @@ def checkpoint(label):
         s = m.group(2)
         if "reset_cluster: fresh pool up" in s: t["up"] = ts
         if "quiescing cluster" in s: t["quiesce"] = ts
-        if "post-graduation-drain residual" in s or ("forced GC residual unreachable=0" in s): t["fix"] = ts
+        if "post-drain residual" in s or "post-graduation-drain residual" in s or ("forced GC residual unreachable=0" in s): t["fix"] = ts
         if "S11 DONE" in s: t["done"] = ts
     d = lambda a, b: (t[b] - t[a]).total_seconds() if a in t and b in t else float("nan")
     return {"workload_s": d("up", "quiesce"), "quiesce_to_fixpoint_s": d("quiesce", "fix"), "total_s": d("up", "done")}

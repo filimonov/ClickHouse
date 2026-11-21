@@ -1,6 +1,9 @@
 import json
 import sqlite3
+import threading
+import time
 
+from soak import harness_failures
 from soak.signals import CAS_SIGNAL_EVENTS
 
 # The CAS signal counters ride the metrics curve as one column each, named EXACTLY after the
@@ -45,12 +48,54 @@ def _ensure_columns(conn: sqlite3.Connection, table: str, cols, text_cols) -> No
             conn.execute(f'ALTER TABLE {table} ADD COLUMN "{c}" {kind}')
 
 
+# One process-wide lock serializes every write on the shared connection (statements + commit): two
+# threads interleaving execute/commit on one connection made the second commit fail with "cannot
+# commit - no transaction is active". Writers that open their own connection (`write_retrying`) use
+# a busy timeout instead and do not need it.
+WRITE_LOCK = threading.RLock()
+BUSY_TIMEOUT_S = 60
+WRITE_ATTEMPTS = 5
+WRITE_BACKOFF_S = 1.0
+
+
+
+def write_failures() -> list:
+    """Writes that stayed failing after every retry (the run verdict turns each into a harness failure)."""
+    return [f for f in harness_failures.all_failures() if f.startswith("metrics db write")]
+
+
+def reset_write_failures() -> None:
+    harness_failures.reset()
+
+
+def write_retrying(what: str, fn, *, attempts: int = WRITE_ATTEMPTS, backoff_s: float = WRITE_BACKOFF_S) -> bool:
+    """Run the sqlite write `fn` under `WRITE_LOCK`, retrying a bounded number of times on
+    `sqlite3.Error`. When it stays failing the failure is recorded (see `write_failures`) and False is
+    returned: the workload and the checks go on, the verdict fails."""
+    last = None
+    for i in range(attempts):
+        try:
+            with WRITE_LOCK:
+                fn()
+            return True
+        except sqlite3.Error as e:
+            last = e
+            print(f"metrics db write '{what}' failed (attempt {i + 1}/{attempts}): {type(e).__name__}: {e}", flush=True)
+            if i + 1 < attempts:
+                time.sleep(backoff_s * (i + 1))
+    harness_failures.add(f"metrics db write '{what}' failed after {attempts} attempts: {type(last).__name__}: {last}")
+    return False
+
+
+def connect_own(path: str) -> sqlite3.Connection:
+    """A short-lived connection for one writer; waits up to `BUSY_TIMEOUT_S` for the db lock."""
+    return sqlite3.connect(path, timeout=BUSY_TIMEOUT_S)
+
+
 def open_db(path: str) -> sqlite3.Connection:
-    # check_same_thread=False: the Phase-3 metrics ticker writes from its OWN thread while the main
-    # thread also records checkpoint-tagged ticks (carrying the fsck result). Callers that share the
-    # connection across threads MUST serialize their writes with a lock (MetricsTicker does); sqlite
-    # itself serializes the underlying file writes.
-    conn = sqlite3.connect(path, check_same_thread=False)
+    # check_same_thread=False: the metrics ticker, the checkpoint tick and the gc_phases writer use one
+    # connection from different threads; `record` / `record_phases` serialize on WRITE_LOCK.
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=BUSY_TIMEOUT_S)
     conn.row_factory = sqlite3.Row
     cols_ddl = ", ".join(f'"{c}" INTEGER' if c != "node" else '"node" TEXT' for c in _COLS)
     conn.execute(f"CREATE TABLE IF NOT EXISTS metrics ({cols_ddl})")
@@ -63,12 +108,19 @@ def open_db(path: str) -> sqlite3.Connection:
     return conn
 
 
-def record(conn: sqlite3.Connection, snap: dict) -> None:
+def record(conn: sqlite3.Connection, snap: dict) -> bool:
     vals = [snap.get(c) for c in _COLS]
     placeholders = ", ".join("?" for _ in _COLS)
     names = ", ".join(f'"{c}"' for c in _COLS)
-    conn.execute(f"INSERT INTO metrics ({names}) VALUES ({placeholders})", vals)
-    conn.commit()
+
+    def write():
+        try:
+            conn.execute(f"INSERT INTO metrics ({names}) VALUES ({placeholders})", vals)
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
+    return write_retrying("metrics", write)
 
 
 def rows(conn: sqlite3.Connection) -> list:
@@ -106,11 +158,16 @@ def record_phases(conn: sqlite3.Connection, phase_rows: list) -> int:
         return 0
     names = ", ".join(f'"{c}"' for c in _PHASE_COLS)
     placeholders = ", ".join("?" for _ in _PHASE_COLS)
-    conn.executemany(
-        f"INSERT INTO gc_phases ({names}) VALUES ({placeholders})",
-        [[row.get(c) for c in _PHASE_COLS] for row in phase_rows])
-    conn.commit()
-    return len(phase_rows)
+    values = [[row.get(c) for c in _PHASE_COLS] for row in phase_rows]
+
+    def write():
+        try:
+            conn.executemany(f"INSERT INTO gc_phases ({names}) VALUES ({placeholders})", values)
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
+    return len(phase_rows) if write_retrying("gc_phases", write) else 0
 
 
 def gc_phase_rows(conn: sqlite3.Connection) -> list:

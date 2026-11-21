@@ -53,21 +53,34 @@ def end_checkpoint(ctx, cluster, result, tables, *, table_filter=None, abandons=
     result.observations["gc_residual_unreachable"] = residual
     ctx.log(f"end checkpoint: forced GC residual unreachable={residual} (rounds={len(history)})")
 
-    # A bounded residual here is typically CONDEMNED content (fsck pending-gc) that graduates only once
-    # the ack floor advances via the servers' periodic retired-view sync (~mount_renew_period), which
-    # forced_gc_to_fixpoint polls faster than. Drive the two-phase graduation to completion (one round
-    # per sync period) so a healthy pipeline drains to 0 — giving assert_no_leftovers a true post-
-    # graduation residual. A residual that will NOT drain (stuck floor / uncondemned orphan) survives
-    # and is classified by fsck class downstream (unreachable/dangling ⇒ real leak ⇒ FAIL).
+    # A bounded residual here is typically CONDEMNED content (fsck pending-gc): GC reclaims a blob over
+    # three rounds (intent, body delete, intent delete) and forced_gc_to_fixpoint polls faster than
+    # rounds complete. Drive single-leader rounds until the body count reaches 0, so a healthy pipeline
+    # drains and assert_no_leftovers sees the true residual. A residual that will NOT drain survives
+    # and is classified by fsck class downstream (unreachable/dangling => real leak => FAIL).
     if residual and residual > 0:
-        ctx.log(f"end checkpoint: draining condemned graduation pipeline (residual={residual})")
+        ctx.log(f"end checkpoint: draining the intent deletion pipeline (residual={residual})")
         td = time.monotonic()
         residual, drain_hist = gc_mod.drain_condemned_pipeline(
             cluster, lifecycle.unreachable_probe(fsck_container), log_fn=ctx.log)
-        result.timings["graduation_drain_s"] = round(time.monotonic() - td, 1)
-        result.observations["graduation_drain_history"] = drain_hist
+        result.timings["pipeline_drain_s"] = round(time.monotonic() - td, 1)
+        result.observations["pipeline_drain_history"] = drain_hist
         result.observations["gc_residual_unreachable"] = residual
-        ctx.log(f"end checkpoint: post-graduation-drain residual unreachable={residual}")
+        ctx.log(f"end checkpoint: post-drain residual unreachable={residual}")
+
+    # The last intent is deleted one round after the last body, so `unreachable == 0` does not mean
+    # `blob-intents/` is empty. Record the count after the final rounds; the report shows it, no verdict
+    # depends on it (a blob referenced again keeps its intent until it reaches zero references once more).
+    try:
+        ti = time.monotonic()
+        intents_left, intent_hist = gc_mod.drain_intents(
+            cluster, lifecycle.intent_listed_probe(fsck_container), log_fn=ctx.log)
+        result.timings["intent_drain_s"] = round(time.monotonic() - ti, 1)
+        result.observations["intent_listed_after_drain"] = intents_left
+        result.observations["intent_drain_history"] = intent_hist
+        ctx.log(f"end checkpoint: intent_listed after drain={intents_left} (history={intent_hist})")
+    except Exception as e:
+        ctx.log(f"drain_intents raised: {e}")
 
     ctx.log("end checkpoint: final detailed fsck + dry-run")
     fsck_final = {}
@@ -110,6 +123,7 @@ def end_checkpoint(ctx, cluster, result, tables, *, table_filter=None, abandons=
         "fsck_final": {k: v for k, v in fsck_final.items() if k not in ("stdout", "stderr", "detail")},
         "dryrun_count": dry.get("count"),
         "gc_residual_unreachable": residual,
+        "intent_listed_after_drain": result.observations.get("intent_listed_after_drain"),
         "gc_fixpoint_history": history,
         "pool_shape": pool,
         "gc_summary": gc_all.get("summary"),
@@ -140,7 +154,7 @@ def end_checkpoint(ctx, cluster, result, tables, *, table_filter=None, abandons=
     assertions.run_common_assertions(
         result, fsck_final=fsck_final, fsck_detail_res=fsck_det, dryrun_res=dry,
         ca_events=ca_events, gc_summary=gc_all.get("summary"), abandons=abandons,
-        expect_exception=expect_exception, residual_after_gc=residual)
+        expect_exception=expect_exception, residual_after_gc=residual, pool_shape=pool)
 
     result.timings["end_checkpoint_s"] = round(time.monotonic() - t0, 1)
     return {

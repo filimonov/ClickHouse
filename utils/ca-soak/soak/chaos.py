@@ -99,6 +99,179 @@ def generate_chaos_schedule(seed: int, duration_s: int, mean_interval_s: int):
         i += 1
     return faults
 
+def intents_fault_track(seed: int, t_start: int, t_end: int, *, compress: bool = False):
+    """The fault track of the intent-churn workload over `[t_start, t_end)`: long freezes of whichever server
+    leads GC when the fault fires (`ObservedFaultApplier` resolves the target, so a deposed but alive leader
+    resumes mid-round), `docker kill` of one server, and short pauses of one server.
+
+    `generate_chaos_schedule` upgrades only about one fault in six to a freeze, of a random replica, and the
+    phase-3 timeline arms faults only in its chaos window; this track puts a leader freeze and a kill in every
+    stretch of the run. Cadence: freeze every 8-12 min, kill and pause every 5-10 min; `compress` (short proof
+    runs): freeze every 3-5 min, kill every 2-4 min, pause every 2-3 min."""
+    import random
+    rnd = random.Random(seed ^ 0xFA17)
+    minutes = {FaultAction.FREEZE_LONG: (3, 5) if compress else (8, 12),
+               FaultAction.KILL: (2, 4) if compress else (5, 10),
+               FaultAction.PAUSE: (2, 3) if compress else (5, 10)}
+    out = []
+    for action, (lo, hi) in minutes.items():
+        t = t_start + rnd.uniform(lo * 30, hi * 60)
+        while t < t_end:
+            target = FaultTarget.CH1 if rnd.random() < 0.5 else FaultTarget.CH2
+            if action == FaultAction.FREEZE_LONG:
+                dur = 60 + rnd.randrange(31)
+            elif action == FaultAction.KILL:
+                dur = 5 + rnd.randrange(26)
+            else:
+                dur = 5 + rnd.randrange(56)
+            out.append(Fault(t_offset=int(t), target=target, action=action, duration_s=dur))
+            t += rnd.uniform(lo * 60, hi * 60)
+    return sorted(out, key=lambda f: f.t_offset)
+
+
+class ObservedFaultApplier:
+    """Applies one fault with the checks around it that make it evidence rather than weather:
+
+    - starts only while both servers serve the pool (`system.cas_mounts.lifecycle = 'live'`), so the pool
+      stays served by one of them; otherwise the fault is skipped and logged;
+    - aims a `FREEZE_LONG` at the current GC leader (`is_leader` of the server's own row);
+    - opens a noise window on the servers the fault affects, closed 25 s after they serve again;
+    - after the fault, requires every affected server to serve a write-then-read through the CAS disk within
+      `recover_limit_s` (a missed bound is a fault failure), then holds `quiet_s` of quiet;
+    - records the fault in `journal_path` (one JSON line) and as `FAULT-START` / `FAULT-RESUMED` /
+      `FAULT-END` lines in the run log, which the log scan reads as fault windows.
+
+    `nodes` maps 1 and 2 to `soak.cluster.Node`s. `noise` is an object with `open(servers)` and
+    `close(servers, tail_s)`, or None."""
+
+    NOISE_TAIL_S = 25
+
+    def __init__(self, nodes, *, disk, journal_path, log_fn, noise=None, end_epoch=None, start_margin_s=90,
+                 quiet_s=30, recover_limit_s=180, apply_fn=None):
+        self.nodes = nodes
+        self.disk = disk
+        self.journal_path = journal_path
+        self.log = log_fn
+        self.noise = noise
+        self.end_epoch = end_epoch
+        self.start_margin_s = start_margin_s
+        self.quiet_s = quiet_s
+        self.recover_limit_s = recover_limit_s
+        self.apply_fn = apply_fn or apply_fault
+        self.failures = []
+        self.applied = 0
+        self.skipped = 0
+        self._probe_seq = 0
+
+    def _own_row(self, n):
+        import json
+        r = self.nodes[n].query(
+            f"SELECT lifecycle, is_leader FROM system.cas_mounts WHERE disk = '{self.disk}' AND is_leader IS NOT NULL "
+            f"FORMAT JSONEachRow", timeout=5)
+        rows = [json.loads(line) for line in r.splitlines() if line.strip()]
+        return rows[0] if rows else None
+
+    def live(self, n) -> bool:
+        try:
+            row = self._own_row(n)
+        except Exception:
+            return False
+        return row is not None and row["lifecycle"] == "live"
+
+    def leader(self):
+        found = None
+        for n in self.nodes:
+            try:
+                row = self._own_row(n)
+            except Exception:
+                continue
+            if row is not None and row.get("is_leader") == 1:
+                found = n
+        return found
+
+    def _probe(self, n) -> bool:
+        """A write then a read through server n's CAS disk: proves the mount is back, not only the port."""
+        import time
+        self._probe_seq += 1
+        t = f"default.soak_probe_{n}_{int(time.time())}_{self._probe_seq}"
+        node = self.nodes[n]
+        try:
+            node.query(f"CREATE TABLE {t} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = '{self.disk}'",
+                       timeout=30)
+            node.query(f"INSERT INTO {t} SELECT number FROM numbers(1000)", timeout=60)
+            ok = node.query(f"SELECT count(), sum(x) FROM {t}", timeout=60).split() == ["1000", "499500"]
+            node.query(f"DROP TABLE IF EXISTS {t} SYNC", timeout=60)
+            return ok
+        except Exception:
+            try:
+                node.query(f"DROP TABLE IF EXISTS {t} SYNC", timeout=30)
+            except Exception:
+                pass
+            return False
+
+    def _record(self, rec):
+        import json
+        with open(self.journal_path, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+
+    def __call__(self, fault: Fault):
+        import time
+        if self.end_epoch is not None and time.time() + self.start_margin_s > self.end_epoch:
+            self.skipped += 1
+            self.log(f"FAULT skipped ({fault.action.value} {fault.target.value}): too close to the end of the run")
+            return
+        t_wait = time.time()
+        while not (self.live(1) and self.live(2)):
+            if time.time() - t_wait > 120:
+                self.skipped += 1
+                self.log(f"FAULT skipped ({fault.action.value} {fault.target.value}): both servers are not live on the pool")
+                return
+            time.sleep(2)
+        led = self.leader()
+        why = "schedule"
+        if fault.action == FaultAction.FREEZE_LONG and led is not None:
+            fault = Fault(t_offset=fault.t_offset, target=FaultTarget.CH1 if led == 1 else FaultTarget.CH2,
+                          action=fault.action, duration_s=fault.duration_s)
+            why = "gc leader"
+        servers = {FaultTarget.CH1: [1], FaultTarget.CH2: [2]}.get(fault.target, [1, 2])
+        start = time.time()
+        if self.noise is not None:
+            self.noise.open(servers)
+        for n in servers:
+            self.log(f"FAULT-START server {n} kind={fault.action.value} target={fault.target.value} "
+                     f"duration={fault.duration_s}s why={why} leader_before={led}")
+        try:
+            self.apply_fn(fault)
+        finally:
+            resumed = time.time()
+            for n in servers:
+                self.log(f"FAULT-RESUMED server {n} kind={fault.action.value} after {resumed - start:.1f} s")
+        recovered = {}
+        for n in servers:
+            t0 = time.time()
+            ok = False
+            while time.time() - t0 < self.recover_limit_s:
+                if self._probe(n):
+                    ok = True
+                    break
+                time.sleep(2)
+            recovered[n] = (ok, round(time.time() - t0, 1))
+            if ok:
+                self.log(f"FAULT-END server {n} kind={fault.action.value} served a read {time.time() - t0:.1f} s after resume")
+            else:
+                msg = f"server {n} did not serve a read {self.recover_limit_s} s after {fault.action.value} ended"
+                self.failures.append(msg)
+                self.log(f"FAILURE {msg}")
+        if self.noise is not None:
+            self.noise.close(servers, self.NOISE_TAIL_S)
+        self.applied += 1
+        for n in servers:
+            self._record({"kind": fault.action.value, "target": fault.target.value, "server": n, "why": why,
+                          "leader_before": led, "start": start, "end": resumed, "duration_s": round(resumed - start, 1),
+                          "recovered": recovered[n][0], "recover_s": recovered[n][1]})
+        time.sleep(self.quiet_s)
+
+
 def _containers(target: FaultTarget):
     if target == FaultTarget.BOTH:
         return [container_for(FaultTarget.CH1), container_for(FaultTarget.CH2)]
@@ -142,6 +315,8 @@ def apply_fault(fault: Fault):
         # to force a fence-out), so the mechanics are identical.
         for c in cs:
             subprocess.run(["docker", "pause", c], capture_output=True)
-        time.sleep(fault.duration_s)
-        for c in cs:
-            subprocess.run(["docker", "unpause", c], capture_output=True)
+        try:
+            time.sleep(fault.duration_s)
+        finally:
+            for c in cs:
+                subprocess.run(["docker", "unpause", c], capture_output=True)

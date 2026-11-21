@@ -8,7 +8,7 @@
 # replication confound, so the INSERT-query ProfileEvents + trace_log on ch1 are the pure write path.
 # ReplicatedMergeTree (not plain MergeTree) is still used so the suite's standard end-checkpoint
 # (SYSTEM SYNC REPLICA, a no-op with one replica) works unchanged.
-name: ca-s41
+name: ${CA_SOAK_S41_PROJECT:-ca-s41}
 
 services:
   rustfs1:
@@ -42,7 +42,7 @@ services:
     image: clickhouse/clickhouse-server:25.8
     entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file", "/etc/clickhouse-keeper/keeper.xml"]
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
     expose:
       - "9181"
@@ -62,7 +62,7 @@ services:
     # (memory.xml caps ClickHouse at 0.9x this) instead of a kernel OOM-kill.
     mem_limit: 16g
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/storage_conf_s41.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/fsck_only_s41.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
@@ -76,7 +76,7 @@ services:
       # profiler would also sample idle/background threads and dilute the write-path attribution).
       - ./logs_s41/ch1:/var/log/clickhouse-server
     ports:
-      - "18123:8123"
+      - "${CA_SOAK_S41_PORT:-18123}:8123"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 2s

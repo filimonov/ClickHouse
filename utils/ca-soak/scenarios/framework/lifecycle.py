@@ -67,6 +67,23 @@ def unreachable_probe(container: str | None = None, disk: str = DEFAULT_FSCK_DIS
     return _fn
 
 
+def fsck_intents_listed(summary: dict) -> int:
+    """fsck `intents_listed` (keys under `blob-intents/`). Older builds spell it `intent_listed`.
+    A summary with neither raises: absent is not zero."""
+    for key in ("intents_listed", "intent_listed"):
+        if key in summary:
+            return int(summary[key])
+    raise RuntimeError("fsck summary has no intents_listed field")
+
+
+def intent_listed_probe(container: str | None = None, disk: str = DEFAULT_FSCK_DISK):
+    """0-arg callable giving the current fsck `intents_listed`, for `gc.drain_intents`."""
+    container = container or fsck_container()
+    def _fn():
+        return fsck_intents_listed(fsck_summary(container, disk))
+    return _fn
+
+
 # ---------------------------------------------------------------------------
 # Quiescence
 # ---------------------------------------------------------------------------

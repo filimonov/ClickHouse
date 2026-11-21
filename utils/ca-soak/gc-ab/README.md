@@ -22,8 +22,8 @@ Everything is mounted through a compose override; nothing in the checkout or the
 | `compare.py` | Before/after over `runs/before-s11ci-*` and `runs/after-s11ci-*`: median (min..max) per round class |
 | `confirm.py` | Several named groups of runs side by side, plus per-run `fold_reduce` |
 | `t2.py` | Janitor (`namespace_cleanup`) figures per run: keys per DELETE request, phase time |
-| `t3.py` | Per-round condemned, graduated, redeleted counters of a run |
-| `small-graduation-budget.xml` | Sets `gc_round_graduation_budget` to 5 on the `ca` disk |
+| `t3.py` | Per-round condemned, intent-confirmed, bodies-deleted counters of a run |
+| `small-intent-create-budget.xml` | Sets `gc_round_intent_create_budget` to 5 on the `ca` disk |
 | `longround/gc-long-interval.xml` | Sets `cas_gc_interval_sec` to 300 on the `ca` disk |
 | `longround/seq2.sh` | One S11 run with 300 s rounds and optional latency; extracts and tears down |
 | `longround/netem.sh` | Adds egress delay on the object store container with `tc netem` |
@@ -85,12 +85,12 @@ The first scheduled round fires about 300 s after start and folds most of the wo
 
 | Scenario | Reaches |
 |---|---|
-| S11 | Heavy `ALTER TABLE ... DELETE`: manifest fold and redelete. The table classes below apply to it |
+| S11 | Heavy `ALTER TABLE ... DELETE`: manifest fold and body deletes. The table classes below apply to it |
 | S30 | Create/drop churn: the namespace janitor. Read with `t2.py` |
-| S46 | Restarts under GC. With `GC_EXTRA_CONFIG=small-graduation-budget.xml` the graduation budget runs out across rounds and a marker is carried. Read with `t3.py` |
+| S46 | Restarts under GC. With `GC_EXTRA_CONFIG=small-intent-create-budget.xml` the intent-create budget runs out across rounds and the remaining blobs stay `candidate`. Read with `t3.py` |
 
 ```bash
-GC_EXTRA_CONFIG=$S/small-graduation-budget.xml $S/run-stand.sh run after-s46 /abs/path/clickhouse-after --scenario S46 --seed 20260930 --duration 300s --scale dev
+GC_EXTRA_CONFIG=$S/small-intent-create-budget.xml $S/run-stand.sh run after-s46 /abs/path/clickhouse-after --scenario S46 --seed 20260930 --duration 300s --scale dev
 python3 $S/t3.py after-s46
 ```
 

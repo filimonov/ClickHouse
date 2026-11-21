@@ -24,7 +24,7 @@ def gc_log_summary(node, since_s=600):
     SELECT event_type, phase, count() AS n,
         sum(candidates_marked) marked, sum(objects_deleted) deleted,
         sum(objects_absent) absent, sum(entries_condemned) condemned,
-        sum(entries_graduated) graduated, sum(entries_redeleted) redeleted,
+        sum(entries_intent_confirmed) intent_confirmed, sum(entries_bodies_deleted) bodies_deleted,
         sum(phase_metrics['janitor_pages']) janitor_pages,
         sum(phase_metrics['janitor_keys']) janitor_keys,
         sum(phase_metrics['janitor_deleted']) janitor_deleted

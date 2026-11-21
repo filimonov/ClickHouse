@@ -38,19 +38,63 @@ def assert_fsck_clean(result, fsck: dict):
     result.observations["fsck_final"] = {
         k: fsck.get(k) for k in ("reachable", "unreachable", "dangling", "physical_bytes",
                                  "referenced_logical_bytes", "distinct_blobs", "total_blob_refs",
-                                 "dedup_ratio") if k in fsck}
-    return [v]
+                                 "dedup_ratio") + _FSCK_INTENT_FIELDS if k in fsck}
+    return [v, assert_fsck_hard_findings(result, fsck)]
+
+
+# Hard findings of `cas-fsck` besides `dangling` (`CommandFsck.cpp` throws on each, and the docs call
+# them the other hard findings): a reachable ref stream with a hole, a corrupt GC source-edge run, a
+# key no writer could have produced, and the three generation 4 deletion-intent findings. `unchecked`
+# is a coverage statement, not a finding, and is not here.
+_FSCK_HARD_FIELDS = ("corrupted_runs", "chain_broken", "lifeless_keys", "intent_malformed", "intent_unread",
+                     "pending_without_intent")
+# Recorded for the report only: `intents_listed` (`intent_listed` in older builds) counts the keys under `blob-intents/`; the rest are
+# normal states of a pool that GC is working on (see docs `operations/debugging.md#fsck-intent-classes`).
+_FSCK_INTENT_FIELDS = ("intents_listed", "intent_listed", "pending_intent_absent", "pending_token_rejected", "standing_present",
+                       "legacy_marker", "unchecked", "janitor_pending")
+
+
+def assert_fsck_hard_findings(result, fsck: dict):
+    """Every hard finding of `cas-fsck` other than `dangling` is 0. A summary that lacks one of the
+    fields (an older binary, a truncated line) is inconclusive: absent is not zero."""
+    missing = [k for k in _FSCK_HARD_FIELDS if k not in fsck]
+    if missing:
+        return result.add(Verdict.inconclusive(
+            "fsck hard findings", "all 0", f"fsck summary lacks {missing}"))
+    if fsck.get("partial"):
+        nonzero = {k: fsck[k] for k in _FSCK_HARD_FIELDS if fsck[k]}
+        if not nonzero:
+            return result.add(Verdict.inconclusive(
+                "fsck hard findings", "all 0", "fsck partial (deadline): remainder unproven"))
+    nonzero = {k: fsck[k] for k in _FSCK_HARD_FIELDS if fsck[k]}
+    v = result.add(Verdict.check("fsck hard findings", "all 0", nonzero or 0, not nonzero))
+    if nonzero:
+        result.note_anomaly(f"fsck reports hard findings: {nonzero}")
+    return v
+
+
+def assert_no_legacy_markers(result, pool_shape: dict):
+    """No `.meta` marker object exists under `blobs/`. Generation 4 writes none (the deletion intents under
+    `blob-intents/` replaced them), and every scenario starts from a fresh pool, so a marker is a
+    protocol regression. `observe.pool_shape` counts them in the `legacy_meta` bucket."""
+    if not pool_shape or not pool_shape.get("_ok"):
+        return [result.add(Verdict.inconclusive(
+            "no legacy .meta markers", "0 objects", "pool shape unavailable"))]
+    n = pool_shape.get("legacy_meta", {}).get("objects", 0)
+    return [result.add(Verdict.check("no legacy .meta markers", "0 objects", n, n == 0,
+                                     "" if n == 0 else
+                                     "a `.meta` object exists under blobs/ in a generation 4 pool"))]
 
 
 # fsck object classes that a `cas-gc-dryrun` candidate may legitimately fall into. `cas-gc-dryrun`
 # previews the NEXT GC round's deletes, which is the union of:
 #   - `unreachable`  — orphan objects GC has not condemned yet;
-#   - `pending-gc` / `awaiting-gc` — objects already CONDEMNED, sitting in the two-phase graduation
-#     pipeline (zero in-degree, awaiting the min-ack rounds before physical delete).
+#   - `pending-gc` / `awaiting-gc` — objects already CONDEMNED, sitting in the intent deletion
+#     pipeline (zero in-degree; intent created, body not yet deleted: candidate / pending rows).
 # fsck splits "not reachable" into those sub-classes; the preview correctly targets all of them. The
 # earlier oracle accepted only `unreachable`, so a run left with a bounded condemned residual (any
-# create/insert/DROP scenario at the fixpoint — the last drop's blobs are condemned but not yet
-# graduated) FALSELY failed with "dryrun ⊄ unreachable" while every candidate was actually `pending-gc`
+# create/insert/DROP scenario at the fixpoint — the last drop's blobs are condemned but their bodies
+# are not yet deleted) FALSELY failed with "dryrun ⊄ unreachable" while every candidate was actually `pending-gc`
 # (verified 2026-07-07: minimal DROP repro → 7 candidates, all classified `pending-gc`, 0 reachable).
 # A candidate classified `reachable` (or `dangling`/`unaccounted`) IS a real over-proposal and still
 # fails — that is the genuine defect this oracle exists to catch.
@@ -74,7 +118,14 @@ def assert_dryrun_subset(result, fsck_detail_res: dict, dryrun_res: dict):
             "dryrun ⊆ deletable (unreachable ∪ pending-gc)", "subset", "dry-run output unavailable"))]
     deletable_keys = {r["key"] for r in fsck_detail_res["detail"]
                       if r.get("class") in _DRYRUN_DELETABLE_CLASSES}
-    candidate_keys = {e["key"] for e in dryrun_res["entries"]}
+    # Entry reasons (`Gc::previewDeletes`): `unreachable` (zero in-degree), `candidate` (intent not yet
+    # created), `pending` (intent created: the body goes next round) and `standing` (body already
+    # deleted or replaced: the next round deletes the INTENT). A `standing` row names no body delete, so
+    # its key is absent from fsck detail by construction, or names a replaced live body that GC will not
+    # touch. It is not a body-deletion candidate and is left out of the subset check.
+    standing = [e for e in dryrun_res["entries"] if e.get("reason") == "standing"]
+    candidate_keys = {e["key"] for e in dryrun_res["entries"] if e.get("reason") != "standing"}
+    result.observations["dryrun_standing_entries_excluded"] = len(standing)
     leaked = sorted(candidate_keys - deletable_keys)
     ok = not leaked
     # Classify the leaked candidates so the note distinguishes a real over-proposal (a candidate fsck
@@ -172,9 +223,9 @@ def _classify_key(key: str) -> str:
 # fsck classes that mean a content object is a genuine ORPHAN leak (uncondemned / lost): GC is not
 # tracking it toward deletion. Distinct from the two-phase deletion PIPELINE classes below.
 _LEAK_CLASSES = {"unreachable", "dangling", "unaccounted"}
-# fsck classes that mean a content object is CONDEMNED and in the two-phase graduation pipeline —
-# zero in-degree, awaiting the ack-floor to advance past its condemn round, then delete_pending, then
-# delete. This is GC working as designed (the checkpoint's forensics logic treats these as non-triggers
+# fsck classes that mean a content object is CONDEMNED and in the intent deletion pipeline —
+# zero in-degree; round n creates the intent (candidate -> pending), round n+1 deletes the body
+# (standing), round n+2 deletes the intent. This is GC working as designed (the checkpoint's forensics logic treats these as non-triggers
 # for the same reason); a bounded pipeline residual at the quiesced fixpoint is EXPECTED, not a leak.
 _PIPELINE_CLASSES = {"pending-gc", "awaiting-gc"}
 
@@ -220,7 +271,7 @@ def assert_no_leftovers(result, fsck: dict, abandons: bool = False, residual_aft
 
     The residual is split by fsck class. `dangling` FAILS unconditionally and is checked separately,
     because a missing referenced object is data loss and no posture excuses it. `pipeline` (condemned
-    `pending-gc`/`awaiting-gc` awaiting ack-floor graduation) PASSES — a create/insert/DROP at the
+    `pending-gc`/`awaiting-gc`, bodies not yet deleted) PASSES — a create/insert/DROP at the
     quiesced fixpoint always leaves the last drop's condemned blobs there. `bookkeeping` (GC state,
     root/namespace-registry objects) PASSES. Every LEAK class FAILS, of any prefix — blob leaks are the
     class this assertion was written for and the one that catches GC-CONCURRENT-LEADER-LEAK.
@@ -282,8 +333,8 @@ def assert_no_leftovers(result, fsck: dict, abandons: bool = False, residual_aft
     return [result.add(Verdict(
         "no unbounded leftovers", "residual is condemned pipeline (pending-gc) and/or bookkeeping",
         f"residual={val} (pipeline={parts['pipeline']}, bookkeeping={parts['bookkeeping']})", "pass",
-        f"no uncondemned orphan content; {pipeline_n} object(s) are condemned and awaiting ack-floor "
-        "graduation (two-phase delete pipeline — drains once the retired-view sync advances the floor)"))]
+        f"no uncondemned orphan content; {pipeline_n} object(s) are condemned and in the intent "
+        "deletion pipeline (intent, then body delete, then intent delete; drains within ~3 GC rounds)"))]
 
 
 def assert_reclaimable_drained(result, verdict_name, residual, fsck_detail_res: dict = None):
@@ -352,8 +403,10 @@ def assert_reclaimable_drained(result, verdict_name, residual, fsck_detail_res: 
 
 def run_common_assertions(result, *, fsck_final, fsck_detail_res, dryrun_res, ca_events,
                           gc_summary, abandons=False, expect_exception=False,
-                          residual_after_gc=None):
-    """Run all common positive-scenario assertions in one call. Returns the list of verdicts added."""
+                          residual_after_gc=None, pool_shape=None):
+    """Run all common positive-scenario assertions in one call. Returns the list of verdicts added.
+    `pool_shape` (from `observe.pool_shape`) enables the generation 4 marker check; callers that omit it
+    keep the pre-generation 4 set of verdicts."""
     out = []
     out += assert_fsck_clean(result, fsck_final)
     out += assert_dryrun_subset(result, fsck_detail_res, dryrun_res)
@@ -361,4 +414,6 @@ def run_common_assertions(result, *, fsck_final, fsck_detail_res, dryrun_res, ca
     out += assert_gc_no_failed(result, gc_summary)
     out += assert_no_leftovers(result, fsck_final, abandons=abandons,
                                residual_after_gc=residual_after_gc, fsck_detail_res=fsck_detail_res)
+    if pool_shape is not None:
+        out += assert_no_legacy_markers(result, pool_shape)
     return out

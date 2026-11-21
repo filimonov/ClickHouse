@@ -18,10 +18,8 @@ So the assertions are now about that seal, in three layers:
   1. **It exists.** An unclean restart's recovery mints one per dead epoch it closes
      (`CASRefRecoveryEpochSealed`), and this card reads the object back out of the pool and checks it
      really is an `epoch_seal` transaction sitting at the top of the dead epoch's stream. A CLEAN
-     restart mints one too — sealing is decided by arithmetic (every epoch below the live one is
-     closed, however its mount died), not by an unclean-boundary flag, and the clean-restart step at
-     the end is what pins that. Its predecessor is the old card's "a clean stop/start pays no T_mat
-     wait" check, inverted by the same commit that deleted the wait.
+     restart mints none: recovery seals only after an unclean end, and the new epoch's first append
+     writes the tombstone itself (`CASRefAppendTombstoneWritten`); the clean-restart step pins both.
 
   2. **It wins the slot.** The straggler's PUT is replayed with the same primitive the writer uses, a
      conditional create at the id the seal took, and must be REFUSED by the store. This is the fence
@@ -354,6 +352,8 @@ class S38(Scenario):
         # wherever the kill landed — which is what gives the successor a dead epoch to close.
         # =====================================================================================
         since_kill = cl.node1.scalar("SELECT toString(now())")
+        _spare_events = ("CASGCRetiredSparedByReref", "CASGCIntentLeftOnSpare")
+        ch2_spare_before = observe.events_snapshot(cl.node2)
         stop = threading.Event()
         wl_stats = {"inserts_ok": 0, "inserts_failed": 0}
 
@@ -390,22 +390,28 @@ class S38(Scenario):
         # The one mechanism of the pre-Stage-A card that was NOT retired: the successor OBSERVES the
         # stale-looking lease's write-token rather than assuming its holder is dead.
         obs_n = _text_log_count(cl.node1, since_kill, "stale-looking mount lease")
-        sparing_n = _text_log_count(cl.node1, since_kill, "delete_pending retired entry recovered in-degree")
-        result.observations["unclean_restart_log_counts"] = {
-            "observation_wait": obs_n, "in_degree_sparing_warning": sparing_n}
+        # VACUOUS since the intent protocol: no build emits this text-log line any more, so the count is
+        # always 0. The intent-era equivalent is `CASGCRetiredSparedByReref` + `CASGCIntentLeftOnSpare`
+        # == 0 over the window (open question in the campaign plan); not wired in until the owner agrees.
+        # Intent-era successor of the retired text-log check: a writer may legitimately re-reference a
+        # condemned blob, so the two sparing counters are RECORDED over the kill window, not gated.
+        ch1_spare = observe.events_snapshot(cl.node1)
+        ch2_spare = observe.events_snapshot(cl.node2)
+        sparing = {
+            "ch1_since_restart": {e: int(ch1_spare.get(e, 0)) for e in _spare_events},
+            "ch2_kill_window_delta": {e: int(ch2_spare.get(e, 0)) - int(ch2_spare_before.get(e, 0))
+                                      for e in _spare_events}}
+        result.observations["unclean_restart_log_counts"] = {"observation_wait": obs_n}
+        result.observations["sparing_counters_kill_window"] = sparing
         result.add(Verdict.check(
             "observation wait line appears (unclean restart)",
             ">0 'stale-looking mount lease' rows in system.text_log since kill",
             obs_n, obs_n > 0,
             "" if obs_n > 0 else "ch1's restart did not log the mount-claim observation wait — "
                                  "either the predecessor's death looked clean, or the log is missing"))
-        result.add(Verdict.check(
-            "no in-degree sparing warning (delete_pending retired entry recovered)",
-            "0 'delete_pending retired entry recovered in-degree' rows",
-            sparing_n, sparing_n == 0,
-            "" if sparing_n == 0 else "the unclean-handover recovery triggered a "
-                                      "delete_pending/in-degree sparing warning — unexpected on a "
-                                      "clean append-storm kill with no prior GC condemnation"))
+        result.add(Verdict("in-degree sparing counters over the kill window (recorded, not gated)",
+                           "recorded: CASGCRetiredSparedByReref, CASGCIntentLeftOnSpare", str(sparing), "pass",
+                           "a writer re-referencing a condemned blob is the designed path"))
 
         # =====================================================================================
         # Step 2: the seal exists. Touching the table drives the lazy per-namespace recovery, whose
@@ -566,14 +572,17 @@ class S38(Scenario):
             f"pre={pre_inject_checksum!r} post={post_inject_checksum!r}", unaffected,
             "" if unaffected else "the table's queryable state CHANGED after injecting a log above "
                                   "the seal — it must never be applied (resurrect invariant)"))
+        # ch2 backs off its fetch of the part ch1 was killed over (ch1's interserver endpoint answered
+        # 500 while it restarted), so it can lag by minutes; wait for replication to drain first.
+        for n in cl.nodes():
+            n.command(f"SYSTEM SYNC REPLICA {_TABLE}", timeout=300,
+                      settings={"receive_timeout": 300, "max_execution_time": 300})
         _common.assert_replicas_agree(result, cl, sql.table_checksum_query(_TABLE),
                                       name="S38 replica agreement after injection")
 
         # =====================================================================================
-        # Step 5: a CLEAN restart seals too, and re-recovers from the durable stream with the injected
-        # object present. Sealing is arithmetic — every epoch below the live one is closed, however
-        # its mount died — so this step is the inverted successor of the old card's "a clean stop/start
-        # pays no T_mat wait", which died with the wait itself.
+        # Step 5: a CLEAN restart re-recovers from the durable stream with the injected object present;
+        # recovery mints no seal, the next append writes the tombstone.
         # =====================================================================================
         ctx.log("S38: graceful `docker restart` ch1 — re-recovers with the injected object in place")
         apply_fault(Fault(t_offset=0, target=FaultTarget.CH1, action=FaultAction.RESTART, duration_s=0))
@@ -597,12 +606,22 @@ class S38(Scenario):
             f"pre={pre_inject_checksum!r} re-recovered={rerecovered_checksum!r}", still_unaffected,
             "" if still_unaffected else "a from-scratch recovery ABSORBED the injected log — the "
                                         "seal did not cover the region above it"))
+        # A clean farewell leaves nothing for recovery to close: recovery seals only when the chain's
+        # last epoch may have ended uncleanly (`CASRefRecoveryEpochSealed`, CasRefLedger.cpp). The new
+        # epoch's first append writes the tombstone itself (`CASRefAppendTombstoneWritten`).
         result.add(Verdict.check(
-            "a CLEAN restart seals its predecessor's epoch too",
-            "CASRefRecoveryEpochSealed > 0 on the cleanly-restarted process",
-            clean_sealed, clean_sealed > 0,
-            "" if clean_sealed > 0 else "the cleanly-restarted process minted no seal — sealing must "
-                                        "be decided by arithmetic (every epoch below the live one is "
-                                        "closed), not by an unclean-boundary flag"))
+            "a CLEAN restart mints no recovery seal",
+            "CASRefRecoveryEpochSealed == 0 on the cleanly-restarted process",
+            clean_sealed, clean_sealed == 0,
+            "" if clean_sealed == 0 else "recovery sealed after a clean restart — it must seal only "
+                                         "when the predecessor epoch may have ended uncleanly"))
+        sql.insert_random(cl.node1, _TABLE, rows=rows, payload_bytes=payload, op_id=10 ** 6)
+        tomb = observe.events_snapshot(cl.node1).get("CASRefAppendTombstoneWritten", 0)
+        result.observations["clean_restart"]["CASRefAppendTombstoneWritten"] = tomb
+        result.add(Verdict.check(
+            "the first append of the new epoch writes the tombstone",
+            "CASRefAppendTombstoneWritten > 0 on the cleanly-restarted process after one INSERT",
+            tomb, tomb > 0,
+            "" if tomb > 0 else "no append-lane tombstone was written after the clean restart"))
 
         _common.standard_end(ctx, result, [_TABLE])

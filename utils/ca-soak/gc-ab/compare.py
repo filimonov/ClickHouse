@@ -27,7 +27,7 @@ def metrics(run):
                 p = X.pe(d["finish"]["ProfileEvents"])
                 for k, v in p.items():
                     m[(cc, "pe_" + k)] += v
-                for k in ("objects_deleted", "manifests_deleted", "entries_condemned", "entries_graduated"):
+                for k in ("objects_deleted", "manifests_deleted", "entries_condemned", "entries_intent_confirmed"):
                     m[(cc, k)] += int(d["finish"][k] or 0)
                 if d["node"] not in ml:
                     ml[d["node"]] = X.load_metric_log(run, d["node"])

@@ -277,15 +277,15 @@ class S29(Scenario):
         result.observations["insert_counters"] = {k: int(delta.get(k, 0)) for k in (
             "CASBlobPut", "DiskS3PutObject", "DiskS3CreateMultipartUpload")}
 
-        # Best-effort: measure the on-disk skip-index file size from the RustFS pool (the secondary
-        # index part file). We cannot map an exact suffix here, so record the total non-blob pool growth
-        # as the proxy for the non-direct-blob file footprint.
+        # The skip-index file spills into `blobs/` once it crosses INLINE_CAP, so pool bytes outside
+        # `blobs/` miss exactly the large files this card is about. Read the file size from the part.
         pool = observe.pool_shape(timeout_s=120)
         result.observations["pool_shape"] = pool.get("_total") if pool.get("_ok") else None
-        non_blob_bytes = None
-        if pool.get("_ok"):
-            non_blob_bytes = (pool["_total"]["bytes"] - pool["blobs"]["bytes"])
-            result.observations["non_blob_pool_bytes"] = non_blob_bytes
+        non_blob_bytes = int(cl.node1.query(
+            f"SELECT sum(secondary_indices_uncompressed_bytes) FROM system.parts "
+            f"WHERE database = currentDatabase() AND table = '{table}' AND active "
+            "FORMAT TabSeparated").strip() or 0)
+        result.observations["non_blob_pool_bytes"] = non_blob_bytes
 
         peak = _common.record_peak_memory(result, smp,
                                           label="peak MemoryResident during skip-index finalize")
@@ -306,7 +306,7 @@ class S29(Scenario):
                     "RSS growth during finalize not ~ non-direct-blob file size",
                     "peak RSS growth < the large non-.bin file size",
                     f"non-direct-blob file footprint too small to attribute RSS "
-                    f"(non_blob_pool_bytes={non_blob_bytes}) — rerun at --scale ci/full where the "
+                    f"(secondary_indices_uncompressed_bytes={non_blob_bytes}) — rerun at --scale ci/full where the "
                     f"skip index crosses INLINE_CAP and dwarfs query noise"))
             else:
                 ok = growth < non_blob_bytes

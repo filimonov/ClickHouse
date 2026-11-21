@@ -27,8 +27,8 @@
 >   residual-settling loops keep the summary counter. `HARNESS-DRAIN-VERDICT-CONVERGENCE` — same.
 > - **STILL OPEN**: `NEEDS-INFRA-S12/S22/S27`; the three `SCENARIO (proposed)` ack-floor cards
 >   (SIGSTOP floor hold, kill-mid-burst fence-out, request-budget guard — now release-gate items,
->   see `docs/en/antalya/cas/roadmap.md`); `S07` manifest-cap needs
->   ci/full scale; B206 settle-gate tuning; B207 fsck phantom-dangling race (RESTORED to the
+>   see `docs/en/antalya/cas/roadmap.md`); `S07` retired (no lowering failpoint:
+>   soak scenarios use only user-reachable means; the caps are unit-tested); B206 settle-gate tuning; B207 fsck phantom-dangling race (RESTORED to the
 >   roadmap as a release gate).
 > - `PRODUCT BUG (S13 mount self-recovery)` — RESOLVED by self-remount (2026-07-02, marked inline).
 
@@ -1901,8 +1901,9 @@ regression set S30x2/S25/S34/S15/S33 all PASS at `eceacc2ad1d`, **0 real regress
   - Release-gate items (ROADMAP §release-gates-2026-07-03): the three ack-floor cards (SIGSTOP floor hold,
     kill-mid-burst fence-out, request-budget guard); `B206` settle-gate tuning; `B207` fsck phantom-dangling
     race; `B3/B186` `FreezeViaHardLinksIntoShadow` red gtest (the one standing CA-battery red).
-  - `S07` manifest-cap + `S01` memory-attribution: need `--scale ci/full` for a hard verdict (dev-scale gaps;
+  - `S01` memory-attribution: needs `--scale ci/full` for a hard verdict (dev-scale gap;
     the real memory-materialization bug is already RESOLVED via streaming `putBlob`).
+  - `S07` retired 2026-11-20: no failpoint to lower the manifest caps; soak scenarios use only user-reachable means.
 - **PHASE-2 follow-on** (new, from this campaign): pluggable-hash `sha256` via a variable-length digest
   (spec `docs/superpowers/specs/2026-07-11-cas-pluggable-blob-hash-design.md` §7) — the big settlement/GC
   refactor; its own brainstorm→plan→TLA/soak.
@@ -3528,3 +3529,59 @@ SETTINGS storage_policy='ca', min_bytes_for_wide_part=0, min_rows_for_...(171 mo
 - **Not the cause:** the 09-21 `url()` access-limitation change (its errors are `executeQuery` rows on 09-22, no CAS effect), S3 errors, lease loss, restarts (09-22 12:30, 09-23 10:00 only shifted the epoch).
 - **Fix direction:** (1) make the per-round budgets proportional to observed backlog (or unbounded for write-once covered keys, which are pure batch deletes needing no HEAD); (2) stop paying a full prefix LIST per round: each namespace `_ckpt` already knows its head sequence and the fold seal knows the covered floor, so the round can enumerate only the uncovered tail per namespace; (3) `ref_object_cleanup` phase metrics expose only `namespaces_planned`/`suppressed`/`trim_enabled`: add `objects_deleted`, `objects_pending`, `budget_exhausted` so this is visible on one row. Stand mitigation: set `cas_gc_round_ref_cleanup_budget`, `cas_gc_round_graduation_budget`, `cas_gc_round_redelete_budget` to 0 or ~100000 in the disk config and restart (pool config is read at mount); expect several long catch-up rounds before the LIST shrinks.
 - **Also answers:** `cas_mounts.pending_reclaim` = cumulative condemned minus executed deletes in this process (`CasGcScheduler.h`), so it resets on restart; the 520k figure from the log is the durable one.
+## S07-20261118T234927-1: S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive 
+
+- **Logged (UTC):** 2026-11-18T23:50:17
+- **Severity:** finding
+- **Run:** 20261118T234927_S07_seed20261118
+- **Observed:** S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive for the direct cap trip; the indirect fail-closed property check still runs.
+
+## S07-20261119T002650-1: S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive 
+
+- **Logged (UTC):** 2026-11-19T00:27:38
+- **Severity:** finding
+- **Run:** 20261119T002650_S07_seed20261118
+- **Observed:** S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive for the direct cap trip; the indirect fail-closed property check still runs.
+
+## S40-20261119T011039-1: quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-11-19T01:15:20
+- **Severity:** finding
+- **Run:** 20261119T011039_S40_seed20261118
+- **Observed:** quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table default.s40_dedup_outage does not exist. (UNKNOWN_TABLE) (version 26.8.34.20001.altinityantalya) | sql=SYSTEM SYNC REPLICA s40_dedup_outage
+
+## S46-20261119T011835-1: quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-11-19T01:21:33
+- **Severity:** finding
+- **Run:** 20261119T011835_S46_seed20261118
+- **Observed:** quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table default.s46_restart_1 does not exist. (UNKNOWN_TABLE) (version 26.8.34.20001.altinityantalya) | sql=SYSTEM SYNC REPLICA s46_restart_1
+
+## S43-20261119T015042-1: quiescence failed: Node(localhost:8123) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-11-19T01:53:58
+- **Severity:** suspected-bug
+- **Run:** 20261119T015042_S43_seed20261118
+- **Observed:** quiescence failed: Node(localhost:8123) HTTP 404: Code: 60. DB::Exception: Table default.w3_recreated does not exist. (UNKNOWN_TABLE) (version 26.8.34.20001.altinityantalya) | sql=SYSTEM SYNC REPLICA w3_recreated
+
+## S43-20261119T015042-2: forced GC left 1 orphan object(s): {'unreachable:_manifests': 1}. If explicit GC
+
+- **Logged (UTC):** 2026-11-19T01:53:58
+- **Severity:** suspected-bug
+- **Run:** 20261119T015042_S43_seed20261118
+- **Observed:** forced GC left 1 orphan object(s): {'unreachable:_manifests': 1}. If explicit GC was driven concurrently with background GC (or on both replicas), this is likely the known GC-CONCURRENT-LEADER-LEAK.
+
+## S43-20261119T021358-1: quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table
+
+- **Logged (UTC):** 2026-11-19T02:15:56
+- **Severity:** finding
+- **Run:** 20261119T021358_S43_seed20261118
+- **Observed:** quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table default.w3_recreated (3e1f0a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b) is not replicated. (BAD_ARGUMENTS) (version 26.8.34.20001.altinityantalya) | sql=SYSTEM SYNC REPLICA w3_recreated
+
+## S39-20261119T030305-1: scenario raised: not enough values to unpack (expected 2, got 1)
+
+- **Logged (UTC):** 2026-11-19T03:12:54
+- **Severity:** suspected-bug
+- **Run:** 20261119T030305_S39_seed20261118
+- **Observed:** scenario raised: not enough values to unpack (expected 2, got 1)
+

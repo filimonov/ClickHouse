@@ -1,0 +1,3 @@
+# Log scan allow list of the profile runs (`soak/evidence.py`, `scan_logs`).
+# One rule per line: <regex matched against the log line><TAB><reason>. A matching hit is reported as ALLOWED, not UNEXPECTED.
+Application: Sending logical errors is enabled	startup notice that logical errors are reported, not an error

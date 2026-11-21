@@ -20,18 +20,9 @@
                 <cas_gc_interval_sec>10</cas_gc_interval_sec>
             </ca>
 
-            <!-- Read-only fsck view over the SAME live pool (mirrors storage_conf_ch1.xml). -->
-            <ca_ro>
-                <type>object_storage</type>
-                <object_storage_type>s3</object_storage_type>
-                <metadata_type>cas</metadata_type>
-                <endpoint>https://test-altinity-support-team.s3.us-east-1.amazonaws.com/ca_live_20260703_r3/soak_pool/</endpoint>
-                <region>us-east-1</region>
-                <use_environment_credentials>1</use_environment_credentials>
-                <cas_server_root_id>ca_live_{replica}</cas_server_root_id>
-                <cas_gc_enabled>0</cas_gc_enabled>
-                <readonly>true</readonly>
-            </ca_ro>
+            <!-- No `ca_ro` here: a read-only disk over the same pool in config.d makes MergeTree part
+                 discovery see every part twice and fail table load on restart (see storage_conf_ch1.xml).
+                 The fsck view is `fsck_only_aws.xml`, mounted outside config.d. -->
         </disks>
         <policies>
             <ca>

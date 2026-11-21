@@ -85,6 +85,7 @@ from soak.signals import (
 )
 from soak.replay import dump_failure
 from soak.chaos import generate_chaos_schedule, apply_fault, Fault, FaultTarget, FaultAction
+from soak import convergence, harness_failures
 from soak import metrics as metrics_mod
 from soak.pool import pool_size
 from soak.schedule import stage_plan, stage_at, chaos_window, StageKind
@@ -557,13 +558,38 @@ def _stale_edge_display(fsck_result: dict) -> str:
     return "not-checked" if value is None else str(value)
 
 
+def _decide_stale_edges(first, cluster):
+    """A detail scan reported stale edges: re-scan after two more GC rounds and keep only keys both scans
+    report (see `soak.convergence`). Returns `(fsck result, verdict, text)` in `stale_edge_verdict` terms;
+    a round wait that times out is a harness failure, recorded without ending the run."""
+    nodes = cluster.nodes()
+    result = {}
+
+    def rescan():
+        result["second"] = run_fsck(fsck_container(), detail=True, timeout_s=600)
+        return result["second"]
+
+    outcome, why, second = convergence.converge(
+        first, rescan=rescan, log_fn=log, label="checkpoint",
+        wait_rounds=lambda: convergence.wait_for_committed_rounds(
+            nodes, above_round=convergence.highest_committed_round(nodes) or 0))
+    if outcome == "undecided":
+        harness_failures.add(f"stale-edge convergence undecided at a checkpoint: {why}")
+        return first, "unchecked", f"the GC round wait timed out ({why})"
+    if outcome == "persistent":
+        return first, "found", why
+    second["stale_edge_first_scan"] = first.get("stale_edge")
+    second["stale_edge"] = 0
+    return second, "clean", why
+
+
 def checkpoint(driver, cluster, model, phase, *, strict_unreachable=False):
     """Pause workers (drain), quiesce, assert both replicas == model, drive GC to fixpoint, assert a
     clean CA pool. Raises CheckpointFailure on any divergence.
 
     `strict_unreachable`: assert the unreachable backlog has collapsed to the GC pipeline floor.
     Pass True ONLY at the final converge checkpoint: mid-churn the backlog legitimately scales with
-    churn rate (multi-round condemn->graduate->delete pipeline, time/ack-gated), so any mid-run
+    churn rate (multi-round intent -> body delete -> intent delete pipeline), so any mid-run
     level cap keyed to the live set is a guaranteed false trip on a churny run (2026-07-22 RCA:
     169,837 AwaitingGc at t+420 drained to 14 by run end through the normal pipeline)."""
     driver.drain()
@@ -755,6 +781,8 @@ def checkpoint(driver, cluster, model, phase, *, strict_unreachable=False):
     # proof of cleanliness rather than a shortcut.
     if not _detail_fsck_skipped:
         _se_verdict, _se_why = stale_edge_verdict(f, detail=_fsck_is_detail)
+        if _se_verdict == "found":
+            f, _se_verdict, _se_why = _decide_stale_edges(f, cluster)
         if _se_verdict in ("absent", "found"):
             raise CheckpointFailure(f"fsck stale_edge check failed: {_se_why} detail={f.get('detail')}")
         if _se_verdict == "unchecked":
@@ -786,7 +814,7 @@ def checkpoint(driver, cluster, model, phase, *, strict_unreachable=False):
     # GC never plans to delete a REACHABLE object: {dryrun delete set} subset of {fsck deletion-pipeline}.
     # The "retired-in-snapshot" refactor made cas-gc-dryrun (previewDeletes) emit a SUPERSET: not only
     # fresh zero-in-degree `unreachable` blobs but ALSO every condemned-pipeline blob (a kCondemned row
-    # in the GC snapshot run), with reason delete_pending / awaiting_graduation. In lock-step, fsck now
+    # in the GC snapshot run), with reason candidate / pending / standing. In lock-step, fsck now
     # classifies a condemned-but-present blob as `pending-gc` / `awaiting-gc` (NOT `unreachable`), so
     # operators do not misread the churny condemn pipeline as a leak. So the oracle is: every dryrun key
     # MUST appear in fsck `--detail` under a DELETION-PIPELINE class {unreachable, pending-gc, awaiting-gc}.
@@ -832,6 +860,10 @@ def checkpoint(driver, cluster, model, phase, *, strict_unreachable=False):
         # Classify dryrun keys: pipeline, absent-from-detail (already deleted pending fold), or wrong-class
         already_deleted_count = 0
         for entry in dr.get("entries", []):
+            if entry.get("reason") == "standing":
+                # A `standing` row's body is already deleted or was replaced; the next round deletes the
+                # intent, not a body, so the key may legitimately be a live (`reachable`) replacement.
+                continue
             if entry["key"] not in detail_class_by_key:
                 # Blob absent from fsck detail: already physically deleted but row not yet folded. TOLERATED.
                 already_deleted_count += 1
@@ -1157,9 +1189,10 @@ class ChaosRunner(threading.Thread):
     `apply_fault` is run HERE (not on a workload thread): it blocks for `duration_s`, and a worker
     blocking that long would stall the whole workload."""
 
-    def __init__(self, schedule, *, on_fault_done, stop_event, checkpoint_active):
+    def __init__(self, schedule, *, on_fault_done, stop_event, checkpoint_active, apply_fn=None):
         super().__init__(daemon=True, name="chaos")
         self.schedule = schedule
+        self.apply_fn = apply_fn or apply_fault
         self.on_fault_done = on_fault_done    # callback(fault) -> request a recovery checkpoint
         self.stop_event = stop_event
         # Set by the main thread WHILE a checkpoint is in progress. The chaos thread will not start a
@@ -1190,7 +1223,7 @@ class ChaosRunner(threading.Thread):
                     return
                 log(f"CHAOS firing fault #{self.faults_fired + 1} at t+{fault.t_offset}s: "
                     f"{fault.target.value} {fault.action.value} dur={fault.duration_s}s")
-                apply_fault(fault)   # blocks for duration_s; brings node(s) back
+                self.apply_fn(fault)   # blocks for duration_s; brings node(s) back
                 self.last_fault = fault
                 self.faults_fired += 1
                 log(f"CHAOS fault window complete: {fault.target.value} {fault.action.value} "
@@ -1513,7 +1546,7 @@ def phase3_chaos_schedule(chaos_seed, plan, chaos_interval_s):
     return faults
 
 
-def run_phase3(args):
+def run_phase3(args, hooks=None):
     """Phase-3 (24h productionization) TIME-DRIVEN soak. Maps wall-clock fractions of --duration to a
     fixed stage timeline (soak.schedule), reusing the Phase-1/2 machinery: the same deterministic
     ledger feeds the workers, but each op is GATED by the active stage's capability flags
@@ -1521,7 +1554,10 @@ def run_phase3(args):
     final converge+restart). A background MetricsTicker records a per-minute curve into --metrics and
     enforces the --max-pool-gb budget by throttling (never dropping) inserts. Checkpoints fire at
     every stage boundary and use the SAME hard asserts as phase 1/2 (dangling==0 HEAD-confirmed,
-    counts==model both replicas, dryrun⊆unreachable; residual unreachable tracked as B140 debris)."""
+    counts==model both replicas, dryrun⊆unreachable; residual unreachable tracked as B140 debris).
+
+    `hooks` is set by a profile run (`soak.profile`): it adds its fault track to the schedule, replaces the
+    fault applier, and is told when a checkpoint starts and ends so a concurrent workload can pause."""
     duration_s = args.duration if args.duration is not None else 24 * 3600
     plan = stage_plan(duration_s)
     metrics_interval = metrics_interval_for(duration_s)
@@ -1592,12 +1628,18 @@ def run_phase3(args):
                 restarts["n"] += 1
         with recovery_lock:
             recovery_pending.append(fault)
+            # Held from here, not from when the main thread gets to the checkpoint: otherwise a next fault
+            # whose offset has already passed fires into the recovery checkpoint. `do_checkpoint` clears it.
+            checkpoint_active.set()
 
     schedule = [] if args.no_chaos else phase3_chaos_schedule(args.chaos_seed, plan, chaos_interval)
+    if hooks is not None and not args.no_chaos:
+        schedule = sorted(schedule + hooks.extra_faults(plan), key=lambda f: f.t_offset)
     log(f"phase-3 chaos schedule: {len(schedule)} faults over the chaos window "
         f"(chaos_seed={args.chaos_seed} mean_interval={chaos_interval}s no_chaos={args.no_chaos})")
     chaos = ChaosRunner(schedule, on_fault_done=on_fault_done, stop_event=chaos_stop,
-                        checkpoint_active=checkpoint_active)
+                        checkpoint_active=checkpoint_active,
+                        apply_fn=hooks.apply_fault if hooks is not None else None)
 
     ticker = MetricsTicker(conn, cluster, TABLE, interval_s=metrics_interval,
                            max_pool_bytes=max_pool_bytes, driver=driver, stop_event=metrics_stop,
@@ -1621,6 +1663,8 @@ def run_phase3(args):
         log(f"{label}")
         checkpoint_active.set()
         try:
+            if hooks is not None:
+                hooks.checkpoint_enter(label)
             wait_for_healthy(cluster)
             # Entry gate only needs dangling/exit_code -> cheap summary fsck (detail=False).
             # Each poll is bounded at 180s; FsckTimeout degrades to a logged skip (B146/B154).
@@ -1631,6 +1675,8 @@ def run_phase3(args):
                     f"proceeding to checkpoint without pool-consistent gate — soak continues")
             now, exp, n1, n2, f, dr = checkpoint(driver, cluster, model, 2, strict_unreachable=strict_unreachable)
         finally:
+            if hooks is not None:
+                hooks.checkpoint_exit(label)
             checkpoint_active.clear()
         log(render_checkpoint_result(label, now, exp, f, dr))
         # Record a checkpoint-tagged metrics tick carrying the fsck result (§2: include fsck at checkpoints).
@@ -1841,6 +1887,11 @@ def run_phase3(args):
         "BEFORE any teardown: `utils/ca-soak/scripts/predown_dump.sh <label>`. Better, drive the whole "
         "run through `utils/ca-soak/scripts/run_soak.sh <label> <args...>`, which does it for you the "
         "instant the run returns")
+    if hooks is None and harness_failures.all_failures():
+        for text in harness_failures.all_failures():
+            log(f"harness failure: {text}")
+        print("PHASE3 FAILED: harness failures")
+        return 1
     print("PHASE3 OK")
     return 0
 
@@ -1918,7 +1969,37 @@ def main(argv=None):
     ap.add_argument("--select-interval-s", type=float, default=2.0,
                     help="(phase 3) mean pacing (s) between one SELECT worker's successive queries "
                          "(jittered 0.5x-1.5x). Lower = more read pressure.")
+    # --- profile runs (soak.profile): own stand, own run directory, one verdict ---------------------
+    ap.add_argument("--profile", choices=("main", "intents", "combined"), default=None,
+                    help="run a profile on a stand this run brings up and removes (soak/profile.py); "
+                         "without it, --phase drives an already running stand as before.")
+    ap.add_argument("--binary", default=None, help="(profile) server binary to bind-mount into the stand.")
+    ap.add_argument("--run-dir", default=None,
+                    help="(profile) run directory; default logs/runs/<profile>-<timestamp>.")
+    ap.add_argument("--project", default="ca-soak-profile", help="(profile) docker compose project name.")
+    ap.add_argument("--port-base", type=int, default=23300,
+                    help="(profile) host ports: server 1 http/native = base+11/base+10, server 2 = base+21/base+20.")
+    ap.add_argument("--compose-file", action="append", default=None,
+                    help="(profile) compose file(s), relative to utils/ca-soak; default docker-compose.yml.")
+    ap.add_argument("--env-file", action="append", default=None, help="(profile) compose --env-file (cloud stands).")
+    ap.add_argument("--fault-compress", action="store_true",
+                    help="(profile) the intents fault track every 2-5 min instead of every 5-12 min (short proof runs).")
+    ap.add_argument("--contents", type=int, default=40, help="(profile intents/combined) distinct contents.")
+    ap.add_argument("--intent-writers", type=int, default=4, help="(profile intents/combined) writers per server.")
+    ap.add_argument("--keep-stand", action="store_true", help="(profile) leave the stand running at the end.")
+    ap.add_argument("--min-free-gb", type=int, default=30, help="(profile) refuse to start with less free disk.")
+    ap.add_argument("--drain-cap-s", type=int, default=3600,
+                    help="(profile) hard cap of the end-of-run drain; reaching it fails the run.")
     args = ap.parse_args(argv)
+
+    if args.profile is not None:
+        if args.binary is None or args.duration is None:
+            ap.error("--profile needs --binary and --duration")
+        if args.chaos_seed is None:
+            args.chaos_seed = args.seed
+        args.compose_file = args.compose_file or ["docker-compose.yml"]
+        from soak.profile import run_profile
+        return run_profile(args)
 
     phase2 = args.phase == 2
     phase3 = args.phase == 3

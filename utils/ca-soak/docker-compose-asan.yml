@@ -1,0 +1,21 @@
+# Override: run ch1/ch2 on the ASan-instrumented server binary instead of the
+# stock build/programs/clickhouse. keeper1 stays on the regular binary --
+# it is not the target of this soak. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose-asan.yml up -d
+services:
+  ch1:
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_ASAN_BINARY:-../../build_asan/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+    environment:
+      ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+  ch2:
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_ASAN_BINARY:-../../build_asan/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+    environment:
+      ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1"

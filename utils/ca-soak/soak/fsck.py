@@ -239,7 +239,7 @@ def run_fsck(container: str, disk: str = "ca_ro", detail: bool = True,
 
     if detail:
         # Detail rows: TSV with the object class in column 0. pending-gc / awaiting-gc are the
-        # ack-floor deletion pipeline mid-flight (expected); unaccounted = outside the GC view;
+        # intent / body-delete / intent-delete deletion pipeline mid-flight (expected); unaccounted = outside the GC view;
         # stale-edge = every source edge on the blob names a manifest that no longer exists, so its
         # in-degree can never reach zero and the incremental GC can never reclaim it (a hard finding,
         # NOT pipeline backlog).
@@ -253,9 +253,16 @@ def run_fsck(container: str, disk: str = "ca_ro", detail: bool = True,
         # was being dropped here — the exact hazard the paragraph above describes. Added 2026-07-26.
         # A dropped row is not merely unreported: `run.py`'s dryrun-subset check reads a dryrun key it
         # cannot find in `detail` as "already deleted, tolerated".
+        # Mirrors the `switch` over `Cas::FsckClass` in `programs/disks/CommandFsck.cpp`. The generation 4
+        # intent classes (`intent-*`, `pending-*`, `standing-present`, `legacy-marker`) are listed only
+        # with `--detail` (the intent ones only with `--verify-intents`); `chain-broken`, `unchecked`,
+        # `lifeless-key` and `janitor-pending` were missing here before 2026-11.
         known_classes = (
             "reachable", "dangling", "unreachable", "pending-gc", "awaiting-gc", "unaccounted",
-            "stale-edge", "corrupted-run",
+            "stale-edge", "corrupted-run", "chain-broken", "unchecked", "lifeless-key", "janitor-pending",
+            "intent-current", "intent-replaced", "intent-body-gone", "intent-malformed", "intent-unread",
+            "pending-without-intent", "pending-intent-absent", "pending-token-rejected",
+            "standing-present", "legacy-marker",
         )
         detail_rows: list[dict] = []
         unknown_classes: set[str] = set()

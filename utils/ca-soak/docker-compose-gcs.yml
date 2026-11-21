@@ -30,7 +30,7 @@ services:
     image: clickhouse/clickhouse-server:25.8
     entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file", "/etc/clickhouse-keeper/keeper.xml"]
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
       - ./configs/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
       - keeper1_data:/var/lib/clickhouse
     expose:
@@ -49,15 +49,15 @@ services:
         condition: service_started
     mem_limit: 28g
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
-      - ./configs/storage_conf_gcs_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLOUD_CONF_DIR:-./configs}/storage_conf_gcs_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node1.xml:/etc/clickhouse-server/config.d/macros.xml:ro
       - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
       - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
       - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
       - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
-      - ./configs/fsck_only_gcs.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ${CA_SOAK_CLOUD_CONF_DIR:-./configs}/fsck_only_gcs.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./logs/ch1:/var/log/clickhouse-server
       - ch1_data:/var/lib/clickhouse
     ports:
@@ -86,15 +86,15 @@ services:
         condition: service_healthy
     mem_limit: 28g
     volumes:
-      - ../../build/programs/clickhouse:/usr/bin/clickhouse:ro
-      - ./configs/storage_conf_gcs_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ${CA_SOAK_CLOUD_CONF_DIR:-./configs}/storage_conf_gcs_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
       - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
       - ./configs/macros_node2.xml:/etc/clickhouse-server/config.d/macros.xml:ro
       - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
       - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
       - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
       - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
-      - ./configs/fsck_only_gcs.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ${CA_SOAK_CLOUD_CONF_DIR:-./configs}/fsck_only_gcs.xml:/etc/clickhouse-server/fsck-only.xml:ro
       - ./logs/ch2:/var/log/clickhouse-server
       - ch2_data:/var/lib/clickhouse
     ports:

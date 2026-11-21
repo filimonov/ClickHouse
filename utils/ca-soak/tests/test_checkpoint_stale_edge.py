@@ -58,6 +58,9 @@ def stubbed(monkeypatch):
     monkeypatch.setattr(run_mod, "run_dryrun", lambda *a, **k: {"count": 0, "entries": []})
     monkeypatch.setattr(run_mod, "pool_size", lambda *a, **k: (0, 0))
     monkeypatch.setattr(run_mod, "log", lambda msg: calls.setdefault("log", []).append(msg))
+    monkeypatch.setattr(run_mod.convergence, "highest_committed_round", lambda nodes, **k: 10)
+    monkeypatch.setattr(run_mod.convergence, "wait_for_committed_rounds", lambda nodes, **k: [11, 12])
+    monkeypatch.setattr(run_mod.harness_failures, "add", lambda text: calls.setdefault("harness", []).append(text))
 
     def install(fsck_fn):
         # `**kwargs` deliberately: this stub stands in for the REAL `run_fsck`, whose signature grows

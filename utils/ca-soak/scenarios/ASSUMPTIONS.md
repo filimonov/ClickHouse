@@ -8,8 +8,8 @@ can tell a deliberate decision from an accident, and a green dev run from spec-s
 - **Cluster.** Reuses the `utils/ca-soak` docker compose: two ClickHouse replicas (`ch1`/`ch2`) +
   RustFS object store + a single-node Keeper. There is also a `gc_shards2` variant
   (`docker-compose-gc_shards2.yml`, `storage_conf_gc_shards2.xml`) with `gc_shards=2`.
-- **Binary.** The host-built CA binary at `../../build/programs/clickhouse` is bind-mounted over the
-  stock image. Runs use whatever is currently built (recorded per run as `version()` + the repo git
+- **Binary.** The host-built CA binary at `../../build/programs/clickhouse` (override with
+  `CA_SOAK_CLICKHOUSE_BINARY=<absolute path>`) is bind-mounted over the stock image. Runs use whatever is currently built (recorded per run as `version()` + the repo git
   sha in `config.json`).
 - **RustFS, not MinIO.** The CA capability probe requires a store that enforces conditional ops
   (wrong-token DELETE → 412). RustFS `1.0.0-beta.8` provides this; MinIO's If-Match semantics do not,
@@ -36,7 +36,7 @@ run a virgin pool + fresh `PoolMeta`, which is the operational equivalent of a f
 - The 15-minute default `--duration` is a cap; most dev cards finish well under it and ignore the
   remainder. Scale tests that prefill do the prefill outside the measured window.
 
-## What the 2-replica + single-store compose cannot exercise (marked `needs_infra`, inconclusive)
+## What the 2-replica + single-store compose cannot exercise (HISTORICAL: every item below now has its own compose variant, see `cluster_boot._VARIANT_FILE`)
 
 These are recorded as `inconclusive` with a reason — never silently skipped or converted to pass:
 

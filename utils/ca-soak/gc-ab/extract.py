@@ -21,14 +21,14 @@ ROUND_EVENTS = [
     "CASGCReadAheadHit", "CASGCReadAheadMiss", "CASGCReadAheadWasted",
     "CASGCList", "CASGCDelete", "CASBulkDeleteRequests", "CASRefCleanupObjectsDeleted",
     "DiskS3ListObjects", "DiskS3HeadObject", "DiskS3GetObject", "DiskS3DeleteObjects",
-    "CASGCCondemnMarkerUnconfirmedCarry",
+    "CASGCIntentUnconfirmedCarry",
 ]
 RUN_WIDE_EVENTS = [
     "DiskS3ListObjects", "DiskS3HeadObject", "DiskS3GetObject", "DiskS3DeleteObjects",
     "CASBulkDeleteRequests", "CASRefCleanupObjectsDeleted", "CASRefEmittedEdges",
     "CASRefManifestBodyFoldGets", "CASRefManifestBodyMemoHits", "CASGCReadAheadHit",
-    "CASGCReadAheadMiss", "CASGCReadAheadWasted", "CASGCCondemnMarkerUnconfirmedCarry",
-    "CASGCRetiredCondemned", "CASGCRetiredGraduated", "CASGCRetiredRedeleted",
+    "CASGCReadAheadMiss", "CASGCReadAheadWasted", "CASGCIntentUnconfirmedCarry",
+    "CASGCRetiredCondemned", "CASGCRetiredIntentConfirmed", "CASGCRetiredBodyDeleted",
 ]
 JANITOR_METRICS = ["janitor_keys", "janitor_pages", "janitor_deleted", "leaked"]
 PE_RE = re.compile(r"'(\w+)':(-?\d+)")
@@ -161,7 +161,7 @@ def main():
             p.get("CASRefManifestBodyFoldGets", 0), p.get("CASRefManifestBodyMemoHits", 0),
             p.get("CASGCReadAheadHit", 0), p.get("CASGCReadAheadMiss", 0),
             p.get("CASGCReadAheadWasted", 0), p.get("CASGCList", 0), p.get("DiskS3DeleteObjects", 0),
-            jd, p.get("CASGCCondemnMarkerUnconfirmedCarry", 0)]))
+            jd, p.get("CASGCIntentUnconfirmedCarry", 0)]))
 
     win = defaultdict(lambda: [0, 0, 0, 0])   # class -> head, list, get, delete over the round windows
     ml = {}

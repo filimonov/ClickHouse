@@ -41,7 +41,7 @@ Mechanics (modelled on `soak/fsck.py`'s `run_fsck`/`run_dryrun`, the only existi
      `Cas::Pool::mountWritable`'s decommission path takes one unbounded-wait-free snapshot compare
      against the lease's `expires_at_ms` with no bounded-wait variant. The card now polls
      `cas-drop-member` for up to `mount_lease_ttl_ms` + one `mount_renew_period` + the `chaos.py`
-     FREEZE_LONG fence margin (60s total, 5s interval) before treating a persistent
+     FREEZE_LONG fence margin (90s total, 5s interval) before treating a persistent
      "alive or contended" refusal as a real failure.
   5. Fixed: `sql.create_ca_table` only ran on `node` (node1); a `ReplicatedMergeTree` materializes
      per-replica, so the victim never had its own local table at all -- a live run then hit
@@ -107,10 +107,10 @@ def _run_drop_member(container: str, srid: str, timeout_s: float = 300.0) -> dic
 # still looks live -- there is no bounded-wait variant on this path (that only exists on the
 # crash-recovery mount path). `docker kill` does not shorten the lease the victim already renewed
 # before dying, so the poll bound below must cover the full lease lifetime: `mount_lease_ttl_ms`
-# (30s default) plus one full `mount_renew_period` (10s) for the worst case where the victim
+# (40s default) plus one full `mount_renew_period` (10s) for the worst case where the victim
 # renewed an instant before being killed, plus the `chaos.py` FREEZE_LONG fence margin (ttl/2) the
-# GC leader itself relies on to call a lease conclusively lapsed.
-_LEASE_WAIT_BOUND_S = 60.0
+# GC leader itself relies on to call a lease conclusively lapsed (40 + 10 + 20 = 70 s, rounded up to 90 s).
+_LEASE_WAIT_BOUND_S = 90.0
 _LEASE_POLL_INTERVAL_S = 5.0
 
 

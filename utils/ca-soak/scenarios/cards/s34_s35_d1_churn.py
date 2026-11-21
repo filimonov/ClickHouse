@@ -108,6 +108,7 @@ class S34(Scenario):
                     f"S34: batch@{i+1}: gc_wall={batch.get('gc_wall_s')}s "
                     f"CASRootList={batch.get('CASRootList')} "
                     f"CASRootGet={batch.get('CASRootGet')} "
+                    f"CASBlobIntentList={batch.get('CASBlobIntentList')} "
                     f"root_dirs={batch.get('root_dirs')}")
 
         result.observations["per_batch"] = per_batch
@@ -159,6 +160,18 @@ class S34(Scenario):
                 f"only {len(per_batch)} GC batch(es) measured — need >=2 to compare growth "
                 "(increase iterations / lower gc_every)"))
 
+        # An idle round defers; a deferred round suppresses destruction, so phase 9 (`intent_sweep_list`)
+        # does not run (docs/en/antalya/cas/architecture/garbage-collection.md#phase-9-intent-sweep-list).
+        # Measured on this binary: 0 `CASBlobIntentList` per idle round (1 on the first sampled round).
+        if per_batch:
+            idle_lists = per_batch[-1].get("CASBlobIntentList")
+            result.add(Verdict.check(
+                "idle deferred round lists no blob-intents",
+                "CASBlobIntentList == 0 in the last idle round",
+                idle_lists, idle_lists == 0,
+                "" if idle_lists == 0 else
+                "an idle (deferred) round enumerated blob-intents: the intent sweep is not suppressed on DEFER"))
+
         # --- reclaimable content must drain to 0 (the D1 correctness assertion) ---------------
         # standard_end runs forced_gc_to_fixpoint, then we call assert_reclaimable_drained on the
         # CONVERGED end-checkpoint residual (B1/B2 correct).
@@ -174,7 +187,7 @@ class S34(Scenario):
         NOTHING (`CASGCDelete==0`).
 
         A round's `CASRootGet` conflates THREE regimes: (a) reclaim-phase GETs, O(pending
-        condemn/graduation backlog); (b) a fold round that re-reads the current generation
+        intent/body-delete backlog); (b) a fold round that re-reads the current generation
         (deletes nothing but still GETs); and (c) an IDLE round that finds nothing new and
         DEFERS (Phase-4 skip-unchanged) — O(1) LISTs, zero GETs. The D1 win is that the
         fixed per-round FLOOR — the idle deferred round (c) — must NOT grow with
@@ -200,6 +213,7 @@ class S34(Scenario):
                 "CASRootGet": int(delta.get("CASRootGet", 0)),
                 "CASGCGet": int(delta.get("CASGCGet", 0)),
                 "CASGCDelete": int(delta.get("CASGCDelete", 0)),
+                "CASBlobIntentList": int(delta.get("CASBlobIntentList", 0)),
                 "root_dirs": S34._count_root_dirs(),
             }
             # Idle deferred round: nothing reclaimed AND no discovery GETs → the per-round floor.

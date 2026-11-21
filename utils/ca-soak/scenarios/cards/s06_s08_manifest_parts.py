@@ -1,4 +1,4 @@
-"""S06 wide part + S07 manifest cap fail-closed + S08 thousands of parts (P0).
+"""S06 wide part + S07 manifest cap fail-closed (RETIRED) + S08 thousands of parts (P0).
 
 These three cards exercise the part-manifest write path and the per-table ref/manifest objects that
 name every part. The relevant fail-closed caps live in `Core/CasBuild.cpp::stageManifest`
@@ -13,10 +13,13 @@ name every part. The relevant fail-closed caps live in `Core/CasBuild.cpp::stage
 `LOG_WARNING` were removed along with the `root_shards` knob; the four `kMaxManifest*` constants above
 are the only live fail-closed caps on manifest size today.)
 
+S07 is RETIRED: its `run` returns a skipped verdict. The caps are not reachable by a user (SQL, settings,
+operator actions), and a soak card corners the system only by user-reachable means, so the caps are
+covered by unit tests in `src/Disks/tests/gtest_cas_part_write.cpp` and `gtest_cas_part_manifest_format.cpp`.
+The old probe stays below as `_retired_probe` for reference.
+
 S06 proves a very wide part stays under the manifest hard cap (or fails early with `LIMIT_EXCEEDED`)
-and that a column-subset read does not fetch every blob. S07 is a negative card that makes a
-best-effort attempt to trip a cap and, when the cap is not reachable at feasible dev SQL scale, still
-verifies the fail-closed PROPERTY (no live ref on a rejected manifest, clean pool). S08 creates many
+and that a column-subset read does not fetch every blob. S08 creates many
 small parts fast and checks per-life ref-object CAS contention stays bounded (refs now live as
 `_log`/`_snap` objects under `cas/ns/stream/<life-id>/`, not a fixed-fanout `root_shards` shard set).
 """
@@ -80,28 +83,6 @@ def _manifests_shape():
             "_manifests": shape.get("_manifests"),
             "refs": shape.get("refs"),
             "_total": shape.get("_total")}
-
-
-def _soft_limit_warnings(cluster, since_event_time):
-    """Best-effort count of root-shard manifest soft-limit warnings from `system.text_log` (the
-    `CasStore` "crossed soft limit" `LOG_WARNING`). Returns (count|None, queryable: bool).
-
-    The warning is a text-log signal, not a system-table event, so this is honest best-effort: if
-    `system.text_log` is not enabled the count is None and the caller records inconclusive."""
-    where = "logger_name = 'CasStore' AND message LIKE '%crossed soft limit%'"
-    if since_event_time:
-        # since_event_time is a 'YYYY-MM-DD HH:MM:SS' string — compare as a quoted DateTime literal.
-        where += f" AND event_time >= '{since_event_time}'"
-    total = 0
-    any_ok = False
-    for n in cluster.nodes():
-        try:
-            v = n.scalar(f"SELECT count() FROM system.text_log WHERE {where}")
-            total += int(v or 0)
-            any_ok = True
-        except Exception:
-            pass
-    return (total if any_ok else None), any_ok
 
 
 @register
@@ -183,18 +164,9 @@ class S06(Scenario):
             result.observations["s06_manifest_mean_encoded_bytes"] = man_bytes
             result.observations["s06_manifest_objects"] = man_objs
 
-        # Root-shard manifest soft-limit warnings (text-log best-effort).
-        warn_count, warn_ok = _soft_limit_warnings(cl, ctx.extra.get("since_event_time"))
-        result.observations["s06_root_soft_limit_warnings"] = warn_count
-        if warn_ok:
-            result.add(Verdict.check(
-                "root-shard manifest soft-limit warnings", "recorded (informational)",
-                warn_count, True,
-                "soft limit only logs a WARNING; nonzero is informational, not a failure"))
-        else:
-            result.add(Verdict.inconclusive(
-                "root-shard manifest soft-limit warnings", "recorded",
-                "system.text_log not queryable (CasStore soft-limit warning is a text-log signal)"))
+        # No product emitter exists for a manifest soft limit (no ProfileEvent, no `CasStore` text-log
+        # line), so there is no verdict; the manifest-size verdict below is the only size gate.
+        result.observations["s06_root_soft_limit_warnings"] = "not checkable: no emitter in the product"
 
         # --- Verdict: commit under cap, OR early fail-closed -----------------------------
         if committed:
@@ -349,7 +321,7 @@ class S06(Scenario):
 @register
 class S07(Scenario):
     name = "S07"
-    title = "manifest cap fail-closed"
+    title = "manifest cap fail-closed (retired)"
     priority = "P0"
     expect_exception = True
     param_table = {
@@ -357,12 +329,65 @@ class S07(Scenario):
         # A Wide part has roughly one manifest entry per column file (.bin/.mrk per column + a few
         # part-level files), so even 20000 columns is ~tens of thousands of entries — three orders of
         # magnitude below kMaxManifestEntries. The cap is honestly NOT reachable via dev SQL.
-        "dev": {"n_cols": 2000, "block_rows": 50},
-        "ci": {"n_cols": 10000, "block_rows": 100},
-        "full": {"n_cols": 20000, "block_rows": 200},
+        "dev": {"n_cols": 2000, "block_rows": 50, "n_idx": 24, "idx_rows": 1000000},
+        "ci": {"n_cols": 10000, "block_rows": 100, "n_idx": 24, "idx_rows": 1000000},
+        "full": {"n_cols": 20000, "block_rows": 200, "n_idx": 32, "idx_rows": 1000000},
     }
 
+    def _inline_total_probe(self, ctx, result, cl, n_idx, rows):
+        """Trip `kMaxManifestInlineBytesTotal` (16 MiB, `CasPartWriteTxn.cpp` `stageManifest`) by SQL.
+
+        Every part file except `.bin`/`.mrk*`/`primary.idx` is an inline candidate
+        (`partFileMustStayBlob`, `ContentAddressedTransaction.cpp:67`), and a skip-index file
+        `skp_idx_*.idx` of a bloom filter is hundreds of KiB to ~1 MiB. `n_idx` of them in one part sum
+        past 16 MiB while each stays under the per-entry bound (1 MiB; a larger file spills to a blob,
+        `ContentAddressedTransaction.cpp:993`, so the per-entry cap itself cannot fire).
+        """
+        table = "s07_inlinecap"
+        cols = ", ".join(f"c{i} UInt64" for i in range(n_idx))
+        idx = ", ".join(f"INDEX ix{i} c{i} TYPE bloom_filter(0.025) GRANULARITY 1" for i in range(n_idx))
+        for n in cl.nodes():
+            sql.create_ca_table(n, table, columns=f"k UInt64, {cols}, {idx}", order_by="k", wide=True)
+        sel = ", ".join(f"cityHash64(number, {i}) AS c{i}" for i in range(n_idx))
+        failed_msg = None
+        try:
+            cl.node1.command(
+                f"INSERT INTO {table} SELECT number AS k, {sel} FROM numbers({rows})",
+                settings={"max_insert_block_size": rows * 2, "min_insert_block_size_rows": rows * 2,
+                          "min_insert_block_size_bytes": 1 << 40, "max_block_size": rows * 2,
+                          "max_threads": 1, "max_insert_threads": 1}, timeout=1800)
+        except Exception as e:
+            failed_msg = str(e)
+        result.observations["s07_inline_probe"] = {"n_idx": n_idx, "rows": rows, "error": (failed_msg or "")[:600]}
+        if failed_msg is not None:
+            capped = "total inline" in failed_msg and "exceeds cap" in failed_msg
+            result.add(Verdict.check(
+                "inline-total manifest cap fail-closed",
+                "INSERT refused with LIMIT_EXCEEDED `total inline ... exceeds cap 16777216` (before any ref)",
+                "LIMIT_EXCEEDED thrown" if capped else "a NON-cap error", capped,
+                "" if capped else f"expected the inline-total cap, got: {failed_msg[:400]}"))
+            counts = [n.query(f"SELECT count() FROM {table}").strip() for n in cl.nodes()]
+            result.add(Verdict.check(
+                "rejected insert leaves no visible part", "0 rows on every replica", counts,
+                all(c == "0" for c in counts)))
+        else:
+            sizes = cl.node1.query(
+                f"SELECT sum(data_compressed_bytes) FROM system.data_skipping_indices WHERE table='{table}'").strip()
+            result.observations["s07_inline_probe"]["skip_index_bytes"] = sizes
+            result.add(Verdict.inconclusive(
+                "inline-total manifest cap fail-closed", "LIMIT_EXCEEDED",
+                f"the insert committed: {n_idx} bloom indexes over {rows} rows hold {sizes} bytes of skip-index "
+                f"files, yet the part's manifest stayed ~93 KB (server log: `Sending part ... by relink ..., "
+                f"manifest payload 93400 bytes`), so those files are blobs, not inline entries. No SQL shape "
+                f"puts 16 MiB inline: the cap needs a lowering failpoint (see the S07 backlog note)."))
+
+    RETIRED_REASON = (
+        "retired: the manifest caps cannot be reached by a user (SQL, settings, operator actions); two of the six are covered by unit tests, the other four by backlog task CAS-509: CASPartWriteTxn.ManifestCapEncodedBytesJustUnderStagesSuccessfully, CASPartWriteTxn.ManifestCapEncodedBytesOverThrowsBeforeBodyWrite, CASPartWriteTxn.StageManifestRejectsOversizedEntryRecordBeforeBodyWrite, CASPartManifestFormat.EncodeEnforcesEntryRecordLineCap, CASPartManifestFormat.EncodeEnforcesDescriptorLineCap")
+
     def run(self, ctx, result):
+        result.add(Verdict.skipped("manifest cap fail-closed", self.RETIRED_REASON))
+
+    def _retired_probe(self, ctx, result):
         cl = ctx.cluster
         p = ctx.params
         n_cols = int(p["n_cols"])
@@ -377,6 +402,8 @@ class S07(Scenario):
         }
         ctx.log(f"S07: best-effort manifest-cap probe with {n_cols} columns (caps are 3+ orders of "
                 f"magnitude above dev SQL reach)")
+
+        self._inline_total_probe(ctx, result, cl, int(p["n_idx"]), int(p["idx_rows"]))
 
         cols = _wide_columns(n_cols)
         for n in cl.nodes():
@@ -416,17 +443,11 @@ class S07(Scenario):
                 f"expected LIMIT_EXCEEDED, got a different error: {non_cap_error}"))
             result.note_anomaly("S07 write failed but not with a manifest-cap LIMIT_EXCEEDED")
         else:
-            # The honest common case at dev scale: the cap is simply not reachable via SQL.
-            result.add(Verdict.inconclusive(
-                "manifest cap fail-closed", "LIMIT_EXCEEDED",
-                f"manifest caps not reachable via dev-scale SQL: {n_cols} columns is ~tens of "
-                f"thousands of manifest entries, vs kMaxManifestEntries={K_MAX_MANIFEST_ENTRIES}; "
-                f"encoded/inline caps are equally far. Reaching a cap deterministically needs a "
-                f"cap-lowering test hook or a part with >1M files. The fail-closed PROPERTY is still "
-                f"verified indirectly below (no ref on a rejected manifest; clean pool)."))
-            result.note_anomaly(
-                "S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive for "
-                "the direct cap trip; the indirect fail-closed property check still runs.")
+            # kMaxManifestEntries (1048576) needs ~500k Wide columns; kMaxLargestInlineEntryBytes cannot
+            # fire (INLINE_CAP == the cap, larger files spill to a blob). Recorded, not a verdict: the
+            # inline-total probe above is the cap this card trips; the entry cap needs a test hook.
+            result.observations["s07_entry_cap_not_reachable"] = (
+                f"{n_cols} columns committed; kMaxManifestEntries={K_MAX_MANIFEST_ENTRIES} needs a lowering hook")
 
         # --- Indirect fail-closed PROPERTY: whatever happened, the pool must be clean ----
         # If the write was rejected, no live ref may name a rejected manifest (fsck dangling==0) and
@@ -436,7 +457,7 @@ class S07(Scenario):
             # The write committed; assert the data is queryable + replicas agree (an oracle).
             _common.assert_replicas_agree(result, cl, sql.table_checksum_query(table))
 
-        end = _common.standard_end(ctx, result, [table], expect_exception=True)
+        end = _common.standard_end(ctx, result, [table, "s07_inlinecap"], expect_exception=True)
         # Explicit restatement of the fail-closed property as its own verdict.
         fsck = (end or {}).get("fsck_final", {})
         dangling = fsck.get("dangling")
@@ -521,8 +542,10 @@ class S08(Scenario):
 
         delta = counters().get("_total", {})
         result.observations["s08_create_counters"] = delta
-        cas_conflict = delta.get("CASRootCompareSwapConflict", 0)
-        cas_total = delta.get("CASRootCompareSwap", 0)
+        # `CASRootCompareSwap*` are declared but never incremented (the backend wrapper counts every
+        # conditional write as `CASRootPut`); the attempt/outcome counters are the live ones.
+        cas_total = delta.get("CASConditionalWriteAttempts", 0)
+        cas_conflict = max(0, cas_total - delta.get("CASConditionalWriteCommitted", 0))
         result.observations["s08_CasRootCas"] = cas_total
         result.observations["s08_CasRootCasConflict"] = cas_conflict
         result.observations["s08_CasRootGet"] = delta.get("CASRootGet", 0)
@@ -599,7 +622,7 @@ class S08(Scenario):
         else:
             result.add(Verdict.inconclusive(
                 "CAS contention bounded", "conflict ratio bounded",
-                "no CASRootCompareSwap ops observed in the creation window"))
+                "no CASConditionalWriteAttempts observed in the creation window"))
 
         # --- Convergence phase: re-enable merges and force convergence -------------------
         ctx.log("S08: re-enabling merges and forcing convergence")

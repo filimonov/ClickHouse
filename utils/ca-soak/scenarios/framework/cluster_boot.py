@@ -11,6 +11,7 @@ same docker-compose project (directory name `ca-soak`), so container names are s
 
 import os
 import shutil
+import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -24,6 +25,8 @@ CA_SOAK_DIR = _THIS.parents[2]
 _VARIANT_FILE = {
     None: None,
     "default": None,
+    # S23: the default compose with only ch1 started (ch2 depends on ch1); see _VARIANT_SERVICES.
+    "onenode": None,
     "gc_shards2": "docker-compose-gc_shards2.yml",
     # S12: 10-replica shared-pool compose (ch1..ch10 over one CA pool).
     "tenreplicas": "docker-compose-10replicas.yml",
@@ -63,13 +66,16 @@ _VARIANT_FILE = {
 # "only 0/1 replicas healthy at timeout" for five minutes before failing with zero verdicts
 # (2026-09-01). A variant that needs different endpoints must carry them, not rely on the operator
 # exporting them by hand.
+# The s41 compose reads the same two variables (`CA_SOAK_S41_PORT`, `CA_SOAK_S41_PROJECT`), so the
+# published port and the container names cannot disagree with what the framework probes.
+_S41_PROJECT = os.environ.get("CA_SOAK_S41_PROJECT", "ca-s41")
 _VARIANT_ENV = {
     "s41": {
-        "CA_SOAK_NODE1_PORT": "18123",
-        "CA_SOAK_NODE1_CONTAINER": "ca-s41-ch1-1",
-        "CA_SOAK_RUSTFS_CONTAINER": "ca-s41-rustfs1-1",
-        "CA_SOAK_CH_CONTAINERS": "ca-s41-ch1-1",
-        "CA_SOAK_FSCK_CONTAINER": "ca-s41-ch1-1",
+        "CA_SOAK_NODE1_PORT": os.environ.get("CA_SOAK_S41_PORT", "18123"),
+        "CA_SOAK_NODE1_CONTAINER": f"{_S41_PROJECT}-ch1-1",
+        "CA_SOAK_RUSTFS_CONTAINER": f"{_S41_PROJECT}-rustfs1-1",
+        "CA_SOAK_CH_CONTAINERS": f"{_S41_PROJECT}-ch1-1",
+        "CA_SOAK_FSCK_CONTAINER": f"{_S41_PROJECT}-ch1-1",
     },
 }
 
@@ -87,8 +93,11 @@ def apply_variant_env(variant) -> None:
         os.environ[k] = v
 
 
+# Services `up -d` starts for a variant that is a subset of its compose file (none = all of them).
+_VARIANT_SERVICES = {"onenode": ["ch1"]}
+
 _VARIANT_NODES = {
-    None: 2, "default": 2, "gc_shards2": 2,
+    None: 2, "default": 2, "onenode": 1, "gc_shards2": 2,
     "tenreplicas": 10, "gc_shards8": 2, "s3faultproxy": 2, "s3listproxy": 2, "s38": 2,
     "tuned": 2, "multidisk": 2, "s41": 1, "s47": 4,
 }
@@ -201,18 +210,39 @@ def wait_healthy(cluster=None, *, variant=None, timeout_s=240, log_fn=print) -> 
 
 def archive_server_logs(tag, node_count=2, log_fn=print):
     """Tar the per-node server logs into logs/ before a reset wipes/overwrites them, so each run's
-    server-side logs are preserved (regression-watch false-alarm guard, per the soak convention)."""
+    server-side logs are preserved (regression-watch false-alarm guard, per the soak convention).
+
+    The log files are owned by the container's `syslog` user with mode 0640, so the host user cannot
+    read them: the archive is streamed out of the running container (`docker exec ... tar`). A host
+    `tar` produced a 113-byte empty archive for every run. A node whose container is not running is
+    reported and skipped; nothing else could read its logs."""
     logs = CA_SOAK_DIR / "logs"
+    # A card may bring up a wider stack than its declared variant (S23 ends on 10 servers), so archive
+    # every running ca-soak-chN-1 container, not only the first `node_count`.
+    try:
+        ps = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=30)
+        running = [int(m.group(1)) for m in
+                   (re.match(r"^ca-soak-ch(\d+)-1$", n) for n in ps.stdout.split()) if m]
+        node_count = max([node_count] + running)
+    except Exception:
+        pass
     for i in range(1, node_count + 1):
         d = f"ch{i}"
         src = logs / d
-        if src.exists() and any(src.iterdir()):
-            dst = logs / f"_archive_{tag}_{d}.tgz"
-            try:
-                subprocess.run(["tar", "czf", str(dst), "-C", str(logs), d],
-                               capture_output=True, timeout=120)
-            except Exception as e:
-                log_fn(f"archive_server_logs {d}: {e}")
+        if not (src.exists() and any(src.iterdir())):
+            continue
+        dst = logs / f"_archive_{tag}_{d}.tgz"
+        container = f"ca-soak-ch{i}-1"
+        try:
+            with open(dst, "wb") as fh:
+                r = subprocess.run(["docker", "exec", container, "tar", "czf", "-", "-C",
+                                    "/var/log/clickhouse-server", "."],
+                                   stdout=fh, stderr=subprocess.PIPE, timeout=120)
+            if r.returncode != 0:
+                log_fn(f"archive_server_logs {d}: docker exec tar rc={r.returncode}: "
+                       f"{r.stderr.decode(errors='replace')[:200]}")
+        except Exception as e:
+            log_fn(f"archive_server_logs {d}: {e}")
 
 
 def check_host_headroom(log_fn=print, *, min_disk_gb=80, min_free_ram_gb=8) -> list:
@@ -315,7 +345,7 @@ def reset_cluster(variant=None, *, archive_tag=None, log_fn=print, timeout_s=300
     _prep_log_dirs(node_count=n)
     if variant == "tuned" and overrides:
         render_tuned_config(overrides)
-    _run(compose_cmd(variant, "up", "-d"), timeout=boot_timeout, log_fn=log_fn)
+    _run(compose_cmd(variant, "up", "-d", *_VARIANT_SERVICES.get(variant, [])), timeout=boot_timeout, log_fn=log_fn)
     ok = wait_healthy(variant=variant, timeout_s=boot_timeout, log_fn=log_fn)
     if not ok:
         log_fn("reset_cluster: cluster did NOT become healthy within timeout")

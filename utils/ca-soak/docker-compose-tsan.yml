@@ -1,0 +1,31 @@
+# Override: run ch1/ch2 on the TSan-instrumented server binary instead of the
+# stock build/programs/clickhouse. keeper1 stays on the regular binary --
+# it is not the target of this soak. halt_on_error=0 so multiple races can be
+# collected across the whole run instead of stopping at the first report;
+# review server logs afterward for "WARNING: ThreadSanitizer". seccomp:unconfined
+# is required for TSan: it calls personality(ADDR_NO_RANDOMIZE) at startup to
+# disable ASLR for its fixed shadow-memory layout, which Docker's default
+# seccomp profile blocks (FATAL: "encountered an incompatible memory layout").
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose-tsan.yml up -d
+services:
+  ch1:
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_TSAN_BINARY:-../../build_tsan/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+    environment:
+      TSAN_OPTIONS: "halt_on_error=0:history_size=7:second_deadlock_stack=1"
+    security_opt:
+      - seccomp:unconfined
+  ch2:
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_TSAN_BINARY:-../../build_tsan/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+    environment:
+      TSAN_OPTIONS: "halt_on_error=0:history_size=7:second_deadlock_stack=1"
+    security_opt:
+      - seccomp:unconfined

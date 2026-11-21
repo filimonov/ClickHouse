@@ -354,7 +354,8 @@ class S16(Scenario):
         delta = counters().get("_total", {})
         result.observations["cycle_counters"] = {k: int(delta.get(k, 0)) for k in (
             "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASBlobDelete",
-            "CASBlobHead", "CASBlobHeadMiss", "CASGCDelete")}
+            "CASBlobHead", "CASBlobHeadMiss", "CASGCDelete", "CASBlobIntentGet",
+            "CASBlobReuseIntentPresent", "CASGCIntentLeftOnSpare", "CASGCIntentDeleted")}
 
         # CA event audit for this run window (blob_reuse_resurrect/adopt, blob_put, blob_delete, etc).
         ca_events = _ca_events_since(ctx)
@@ -370,15 +371,14 @@ class S16(Scenario):
         # blob rather than treat each cycle as new content, or the cycle proves nothing about
         # condemned-token handling and the invariant proxy below has nothing to guard.
         #
-        # This verdict used to require `blob_reuse_resurrect`, on the reading that a writer emits it
-        # when it observes a condemned token and must re-upload from source. That event no longer has
-        # an emitter: `907c3b5ce7d` ("Publish CAS blobs after mandatory HEAD") made publication
-        # unconditional after a mandatory HEAD, so a writer no longer splits reuse into adopt versus
-        # resurrect — it always re-uploads from source and records `blob_reuse_adopt`. The enum member
-        # and its string survive with nothing raising them, so the old assertion could not pass at any
-        # scale. What is LOST by this change is the only direct, positive check that a CONDEMNED token
-        # specifically forces a re-upload; the resurrect invariant itself is still covered, but only by
-        # the proxy immediately below (correct data every cycle plus no bad CA events).
+        # A writer HEADs the body, then reads the deletion intent of the incarnation it found. No
+        # intent: it adopts the body (`blob_reuse_adopt`). An intent: it republishes from its own source
+        # bytes under a fresh token (`blob_reuse_resurrect`, outcome `intent_present`, counter
+        # `CASBlobReuseIntentPresent`). Either event proves the identical content was recognised. A
+        # drain to a fixpoint that completes all three rounds deletes the body and the intent, and the
+        # next insert then publishes a fresh body (`blob_put`) with no reuse event at all, so on a fast
+        # drain this verdict can legitimately see zero reuse events.
+        # The resurrect invariant itself (never revive a condemned object) is checked by the proxy below.
         reuse_events = result.observations["reuse_events"]
         reuse_count = reuse_events.get("blob_reuse_adopt", 0) + reuse_events.get("blob_reuse_resurrect", 0)
         result.add(Verdict.check(

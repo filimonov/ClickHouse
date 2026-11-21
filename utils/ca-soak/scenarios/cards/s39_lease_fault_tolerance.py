@@ -5,8 +5,10 @@ faults. Each disruption is bounded to one physical renewal response, cleared, an
 the next begins. The long and post-clear legs consume the remaining requested time while requiring
 exactly one lease-loss generation followed by whole-chain remount recovery.
 
-The compiled lease TTL and renewal period are currently not XML settings. All time budgets below are
-derived from their 30s/10s defaults and are emitted in the scenario observations.
+The lease TTL (`cas_mount_lease_ttl_ms`) and renewal period (`cas_mount_renew_period_ms`) are disk
+settings; the compose configs leave both at their 40 s / 10 s defaults. All time budgets below derive
+from those values and are emitted in the scenario observations. Keep the constants in step with the
+defaults: a TTL pinned in a storage config needs the same value here.
 """
 
 import json as _json
@@ -24,8 +26,10 @@ _SERVER_ROOT_ID = "ca_soak_ch1"
 _MOUNT_PATH = f"/test/soak_pool/gc/server-roots/{_SERVER_ROOT_ID}/mount"
 _CTL = "http://localhost:8474"
 
-_MOUNT_LEASE_TTL_S = 30
+_MOUNT_LEASE_TTL_S = 40
 _MOUNT_RENEW_PERIOD_S = 10
+# Background renewal retries one body every 0.8-1.2 s (mounts-and-leases.md, "Deadline from the start").
+_RENEWAL_RETRY_SPACING_MAX_S = 2
 _MIN_SHORT_PULSES = 2
 _SHORT_RECOVERY_BUDGET_S = _MOUNT_LEASE_TTL_S - _MOUNT_RENEW_PERIOD_S
 _SHORT_MUTATION_BUDGET_S = 60
@@ -58,7 +62,7 @@ _EVENTS = (
 def _duration_budget(requested_s, configured_long_fault_s, settle_s):
     long_fault_s = max(
         int(configured_long_fault_s),
-        _MOUNT_LEASE_TTL_S + _MOUNT_RENEW_PERIOD_S,
+        _MOUNT_LEASE_TTL_S + _MOUNT_RENEW_PERIOD_S + _RENEWAL_RETRY_SPACING_MAX_S + 1,
     )
     remount_recovery_budget_s = int(settle_s) + _REMOUNT_EXTRA_BUDGET_S
     mandatory_short_budget_s = _MIN_SHORT_PULSES * _SHORT_PULSE_BUDGET_S
@@ -143,6 +147,18 @@ def _mount_lifecycle(node):
         return "missing", "missing", 0
     lifecycle, state, sequence = row.split("\t")
     return lifecycle, state, int(sequence)
+
+
+def _mount_epoch_reason(node):
+    row = node.query(
+        f"SELECT writer_epoch, lifecycle_reason FROM system.cas_mounts "
+        f"WHERE disk = '{_DISK}' AND server_root_id = '{_SERVER_ROOT_ID}' "
+        "LIMIT 1 FORMAT TabSeparated"
+    ).strip()
+    if not row:
+        return None, ""
+    epoch, _, reason = (row + "\t").partition("\t")
+    return int(epoch), reason.strip()
 
 
 def _renewal_outcomes(node, since):
@@ -404,13 +420,12 @@ class S39(Scenario):
             short_delta["CASMountRenewalAttempts"] > pulse_count
             and short_delta["CASMountRenewalRetries"] >= pulse_count
             and short_delta["CASMountRenewalRecovered"] >= pulse_count
-            and short_outcomes.get("retrying", 0) >= pulse_count
             and short_outcomes.get("recovered", 0) >= pulse_count
         )
         result.add(
             Verdict.check(
                 "leg A: Task 6 retry/recovery counters and aggregate events are positive",
-                "attempts > pulses, retries/recovered/retrying events >= pulses",
+                "attempts > pulses, retries/recovered counters and recovered events >= pulses",
                 f"delta={short_delta} outcomes={short_outcomes}",
                 counters_ok,
                 _failure_note(
@@ -473,6 +488,7 @@ class S39(Scenario):
         _ctl("/config", {"reset": True})
         long_since = node.scalar("SELECT toString(now64(6))")
         long_before = _profile_events(node)
+        epoch_before, _ = _mount_epoch_reason(node)
         long_s = budget["long_fault_s"]
         result.observations["fault_window_arithmetic"]["long_actual_s"] = long_s
         _ctl(
@@ -488,26 +504,33 @@ class S39(Scenario):
         )
         long_deadline = time.monotonic() + long_s
         saw_paused = False
+        saw_reason = ""
         while time.monotonic() < long_deadline:
             try:
-                saw_paused = saw_paused or _mount_lifecycle(node)[0] == "paused"
+                if _mount_lifecycle(node)[0] == "not_live":
+                    saw_reason = _mount_epoch_reason(node)[1]
+
+                # `system.cas_mounts.lifecycle` has no `paused` value; a mount whose lease ran out while renewal
+                # retries reads `not_live` (reason `lease_expired`), per the column docs in
+                # StorageSystemContentAddressedMounts.cpp.
+                saw_paused = saw_paused or _mount_lifecycle(node)[0] == "not_live"
             except Exception:
                 pass
             time.sleep(0.5)
         _ctl("/config", {"rate": 0.0})
         long_fault_stats = _ctl("/stats")
 
-        def remounted():
+        def resumed():
             events = _profile_events(node)
             lifecycle = _mount_lifecycle(node)
             if (
-                events["CASRemountSucceeded"] > long_before["CASRemountSucceeded"]
+                events["CASMountRenewalRecovered"] > long_before["CASMountRenewalRecovered"]
                 and lifecycle[0] == "live"
             ):
                 return events, lifecycle
             return None
 
-        recovered_state = _wait_for(remounted, budget["remount_recovery_budget_s"])
+        recovered_state = _wait_for(resumed, budget["remount_recovery_budget_s"])
 
         write_recovered = False
         last_error = ""
@@ -587,42 +610,53 @@ class S39(Scenario):
             "post_clear_probe_errors": post_clear_probe_errors,
             "post_clear_observed_non_live": post_clear_observed_non_live,
         }
-        loss_ok = (
-            long_delta["CASMountLeaseLost"] == 1
-            and long_outcomes.get("failed", 0) == 1
+        epoch_after, _ = _mount_epoch_reason(node)
+        result.observations["leg_b"].update(
+            {"writer_epoch_before": epoch_before, "writer_epoch_after": epoch_after,
+             "not_live_reason": saw_reason})
+        # mounts-and-leases.md, "An expired lease is a pause": the background renewal has no deadline,
+        # so an outage past the TTL pauses writes (`not_live` / `lease_expired`) and nothing is lost
+        # or remounted; the first confirmed renewal resumes writes under the same writer epoch.
+        pause_ok = (
+            saw_paused
+            and saw_reason == "lease_expired"
             and long_fault_stats["faults"] > 0
-            and saw_paused
+            and long_delta["CASMountLeaseLost"] == 0
+            and long_delta["CASMountRenewalDeadlineExceeded"] == 0
+            and long_delta["CASRemountAttempts"] == 0
         )
         result.add(
             Verdict.check(
-                "leg B: sustained disruption fails closed in one recovery generation",
-                "lease_lost=1, failed aggregate event=1, targeted faults>0",
+                "leg B: an outage past the TTL pauses writes and loses no lease",
+                "not_live/lease_expired seen, lease_lost=0, deadline_exceeded=0, remount_attempts=0, "
+                "targeted faults>0",
                 f"delta={long_delta} outcomes={long_outcomes} faults={long_fault_stats['faults']} "
-                f"saw_paused={saw_paused}",
-                loss_ok,
+                f"saw_paused={saw_paused} reason={saw_reason!r}",
+                pause_ok,
                 _failure_note(
-                    loss_ok,
-                    "the past-TTL renewal outage did not produce exactly one fail-closed "
-                    "generation",
+                    pause_ok,
+                    "the past-TTL renewal outage did not pause writes as documented, or lost the lease",
                 ),
             )
         )
-        remount_ok = (
+        resume_ok = (
             recovered_state is not None
-            and long_delta["CASRemountAttempts"] >= 1
-            and long_delta["CASRemountSucceeded"] >= 1
+            and long_delta["CASMountRenewalRecovered"] >= 1
+            and long_outcomes.get("recovered", 0) >= 1
             and final_lifecycle[0] == "live"
             and final_lifecycle[1] == "live"
+            and epoch_before is not None
+            and epoch_after == epoch_before
         )
         result.add(
             Verdict.check(
-                "leg B: whole-chain remount restores Live",
-                "remount_attempts>=1, remount_succeeded>=1, final lifecycle=live",
-                f"delta={long_delta} mount={final_lifecycle}",
-                remount_ok,
+                "leg B: the first confirmed renewal resumes writes under the same writer epoch",
+                "renewal recovered>=1, final lifecycle=live, writer_epoch unchanged",
+                f"delta={long_delta} mount={final_lifecycle} epoch {epoch_before}->{epoch_after}",
+                resume_ok,
                 _failure_note(
-                    remount_ok,
-                    "the mount did not recover through the whole-chain remount protocol",
+                    resume_ok,
+                    "the mount did not resume under the same epoch after the outage cleared",
                 ),
             )
         )

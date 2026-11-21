@@ -165,6 +165,7 @@ def main(argv=None):
     # tore it down, the dump reports QUERY-FAILED rather than inventing empty files.
     last = results[-1].scenario if results else "batch"
     cluster_boot.predown_dump(f"{last}_end_of_batch", log_fn=print)
+    cluster_boot.archive_server_logs(f"{last}_end_of_batch", node_count=2, log_fn=print)
 
     print("\n=== SUITE SUMMARY ===")
     for r in results:

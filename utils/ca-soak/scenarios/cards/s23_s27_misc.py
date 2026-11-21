@@ -50,7 +50,51 @@ class S23(Scenario):
         "full": {"idle_minutes": 15, "minute_s": 60, "per_round_s3_budget": 64},
     }
 
+    # (compose variant, label): the README asks for 1-, 2- and 10-server configurations. "onenode" is
+    # the default compose with only ch1 started (ch2 depends on ch1, so the service list is enough).
+    _VARIANTS = ((None, "2-server"), ("onenode", "1-server"), ("tenreplicas", "10-server"))
+
     def run(self, ctx, result):
+        # cluster_boot is imported lazily so the card can drive its own resets (a fresh pool per
+        # configuration); the runner already brought up the default 2-server stack.
+        from ..framework import cluster_boot
+        from soak.cluster import Cluster
+
+        p = ctx.params
+        result.add(Verdict("scale used",
+                           "spec asks for 1-, 2-, and 10-server variants over a 15-minute idle window",
+                           f"1, 2 and 10 servers, {int(p['idle_minutes'])} idle 'minutes' x "
+                           f"{int(p['minute_s'])}s each (scale={ctx.scale})", "pass",
+                           "dev/ci shorten the idle window; only --scale full approaches 15 minutes"))
+        per_variant = {}
+        for variant, label in self._VARIANTS:
+            if variant is not None:
+                ctx.log(f"S23: resetting cluster to a fresh pool for the {label} configuration")
+                ok = cluster_boot.reset_cluster(
+                    variant, archive_tag=f"S23_{label}_{ctx.timestamp}", log_fn=ctx.log)
+                if not ok:
+                    result.add(Verdict.check(f"{label}: cluster healthy after reset",
+                                             "all replicas healthy", "not healthy", False))
+                    continue
+                ctx.cluster = Cluster(node_count=cluster_boot.node_count_for(variant))
+                ctx.extra["since_event_time"] = ctx.cluster.node1.scalar(
+                    "SELECT toString(now())").strip()
+            saved_obs, result.observations = result.observations, {}
+            orig_add = result.add
+
+            def add(v, _label=label, _orig=orig_add):
+                v.name = f"{_label}: {v.name}"
+                return _orig(v)
+            result.add = add
+            try:
+                self._idle_window(ctx, result, label)
+            finally:
+                result.add = orig_add
+                per_variant[label] = result.observations
+                result.observations = saved_obs
+        result.observations["per_variant"] = per_variant
+
+    def _idle_window(self, ctx, result, label):
         cl = ctx.cluster
         p = ctx.params
         idle_minutes = int(p["idle_minutes"])
@@ -58,20 +102,8 @@ class S23(Scenario):
         budget = int(p["per_round_s3_budget"])
         result.observations["scale"] = {
             "idle_minutes": idle_minutes, "minute_s": minute_s,
-            "per_round_s3_budget": budget, "servers": 2,
+            "per_round_s3_budget": budget, "servers": len(cl.nodes()),
         }
-        result.add(Verdict("scale used",
-                           "spec asks for 1-, 2-, and 10-server variants over a 15-minute idle window",
-                           f"2-server compose, {idle_minutes} idle 'minutes' x {minute_s}s "
-                           f"(scale={ctx.scale})", "pass",
-                           "dev/ci shorten the idle window; only --scale full approaches 15 minutes"))
-        # The 1-server and 10-server variants are not buildable on this fixed 2-server compose.
-        result.add(Verdict.inconclusive(
-            "1-server idle baseline", "1-server config measured",
-            "compose fixed at 2 servers"))
-        result.add(Verdict.inconclusive(
-            "10-server idle baseline", "10-server config measured",
-            "compose fixed at 2 servers"))
 
         # The pool is empty: NO user workload. Sanity-check there are no leftover CA tables, so we
         # really are measuring idle overhead and not the cost of stale data.

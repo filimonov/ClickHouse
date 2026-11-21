@@ -101,22 +101,21 @@ def forced_gc_to_fixpoint(cluster, unreachable_fn, *, max_seconds: float = 240.0
             return n, history
 
 
-def drain_condemned_pipeline(cluster, unreachable_fn, *, sync_period_s: float = 11.0,
+def drain_condemned_pipeline(cluster, unreachable_fn, *, sync_period_s: float = 3.0,
                              max_seconds: float = 150.0, disk: str = "ca", round_timeout: float = 600.0,
                              log_fn=print, sleep_fn=time.sleep, monotonic_fn=time.monotonic):
-    """Drive the TWO-PHASE graduation pipeline to completion and return (residual, history).
+    """Drive the intent deletion pipeline to completion and return (residual, history).
 
-    After `forced_gc_to_fixpoint`, a bounded residual of CONDEMNED content (fsck `pending-gc`) can
-    remain: a condemned blob graduates only once the ack floor advances past its condemn round, and the
-    floor (`min` over live writers' `observed_gc_round`) advances when each server runs its PERIODIC
-    retired-view sync (`mount_renew_period`, ~10 s) — NOT by driving GC rounds alone. `forced_gc_to_fixpoint`
-    polls faster than that period, so it reports the residual as "settled" while the floor simply has
-    not advanced yet. Here we drive ONE single-leader round then WAIT ~`sync_period_s` so both servers'
-    syncs bump `observed_gc_round`, letting graduation + the delete_pending → delete step complete;
-    repeat until the residual reaches 0 or `max_seconds`. A HEALTHY condemned residual drains within a
-    few periods (~45-55 s observed); a residual that does NOT drain within the budget is a real finding
-    (stuck ack floor, or an uncondemned orphan that GC never tracks) — the caller's `assert_no_leftovers`
-    classifies the surviving residual by fsck class (unreachable/dangling ⇒ leak ⇒ FAIL)."""
+    `GC` reclaims a blob over three rounds: round n creates its deletion intent, round n+1 deletes the
+    body, round n+2 deletes the intent. `forced_gc_to_fixpoint` can report a bounded residual of
+    condemned content (fsck `pending-gc`) as "settled" because it polls faster than rounds complete.
+    Here we drive ONE single-leader round, pause `sync_period_s` (pacing only: nothing gates a round on
+    a clock), and repeat until the residual reaches 0 or `max_seconds`. A healthy residual drains in
+    about three rounds; a residual that does NOT drain within the budget is a real finding — the
+    caller's `assert_no_leftovers` classifies the surviving residual by fsck class (unreachable/dangling
+    => leak => FAIL).
+
+    This counts bodies (`fsck.unreachable`), not intents: use `drain_intents` for the last round."""
     history = []
     node = cluster.nodes()[0]
     deadline = monotonic_fn() + max_seconds
@@ -141,6 +140,40 @@ def drain_condemned_pipeline(cluster, unreachable_fn, *, sync_period_s: float = 
                 log_fn(f"drain_condemned_pipeline: round on {node.container} raised: {e}")
         except Exception as e:
             log_fn(f"drain_condemned_pipeline: round transport error: {e}")
-        # Wait a retired-view-sync period so both servers advance observed_gc_round (raises the ack
-        # floor); driving rounds back-to-back without this wait does NOT graduate anything.
         sleep_fn(sync_period_s)
+
+
+def drain_intents(cluster, intent_listed_fn, *, max_seconds: float = 90.0, stable: int = 2,
+                  disk: str = "ca", round_timeout: float = 600.0, log_fn=print,
+                  sleep_fn=time.sleep, monotonic_fn=time.monotonic, pause_s: float = 3.0):
+    """Drive rounds until the number of keys under `blob-intents/` (`fsck.intents_listed`; `intent_listed` in older builds) is 0 or has not
+    changed for `stable` consecutive rounds. Returns (last_count_or_None, history).
+
+    The body count reaches 0 one round before the last intent is deleted (round n+2), so a checkpoint
+    that stops at `unreachable == 0` can still see intents. A count that stops above 0 is NOT a failure
+    by itself: a blob that was referenced again after `GC` condemned it keeps its intent until it reaches
+    zero references once more (docs `architecture/garbage-collection.md#orphan-intents`). The caller
+    records the count; it decides nothing here."""
+    history = []
+    node = cluster.nodes()[0]
+    deadline = monotonic_fn() + max_seconds
+    while True:
+        try:
+            n = int(intent_listed_fn())
+        except Exception as e:
+            log_fn(f"drain_intents: intent probe failed: {e}")
+            n = None
+        if n is not None:
+            history.append(n)
+            if n == 0 or (len(history) > stable and len(set(history[-(stable + 1):])) == 1):
+                return n, history
+        if monotonic_fn() >= deadline:
+            return (n if n is not None else (history[-1] if history else None)), history
+        try:
+            gc_round(node, disk, round_timeout)
+        except QueryError as e:
+            if not e.is_aborted:
+                log_fn(f"drain_intents: round on {node.container} raised: {e}")
+        except Exception as e:
+            log_fn(f"drain_intents: round transport error: {e}")
+        sleep_fn(pause_s)

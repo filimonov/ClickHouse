@@ -20,9 +20,9 @@ an identical second insert on both plain S3 and CAS. The CAS pair therefore sepa
 publication from duplicate adoption while the plain pair controls for ordinary second-run warmth.
 
 The report records wall and query duration, per-leg peak resident memory, exact logical blob-body
-and metadata request classes, physical S3 operations, and per-part/per-GiB request rates. Protocol
+and deletion-intent request classes, physical S3 operations, and per-part/per-GiB request rates. Protocol
 verdicts fail if a fresh blob does not issue exactly one `HEAD`, if a common-path fresh blob reads
-metadata before publication, or if an identical duplicate republishes its body.
+an intent before publication, or if an identical duplicate republishes its body.
 
 ISOLATION: this card runs on the isolated single-node `ca-s41` compose project (compose_variant
 "s41"). On a host where the shared `ca-soak` soak stack is running, it MUST be driven with
@@ -176,12 +176,12 @@ CA_EVENT_KEYS = [
     "CASBlobUploadFanoutTasks",
     "CASBlobDelete",
     "CASBlobList",
-    "CASMetaPut",
-    "CASMetaCompareSwap",
-    "CASMetaCreateClean",
-    "CASMetaAdoptBackfill",
-    "CASMetaAbsentRepublish",
-    "CASMetaResurrectClean",
+    "CASBlobIntentGet",
+    "CASBlobIntentPut",
+    "CASBlobIntentDelete",
+    "CASBlobIntentList",
+    "CASBlobReuseIntentPresent",
+    "CASBlobReuseTokenRejected",
     "CASRootGet",
     "CASRootHead",
     "CASRootCompareSwap",
@@ -360,14 +360,13 @@ def _measurement_envelope(*, node, metrics_path, cluster, phase_fn, log_fn):
 def _write_path_metrics(leg: dict) -> dict:
     """Return non-overlapping logical request classes and raw physical S3 counters for one insert.
 
-    `CASBlobPut` classifies every successful PUT under `blobs/`, including the adjacent `.meta`
-    object. `CASMetaPut` is the metadata-create choke point, so their difference is the number of
-    blob-body publications for these successful, contention-free measurement inserts. There is no
-    query-attributed ProfileEvent that splits those successful logical publications by streaming
-    versus server-side-copy transport. `S3CopyObject` counts physical attempts, including retries,
-    and is therefore reported separately without being subtracted from the logical total.
-    `CASBlobGet` is a metadata GET here because S41 never reads blob bodies during an INSERT and local
-    scratch supplies publication bytes.
+    Generation 4 writes no per-blob marker, so `CASBlobPut` counts blob-body publications only. A blob
+    reuse costs one `HEAD` of the body and, when the body is present, one `GET` of its deletion intent
+    (`CASBlobIntentGet`, counted apart from `CASBlobGet`): an absent intent adopts the body
+    (`CASBlobBodyPutAvoided`), a present one republishes it (`CASBlobReuseIntentPresent`). Writers never
+    create or delete intents, so the intent PUT, DELETE and LIST counters must stay 0 on an insert.
+    `S3CopyObject` counts physical attempts, including retries, and is reported separately.
+    `CASBlobGet` is 0 here because S41 never reads blob bodies during an INSERT.
     """
     qlog = leg.get("query_log") or {}
     pe = qlog.get("profile_events") or {}
@@ -382,17 +381,16 @@ def _write_path_metrics(leg: dict) -> dict:
 
     head_hits = event("CASBlobHead")
     head_misses = event("CASBlobHeadMiss")
-    metadata_creates = event("CASMetaPut")
-    body_publications = max(0, event("CASBlobPut") - metadata_creates)
+    body_publications = event("CASBlobPut")
     body_avoided = event("CASBlobBodyPutAvoided")
     fanout_tasks = event("CASBlobUploadFanoutTasks")
-    metadata_gets = event("CASBlobGet")
-    metadata_compare_swaps = event("CASMetaCompareSwap")
-    metadata_clean_creates = event("CASMetaCreateClean")
-    # A present body with an absent marker: 26.6.4 adopts it with a backfill, later builds republish it.
-    # The key keeps its old name for report consumers.
-    metadata_adopt_backfills = event("CASMetaAdoptBackfill") + event("CASMetaAbsentRepublish")
-    metadata_resurrect_cleans = event("CASMetaResurrectClean")
+    blob_gets = event("CASBlobGet")
+    intent_gets = event("CASBlobIntentGet")
+    intent_puts = event("CASBlobIntentPut")
+    intent_deletes = event("CASBlobIntentDelete")
+    intent_lists = event("CASBlobIntentList")
+    intent_present = event("CASBlobReuseIntentPresent")
+    token_rejected = event("CASBlobReuseTokenRejected")
 
     logical_counts = {
         "head_hits": head_hits,
@@ -400,12 +398,13 @@ def _write_path_metrics(leg: dict) -> dict:
         "head_total": head_hits + head_misses,
         "body_publications": body_publications,
         "body_publications_avoided": body_avoided,
-        "metadata_gets": metadata_gets,
-        "metadata_create_attempts": metadata_creates,
-        "metadata_compare_swap_attempts": metadata_compare_swaps,
-        "metadata_clean_creates": metadata_clean_creates,
-        "metadata_adopt_backfills": metadata_adopt_backfills,
-        "metadata_resurrect_cleans": metadata_resurrect_cleans,
+        "blob_gets": blob_gets,
+        "intent_gets": intent_gets,
+        "intent_puts": intent_puts,
+        "intent_deletes": intent_deletes,
+        "intent_lists": intent_lists,
+        "reuse_intent_present": intent_present,
+        "reuse_token_rejected": token_rejected,
     }
     per_part = {name: _rate(value, n_parts, 3) for name, value in logical_counts.items()}
     per_input_gib = {name: _rate(value, written_gib, 3) for name, value in logical_counts.items()}
@@ -427,13 +426,14 @@ def _write_path_metrics(leg: dict) -> dict:
             "logical_server_side_copy_publications": None,
             "physical_s3_copy_attempts": event("S3CopyObject"),
         },
-        "metadata": {
-            "gets": metadata_gets,
-            "create_attempts": metadata_creates,
-            "compare_swap_attempts": metadata_compare_swaps,
-            "clean_creates": metadata_clean_creates,
-            "adopt_backfills": metadata_adopt_backfills,
-            "resurrect_cleans": metadata_resurrect_cleans,
+        "intent": {
+            "gets": intent_gets,
+            "puts": intent_puts,
+            "deletes": intent_deletes,
+            "lists": intent_lists,
+            "present": intent_present,
+            "token_rejected": token_rejected,
+            "blob_gets": blob_gets,
         },
         "logical_counts": logical_counts,
         "per_part": per_part,
@@ -444,7 +444,7 @@ def _write_path_metrics(leg: dict) -> dict:
         "request_ratios": {
             "heads_per_fanout_task": _rate(logical_counts["head_total"], fanout_tasks, 6),
             "body_publications_per_fanout_task": _rate(body_publications, fanout_tasks, 6),
-            "metadata_gets_per_fanout_task": _rate(metadata_gets, fanout_tasks, 6),
+            "intent_gets_per_fanout_task": _rate(intent_gets, fanout_tasks, 6),
             "body_avoided_fraction": _rate(body_avoided, fanout_tasks, 6),
         },
         "physical_s3": {name: event(name) for name in S3_EVENT_KEYS},
@@ -452,17 +452,30 @@ def _write_path_metrics(leg: dict) -> dict:
 
 
 def _protocol_errors(metrics: dict, path_kind: str) -> list[str]:
-    """Check the request shape that distinguishes fresh publication from duplicate adoption."""
+    """Check the request shape that distinguishes fresh publication from duplicate adoption.
+
+    Per blob: one `HEAD`; a miss publishes the body and reads nothing else; a hit reads the body's
+    deletion intent once, and an absent intent adopts the body without a PUT. Writers never touch
+    intents otherwise, and no blob body is read."""
     tasks = metrics["fanout_tasks"]
     heads = metrics["blob_head"]
     body = metrics["blob_body"]
-    metadata = metrics["metadata"]
+    intent = metrics["intent"]
     errors = []
 
     if tasks <= 0:
         return ["no CAS blob fan-out tasks were observed"]
     if heads["total"] != tasks:
         errors.append(f"observed {heads['total']} blob HEAD requests for {tasks} fan-out tasks")
+    for name in ("puts", "deletes", "lists"):
+        if intent[name] != 0:
+            errors.append(f"an insert issued {intent[name]} intent {name[:-1].upper()} request(s); only GC does")
+    if intent["blob_gets"] != 0:
+        errors.append(f"an insert issued {intent['blob_gets']} blob GET request(s); none expected")
+    if intent["present"] != 0:
+        errors.append(f"{intent['present']} blob(s) were republished because a deletion intent existed")
+    if intent["token_rejected"] != 0:
+        errors.append(f"{intent['token_rejected']} blob(s) had a token that names no incarnation")
 
     if path_kind == "fresh":
         if heads["hits"] != 0 or heads["misses"] != tasks:
@@ -471,44 +484,28 @@ def _protocol_errors(metrics: dict, path_kind: str) -> list[str]:
             errors.append(f"fresh path published {body['publications']} blob body/bodies for {tasks} tasks")
         if body["avoided"] != 0:
             errors.append(f"fresh path avoided {body['avoided']} body publication(s)")
-        if metadata["gets"] != 0:
-            errors.append(f"fresh path issued {metadata['gets']} metadata GET request(s)")
-        if metadata["create_attempts"] != tasks:
-            errors.append(f"fresh path recorded {metadata['create_attempts']} metadata create attempt(s) for {tasks} task(s)")
-        if metadata["clean_creates"] != tasks:
-            errors.append(f"fresh path recorded {metadata['clean_creates']} clean metadata create(s) for {tasks} tasks")
-        if metadata["compare_swap_attempts"] != 0:
-            errors.append(f"fresh path unexpectedly issued {metadata['compare_swap_attempts']} metadata compare-and-swap attempt(s)")
-        if metadata["adopt_backfills"] != 0:
-            errors.append(f"fresh path unexpectedly recorded {metadata['adopt_backfills']} absent-marker adopt or republish reason(s)")
-        if metadata["resurrect_cleans"] != 0:
-            errors.append(f"fresh path unexpectedly recorded {metadata['resurrect_cleans']} metadata resurrect-clean reason(s)")
+        if intent["gets"] != 0:
+            errors.append(f"fresh path issued {intent['gets']} intent GET request(s); a HEAD miss needs none")
     elif path_kind == "cold_mixed":
         if heads["misses"] <= 0:
             errors.append("cold mixed path did not contain any genuinely fresh blob")
         if body["publications"] != heads["misses"]:
             errors.append(f"cold mixed path published {body['publications']} bodies for {heads['misses']} HEAD misses")
-        if metadata["clean_creates"] != heads["misses"] or metadata["create_attempts"] != heads["misses"]:
-            errors.append(f"cold mixed path metadata creates did not match fresh blobs ({metadata['clean_creates']} reasons/{metadata['create_attempts']} attempts for {heads['misses']} misses)")
         if body["avoided"] != heads["hits"]:
             errors.append(f"cold mixed path avoided {body['avoided']} bodies for {heads['hits']} HEAD hits")
-        if metadata["gets"] != heads["hits"]:
-            errors.append(f"cold mixed path issued {metadata['gets']} metadata GETs for {heads['hits']} adopted blobs")
+        if intent["gets"] != heads["hits"]:
+            errors.append(f"cold mixed path issued {intent['gets']} intent GETs for {heads['hits']} adopted blobs")
         if body["publications"] + body["avoided"] != tasks:
             errors.append(f"cold mixed path resolved {body['publications'] + body['avoided']} bodies for {tasks} tasks")
-        if metadata["compare_swap_attempts"] != 0:
-            errors.append(f"cold mixed path unexpectedly issued {metadata['compare_swap_attempts']} metadata compare-and-swaps")
     elif path_kind == "duplicate_adopt":
         if heads["hits"] != tasks or heads["misses"] != 0:
             errors.append(f"duplicate path had {heads['hits']} HEAD hit(s) and {heads['misses']} miss(es) for {tasks} tasks")
-        if metadata["gets"] != tasks:
-            errors.append(f"duplicate path issued {metadata['gets']} metadata GET request(s) for {tasks} tasks")
+        if intent["gets"] != tasks:
+            errors.append(f"duplicate path issued {intent['gets']} intent GET request(s) for {tasks} tasks")
         if body["publications"] != 0:
             errors.append(f"duplicate path republished {body['publications']} blob body/bodies")
         if body["avoided"] != tasks:
             errors.append(f"duplicate path avoided {body['avoided']} body publication(s) for {tasks} tasks")
-        if metadata["create_attempts"] != 0 or metadata["compare_swap_attempts"] != 0:
-            errors.append(f"duplicate path mutated metadata ({metadata['create_attempts']} create, {metadata['compare_swap_attempts']} compare-and-swap)")
     else:
         raise ValueError(f"unknown CAS path kind: {path_kind}")
 
@@ -1038,20 +1035,19 @@ class S41(Scenario):
             protocol_checks[name] = {"accepted": not errors, "errors": errors}
             head = metrics["blob_head"]
             body = metrics["blob_body"]
-            meta = metrics["metadata"]
+            intent = metrics["intent"]
             transport = metrics["publication_transport"]
             observed = (
                 f"HEAD={head['total']} ({head['hits']} hit/{head['misses']} miss), "
                 f"body published/avoided={body['publications']}/{body['avoided']}, "
                 f"logical transport split=unavailable, physical S3 CopyObject attempts="
                 f"{transport['physical_s3_copy_attempts']}, "
-                f"metadata GET/create/CAS={meta['gets']}/{meta['create_attempts']}/"
-                f"{meta['compare_swap_attempts']}"
+                f"intent GET/PUT/DELETE={intent['gets']}/{intent['puts']}/{intent['deletes']}"
             )
             result.add(
                 Verdict.check(
                     f"{name}: blob publication protocol",
-                    "one HEAD per blob; fresh has body publication and no metadata GET; duplicate adopts",
+                    "one HEAD per blob; fresh has body publication and no intent GET; duplicate reads one intent per blob and adopts",
                     observed,
                     not errors,
                     "; ".join(errors),
