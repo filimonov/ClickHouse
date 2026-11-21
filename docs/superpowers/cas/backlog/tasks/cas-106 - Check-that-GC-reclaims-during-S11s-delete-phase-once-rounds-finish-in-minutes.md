@@ -4,7 +4,7 @@ title: Check that GC reclaims during S11's delete phase once rounds finish in mi
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gc'
   - 'area:soak'
@@ -13,6 +13,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-29
@@ -52,3 +55,13 @@ Provenance: BACKLOG/performance.md#scale-findings [S11 capacity]. Verified 2026-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'S11 capacity')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Blocked by its own precondition: spec stages B and C are not shipped (global ref LIST in place, CasGc.h:1010; no cas_gc_round_deadline_sec in src), so the measurement cannot run yet. Changes: none. Links: depends on CAS-29 (already stated). Would settle it: an S11 full-scale run on a build with stages B and C.
+---
+<!-- COMMENTS:END -->

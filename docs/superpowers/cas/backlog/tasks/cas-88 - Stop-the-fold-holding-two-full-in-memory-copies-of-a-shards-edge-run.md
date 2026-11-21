@@ -4,7 +4,7 @@ title: Stop the fold holding two full in-memory copies of a shard's edge run
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -13,6 +13,9 @@ labels:
   - 'origin:issue'
   - 'origin:canary'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-29.1
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-035')
 
 2031-triage CAS-035: label added; LIST half is CAS-29.1.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc/CasBlobInDegree.cpp:480 WriteBufferFromOwnString out and :977 `const String run_bytes = out.str();` then checksum and putDeterministicArtifact (:981-983): the shard run is still built in a string buffer and copied. Changes: none. Links: depends on CAS-29.1 (already stated). Pointers stale: CasBlobInDegree.cpp:358/398/688 moved to :480/:977. Would settle it: not confirmed that WriteBufferFromOwnString::str() copies in this tree (it does in upstream); no memory measurement.
+---
+<!-- COMMENTS:END -->

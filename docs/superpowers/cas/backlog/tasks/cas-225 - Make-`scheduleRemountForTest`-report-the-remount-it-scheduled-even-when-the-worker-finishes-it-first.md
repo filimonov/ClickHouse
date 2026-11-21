@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'area:mounts'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -60,3 +65,13 @@ PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c64cf779b15, not yet merged)
 
 2026-11-07 audit: reopened. scheduleRemountForTest is still in src on antalya-26.6 (ae6e7493aba) and antalya-26.8 (92d84fc434c); the removal branch fix/antalya-26.6/cas-remove-remount-machine is not on the Altinity remote.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasMountRuntime.cpp:1199-1204: scheduleRemountForTest still calls scheduleRemount, then re-takes driver_mutex and returns remount_requested_generation > remount_handled_generation; also still exposed at CasPool.h:886.. Changes: label quick-win. Pointers stale: CasMountRuntime.cpp:1080-1085 is now :1199-1204..
+---
+<!-- COMMENTS:END -->

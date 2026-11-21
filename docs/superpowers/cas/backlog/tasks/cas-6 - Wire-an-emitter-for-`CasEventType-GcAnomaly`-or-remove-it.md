@@ -4,7 +4,7 @@ title: 'Wire an emitter for `CasEventType::GcAnomaly` or remove it'
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -12,6 +12,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -53,3 +59,13 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-anomaly-never-emitted (d
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (967849c785b, by 'gc-anomaly-never-emitted')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 grep GcAnomaly in src: only CasEvent.h:30 and CasEvent.cpp:49, no emitter. Changes: impact:operability; label quick-win. Pointers stale: CasEvent.h:29 is :30, CasEvent.cpp:46 is :49.
+---
+<!-- COMMENTS:END -->

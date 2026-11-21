@@ -6,15 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ci'
-  - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
   - 'theme:parity'
   - 'theme:ci-stabilization'
+  - 'complexity:small'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -34,6 +38,8 @@ The GC backlog runaway on the msan/tsan CAS lanes (#2298) was diagnosed from a l
 Add `cas_gc_log` (and consider `cas_log` within the row limit) on CAS lanes only.
 
 Provenance: BACKLOG/gc.md#janitor-page-hardcoded ask 5. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (no cas_gc_log in the list on either).
+
+Update 2026-11-21: The dump of cas_gc_log and cas_log landed in 9fddee6d03b (ci/jobs/scripts/clickhouse_proc.py:1374, merged via 0aa837e942e). Remaining scope: a shard killed by the job time limit, and a green run, upload no dump, so those runs still have no GC history.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -61,3 +67,13 @@ Identifier trace: the earliest docs mention of `query_log` is 2026-06-05 (2c762c
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `9fddee6d03b`. Open: a shard killed by the job time limit uploads no dump.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: 9fddee6d03b is an ancestor of the checked branch; ci/jobs/scripts/clickhouse_proc.py:1374 OPTIONAL_TABLES = [cas_gc_log, cas_log]; task notes 2026-11-17 name the remaining gap. Changes: size trivial -> small (S): remaining gap is the dump on time-limit kill; one script, one CI check; description: Update paragraph appended. Size: S. Pointers stale: TABLES list is no longer at clickhouse_proc.py:1260-1272; optional CAS tables at :1374.
+---
+<!-- COMMENTS:END -->

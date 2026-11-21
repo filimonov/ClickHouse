@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 03:02'
-updated_date: '2026-11-13 09:29'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'origin:review'
   - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: task
 ordinal: 581000
 ---
 
@@ -37,3 +42,13 @@ With all five round budgets at 0 one round processes each phase's whole eligible
 
 2026-11-13: measurement report docs/superpowers/reports/2026-11-12-cas-improvements-wave1-measurements.md: prediction M-4 (reclaim backlog 0 at the end of a 120 s idle phase) failed on base and head alike (last idle pending_reclaim: base churn 152, head churn 112, base no-churn 86, head no-churn 144). pending_reclaim equals condemned minus redeleted of system.cas_gc_log; entries are redeleted two rounds after they are condemned and rounds 47 to 49 still condemn during idle. Not a regression of the head. To confirm: extend the idle phase until two consecutive rounds condemn 0, then read pending_reclaim; find what the idle-phase condemnations are (suspect: old parts after merges). Also: the base had 4 aborted rounds (NETWORK_ERROR ref-catalog erase at the 90 s window) in the churn run, the head 0; which head change avoids them was not isolated.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no report under docs/superpowers/reports mentions a 1M-backlog or 128 MiB outcome-log measurement (grep empty); no backlog card in utils/cas-yardstick/yardstick/cards. Changes: type unset -> task: a stand measurement run. Links: needs the backlog card of CAS-321.8 for the 1M backlog. Would settle it: a measurement report; may exist outside docs/superpowers/reports (e.g. under tmp/) which this check did not search.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
   - 'risk:medium'
   - 'touches:protocol'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-69
 references:
@@ -56,3 +59,13 @@ First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 3')
 
 2026-10-08: deferred by the owner with CAS-343. The transport wall-clock deadline (series item 17b) is not being done now; `cas_request_deadline_ms` does not exist.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Backend/CasRequests.h has no clamp deadline; task note (2026-10-08) records the owner deferral; dependency CAS-69 not checked. Changes: none. Links: deferred by the owner 2026-10-08 together with CAS-343; status looks stale since 2026-10-08 is deliberate (deferral). Would settle it: status of CAS-69 (declared dependency).
+---
+<!-- COMMENTS:END -->

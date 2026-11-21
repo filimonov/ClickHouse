@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'needs:repro'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-low'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2300'
@@ -50,3 +55,13 @@ Provenance: BACKLOG/formats-and-storage.md#cas-r2-r3-numcolumns-repro; the suite
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (f7e7a540506, by 'cas-r2-r3-numcolumns-repro')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (low). Evidence: Task text only: the suite is in the Altinity regression repository, outside the checked trees; the task says the only surviving trace is the error name and suite name.. Changes: impact:operability. Would settle it: A run of the statement pair on plain, CAS and cache-over-CAS policies, or a recent cas_s3_cache_atomic_insert CI report showing the error again..
+---
+<!-- COMMENTS:END -->

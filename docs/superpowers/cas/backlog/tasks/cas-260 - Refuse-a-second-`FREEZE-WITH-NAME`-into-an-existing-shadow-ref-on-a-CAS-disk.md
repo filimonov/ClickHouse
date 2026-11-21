@@ -4,13 +4,16 @@ title: Refuse a second `FREEZE WITH NAME` into an existing shadow ref on a CAS d
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-3
 dependencies: []
 references:
@@ -55,3 +58,13 @@ Provenance: BACKLOG/formats-and-storage.md#freeze-name-reuse-merges-shadow-ref (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (c459c34d897, by 'freeze-name-reuse-merges-shadow-ref')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: ContentAddressedMetadataStorage.cpp:2016-2027 isDirectoryEmpty still answers true for every part-shaped dir (part and projection dirs), the mechanism the task names; no FREEZE-twice test found. Changes: none. Pointers stale: CA/ContentAddressedMetadataStorage.cpp:1928-1947 now :2010-2029. Would settle it: a run of two FREEZE WITH NAME 'x' on a CAS disk showing the second one succeeds and merges entries (consequence not re-run).
+---
+<!-- COMMENTS:END -->

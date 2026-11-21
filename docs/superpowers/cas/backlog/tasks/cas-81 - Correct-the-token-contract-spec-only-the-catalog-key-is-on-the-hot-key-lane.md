@@ -4,7 +4,7 @@ title: 'Correct the token-contract spec: only the catalog key is on the hot-key 
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'area:ref-ledger'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md
@@ -49,3 +52,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `allocateWriterEpoch` is 2026-07-01 (51160686f4f); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: spec 2026-09-02-cas-backend-token-contract-design.md:634-635 still says 'A key several writers of one pool share is written through the hot-key lane ... never conflicts with itself'. Changes: none.
+---
+<!-- COMMENTS:END -->

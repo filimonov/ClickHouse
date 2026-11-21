@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -16,6 +16,9 @@ labels:
   - 'needs:decision'
   - 'origin:2031-triage'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -65,3 +68,13 @@ First recorded: 2026-08-21 (4268978c8f7, by 'fsck-meta-body-counters-unrendered'
 
 Closed for good by CAS-360.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: no meta_without_body anywhere under cas-pr1 src, docs or programs; counter removed in f18db8f4008 (blob intents / legacy markers); task notes say closed by CAS-360. Changes: none. Pointers stale: all cited line numbers and both counters are gone. Would settle it: AC #2 (test that fails if a counted field is not rendered): kFsckFields table at CasFsck.cpp:1843 exists but no gtest referencing it was found.
+---
+<!-- COMMENTS:END -->

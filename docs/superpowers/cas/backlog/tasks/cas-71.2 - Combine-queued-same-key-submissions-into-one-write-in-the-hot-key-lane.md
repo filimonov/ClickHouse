@@ -4,7 +4,7 @@ title: Combine queued same-key submissions into one write in the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:large'
@@ -12,6 +12,9 @@ labels:
   - 'touches:protocol'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-70.3
   - CAS-71.1
@@ -56,3 +59,13 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 1. Verified 2026-09
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 1')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Backend/CasHotKeys.cpp has no combining/batch/taken logic; gate CAS-70.3 and CAS-71.1 still To Do. Changes: none.
+---
+<!-- COMMENTS:END -->

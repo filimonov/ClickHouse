@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:testing'
   - 'area:write-path'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +60,13 @@ Provenance: BACKLOG/testing-and-ci.md [pool-hash-consistency]; verified 2026-09-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (5245fbc7a76, by 'pool-hash-consistency')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Disks/tests/gtest_cas_pluggable_hash.cpp:487-532: Sha256BuildWritesFullWidthDigestAndInlineEqualsBlob still computes the inline hash directly (:509) and stages entries by hand; CaContentWriteBuffer is used only in the Xxh3/CityHash local-mode tests (:263, :299), not for an inline-vs-blob sha256 comparison.. Changes: label quick-win. Pointers stale: test at :487, not :486; comment :481 not :483..
+---
+<!-- COMMENTS:END -->

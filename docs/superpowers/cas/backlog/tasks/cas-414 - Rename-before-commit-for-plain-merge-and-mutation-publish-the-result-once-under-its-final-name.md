@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 20:18'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -14,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies:
   - CAS-346
@@ -44,3 +48,13 @@ Decide whether to move the storage commit after `renameMergedTemporaryPart`/`ren
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: MergePlainMergeTreeTask.cpp:157-161 still calls getDataPartStorage().commitTransaction() before renameMergedTemporaryPart, so the extra Move remains; the decision is still unrecorded. Changes: none. Pointers stale: MergePlainMergeTreeTask.cpp:157-161 matches; mutation task lines not rechecked. Owner question: Reorder plain merge and mutation tasks to rename before the storage commit (-1 ref-log append each, two lines per task in upstream-shared files), or keep the upstream ordering?
+---
+<!-- COMMENTS:END -->

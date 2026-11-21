@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -15,6 +15,10 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:2031-triage'
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies: []
 references:
@@ -43,6 +47,8 @@ Before reusing the LIST path, confirm `max_keys` propagation into `S3ObjectStora
 1000-key page).
 
 Provenance: BACKLOG/gc.md#gc-defer-decision-list-cost and [gc-frontier-one-list]; verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6: global LIST still in place on both.
+
+Update 2026-11-21: CAS-487 (generation 3 cursors can be tombstones) and the 2026-10-12 owner note change the scope: the intake needs a `_ckpt` read plus a probe per life, not exactly K GETs (AC #1); re-plan against current code before starting.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -84,3 +90,13 @@ CAS-487 changes the intake probe: with generation 3 a cursor can be a tombstone,
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 67f518e7b8f: the intake now reads to the first absent key with a per-round time slice.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.h:1010 RoundInput listRefPrefix; CasGc.cpp:902 comment: the round's one full enumeration of cas/ns/stream/ is still in place. Changes: description: Update paragraph appended.
+---
+<!-- COMMENTS:END -->

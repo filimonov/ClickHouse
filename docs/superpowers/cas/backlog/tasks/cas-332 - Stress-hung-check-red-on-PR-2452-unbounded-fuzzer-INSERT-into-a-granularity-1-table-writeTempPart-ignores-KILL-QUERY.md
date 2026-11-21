@@ -6,13 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 20:54'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:27'
 labels:
   - ci
   - mergetree
   - 'theme:ci-stabilization'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'needs:decision'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
+type: research
 ordinal: 421000
 ---
 
@@ -36,3 +45,13 @@ Two possible actions, both generic (upstream code): (a) a cancellation check in 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Storages/MergeTree/MergeTreeDataWriter.cpp has no cancellation or kill check in the part writer path; upstream search 'writeTempPart cancel' returned no PR; the task has no later note on a re-run. Changes: risk set to low; confidence set to plausible; label needs:decision; type unset -> research: AC1 is to decide between an upstream issue and closing as noise. Would settle it: whether the stress hung-check recurred on any later PR (task says close as fuzzer noise after one clean re-run). Upstream: not-found. Owner question: File an upstream issue for the missing KILL QUERY check in writeTempPart, or close as fuzzer noise after a clean re-run?
+---
+<!-- COMMENTS:END -->

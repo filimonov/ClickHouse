@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 18:48'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -14,6 +14,9 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-1
 dependencies: []
 references:
@@ -63,3 +66,13 @@ Provenance: BACKLOG/gc.md#gc-rounds-in-minutes; verified 2026-09-26 against aefe
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30 OWNER DECISION on the request-cuts branch: nothing shipped from it. A0 (29.3) blocked by CAS-30; A2 (29.5) rejected by measurement; memo (29.12) parked, re-measure after CAS-83 (D); janitor batches (29.9) return only with the page-cap change (C). Draft backed up at github.com/filimonov/ClickHouse cas/gc-request-cuts @1edf28f2a9a. The measured GC cost that moved in practice came from CAS-83 (PR #2452): the part-removal flow published two extra manifests per removed part.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep cas_gc_round_deadline_sec in cas-pr1/src: no hits, so stage C is not shipped; epic AC1 open; children 29.1-29.12 carry the stages; marker_confirmed (A0) already exists in CasRecordStreamFormat.cpp:207 as a field. Changes: none.
+---
+<!-- COMMENTS:END -->

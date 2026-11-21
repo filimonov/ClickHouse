@@ -6,10 +6,13 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-05 13:00'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'origin:ci'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +61,13 @@ CI of PR 2806 @300a8c155c7 (2026-11-06): builds green. Reds: GroupingAggregatedT
 
 2026-11-07 audit: open PR https://github.com/Altinity/ClickHouse/pull/2806 (base antalya-26.6).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text: AC#1 (PR 2730 merged into antalya-26.8) ticked, AC#2/#3 open; status In Progress, last update 2026-11-06 (15 days, under the 30-day staleness line). Changes: none. Would settle it: whether a backport PR to antalya-26.6 exists or merged: that branch is not in the checked worktree.
+---
+<!-- COMMENTS:END -->

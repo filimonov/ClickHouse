@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-1
 dependencies: []
 references:
@@ -65,3 +70,13 @@ First recorded: 2026-09-26 (83949645ce7, by 'audit F28')
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `9614529f050`. Fields `carried` and `deadline_hit` wait for CAS-29.10.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGcScheduler.cpp:308 emits the finish LOG_INFO (9614529f050, merged as 0aa837e942e); the line has no carried or deadline_hit fields; task note says Deferred and NotALeader rounds still log nothing. Changes: impact:operability. Links: Remaining after PR 2831: one line for Deferred and NotALeader rounds (AC#1), fields carried and deadline_hit once CAS-29.10 lands..
+---
+<!-- COMMENTS:END -->

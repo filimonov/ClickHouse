@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'area:mounts'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:plausible'
   - 'risk:medium'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -62,3 +65,13 @@ Implemented 2026-11-12 on branch `fix/antalya-26.8/cas-late-request-audit-bundle
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `894ead31248`: after a ledger `Yes` the pool reads the mount slot once and answers `Unknown` unless it still holds a body this renewer wrote. Open: the model extension (AC1).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: 894ead31248 (PR 2831 slot read before Yes) is an ancestor of the checked branch; task note 2026-11-17 says only the model extension AC1 stays open. Changes: none. Would settle it: AC1 model extension (CaRelinkConfirmCore with slot holder and ETag) merged on this branch, and the AC2 gtest not individually located.
+---
+<!-- COMMENTS:END -->

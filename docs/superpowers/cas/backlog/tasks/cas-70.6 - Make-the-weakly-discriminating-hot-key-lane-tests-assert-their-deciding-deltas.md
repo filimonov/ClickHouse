@@ -4,13 +4,18 @@ title: Make the weakly discriminating hot-key lane tests assert their deciding d
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:testing'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Disks/tests/gtest_cas_hot_keys.cpp
@@ -33,6 +38,8 @@ Each has a deterministic sibling, so none is a false-pass risk today; each alone
 - The "nothing of ours landed" assertion: give the external writer a distinct `removal_started_round`.
 
 Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (deferred item 7). `ACachedStartPastTheDeadlineSendsNothing` was already closed by the final review. Verified 2026-09-26 against 59494ebf366.
+
+Update 2026-11-21: Bullet 2 (AConflictThatSettledAFault...) already asserts the Reissue delta (gtest_cas_requests.cpp:1936-1944); re-check the other bullets against current code before starting.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -55,3 +62,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `Reissue` is 2026-07-18 (4420b5a3498); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1 src/Disks/tests/gtest_cas_requests.cpp:1927-1946: AConflictThatSettledAFaultKeepsTheGrowingSchedule already asserts the CASRequestReissue delta (and ConflictPause delta 0) next to the sleep bound; ABaseReadThatFailsGivesUpAsReadModifyWriteDoes still at gtest_cas_hot_keys.cpp:285.. Changes: impact:operability; description: Update paragraph appended. Pointers stale: AConflictThatSettledAFault... and CleanConflictsBeforeAFault... live in gtest_cas_requests.cpp (:1927, :1992), not the files listed; gtest_cas_hot_keys.cpp:285 unchanged.. Would settle it: Not checked which of the other bullets (CleanConflictsBeforeAFault delta asserts, AFailedEnqueue, corruption 'break again' arm, GC-erase 'exactly', distinct removal_started_round) remain open..
+---
+<!-- COMMENTS:END -->

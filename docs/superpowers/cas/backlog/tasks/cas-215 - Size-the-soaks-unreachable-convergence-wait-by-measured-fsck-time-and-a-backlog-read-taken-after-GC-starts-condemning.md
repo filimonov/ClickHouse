@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:soak'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +62,13 @@ Provenance: BACKLOG/testing-and-ci.md#soak-harness-bugs-2026-09-04 bullet 1; ver
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b33dee93897, by 'soak-harness-bugs-2026-09-04')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: utils/ca-soak/soak/checker.py:279 poll_unreachable_to_stable still takes stable=3; :584-599 still reads `initial` once and scales fixpoint_timeout_s from it; soak/run.py:1176-1179 still returns 'skipped' for any fsck that could not run.. Changes: impact:operability; label quick-win. Pointers stale: checker.py :581-588 is now :584-599 region. worktree has no utils/ca-soak; checked master tree.. Would settle it: Did not read :575-600 to confirm `initial` is read before (not after) the first condemning round..
+---
+<!-- COMMENTS:END -->

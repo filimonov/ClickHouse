@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:soak'
   - 'area:tooling'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/soak/chaos.py
@@ -34,6 +39,8 @@ Default container names are duplicated in `soak/chaos.py` (`_DEFAULT_CONTAINER`,
 The `object_kind != 'none'` filter in `test_gcs_live` (`test.py:554`) has no stub-driven local coverage.
 
 Provenance: BACKLOG/gcs.md#environment 'Harness debt'. Verified 2026-09-26 against 8b87aa15d21.
+
+Update 2026-11-21: Remaining scope: drop observe.RUSTFS_CONTAINER (2 users left: s15_s18_shards_lifecycle.py:156, scripts/t8_s44_stuck_removing_discrimination.py:32), collapse the three duplicated default names (soak/chaos.py, soak/pool.py, observe.py) into one module, add the object_kind != 'none' stub test. DEFAULT_FSCK_CONTAINER is already gone.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,3 +65,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `observe.RUSTFS_CONTAINER` is 2026-09-02 (9f87032fde6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: utils/ca-soak: observe.py:39 RUSTFS_CONTAINER still defined; used at scenarios/cards/s15_s18_shards_lifecycle.py:156 and scripts/t8_s44_stuck_removing_discrimination.py:32; defaults still duplicated in soak/chaos.py:35, soak/pool.py:37, observe.py:49. DEFAULT_FSCK_CONTAINER no longer exists (only a comment in framework/checkpoint.py:23); s28 and s34 no longer use the constant.. Changes: impact:operability; description: Update paragraph appended. Pointers stale: s28_s33_corner.py:472 and s34_s35_d1_churn.py:218 no longer use observe.RUSTFS_CONTAINER; lifecycle.DEFAULT_FSCK_CONTAINER already removed. The worktree cas-pr1 has no utils/ca-soak; checked in the m….
+---
+<!-- COMMENTS:END -->

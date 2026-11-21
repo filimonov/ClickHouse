@@ -4,7 +4,7 @@ title: Route `_ckpt` and `gc/state` writes through the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -12,6 +12,10 @@ labels:
   - 'touches:protocol'
   - 'confidence:plausible'
   - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-176
 references:
@@ -36,6 +40,8 @@ Go/no-go for leaving `_ckpt` on `readModifyWrite`: 40·M requests per second per
 Owner decision F31 item 2 (`u11-refproto:#part-publish-zero-gets`) rewrites `publishCkpt` as an optimistic write from a cached etag; decide this subtask after that lands.
 
 Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 5. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
+
+Update 2026-11-21: Scope is `gc/state` only (`Gc::acquireOrRenewLease`, `CasGc.cpp:783`). The `_ckpt` half and AC #1 (`publishCkptContribution`) are obsolete: the function is removed. Title and AC#2 still name `_ckpt`; whoever picks the task up restates them.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -61,3 +67,13 @@ After CAS-487 merges the `_ckpt` half of this task is obsolete: `publishCkptCont
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds. This task keeps only `gc/state`.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: publishCkptContribution no longer exists under ContentAddressed/ (grep empty), so the _ckpt half and AC#1 have no subject (task note 2026-11-17, PR 2831); the gc/state half remains: Gc/CasGc.cpp:783 acquireOrRenewLease still used and the gc/state write still goes through readModifyWrite. Changes: description: Update paragraph appended. Pointers stale: CasRefCkpt.cpp:259 publishCkpt and CasGc.cpp:4741 moved; publishCkptContribution removed.
+---
+<!-- COMMENTS:END -->

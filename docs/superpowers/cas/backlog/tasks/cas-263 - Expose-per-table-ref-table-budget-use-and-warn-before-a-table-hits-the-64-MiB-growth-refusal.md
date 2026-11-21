@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'area:observability'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +63,13 @@ Provenance: BACKLOG/formats-and-storage.md#ref-table-64mib-admission-ceiling par
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2583e3427aa, by 'ref-table-64mib-admission-ceiling')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Pool/CasRefLedger.cpp:3628,3636 still refuse with LIMIT_EXCEEDED; no per-table budget metric or ProfileEvent matching ref-table budget in Common/CurrentMetrics.cpp or ProfileEvents.cpp. Changes: impact:operability. Pointers stale: CasRefLedger.cpp:3193 now :3628/:3636. Would settle it: whether a system table already exposes per-table ref budget use (not searched).
+---
+<!-- COMMENTS:END -->

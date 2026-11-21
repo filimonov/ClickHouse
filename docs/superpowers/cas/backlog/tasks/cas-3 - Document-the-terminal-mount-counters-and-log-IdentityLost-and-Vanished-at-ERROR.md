@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:observability'
   - 'area:docs'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -60,3 +66,13 @@ First recorded: 2026-08-22 (f07a9ed680d, by 'terminal-counters-undocumented-and-
 
 2026-10-08: 9a is ready locally (branch `lease/antalya-26.6/pr09a-squash`) with the `lifecycle`, `is_local` and `listing_error` columns. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 CasMountRuntime.cpp:1091-1092 and :1164-1165 still LOG_WARNING for IdentityLost and Vanished; grep of docs/en/antalya/cas/operations/monitoring.md finds no CASIdentityLost / CASDataRootVanished. Changes: impact:operability; label quick-win. Pointers stale: CasMountRuntime.cpp:971-972 and :1045-1046 are now :1091 and :1164.
+---
+<!-- COMMENTS:END -->

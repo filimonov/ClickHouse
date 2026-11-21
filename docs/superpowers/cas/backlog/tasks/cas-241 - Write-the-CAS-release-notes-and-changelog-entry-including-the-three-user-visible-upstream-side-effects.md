@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'area:upstream'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -59,3 +62,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#cas-changelog-entry-missing (from final-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (0f266066bef, by 'CHANGELOG-unknown-config-key-rejection')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 CHANGELOG.md has 0 hits for content-addressed/antalya; cas_log config exists at programs/server/config.xml:1229. Changes: none. Pointers stale: config.xml cas_log now at :1229 (task says :1201). Would settle it: whether the CAS PR description has a changelog entry and Antalya release notes exist outside the repo.
+---
+<!-- COMMENTS:END -->

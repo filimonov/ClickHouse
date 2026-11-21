@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'complexity:large'
@@ -16,6 +16,9 @@ labels:
   - 'confidence:speculative'
   - 'needs:decision'
   - 'needs:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - src/Storages/StorageReplicatedMergeTree.cpp
@@ -62,3 +65,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `StorageReplicatedMergeTree` is 2026-06-02 (019f825a59a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text only; the roadmap marks it maybe and the task records no measurement or design. Changes: none. Links: upstream: cloneReplica. Would settle it: AC1 bootstrap measurement with 10,000 parts. Owner question: Build bulk ref cloning for replica bootstrap, or drop it after the 10,000-part measurement?
+---
+<!-- COMMENTS:END -->

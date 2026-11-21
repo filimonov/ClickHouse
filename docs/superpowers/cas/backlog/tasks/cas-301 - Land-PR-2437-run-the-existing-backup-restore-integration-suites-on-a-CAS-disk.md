@@ -7,13 +7,16 @@ status: In Progress
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26 12:37'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:testing'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-3
 dependencies:
   - CAS-300
@@ -61,3 +64,13 @@ PR #2437 (draft), branch cas/update-existing-backup-tests, base antalya-26.6.
 
 2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2437 merged as 8b0499c4ace (antalya-26.6, 2026-10-14). Its CAS cases are in all five suites on antalya-26.6 and antalya-26.8 (ported by https://github.com/Altinity/ClickHouse/pull/2540). The 2026-11-04 'not landed' note is wrong. Open: AC #2, lane results not verified.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: task note 2026-11-07: PR 2437 merged as 8b0499c4ace and ported by PR 2540; CAS cases present in test_backup_restore_new, test_backup_restore_on_cluster, test_backup_restore_s3 (12, 17, 11 'cas' mentions in the worktree). Changes: none. Links: Title says 'Land PR #2437': that part is done.. Would settle it: AC#2: the only pytest.skip seen in test_backup_restore_new/test.py:544 is the sanitizer one, not a CAS skip naming a task; integration-lane results for the CAS cases are not recorded.
+---
+<!-- COMMENTS:END -->

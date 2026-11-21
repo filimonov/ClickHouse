@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:upstream'
   - 'area:replication'
@@ -15,6 +15,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:unclear'
+  - 'groom-20261121:certainty-low'
 milestone: m-5
 dependencies:
   - DRAFT-18
@@ -56,3 +60,13 @@ First recorded: 2026-08-22 (512e55b5bc7, by 'sync-replica-lazy-mv-proxy')
 
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): 26.8 replaced `unwrapTableProxy` by `castStorage<T>(table, DeferredTable::Load)` (the fork's SYSTEM-command uses were reverted to it). `trySyncReplica` (`InterpreterSystemQuery.cpp:2317`) still does a raw `dynamic_cast<StorageMaterializedView *>` before the `castStorage<StorageReplicatedMergeTree>` call, so the defect stands; the fix is `castStorage<StorageMaterializedView>(table, DeferredTable::Load)`.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: unclear (low). Evidence: InterpreterSystemQuery.cpp on cas-blob-intents (:2319, :3080) has dynamic_cast<StorageMaterializedView*> but no `unwrapTableProxy` call anywhere in the file, and upstream master's file has none either; the task says an unwrap exists for the replicated cast at :2166. No upstream PR found. Changes: none. Would settle it: whether unwrapTableProxy / StorageTableProxy exists in this branch's tree at all (task may describe the 26.6 lazy_load_tables code only). Upstream: unverified.
+---
+<!-- COMMENTS:END -->

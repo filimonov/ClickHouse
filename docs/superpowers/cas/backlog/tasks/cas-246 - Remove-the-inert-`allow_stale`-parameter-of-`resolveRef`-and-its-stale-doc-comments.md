@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'area:read-path'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#resolve-ref-allow-stale-inert-parameter 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2583e3427aa, by 'resolve-ref-allow-stale-inert-parameter')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -rn allow_stale over ContentAddressed/ still finds 9 hits; resolveRef at Pool/CasRefLedger.cpp:345 still has bool /*allow_stale*/. Changes: none. Pointers stale: CasRefLedger.cpp:285/:289 now :345-366.
+---
+<!-- COMMENTS:END -->

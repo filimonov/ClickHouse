@@ -4,13 +4,16 @@ title: Make local and shared POSIX filesystems a first-class CAS backend
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:backend'
   - 'complexity:epic'
   - 'risk:high'
   - 'touches:protocol'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-6
 dependencies: []
 documentation:
@@ -52,3 +55,13 @@ Provenance: BACKLOG/formats-and-storage.md [B26 / B135]; verified 2026-09-26 aga
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'B26 / B135')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedMetadataStorage.cpp:748 still selects Mode::EmulatedSingleProcess for local; no Mode::Posix anywhere under ContentAddressed/. Changes: none. Size: XL. Links: children: CAS-276.1, CAS-277, CAS-278, CAS-279 (emulated-mode defects retired or closed by Mode::Posix).
+---
+<!-- COMMENTS:END -->

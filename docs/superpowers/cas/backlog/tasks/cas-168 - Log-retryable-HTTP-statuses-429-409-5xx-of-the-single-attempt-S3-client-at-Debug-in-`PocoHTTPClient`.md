@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-05'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:observability'
   - 'area:backend'
@@ -18,6 +18,12 @@ labels:
   - 'origin:soak'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -64,3 +70,13 @@ Provenance: BACKLOG/gcs.md#single-attempt-client-status-error-log-site (incl. it
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-05 (6b752525a36, by 'single-attempt-client-status-error-log-site')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/IO/S3/PocoHTTPClient.cpp:741 still LOG_ERROR(log, "Response status: ...") and grep single_attempt in that file finds nothing. Changes: impact:operability. Pointers stale: PocoHTTPClient.cpp:740 is now :741; :222, :240 and Client.h:374 not rechecked. Would settle it: Upstream search for SingleAttemptRetryStrategy returned no PRs, but that class may exist only in this fork, so the search says nothing about upstream.. Upstream: unverified.
+---
+<!-- COMMENTS:END -->

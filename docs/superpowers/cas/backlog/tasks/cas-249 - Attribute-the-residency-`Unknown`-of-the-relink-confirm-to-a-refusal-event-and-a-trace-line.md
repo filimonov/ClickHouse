@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-06-07'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:replication'
   - 'area:observability'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -63,3 +68,13 @@ First recorded: 2026-06-07 (07a483c65e0, by 'open-items')
 
 Issue #2310 was closed on 2026-09-25 (rule-3 fix released in 26.6.4); this residency `Unknown` is its remaining open cause and is not covered by the closure.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no `CASRelinkConfirmRefusedTableNotResident` anywhere under src on the checked branch; only SlotMoved and SlotUnreadable refusal events seen in Pool/CasPool.cpp:50-51. Changes: label quick-win. Links: fit into CAS-170.3 event merge; related CAS-123. Pointers stale: CasRefLedger.cpp:447-460 / :470 line numbers not re-checked. Would settle it: direct read of confirmExactRef rule 2 for a non-event Unknown answer.
+---
+<!-- COMMENTS:END -->

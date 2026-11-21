@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -17,6 +17,11 @@ labels:
   - 'origin:review'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies:
   - CAS-1
@@ -66,3 +71,13 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-observability-field-list
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'gc-observability-field-list')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 docs/en/antalya/cas/operations/monitoring.md has sections system-tables, key-metrics, mount counters, gc-health and one CasGcStale alert (line 213), but no table mapping each roadmap alert to a surface or marking it uncovered (AC#1, AC#3 open). Changes: impact:operability. Links: CAS-289.2 consumes this mapping. Would settle it: Not checked which of the roadmap alerts (lease lost, renewal retries, round age, backlog growth, conditional-write unresolved rate, S3 5xx) already have a surface; that is the overlap check the task …. Owner question: Which GC alert signals does the operator set require beyond the CasGcStale example, and may uncovered ones get new columns or counters?
+---
+<!-- COMMENTS:END -->

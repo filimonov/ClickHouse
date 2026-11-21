@@ -4,7 +4,7 @@ title: Remove the `gc/state.retired_refs` references from two GC gtest comments
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:testing'
   - 'area:gc'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Disks/tests/gtest_cas_gc_ack_floor.cpp
@@ -48,3 +53,13 @@ Provenance: residue found while verifying BACKLOG/gc.md [retired-refs-map-stalen
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'retired-refs-map-staleness')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep retired_refs src (cas-pr1): gtest_cas_gc_round_defer.cpp:494 and gtest_cas_gc_ack_floor.cpp:82 still mention it; no other hit.. Changes: label quick-win. Pointers stale: gtest_cas_gc_ack_floor.cpp:88 is now :82. CasFsck.cpp:827 historical note no longer exists, so AC#1 now means zero hits..
+---
+<!-- COMMENTS:END -->

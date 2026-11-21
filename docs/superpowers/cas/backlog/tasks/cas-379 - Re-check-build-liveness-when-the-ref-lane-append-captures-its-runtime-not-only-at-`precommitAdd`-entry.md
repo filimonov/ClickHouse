@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
-updated_date: '2026-10-12 22:55'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -15,6 +15,9 @@ labels:
   - 'risk:high'
   - 'needs:repro'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -53,3 +56,13 @@ ordinal: 473000
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13 recheck on 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): EXISTS in two forms, leak only (no loss found). Cancel form: `precommitAdd` passes `requireAlive`, drop completes (sets `cancelled`, drains row, erases slot), `namespaceLife` births L2, the closure never re-reads `cancelled` → orphan Live row + stray precommit (promote fails on sticky `cancelled`). Remount form: `promote` checks the epoch at entry, a self-remount finishes during its manifest GET; `maybeSweepStalePrecommits` clears its flag before the sweep finishes, so concurrent callers skip it. Fix: re-check cancelled/epoch/life inside the closure; clear the sweep flag on completion.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: PartWriteTxn::requireAlive still called at entry of each op (CasPartWriteTxn.cpp:312,379,553); no re-check inside the ref-lane append closure found. Changes: none. Would settle it: direct read of the precommitAdd append closure for a cancelled/life re-check; reachability verdict (AC1) not recorded.
+---
+<!-- COMMENTS:END -->

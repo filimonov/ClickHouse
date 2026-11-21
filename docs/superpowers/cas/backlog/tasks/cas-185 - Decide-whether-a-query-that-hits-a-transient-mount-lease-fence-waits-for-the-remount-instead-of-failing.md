@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'area:write-path'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ First recorded: 2026-09-04 (bbe9972e7a1, by 'cas-transient-lease-fence-surfaces-
 
 2026-10-08: decision deferred by the owner.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no wait-for-remount path in ContentAddressed headers (only writesPausedSinceBootMs at CasMountRuntime.h:344); decision deferred 2026-10-08. Changes: none. Links: Overlaps CAS-405.2 (write pause as a wait); related txn-metadata-store-noexcept-class-fix. Would settle it: whether CAS-405.2 (write pause becomes a wait) decides this question for writes, leaving only waitForMutation. Owner question: Where, if anywhere, does a query wait for a remount: ref-lane append, waitForMutation, or a disk-level retry?
+---
+<!-- COMMENTS:END -->

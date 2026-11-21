@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ci'
   - 'area:testing'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -53,3 +58,13 @@ Provenance: BACKLOG/testing-and-ci.md [GATE-DEBRIS]; checked 2026-09-26 against 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-15 (eddc07464bb, by 'GATE-DEBRIS')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ls in /home/mfilimonov/workspace/ClickHouse/master root on 2026-11-21 shows 03371_qbit_read_write_test_*.clickhouse files and test_resize1 as fresh debris; producer still unnamed. Changes: impact:operability.
+---
+<!-- COMMENTS:END -->

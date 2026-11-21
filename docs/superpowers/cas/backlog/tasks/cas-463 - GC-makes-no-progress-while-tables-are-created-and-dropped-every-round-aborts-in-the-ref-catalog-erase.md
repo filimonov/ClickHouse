@@ -6,12 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 19:20'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
   - 'origin:soak'
   - 'confidence:solid'
+  - 'impact:availability'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - docs/superpowers/reports/2026-11-11-cas-defaults-review.md
@@ -82,3 +88,13 @@ Evidence: `tmp/prbundle/measure/runs/{R1b_before_churn,R2b_after_churn}/{gc_all_
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `e3d8bf5e1c5` pauses a conflicted erase before its resolution read and `fa02e75843e` reports erases of a pre-fold drain that throws. Open: `ddl16` rerun and the non-aborting fold (CAS-463.1).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasRefCatalog.cpp:459-503 deleteCompletedRemovingAtSnapshot (successor of completedRemovingDelete) still freezes one Retry::standard policy (op.freeze at ~:502) for the whole erase and resolution loop and gives up at the deadline; Gc/CatalogLifecycleReconciler.cpp:133 calls it per row. Changes: impact:availability; impact:cost. Links: child CAS-463.1 carries AC#2; overlaps CAS-321.3 (batch erase through the hot-key lane, same RC1 family) and CAS-71.4. Pointers stale: completedRemovingDelete is now deleteCompletedRemovingAtSnapshot.
+---
+<!-- COMMENTS:END -->

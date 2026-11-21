@@ -4,7 +4,7 @@ title: Expose the currently wedged ref-lane namespaces as a queryable system vie
 status: To Do
 assignee: []
 created_date: '2026-08-03'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'area:ref-ledger'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -52,3 +57,13 @@ Provenance: BACKLOG/operability-and-introspection.md #cas-inspect (queryable lis
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-03 (09151538323, by 'cas-inspect')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 StorageSystemContentAddressedMounts.cpp:55 and :228 expose only wedged_namespace_count; grep for cas_wedged / per-namespace wedge listing in src finds none; Pool::wedgedRefLaneCount (CasPool.cpp:2385) returns a size_t. Changes: impact:operability. Pointers stale: CasRefLedger.cpp:1958-1975 and :2358-2375 moved (count now reached via Pool::wedgedRefLaneCount at CasPool.cpp:2385); the table is now documented as system.cas_mounts.
+---
+<!-- COMMENTS:END -->

@@ -4,7 +4,7 @@ title: Ship a Grafana dashboard and alert rules for CAS operators
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:observability'
   - 'complexity:epic'
@@ -12,6 +12,11 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-0
 dependencies: []
 references:
@@ -58,3 +63,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `S3ReadRequestsErrors` is 2026-06-15 (6e28ecaaed5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 and master utils/ca-soak: find for grafana paths outside contrib finds no CAS dashboard JSON or alert rules (only unrelated docs); children CAS-289.1 to .6 carry the work. Changes: impact:operability. Links: epic over CAS-289.1, .2, .3, .4, .5, .6; consumes the CAS-4 mapping. Would settle it: Children's progress not checked; this epic closes only when 289.1-289.6 do..
+---
+<!-- COMMENTS:END -->

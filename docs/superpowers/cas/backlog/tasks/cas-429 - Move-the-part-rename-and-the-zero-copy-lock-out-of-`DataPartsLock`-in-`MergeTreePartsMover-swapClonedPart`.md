@@ -6,11 +6,23 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 11:34'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:moves'
   - 'area:upstream'
   - perf
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:solid'
+  - 'impact:cost'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
+priority: medium
+type: upstream
 ordinal: 532000
 ---
 
@@ -39,3 +51,13 @@ Shape: run `lockSharedData` and `renameClonedPart` before `lockParts`; under the
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: MergeTreePartsMover.cpp:337 data->lockParts() is taken before lockSharedData (:362) and renameClonedPart (:364): both still run under DataPartsLock. Changes: size unset -> medium (M): reorder plus a merged-away branch, failpoint integration test, upstream PR and two cherry-picks; risk set to high; confidence set to solid; impact:cost; type unset -> upstream: fix lives in upstream src/Storages/MergeTree/MergeTreePartsMover.cpp; priority unset -> medium: task has no priority; measured 170 s vs 87 s insert on tiered CAS (issue 2772), a perf cost with a workaround of not tiering. Size: M. Links: gh search for swapClonedPart found only unrelated PRs (125404 keeps caches on move is open and touches moves: check overlap before opening a PR). Upstream: not-found.
+---
+<!-- COMMENTS:END -->

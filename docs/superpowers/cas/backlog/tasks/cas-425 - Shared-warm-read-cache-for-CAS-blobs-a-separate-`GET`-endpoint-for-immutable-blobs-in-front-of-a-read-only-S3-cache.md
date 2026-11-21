@@ -6,15 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-28 08:34'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:read-path'
   - 'area:backend'
-  - 'complexity:small'
   - 'risk:low'
   - 'touches:settings'
   - 'confidence:plausible'
   - 'needs:spec'
   - 'needs:measurement'
+  - 'complexity:medium'
+  - 'impact:cost'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -62,3 +69,13 @@ A query on node A warms A's filesystem cache; the same data queried on node B hi
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no blob_read_endpoint anywhere in src/ on the checked branch; task is an unbuilt design needing spec and measurement. Changes: size small -> medium (M): new setting, backend routing, two-node integration test with a cache, and a measurement; the S label undersells it; impact:cost; label needs:decision. Size: M. Would settle it: repeat-read share of blob GET bytes across nodes on the stand (AC4), which decides whether to build. Owner question: The design adds a latency-only fallback (cache error retries the GET on the store) while the project rule is no fallback paths: confirm this one is allowed.
+---
+<!-- COMMENTS:END -->

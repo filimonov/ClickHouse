@@ -4,13 +4,17 @@ title: Move `eraseView` inside the `try` of the `noexcept` ref-drop helpers
 status: To Do
 assignee: []
 created_date: '2026-08-24'
-updated_date: '2026-10-22 06:09'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -28,6 +32,8 @@ ordinal: 237000
 These run on the rollback path under memory pressure, where allocation is most likely to fail.
 
 Provenance: BACKLOG/ref-protocol.md#noexcept-ref-drop-allocates (opus review NV-5). Verified 2026-09-26 against b1c34d03479 and 0dbbd797792. Same class: CAS-113, noexcept-destructor-allocation-nits.
+
+Update 2026-11-21: Remaining scope is `dropRefBestEffort` only (`PartFolderAccess.cpp:782-801`): `dropRefIfMatches` already runs `eraseView` under `SCOPE_EXIT_MEMORY_SAFE` via `dropRefExact`.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -50,3 +56,13 @@ First recorded: 2026-08-24 (45efac389eb, by 'noexcept-ref-drop-allocates')
 
 2026-10-22: CAS-408 folds `dropRefIfMatches` onto `dropRefExact`, which runs `eraseView` from `SCOPE_EXIT_MEMORY_SAFE`; `dropRefBestEffort` is untouched by it. Verified on `feature/cas-disk-transactions` @ 7a16106160c (`PartFolderAccess.cpp:836-840`).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Parts/PartFolderAccess.cpp:782-801 dropRefBestEffort is noexcept and still calls eraseView (:800) after its try; dropRefIfMatches (:803) now delegates to dropRefExact which runs eraseView in SCOPE_EXIT_MEMORY_SAFE (:832). Changes: description: Update paragraph appended. Pointers stale: line numbers moved; dropRefIfMatches no longer has the problem.
+---
+<!-- COMMENTS:END -->

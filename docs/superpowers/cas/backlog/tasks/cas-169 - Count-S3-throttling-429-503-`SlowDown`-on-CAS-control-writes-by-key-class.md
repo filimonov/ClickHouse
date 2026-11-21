@@ -4,7 +4,7 @@ title: Count S3 throttling (429 / 503 `SlowDown`) on CAS control writes by key c
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:observability'
   - 'area:backend'
@@ -13,6 +13,11 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -57,3 +62,13 @@ Provenance: BACKLOG/gcs.md#environment [cas-throttling-by-key-class]. Verified 2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-02 (9f87032fde6, by 'cas-throttling-by-key-class')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Common/ProfileEvents.cpp: grep for throttl / SlowDown among CAS events finds only CASRequestReissue (:1004), no per-key-class throttling counter. Changes: impact:operability.
+---
+<!-- COMMENTS:END -->

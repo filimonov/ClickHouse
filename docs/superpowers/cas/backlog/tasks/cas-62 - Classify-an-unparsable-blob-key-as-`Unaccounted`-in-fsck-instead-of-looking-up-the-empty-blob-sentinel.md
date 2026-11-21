@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +58,13 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-unparsable-blob-key-se
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (78f9dea6122, by 'fsck-unparsable-blob-key-sentinel-collides-with-the-empty-blob')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Tools/CasFsck.cpp:1471 still layout.parseBlobKey(bkey).value_or(BlobRef{}). Changes: none. Pointers stale: CasFsck.cpp:954 is now :1471.
+---
+<!-- COMMENTS:END -->

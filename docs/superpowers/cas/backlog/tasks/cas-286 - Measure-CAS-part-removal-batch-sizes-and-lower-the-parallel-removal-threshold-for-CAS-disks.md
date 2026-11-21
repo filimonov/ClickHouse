@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -18,6 +18,9 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-2
 dependencies: []
 references:
@@ -69,3 +72,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `MergeTreeData` is 2026-06-02 (c0a7046a3a7); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: concurrent_part_removal_threshold_for_remote_disk still defaults to 16 (MergeTreeSettings.cpp:1876) and is used at MergeTreeData.cpp:4434; no batch-size measurement is recorded. Changes: none. Links: related CAS-83. Pointers stale: MergeTreeSettings.cpp:1771 now :1876; MergeTreeData.cpp:3759-3761 now ~:4434. Would settle it: the parts_to_remove.size() distribution on a CAS node (AC1); also whether 26.8's Move rename (see CAS-83) changes the per-removal trips this task assumes.
+---
+<!-- COMMENTS:END -->

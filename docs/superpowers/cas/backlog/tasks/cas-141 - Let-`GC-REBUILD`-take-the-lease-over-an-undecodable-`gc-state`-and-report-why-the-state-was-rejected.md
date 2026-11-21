@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -14,6 +14,9 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -64,3 +67,13 @@ Provenance: BACKLOG/gc.md#rebuild-cannot-recover-undecodable-gc-state (opus revi
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-069')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.cpp rebuildBaseline (:4757) still decodes gc/state inside `catch (...) // NOLINT(bugprone-empty-catch)` (~:4796-4801); acquireOrRenewLease (:5434) decodes the same bytes at ~:5467 with CORRUPTED_DATA throws and no undecodable-state replacement path. Changes: none. Links: same entry path as CAS-44, CAS-142. Pointers stale: CasGc.cpp:4073-4080/:4206/:4761 moved (rebuildBaseline now :4757, acquireOrRenewLease :5434).
+---
+<!-- COMMENTS:END -->

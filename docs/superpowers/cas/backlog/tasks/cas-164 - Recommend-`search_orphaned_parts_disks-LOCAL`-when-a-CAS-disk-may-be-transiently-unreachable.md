@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-23'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'area:mounts'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 documentation:
@@ -51,3 +54,13 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#disk-lifecycle-rev8-closure (accepte
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-23 (87aeefac9bd, by 'disk-lifecycle-rev8-closure')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep search_orphaned_parts_disks over cas-pr1 docs/en returns nothing. Changes: none.
+---
+<!-- COMMENTS:END -->

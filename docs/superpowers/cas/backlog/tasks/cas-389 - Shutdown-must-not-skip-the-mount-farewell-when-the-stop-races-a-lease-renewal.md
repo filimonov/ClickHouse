@@ -4,9 +4,12 @@ title: Shutdown must not skip the mount farewell when the stop races a lease ren
 status: To Do
 assignee: []
 created_date: '2026-10-14 17:03'
-updated_date: '2026-10-14 20:37'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2567'
@@ -41,3 +44,13 @@ Cause 2: a stop after the renewal write was sent ends the renewer terminally and
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: commit 1a9f1fe5bcd (cause-1 fix, PR B) is not in the checked branch; stopBackgroundWorkers shows no wait for an in-flight renewal in the excerpt checked. Changes: none. Links: Task has no complexity/risk labels. Would settle it: read of stopBackgroundWorkers and the renewer postCommit path on this branch to confirm cause 2 still skips the farewell.
+---
+<!-- COMMENTS:END -->

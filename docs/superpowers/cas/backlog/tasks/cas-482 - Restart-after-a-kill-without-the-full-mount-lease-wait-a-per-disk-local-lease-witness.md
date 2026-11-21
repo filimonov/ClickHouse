@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 14:29'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:lease'
   - 'origin:ci'
   - 'complexity:epic'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: design
 ordinal: 587000
 ---
 
@@ -39,3 +45,13 @@ A server restarted after SIGKILL or a forced exit waits the full mount observati
 
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s. The rejection text "the 120 s default exists for the write window" needs the same correction.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/: no UncleanLocalDeath, lease witness or flock (grep empty); only the CLOCK_BOOTTIME anchor at Pool/CasServerRoot.h:648,:706. Changes: label needs:decision; type unset -> design: the task body asks for model extensions and owner decisions before code. Pointers stale: description assumes a 120 s lease (default now 40 s, feb86da1f4a); memo path tmp/prbundle/wave2/restart-memo.md not checked. Owner question: Settle window 16 s or 0; self-fence before the forced exit in programs/server/Server.cpp; on by default; accept the memory-clone residual; in-process self-remount?
+---
+<!-- COMMENTS:END -->

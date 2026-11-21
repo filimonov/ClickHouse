@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -55,3 +58,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor [C2-followups] (narrowed: the hook
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'C2-followups')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:203 deletePrefixWholesale (defined at :193) still calls op.list(prefix, cursor, kListPageLimit, ...) in its own loop; no forEachListedKey in it. Changes: none. Pointers stale: CasGc.cpp:3725-3750 (now ~:193-240), :1080 caller (now ~:1445), :84 page hook not rechecked.
+---
+<!-- COMMENTS:END -->

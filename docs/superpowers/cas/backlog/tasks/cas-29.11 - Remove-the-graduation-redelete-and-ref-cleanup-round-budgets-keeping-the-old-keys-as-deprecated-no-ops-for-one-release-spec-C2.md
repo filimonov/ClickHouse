@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -15,6 +15,10 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies:
   - CAS-29.10
@@ -45,6 +49,8 @@ deprecated no-ops with a Warning at load (AGENTS.md invariant 7), plus a docs mi
 Round-report counters tallied from in-memory decisions (2031-triage CAS-101) ship in the same change; that item is sourced by u03.
 
 Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure class A; audit F14 and conclusion 3. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (defaults 5000 on both).
+
+Update 2026-11-21: Reduced form delivered by 632f1b04a7d and 9ece501b97e. AC #1 (remove keys, warn) is superseded: keys stay and default to 0. Remaining scope: one test that `objects_deleted + objects_absent + objects_replaced == entries_redeleted` past 5000 (AC #2). The dependency on CAS-29.10 no longer holds for this scope.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -90,3 +96,13 @@ Source: utils/ca-soak/scenarios/BACKLOG.md:3510 (uncommitted). Related owners: C
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `632f1b04a7d` and `9ece501b97e` in reduced form: keys stay and default to unbounded. Open: a test of `entries_redeleted` past 5000; AC1 is superseded.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: 632f1b04a7d (five budgets default to 0, configuration.md migration note) is an ancestor of the branch; task note 2026-11-12 supersedes AC #1 (keys stay). Changes: description: Update paragraph appended.
+---
+<!-- COMMENTS:END -->

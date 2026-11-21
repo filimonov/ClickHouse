@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -53,3 +56,13 @@ Provenance: BACKLOG/formats-and-storage.md#blob-envelope-never-read-back (2031-t
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b03f1c765f8, by 'blob-envelope-never-read-back')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasBlobEnvelopeFormat.cpp:235 object_size still commented out and unused. Changes: none.
+---
+<!-- COMMENTS:END -->

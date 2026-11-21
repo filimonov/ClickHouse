@@ -4,7 +4,7 @@ title: 'Find why CA-S3 lanes hold over 10,000 concurrent Disk-group HTTP session
 status: To Do
 assignee: []
 created_date: '2026-07-27'
-updated_date: '2026-11-13 14:29'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'area:ci'
@@ -14,11 +14,16 @@ labels:
   - 'needs:measurement'
   - 'origin:review'
   - 'theme:ci-stabilization'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Common/HTTPConnectionPool.cpp
-priority: low
-type: research
+priority: medium
+type: enhancement
 ordinal: 165000
 ---
 
@@ -32,6 +37,8 @@ Output was correct and reruns passed, but 10k concurrent sessions is a pressure 
 across retry backoffs before raising any limit.
 
 Provenance: BACKLOG/operability-and-introspection.md#ca-s3-disk-session-pressure; verified 2026-09-26 against dd0ed2f263a.
+
+Update 2026-11-21: The 2026-11-13 RCA (tmp/prbundle/wave1/ci2/sanitizer-rca.md) attributes the warning to a single system.metric_log merge (2418 columns) holding 8000 to 9000 Disk-group sessions for 93 s. The open scope is no longer 'find why' but: compare with the plain-S3 lane, decide whether the merge should hold fewer sessions or the warning limit should change, and stop the warning failing stateless tests on the cas-s3 lanes (largest single cause of stateless FAILs there).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -65,3 +72,13 @@ First recorded: 2026-07-27 (1258b8c2a30, by 'CA-s3 Disk session pressure')
 
 2026-11-13: RCA on PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (report tmp/prbundle/wave1/ci2/sanitizer-rca.md): the session warnings are caused by one system log merge (system.metric_log, 2418 columns): 8000 to 9000 sessions held for 93 s on ASan 1/2. They are not tied to the number of workers or of CAS disks.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: task note 2026-11-13: RCA (tmp/prbundle/wave1/ci2/sanitizer-rca.md) attributes the warnings to one system.metric_log merge holding 8000-9000 sessions for 93 s, independent of workers or CAS disks; question 'why' is answered, no fix or decision recorded. Changes: impact:availability; type research -> enhancement: cause is known; remaining work is reducing session pressure or handling the warning; priority low -> medium: largest single cause of stateless FAILs on the cas-s3 lanes per notes of 2026-11-11 and 2026-11-13; description: Update paragraph appended. Links: related: connection churn tasks (CAS-74, CAS-283). Would settle it: whether the metric_log-merge session holding is CAS-specific (plain-S3 lane comparison, AC1) and which fix or limit change is chosen.
+---
+<!-- COMMENTS:END -->

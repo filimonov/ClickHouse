@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-17'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -14,6 +14,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:plausible'
   - 'origin:review'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies:
   - CAS-177
@@ -66,3 +70,13 @@ Provenance: BACKLOG/formats-and-storage.md#version-metadata-reload-fail-closed; 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-17 (bbba96594a7, by 'version-metadata-reload-fail-closed')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: VersionMetadataOnDisk.cpp has no CORRUPTED_DATA path at all and still synthesises NonTransactional records (:98); no upstream PR found. Changes: none. Pointers stale: loadMetadata line range :48-95 not re-checked. Would settle it: read loadMetadata :48-95 to confirm the no-file branch still returns NonTransactional without checking storing_version. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

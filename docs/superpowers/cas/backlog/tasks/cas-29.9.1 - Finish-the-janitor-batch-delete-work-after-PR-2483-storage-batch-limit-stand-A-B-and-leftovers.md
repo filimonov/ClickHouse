@@ -6,13 +6,17 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-05 15:50'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies:
   - CAS-29.9
@@ -42,6 +46,8 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 3. A/B of PR #2483 on the local RustFS stand, scenarios of `docs/superpowers/reports/2026-10-01-cas-29-9-janitor-ab/README.md`, read from the `delete_requests` and `janitor_pages` phase metrics.
 
 4. Leftovers from the review of PR #2483, all low: a pass over a `LIST` that lags behind deletes can run to the 20 s budget because absent keys of a successful batch count as deleted; `io_pool_refuse_at_for_test` is one seam shared by `redeleteBlobs` and the janitor; `tests/integration/test_cas_janitor_drain` was never run against the base binary; `NamespaceJanitor::runOnePage` still classifies, deletes and publishes in one function (a reviewer of PR #2468 asked for less coupling).
+
+Update 2026-11-21: Items 1 and 2 look delivered (storage limit merged in PR 2484; janitor cuts chunks by bulkDeleteChunkKeys, CasGc.h:627; drain test uses objects_chunk_size_to_delete). Remaining scope to confirm: stand A/B record (AC #4), the item-4 leftovers (AC #6), closing PR 2468 (AC #5), phase 16 doc sentence (AC #7).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -72,3 +78,13 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 
 2026-11-07 audit: item 1 (batch-delete limit) merged in https://github.com/Altinity/ClickHouse/pull/2484 as 5b7c9f503df (antalya-26.6, 2026-10-07).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Item 1 merged (5b7c9f503df per task note). Item 2 appears present in the branch: Gc/CasGc.h:627 janitor RemoveWriteOnce uses one job per bulkDeleteChunkKeys keys; tests/integration/test_cas_janitor_drain/test.py mentions objects_chunk_size_to_delete. Changes: description: Update paragraph appended. Links: status In Progress; last update 2026-11-06, within 30 days. Would settle it: items 3 (stand A/B record), 4 (leftovers), AC #5 (PR 2468 closed) and AC #7 (phase 16 doc) not checked.
+---
+<!-- COMMENTS:END -->

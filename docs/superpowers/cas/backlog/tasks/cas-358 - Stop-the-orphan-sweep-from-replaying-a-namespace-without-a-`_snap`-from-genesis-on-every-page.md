@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies:
   - CAS-391
@@ -117,3 +122,13 @@ Decision log (times are commit times, local):
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 20b02254350 bounds the owner replay of `activeManifestKeys` per record against the round's recovery budget and keeps the namespace's candidates when it stops (`recovery_incomplete`). Stage 2 removes the replay; until then this bound applies.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: no manifest_sweep_interval_sec anywhere under ContentAddressed (stage 1 absent); Gc/CasOrphanManifestSweep.cpp:262,:611,:870 activeManifestKeys still used (stage 2 absent). Changes: impact:cost. Pointers stale: CasOrphanManifestSweep.cpp:192 (now :262).
+---
+<!-- COMMENTS:END -->

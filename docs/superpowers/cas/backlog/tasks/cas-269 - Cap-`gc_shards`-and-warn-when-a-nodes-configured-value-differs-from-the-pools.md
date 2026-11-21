@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'area:formats'
@@ -15,6 +15,9 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -60,3 +63,13 @@ Provenance: BACKLOG/formats-and-storage.md [gc-shards-no-upper-bound] and #gc-sh
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (bab19a3de54, by 'gc-shards-config-override-silent')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedSettings.cpp:262 and Pool/CasPoolMeta.cpp:156 check only gc_shards == 0, no ceiling; Pool/CasPool.cpp:632 and :678 assign config.gc_shards = meta.gc_shards with no warning. Changes: none. Pointers stale: ContentAddressedSettings.cpp:62/:231-236 (now :67/:262); CasPoolMeta.cpp:112-113 (now :156); CasPool.cpp:540/:959 (now :632/:678/:1150).
+---
+<!-- COMMENTS:END -->

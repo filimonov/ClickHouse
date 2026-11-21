@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'area:testing'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasRefProtocol.cpp
@@ -50,3 +53,13 @@ Provenance: BACKLOG/ref-protocol.md#debug-body-counter-assert-on-replay (2031-tr
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (6e464e597ed, by 'debug-body-counter-assert-on-replay')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefProtocol.cpp:629 (applyTxnInPlace) and :767 (admits preview) still call debugAssertBodyCounters unconditionally (defined :556). Changes: none. Pointers stale: CasRefProtocol.cpp:585 now :629, :730 now :767.
+---
+<!-- COMMENTS:END -->

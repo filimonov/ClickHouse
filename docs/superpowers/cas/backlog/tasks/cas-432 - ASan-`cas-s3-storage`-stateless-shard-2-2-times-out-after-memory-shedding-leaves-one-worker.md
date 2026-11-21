@@ -6,12 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:21'
 labels:
-  - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 type: bug
@@ -82,3 +86,13 @@ Options, cheapest first: (a) three or four batches for the ASan CAS S3 lane, as 
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. `3478d29a671` moves the ASan `cas s3 storage` shards to the larger runner. Run 44084349150 on `44fc40023c1`: both shards green (135 and 163 min). One run only; AC1 needs a second consecutive green run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: ci/defs/altinity_jobs.py:89-101 now runs the ASan cas-s3 lane on AMD_LARGE with 2 batches, but the last recorded run (2026-11-11, run 42921139681) still timed out for shard 2/2 (5921/6933), and AC #1 (two consecutive passing PR runs) has no record. Changes: label area:tests -> area:testing. Links: the AMD_LARGE runner change (2a4b5e72aa2 per task note) is now present in ci/defs/altinity_jobs.py on cas-blob-intents; the task note saying it needs its own PR is stale. Would settle it: results of two consecutive PR runs of the ASan cas-s3 shards on this branch since the AMD_LARGE change landed.
+---
+<!-- COMMENTS:END -->

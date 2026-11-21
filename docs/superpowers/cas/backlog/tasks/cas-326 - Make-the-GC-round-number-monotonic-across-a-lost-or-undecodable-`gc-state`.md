@@ -4,7 +4,7 @@ title: Make the GC round number monotonic across a lost or undecodable `gc/state
 status: To Do
 assignee: []
 created_date: '2026-09-30 14:20'
-updated_date: '2026-09-30 14:22'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -12,6 +12,11 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'touches:protocol'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-30
 references:
@@ -50,3 +55,13 @@ Direction, not verified: start the round after a bootstrap or rebuild from a val
 <!-- SECTION:NOTES:BEGIN -->
 Correction after the external review of the CAS-30 spec, checked against `Gc/CasGc.cpp` at e2dd0f5d343 on 2026-09-30: `max_fence_round` is declared as 0 (`:4515`) and never updated, so it contributes nothing to the rebuild round (`:4681`). `acquireOrRenewLease` decodes an existing `gc/state` unconditionally (`:4919`), so a rebuild does not get past an undecodable state through this path. A regression therefore needs `gc/state` to be ABSENT (bootstrap from 0) and the surviving generation numbers (`max_gen`) to be lower than rounds already stamped into `.meta`; what `max_gen` preserves after a state loss is not established. First step of this task: establish whether a regression is reachable at all.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:805 round = state.round + 1; :5229 rebuild round = max({max_fence_round, state.round, max_gen}) + 1; no wall-clock or pool-wide floor above stored condemn_round. Changes: impact:data-loss. Pointers stale: CasGc.cpp:643/:1124/:4899-4977/:4681/:4909-4916 (now :805/:5229 ...).
+---
+<!-- COMMENTS:END -->

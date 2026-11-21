@@ -6,11 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 18:58'
-updated_date: '2026-10-24 12:24'
+updated_date: '2026-11-21 08:27'
 labels:
   - cas
   - gc
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-30
 priority: medium
@@ -64,3 +67,13 @@ Depends on CAS-361.
 
 2026-10-24: dependency CAS-361 landed (https://github.com/Altinity/ClickHouse/pull/2555, 8fefc27bd62, 2026-10-17): blob creating requests are single-attempt, so exact-token deletes without `HEAD` no longer risk matching a resurrected incarnation. Unblocked.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: obsolete (high). Evidence: in cas-pr1 the condemn-marker chain is gone from GC: no 'condemn' hit under ContentAddressed/Gc/ and writeCondemnedMeta does not exist; Gc/CasGc.cpp:605-611 performRedeleteIo already deletes with the etag the fold's HEAD observed, without a second HEAD; decision-7 moves blob deletes to per-object conditional bulk deletes (CAS-284). Changes: none. Links: superseded by the redesigned GC blob delete path (decision-7, CAS-284); CAS-330 is the same obsolete chain. Pointers stale: writeCondemnedMeta, performRedeleteIo HEAD, CaGcCondemnMarkerGate model: premise no longer matches the code.
+---
+<!-- COMMENTS:END -->

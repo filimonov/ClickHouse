@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:44'
-updated_date: '2026-09-26 14:47'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -62,3 +68,13 @@ Merged from u19d-soak (S40 end-checkpoint quiescence fails on ch2 (resolve to th
 The framework-level fix in u19d `quiesce-only-hosted-replicated-tables` would cure S40, S43 and S46 together. If it lands first, close this one as done by it.
 Source: utils/ca-soak/scenarios/BACKLOG.md:3311, :3437, :3481.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/cards/s40_insert_dedup_outage.py:58 creates the table on node1 only; RUN_HISTORY.md:677 (2026-11-19, b92bd24789c9) still records status pass with 'quiescence failed ... s40_dedup_outage does not exist (UNKNOWN_TABLE)' on localhost:8124; framework/checkpoint.py:37 still sets result.add_inconclusive and grep finds no reader of it.. Changes: impact:operability; label quick-win. Links: Overlaps CAS-316 (framework-level fix of the same quiescence failure for S40, S43, S46); AC#3 here (add_inconclusive never read) is not covered by CAS-316.. Pointers stale: s40 card :57 is now :58..
+---
+<!-- COMMENTS:END -->

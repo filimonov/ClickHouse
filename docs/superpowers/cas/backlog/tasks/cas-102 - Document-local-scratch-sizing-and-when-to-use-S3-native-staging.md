@@ -4,7 +4,7 @@ title: Document local scratch sizing and when to use S3-native staging
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +58,13 @@ First recorded: 2026-07-06 (4abf5b743ed, by 'scratch=full-part')
 
 2031-triage CAS-046: the scratch = full part bytes half (`[scratch=full-part]`); guard and sweep half is CAS-125.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 configuration.md:114 documents cas_staging_backend but no scratch free-space requirement or when-to-switch guidance. Changes: none. Pointers stale: setting is now named cas_staging_backend in docs (task says staging_backend); configuration.md:93 moved. Would settle it: full read of configuration.md and part-lifecycle.md for scratch sizing text (one grep only).
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -56,3 +62,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `CasRefCatalog` is 2026-07-30 (94bd8deaadd); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasRefCatalog.cpp:205 still calls op.pause directly with no counter; CASRequestConflictPause is incremented only via detail::recordConflictPause in Backend/CasRequests.cpp:69-71,947. Changes: impact:operability; label quick-win. Pointers stale: CasRefCatalog.cpp:190-191 is now :205; CasRequests.cpp:65-68 is now :69-71.
+---
+<!-- COMMENTS:END -->

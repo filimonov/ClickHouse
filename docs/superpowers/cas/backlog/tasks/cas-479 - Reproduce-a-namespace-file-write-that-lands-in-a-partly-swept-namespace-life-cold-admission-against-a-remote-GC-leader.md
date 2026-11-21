@@ -6,12 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 04:38'
-updated_date: '2026-11-13 04:39'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:plausible'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: research
 ordinal: 584000
 ---
 
@@ -34,3 +42,13 @@ By reading (re-review of the wave 1 final fix, tmp/prbundle/wave1/final/rereview
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-13: related, same re-review (needs verification 2, predates wave 1): a reader of namespace files that hits a resident runtime which cannot recover (its checkpoint was swept) gets CORRUPTED_DATA until eviction, a remount, or a writer's namespaceLife call detaches the runtime; the reader path (namespaceFilesLifeIfReadable) has no catalog check of its own. Decide together with the partly swept case.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no gtest named for a partly swept life under src/Disks/tests (searched PartlySwept/PartiallySwept and the fully-swept test name: none matched by name). Changes: size unset -> medium (M): gtest for a new shape plus a decision on a catalog cut; risk set to medium; confidence set to plausible; type unset -> research: reproduce, pin, decide. Size: M. Would settle it: the fully swept gtest ColdWriterCannotWriteIntoALifeSweptByARemoteLeaderDuringItsAdmission was not found by name either; check it is still present under another name.
+---
+<!-- COMMENTS:END -->

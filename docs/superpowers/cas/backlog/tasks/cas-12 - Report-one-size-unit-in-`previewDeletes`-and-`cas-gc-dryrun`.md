@@ -4,7 +4,7 @@ title: Report one size unit in `previewDeletes` and `cas-gc-dryrun`
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:18'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -54,3 +57,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `previewDeletes` is 2026-06-13 (b9e64af811a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:18
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc/CasGc.cpp:5338-5339 stores raw HEAD observed->size for zero rows; condemned rows use rec.size; condemn path strips blob_header_len (CasGc.cpp:2244). Changes: none. Pointers stale: CasGc.cpp:4608/4645/4671 and retiredLogicalSize :286 no longer exist; previewDeletes is now at ~:5305. Would settle it: whether rec.size is payload-only for every condemned row (producer not traced).
+---
+<!-- COMMENTS:END -->

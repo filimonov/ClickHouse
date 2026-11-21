@@ -6,13 +6,23 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 02:34'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:20'
 labels:
   - ci
   - tests
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
+type: chore
 ordinal: 427000
 ---
 
@@ -34,3 +44,13 @@ Observed 2026-10-01 on the CAS-30 branch gate (gc-request-cuts worktree, HEAD bc
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Test still exists: src/IO/S3/tests/gtest_cas_aws_s3_client.cpp (ReadBufferFromS3AttemptSeedCarriesAcrossLocalRetry); no commit touching it since the cherry-pick of #2300; the file has no explicit connect timeout, so the timing knob sits in the shared client or fixture. Changes: area set to testing; size unset -> small (S): find the timeout, widen it or accept before connect; risk set to low; confidence set to plausible; impact:operability; type unset -> chore: test flake fix, no behaviour change. Size: S. Pointers stale: task cites no file path; the test is in src/IO/S3/tests, not src/Disks/tests. Would settle it: Where the loopback connect timeout is set (fixture or S3 client config) and whether any later run still flakes.
+---
+<!-- COMMENTS:END -->

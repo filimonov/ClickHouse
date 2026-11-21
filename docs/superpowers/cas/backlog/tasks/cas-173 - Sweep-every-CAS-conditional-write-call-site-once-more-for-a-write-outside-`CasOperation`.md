@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/gcs.md#single-attempt-conditional-writes [cas-uncontrolled-c
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-02 (ccf7d4a45c4, by 'cas-uncontrolled-conditional-writes]')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1: many conditional writes now go through op.create/op.write with explicit Retry::once() or other bounds (CasRefLedger.cpp:1319, CasRefCkpt.cpp:172); no per-site policy table found; code moved since the task's line pointers. Changes: none. Size: S. Pointers stale: CasPoolMeta.cpp:80,158, CasRefCkpt.cpp:259, CasGc.cpp:4732 and :4713 are not checked and the code has since moved (Pool/, Gc/ layout). Would settle it: the sweep itself: a list of every conditional-write site with its retry policy.
+---
+<!-- COMMENTS:END -->

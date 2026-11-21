@@ -6,12 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'confidence:plausible'
   - 'risk:low'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -43,3 +47,13 @@ Fix (~60 lines): re-read the lease before S8's throw and report deposed; sweep `
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/CasGc.cpp:3590 still throws CORRUPTED_DATA 'GC bookkeeping is corrupt' for a missing parent-seal entry with no lease re-read before it; no sweep of gc/gen below snap_pruned_through found (grep shows only the prune bookkeeping at :1344-1348). Changes: none. Links: overlaps CAS-496 (soak instance of the S8 deposed-leader false CORRUPTED_DATA, different throw site CasBlobInDegree.cpp openSourceEdgeRun); overlaps CAS-386 (prune vs adopted seal). Pointers stale: S8 throw site line not cited in the task. Would settle it: the exact S8 throw site in gcctl.md and whether a lease re-read guards it on current code.
+---
+<!-- COMMENTS:END -->

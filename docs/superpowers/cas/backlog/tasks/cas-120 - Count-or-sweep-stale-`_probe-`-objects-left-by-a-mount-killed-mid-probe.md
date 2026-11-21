@@ -4,7 +4,7 @@ title: Count or sweep stale `_probe/` objects left by a mount killed mid-probe
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:mounts'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -56,3 +59,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `runCapabilityProbe` is 2026-07-12 (e1e76106f40); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Tools/CasFsck.cpp has no _probe or probe_debris reference. Changes: none. Would settle it: whether Pool::open now sweeps _probe/ (second alternative of AC #1).
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:ux'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Storages/StorageSet.cpp
@@ -52,3 +57,13 @@ Provenance: BACKLOG/ref-protocol.md#cas-join-set-truncate. Verified 2026-09-26 a
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (63bdac99d21, by 'cas-join-set-truncate')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: StorageSet.cpp:255-259 truncate still does removeRecursive then createDirectories; the pinning test FilesOnlyNamespaceTruncateThrowsRetryLaterUntilGcReclaimsThenRebirths still exists (gtest_cas_ref_writer.cpp:7090). Changes: impact:ux. Pointers stale: StorageSet.cpp:255-260 now :255-260 (same); gtest_cas_ref_writer.cpp:4823 now :7090; CasRefLedger.cpp:1354 not re-checked.
+---
+<!-- COMMENTS:END -->

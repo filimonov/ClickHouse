@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
@@ -14,6 +14,11 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - quick-win
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -60,3 +65,13 @@ First recorded: 2026-08-21 (b03f1c765f8, by 'boottime-not-portable')
 
 2031-triage CAS-092: the only surviving half of the audit finding; 'different clocks for fence and request' stays refuted.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: clock_gettime(CLOCK_BOOTTIME) still at Pool/CasMountRuntime.cpp:81 and Pool/CasServerRoot.cpp:98; base/base/time.h has no CLOCK_BOOTTIME mapping. Changes: label quick-win. Size: XS. Pointers stale: CasMountRuntime.cpp:78 is now :81; CasServerRoot.cpp:95 is now :98; CA/ prefix means ContentAddressed/..
+---
+<!-- COMMENTS:END -->

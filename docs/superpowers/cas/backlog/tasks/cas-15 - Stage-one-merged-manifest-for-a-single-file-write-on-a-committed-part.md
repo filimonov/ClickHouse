@@ -4,7 +4,7 @@ title: Stage one merged manifest for a single-file write on a committed part
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -13,6 +13,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:unclear'
+  - 'groom-20261121:certainty-low'
 dependencies: []
 references:
   - >-
@@ -58,3 +61,13 @@ Merged from ref-protocol.md #cas-txn-commit-inside-noexcept-aftercommit option 3
 
 First recorded: 2026-08-21 (6e464e597ed, by 'standalone-write-scratch-manifest-cost')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: unclear (low). Evidence: ContentAddressedTransaction.cpp no longer matches the task's description at the cited places: comments at :390 and :542 say single-file writes republish once via the repoint path; abandon at :154 concerns uncommitted transactions. Changes: none. Pointers stale: ContentAddressedTransaction.cpp:390-398 and :436 no longer describe the scratch/merged-manifest sequence. Would settle it: read the current single-file write/unlink path in ContentAddressedTransaction.cpp (formerly :390-436) to see whether a scratch manifest is still staged and abandoned.
+---
+<!-- COMMENTS:END -->

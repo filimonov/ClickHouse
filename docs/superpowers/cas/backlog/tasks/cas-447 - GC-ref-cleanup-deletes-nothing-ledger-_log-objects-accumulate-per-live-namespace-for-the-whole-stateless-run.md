@@ -6,12 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 23:26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'impact:cost'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 550000
@@ -53,3 +59,13 @@ LINEAGE 2026-11-11: the gate is not new. 53e2a135980 (2026-08-02, 'Revalidate CA
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Cause removed in PR 2831 by `20e4b2fd7f3`. Open: AC1, `_log` count per life bounded over a full lane run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/CasGc.cpp:4215 cleanupRefObjects still deletes only chunks licensed per write-once chunk (licenceForChunk at ~:4256); no change to the gating found in git log -S checkpoint_snapshot_id. Changes: impact:cost; impact:availability. Links: related CAS-432 (cas-s3 lane slowdown), CAS-463. Would settle it: a current cas-s3 stateless run showing CASRefCleanupObjectsDeleted still 0 (acceptance #1), and the gating reason (#2).
+---
+<!-- COMMENTS:END -->

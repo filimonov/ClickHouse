@@ -4,13 +4,16 @@ title: Measure the hot-key lane on ten minutes of the parallel CA-s3 stateless s
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'needs:measurement'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-70.2
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (Task 7) and #
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (c1b1e01a5e1, by 'stateless-lane-wall-time-is-drop-table')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: grep of reports/ and cas/ for CASHotKeyQueueWait finds only the yardstick/audit/PR2 bundle reports and weekly profile TSV, no before/after DROP/CREATE percentile report for the hot-key lane; CAS-70.2 (its dependency) is still To Do. Changes: none. Would settle it: a dated report with the stateless-lane DROP TABLE / CREATE TABLE percentiles after the lane (not found by name; the 2026-11-11 bundle-measurements report was not opened).
+---
+<!-- COMMENTS:END -->

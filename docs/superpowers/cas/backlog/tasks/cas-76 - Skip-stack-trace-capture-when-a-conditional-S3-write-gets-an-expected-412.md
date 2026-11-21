@@ -4,7 +4,7 @@ title: Skip stack-trace capture when a conditional S3 write gets an expected 412
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -13,6 +13,13 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - 'impact:cost'
+  - 'impact:operability'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/IO/WriteBufferFromS3.cpp
@@ -59,3 +66,13 @@ Merged from u19c-soak (Skip stack-trace capture when a conditional S3 write gets
 Returning the 412 as an outcome without constructing an exception fixes both the stack capture and the counter.
 Provenance: utils/ca-soak/scenarios/BACKLOG.md#OPTIMIZATION OPPORTUNITY (conditional-PUT collisions inflate S3_ERROR).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/IO/WriteBufferFromS3.cpp:846-860 still throws S3Exception for an expected 412 (only the log level is lowered). Changes: impact:cost; impact:operability. Pointers stale: throw site is now at WriteBufferFromS3.cpp:~856 (task says :819-831). Upstream: not-found.
+---
+<!-- COMMENTS:END -->

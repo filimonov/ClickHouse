@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:gc'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies:
   - CAS-141
@@ -57,3 +60,13 @@ Provenance: BACKLOG/gc.md [gc-rebuild follow-ups] parts (b) and (c). Verified 20
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'gc-rebuild follow-ups')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep for 'GC REBUILD|gc/state' in utils/ca-soak/scenarios/cards finds only a docstring mention (s28_s33_corner.py:768); no card removes or damages gc/state. Changes: none.
+---
+<!-- COMMENTS:END -->

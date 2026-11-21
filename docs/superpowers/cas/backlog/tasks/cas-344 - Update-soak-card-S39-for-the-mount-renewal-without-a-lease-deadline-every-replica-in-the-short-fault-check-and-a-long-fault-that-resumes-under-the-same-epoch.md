@@ -7,7 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 09:23'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'area:soak'
@@ -15,6 +15,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies:
   - CAS-298
@@ -58,3 +61,13 @@ Integration coverage that exists meanwhile: `tests/integration/test_cas_mount_re
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-08: s39/s43 updated for the 9a lifecycle values (master commit 3f5ad504ea3). Leg B (one lease loss and a remount) still needs rewriting to the pause behaviour and a stand run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task note 2026-10-08: s39/s43 updated only for 9a lifecycle values; leg B (loss and remount) still to rewrite and no stand run recorded; s39 card still references cl.nodes()[0] / lease_expired in 5 places (not resolved per line). Changes: none. Would settle it: whether s39 now reads every replica (AC1) and a stand run on a binary with the no-deadline renewal.
+---
+<!-- COMMENTS:END -->

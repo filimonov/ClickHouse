@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'area:upstream'
@@ -15,10 +15,16 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:fixed-master'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-5
 dependencies: []
 references:
   - programs/disks/DisksApp.cpp
+  - 'https://github.com/ClickHouse/ClickHouse/pull/82348'
 priority: medium
 type: bug
 ordinal: 73000
@@ -33,6 +39,8 @@ and exit 0: a failure that scripts read as success. Other codes above 255 report
 The ca-soak harness and the CAS integration tests gate on this exit code. Map failures to a small set of stable nonzero codes before the change is carved out upstream.
 
 Provenance: BACKLOG/operability-and-introspection.md#disks-exit-code-truncation item 1 (opus review M6); verified 2026-09-26 against 59494ebf366 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
+
+Update 2026-11-21: The multiple-of-256 case (exit 0 on failure) is fixed by upstream PR 82348 and present in DisksApp.cpp. What remains: map failures above 255 to a stable small code set, document it and test it (AC #2).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -54,3 +62,13 @@ Provenance: BACKLOG/operability-and-introspection.md#disks-exit-code-truncation 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (f07a9ed680d, by 'disks-exit-code-truncation')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: programs/disks/DisksApp.cpp:720,731 return `static_cast<UInt8>(code) ? code : 1`, so a code that is a multiple of 256 no longer exits 0 (AC #1); the same lines exist upstream (blame: merged PR 82348). Codes above 255 still reach the OS truncated, and AC #2 (documented, tested exit-code set) has no sign of work. Changes: upstream reference added; description: Update paragraph appended. Would settle it: whether a test of the exit code exists (grep tests/ for clickhouse-disks exit codes). Upstream: fixed-master (https://github.com/ClickHouse/ClickHouse/pull/82348); already here.
+---
+<!-- COMMENTS:END -->

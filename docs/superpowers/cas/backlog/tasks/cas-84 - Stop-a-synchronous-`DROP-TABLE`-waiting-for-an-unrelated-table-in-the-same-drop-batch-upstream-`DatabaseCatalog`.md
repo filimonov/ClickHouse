@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-16'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -14,6 +14,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-5
 dependencies: []
 references:
@@ -62,3 +66,13 @@ Provenance: BACKLOG/gc.md#drop-path-head-of-line-and-repoint-ramp item 1. Verifi
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-16 (cbf3fe14e36, by 'drop-path-head-of-line-and-repoint-ramp')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Interpreters/DatabaseCatalog.cpp:1622-1632 dropTablesParallel still waits for the whole batch (runner.waitForAllToFinish) and dropTableDataTask :1690 calls it; the same shape is in upstream master (DatabaseCatalog.cpp:1809-1819, :1882-1898). Changes: none. Pointers stale: cited :1649 and :1591 are now :1690 and :1622. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

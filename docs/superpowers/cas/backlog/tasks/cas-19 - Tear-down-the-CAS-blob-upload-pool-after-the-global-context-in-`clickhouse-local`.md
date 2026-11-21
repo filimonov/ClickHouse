@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -14,6 +14,9 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/performance.md#blob-upload-pool-teardown-order (umbrella rev
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e77a8472db9, by 'blob-upload-pool-teardown-order')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: programs/local/LocalServer.cpp:984 calls DB::Cas::shutdownBlobUploadPool() before global_context->shutdown() at :988: still the reverse of clickhouse-server order. Changes: none. Pointers stale: LocalServer.cpp:918/:922 are now :984/:988; the call is shutdownBlobUploadPool, and blobUploadPool() is at CasBlobUploadPool.cpp:52.
+---
+<!-- COMMENTS:END -->

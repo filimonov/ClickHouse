@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:47'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -16,6 +16,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -62,3 +67,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md:2978 (Investigations closed 2026-
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13: CAS-358 removes the sweep's view replay, so the sweep half of this task (CasOrphanManifestSweep.cpp:600-611 catch) disappears with it. What remains: fsck and preview replays, and the fold's seed walk (CAS-358 §4.3), which walks only immutable objects from a validated _ckpt triple to the fold cursor. AC #3 (written argument that the cut is unreachable) is the likely close for the seed path.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Pool/CasRefProtocol.cpp:338 still throws 'exact committed binding ... to remove is absent'; Gc/CasOrphanManifestSweep.cpp:637 still catches Exception around view build. Changes: impact:operability. Pointers stale: CasRefProtocol.cpp:282-288 (now :338); CasOrphanManifestSweep.cpp:600-611 (now ~:637). Would settle it: whether the _ckpt-anchored view can still meet the incoherent cut (task's own open point); needs a repro or a written argument.
+---
+<!-- COMMENTS:END -->

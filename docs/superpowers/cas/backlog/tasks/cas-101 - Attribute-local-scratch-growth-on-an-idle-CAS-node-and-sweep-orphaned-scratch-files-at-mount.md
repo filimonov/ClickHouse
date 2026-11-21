@@ -4,7 +4,7 @@ title: Attribute local scratch growth on an idle CAS node
 status: To Do
 assignee: []
 created_date: '2026-07-18'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:speculative'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - >-
@@ -52,3 +55,13 @@ The mount-time sweep of orphaned scratch files moved to CAS-125, which carries t
 
 First recorded: 2026-07-18 (b22798a24a3, by 'idle-scratch-debris')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: scratchPath() is still used only by the writers (ContentAddressedTransaction.cpp:1132,1183-1185); no sweep or attribution exists; task text records no attribution result. Changes: none. Links: mount-time sweep part lives in CAS-125 (same acceptance criterion); related CAS-264 (S3 staging debris). Pointers stale: R/ContentAddressedTransaction.cpp:956,:1008-1010 now ~:1132,:1183-1185. Would settle it: a measurement on an idle node showing whether the growth is in-flight system-log spills or files outliving their write.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/gc.md#gc-observability [fsck oracle gaps]. Sibling fsck blin
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'fsck oracle gaps')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 CasFsck.cpp:1726 manifest-debris pass still iterates store.listNamespaces(namespace_prefix). Changes: none. Pointers stale: CasFsck.cpp:1093-1122 is now about :1726. Would settle it: whether Pool::listNamespaces still derives namespaces from the catalog alone.
+---
+<!-- COMMENTS:END -->

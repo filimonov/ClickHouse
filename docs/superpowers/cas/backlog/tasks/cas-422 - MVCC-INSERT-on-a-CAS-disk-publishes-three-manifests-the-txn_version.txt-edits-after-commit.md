@@ -6,9 +6,21 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-23 05:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - cas
+  - 'area:write-path'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
+priority: low
+type: enhancement
 ordinal: 525000
 ---
 
@@ -31,3 +43,13 @@ Measured 2026-10-23 on antalya-26.8 (owner-Move series, local object storage): B
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: No code changes found for the version-metadata edits: appendCSNToVersionMetadata still lives in generic MergeTree code (commit d6350c12225 area); no test in tests/queries/0_stateless/05396* or gtest_cas_* pins the manifest count of a BEGIN TRANSACTION INSERT. Changes: area set to write-path; size unset -> medium (M): change when txn_version.txt is written or batch it into the part publish, plus a pin test; risk set to medium; confidence set to solid; impact:cost; type unset -> enhancement: cost only; data and ref are right; priority unset -> low: no priority set; extra requests per MVCC INSERT only. Size: M. Would settle it: Re-measure cas_log events (manifest_put, build_abort) for BEGIN; INSERT; COMMIT on the current branch.
+---
+<!-- COMMENTS:END -->

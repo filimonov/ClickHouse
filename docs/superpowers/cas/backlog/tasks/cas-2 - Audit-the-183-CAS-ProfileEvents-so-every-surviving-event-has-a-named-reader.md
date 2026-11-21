@@ -4,7 +4,7 @@ title: Audit the 183 CAS ProfileEvents so every surviving event has a named read
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:observability'
   - 'complexity:large'
@@ -13,6 +13,9 @@ labels:
   - 'origin:review'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -64,3 +67,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-profile-events-audit (2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (9e105470c4a, by 'profileevents-surface-residuals')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Common/ProfileEvents.cpp now has 207 `M(CAS*` entries (task says 183); the 11 CASServer* events remain; child CAS-2.1 open; no event table recorded. Changes: none. Links: Child CAS-2.1; related CASRelinkConfirmRefused 7 to 4 merge. Pointers stale: event count 183 is now 207 on this branch.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies:
   - CAS-9
@@ -62,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#lifecycle-verbs-wait-out-un
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b2a38f0b611, by 'lifecycle-verbs-wait-out-uncancellable-scans')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedMetadataStorage.cpp:1217 runFsckNow still calls Cas::runFsck(*store(), detail) with no deadline or cancellation. Changes: none. Pointers stale: ContentAddressedMetadataStorage.cpp:1170-1183 is now :1205-1218.
+---
+<!-- COMMENTS:END -->

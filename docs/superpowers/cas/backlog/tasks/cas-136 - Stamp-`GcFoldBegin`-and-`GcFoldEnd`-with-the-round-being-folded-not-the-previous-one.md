@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -51,3 +56,13 @@ Provenance: BACKLOG/gc.md#gc-outcome-budget-skews-round-report-counters (2031-tr
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-101')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/CasGc.cpp:994 (GcFoldBegin) and :1029 (GcFoldEnd) still set e.round = state.round while other events use new_round = state.round + 1 (:805, :868, :881, :632 ctx.new_round); comment at :951-954 says state.round is the previously adopted round until the round CAS commits. Changes: impact:operability. Pointers stale: CasGc.cpp:639,:676 are now :994,:1029; :450 is :805. Would settle it: Not confirmed that `state` has not been reassigned to the committed next state before :989 on the fold path (would make the stamp already correct)..
+---
+<!-- COMMENTS:END -->

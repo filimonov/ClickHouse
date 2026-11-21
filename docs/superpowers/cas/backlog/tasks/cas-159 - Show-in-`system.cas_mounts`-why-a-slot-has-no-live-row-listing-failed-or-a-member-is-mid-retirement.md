@@ -6,13 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'area:observability'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -37,6 +41,8 @@ Two causes read the same as an empty pool:
 Owed: a `state` word such as `unknown`/`retiring`, or a nullable `mount_list_error` column.
 
 Provenance: BACKLOG/mounts-and-lifecycle.md#owner-only-slot-invisible-in-mounts (merged [mounts-list-failure-indistinguishable]); verified 2026-09-26 against b1c34d03479 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
+
+Update 2026-11-21: Remaining scope after current code: a failed mount listing yields a snapshot-only row (StorageSystemContentAddressedMounts.cpp:186-196) without a listing-error marker; the owner-only-slot case no longer arises from new decommissions (retired state, 2026-10-14 note). AC2 needs re-evaluating.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -62,3 +68,13 @@ First recorded: 2026-08-21 (71adf002454, by 'mounts-list-failure-indistinguishab
 
 2026-10-14: PR C (CAS-388.3) adds a `retired` state to system.cas_mounts. The 'owner-only slot with no row' cause no longer arises from new decommissions.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: StorageSystemContentAddressedMounts.cpp:186-196 now falls through to a snapshot-only row with lifecycle columns when listMounts throws, but sets no listing-error marker (no listing_error column found); the mid-retirement cause is largely gone per the 2026-10-14 note (retired state). Changes: description: Update paragraph appended. Would settle it: whether the unpushed 9a branch's listing_error column landed; remaining scope is the listing-failure marker (AC1), AC2 likely moot.
+---
+<!-- COMMENTS:END -->

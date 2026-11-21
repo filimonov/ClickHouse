@@ -4,13 +4,18 @@ title: Invalidate file-cache entries of blobs GC reclaims under a cache disk ove
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - docs/superpowers/cas/2031-triage.md#cas-084
@@ -48,3 +53,13 @@ Provenance: BACKLOG/performance.md#file-cache-stale-after-gc-reclaim (2031-triag
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b03f1c765f8, by 'file-cache-stale-after-gc-reclaim')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 ContentAddressed/Gc and Backend: grep for FileCache, file_cache, removeIfExists, cache_invalid finds no cache invalidation hook. Changes: impact:cost. Would settle it: Did not check whether the cache wrapper (DiskObjectStorage cache layer) evicts on its own when a CAS read of a deleted key fails; the task already says the cost is only hit rate and lingering bytes..
+---
+<!-- COMMENTS:END -->

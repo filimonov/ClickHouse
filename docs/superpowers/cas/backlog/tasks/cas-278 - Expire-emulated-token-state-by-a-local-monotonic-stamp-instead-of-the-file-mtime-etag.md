@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:backend'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -53,3 +56,13 @@ Provenance: BACKLOG/formats-and-storage.md#emu-token-state-clock-skew-leak (2031
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b80ba4f80fb, by 'emu-token-state-clock-skew-leak')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 CasObjectStorageBackend.cpp:408 etagComfortablyInThePast still used at :479 and :1004 with the mtime-derived etag. Changes: none. Links: retired by CAS-276 if Mode::Posix lands. Pointers stale: function now at :408, uses at :479 and :1004 (task :391, :462, :999).
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:18'
 labels:
   - 'area:backend'
   - 'area:gc'
@@ -16,6 +16,10 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies: []
 references:
@@ -28,7 +32,7 @@ documentation:
     docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md#verification-items
 parent_task_id: CAS-29
 priority: high
-type: bug
+type: task
 ordinal: 174000
 ---
 
@@ -45,6 +49,8 @@ S3's 1000-key cap and so takes two requests, and the store default on resumed pa
 That iterator prefetches the next batch, which is wasted when the caller stops at its page end.
 
 Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F6, conclusion 7, verification item). CAS-29.1 and CAS-29.6 say to confirm this before reusing the path; this task is that confirmation and fix. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+
+Update 2026-11-21: Code part (AC1, AC3) landed in bd712122b60 and e1be3807259 (merged via 0aa837e942e, ancestors of the checked branch). Remaining scope: AC2 only, a stand measurement of S3ListObjects per list page, plus explaining the 9.3 requests per page seen on otel.demo.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -77,3 +83,13 @@ First recorded: 2026-09-26 (fc7b142789d, by 'audit F6')
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `bd712122b60` and `e1be3807259`: a 10000-key walk costs 21 requests instead of 27 (and 11 without prefetch). Open: the stand ratio.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:18
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: bd712122b60, e1be3807259, 0aa837e942e are ancestors of the checked branch; task notes say AC1 and AC3 delivered, AC2 (stand ratio) unmeasured. Changes: type bug -> task: fix is delivered; what remains is a measurement; description: Update paragraph appended. Size: S. Links: remaining scope is the AC2 stand measurement only. Would settle it: stand measurement of S3ListObjects per list page (AC2) and the unexplained 9.3 requests per page on otel.demo.
+---
+<!-- COMMENTS:END -->

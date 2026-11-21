@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies:
   - CAS-243
@@ -59,3 +64,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `NoSuchKey` is 2026-06-06 (4df7956ec79); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep InvalidObjectState over cas-pr1 src and docs/en/antalya returns nothing; no handling or message exists. Changes: impact:operability. Pointers stale: CasObjectStorageBackend.cpp:339-346 not re-checked.
+---
+<!-- COMMENTS:END -->

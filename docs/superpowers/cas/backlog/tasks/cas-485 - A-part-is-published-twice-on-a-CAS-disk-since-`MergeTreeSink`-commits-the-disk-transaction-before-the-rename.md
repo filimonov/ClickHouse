@@ -6,14 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 21:17'
-updated_date: '2026-11-14 10:18'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: task
 ordinal: 590000
 ---
 
@@ -54,3 +59,13 @@ Study on record: docs/superpowers/reports/2026-11-14-cas-promote-move-one-append
 - Prose defect found: the comment of `05396_cas_root_put_per_insert` and the message of `ee662a8d383` name the three root PUTs as manifest, publish, move. They are precommit, promote and `Move`; a manifest PUT counts as `CASManifestPut`.
 - Not reconciled: 21 `CASRequestAttempt` per INSERT on record against the 14 counted plus blob requests.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: task notes: owner correction 2026-11-13 (not a defect, 'published twice' is a misnomer), the extra Move is measured (2026-11-14 local A/B: +4 requests, +1.9 ms store time, 21 -> 25 requests per INSERT), and the promote+Move one-append variant and variant W were declined by the owner on 2026-11-14 in favour of CAS-487; there are no acceptance criteria. Changes: type unset -> task: reframed by the owner into a measurement; no type was set. Links: direction chosen: CAS-487; related CAS-414. Would settle it: whether the one prose defect noted (comment of 05396_cas_root_put_per_insert and the message of ee662a8d383 naming the root PUTs 'manifest, publish, move' instead of precommit, promote, Move) was fix….
+---
+<!-- COMMENTS:END -->

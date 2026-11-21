@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -13,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +61,13 @@ Provenance: issue #2031 'New this round' CAS-136 (absent from docs/superpowers/c
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Interpreters/InterpreterSystemQuery.cpp:2676-2686: no-disk branch loops getDisksMap and runs runGarbageCollectionRoundNow per tryFromDisk match, no dedup by metadata storage and no cache-layer skip. Changes: impact:operability. Pointers stale: InterpreterSystemQuery.cpp:2550-2560 (now :2676-2686).
+---
+<!-- COMMENTS:END -->

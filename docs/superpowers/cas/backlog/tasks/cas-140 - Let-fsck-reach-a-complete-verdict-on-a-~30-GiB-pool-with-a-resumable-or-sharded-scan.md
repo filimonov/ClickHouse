@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:soak'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies:
   - CAS-9
@@ -63,3 +66,13 @@ From testing-and-ci.md (u13 merge): the timed-out pool was 183 GB / 2.14M object
 
 First recorded: 2026-07-29 (660aab38fd2, by 'FSCK-SCALE-TIMEOUT')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 CasFsck.h has no cursor or resume mechanism; scan is bounded only by deadline/partial/namespace_prefix. Changes: none.
+---
+<!-- COMMENTS:END -->

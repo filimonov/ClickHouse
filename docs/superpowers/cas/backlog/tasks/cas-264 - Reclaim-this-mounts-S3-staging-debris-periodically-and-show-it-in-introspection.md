@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:cost'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -58,3 +63,13 @@ First recorded: 2026-08-21 (55c650b8635, by 's3-staging-reclaim-only-at-mount-st
 
 2026-10-14: abort now deletes staging (PR A https://github.com/Altinity/ClickHouse/pull/2566). A periodic sweep can delete keys below the live epoch (PR B https://github.com/Altinity/ClickHouse/pull/2567 key layout). The remaining leak is killed or crashed writers until restart.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Cas::sweepOwnMountStaging has one call site, ContentAddressedMetadataStorage.cpp:926 (mount start); defined at Pool/CasServerRoot.cpp:2274. Changes: impact:cost. Pointers stale: CasServerRoot.cpp:1804 is now :2274; ContentAddressedMetadataStorage.cpp:893 is now :926; CA/ prefix means ContentAddressed/..
+---
+<!-- COMMENTS:END -->

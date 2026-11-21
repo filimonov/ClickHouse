@@ -6,10 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-23 01:50'
-updated_date: '2026-10-23 01:50'
+updated_date: '2026-11-21 08:21'
 labels:
   - cas
+  - 'area:write-path'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
+priority: low
+type: chore
 ordinal: 522000
 ---
 
@@ -39,3 +49,13 @@ From the packed-parts review (antalya-26.8 worktree tmp/review3/REPORT.md, items
 <!-- SECTION:NOTES:BEGIN -->
 Also from the review (quality, needs measurement): DataPartStorageOnDiskPacked::finalizeWriter reopens the whole archive once per old member, which on CAS-over-S3 may cost one GET per member; measure before changing.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: MergeTreeData::normalizePartFormatForDisk (MergeTreeData.cpp:6440) used at MergeTreeDataWriter.cpp:923 and FutureMergedMutatedPart.cpp:108 while MergeTreeDataPartBuilder.cpp:168 still downgrades inline; ContentAddressedTransaction.cpp:79 hardcodes "data.packed"/"data.packed.tmp"; DataPartStorageOnDiskPacked.cpp has no allowsPackedParts call. Changes: area set to write-path; size unset -> medium (M): three code changes across MergeTree and CAS plus a test; risk set to medium; confidence set to solid; type unset -> chore: consolidation, no behaviour change except the pinned freezeRemote choice; priority unset -> low: no priority set; consolidation with no user-visible failure. Size: M. Pointers stale: tmp/review3/REPORT.md lives in another worktree.
+---
+<!-- COMMENTS:END -->

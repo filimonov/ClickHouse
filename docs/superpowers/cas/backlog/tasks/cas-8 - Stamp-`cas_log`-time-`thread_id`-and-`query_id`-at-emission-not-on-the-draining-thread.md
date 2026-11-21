@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:observability'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -59,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-log-drain-thread-attrib
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (5e6e8a16e82, by 'cas-log-drain-thread-attribution')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedMetadataStorage.cpp:597-614: sink lambda sets event_time from now() and thread_id/query_id from getThreadId()/CurrentThread::getQueryId() at delivery; Pool/CasEventDispatcher.cpp:20-29 enqueues and lets an already-draining thread deliver. Changes: impact:operability; label quick-win. Pointers stale: ContentAddressedMetadataStorage.cpp:591 and :606-607 are now :599 and :613-614; CasEventDispatcher.cpp:17-50 not rechecked.
+---
+<!-- COMMENTS:END -->

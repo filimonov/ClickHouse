@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - docs/superpowers/models/CaRefWriterCleanupCore.tla
@@ -54,3 +57,13 @@ Provenance: BACKLOG/testing-and-ci.md#empty-set-survey-residues; verified 2026-0
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (d0d73d46835, by 'empty-set-survey-residues')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/superpowers/models/2026-07-30-empty-set-survey.md:82 still shows the CaRefWriterCleanupCore counter-example without an identified mechanism; line 135 gives only the general 'never enabled holds vacuously' remark and line 156 says the jar version is not the mechanism. Changes: none. Would settle it: read survey lines 130-160 to confirm no mechanism statement for this model.
+---
+<!-- COMMENTS:END -->

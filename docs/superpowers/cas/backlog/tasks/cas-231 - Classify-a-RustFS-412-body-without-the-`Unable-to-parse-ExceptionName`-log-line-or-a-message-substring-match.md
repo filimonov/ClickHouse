@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -15,6 +15,12 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-5
 dependencies: []
 references:
@@ -58,3 +64,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor [RUSTFS-ERROR-XML]; narrowed: the 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-15 (db28579459a, by 'RUSTFS-ERROR-XML')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/IO/S3Common.h:103-108 isPreconditionFailedError still has the GetMessage().find("PreconditionFailed") substring arm. Changes: impact:operability. Pointers stale: S3Common.h predicate now at :103-108 (task says :94-99). Upstream: unverified.
+---
+<!-- COMMENTS:END -->

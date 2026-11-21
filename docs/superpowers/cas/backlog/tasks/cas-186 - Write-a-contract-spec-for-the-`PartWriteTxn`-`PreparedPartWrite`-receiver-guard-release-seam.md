@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'area:replication'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasPartWriteTxn.h
@@ -55,3 +58,13 @@ Provenance: BACKLOG/ref-protocol.md#ref-protocol-ledger [PART-WRITE-RELEASE-SEAM
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (a949f5d9e46, by 'PART-WRITE-RELEASE-SEAM')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: no spec in docs/superpowers/specs covers the seam (only a passing PreparedPartWrite mention in specs/2026-11-15-cas-append-without-catalog-read-design.md:220); publication_attempted still in Pool/CasPartWriteTxn.h. Changes: none. Pointers stale: R/Pool/CasPartWriteTxn.h:24-40 not rechecked; PR 2831 changed the publish path (no catalog/_ckpt reads), so the exit list must be re-derived.
+---
+<!-- COMMENTS:END -->

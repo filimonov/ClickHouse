@@ -4,11 +4,14 @@ title: 'Precommit-and-stay-open for temporary part names: one ledger append per 
 status: To Do
 assignee: []
 created_date: '2026-10-07 21:05'
-updated_date: '2026-11-14 10:18'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
   - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-346
 priority: low
@@ -56,3 +59,13 @@ Depends on the GC nomination fix from CAS-346. Source: codex review of docs/supe
 
 2026-11-14, owner decision: not built in this form (deviation from the upstream writer order). See CAS-485 and docs/superpowers/reports/2026-11-14-cas-promote-move-one-append-feasibility.md. If reopened: replace the op formula `RemovePrecommit(tmp) + AddPrecommit(final) + Promote(final)` with `[Promote(tmp), Move(tmp -> final), SetPublishedAt(final)]`. The pair emits no manifest edge, so the dependency on the GC un-nomination fix goes away. Prefer wiring A of the report (park the build in the disk layer, promote on first observation): it edits no upstream file. Wiring B (keep the storage transaction open) edits three upstream sites.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: task note 2026-11-14: owner decision not to build this form (deviation from the upstream writer order), see CAS-485 and docs/superpowers/reports/2026-11-14-cas-promote-move-one-append-feasibility.md; the Move-based rename already landed (CAS-346). Changes: none. Links: superseded in intent by CAS-485 (a part is published twice); dependency CAS-346 done per the note. Would settle it: owner confirmation that the work is dropped rather than parked, since the note keeps a reopen formula.
+---
+<!-- COMMENTS:END -->

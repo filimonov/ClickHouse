@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-16'
-updated_date: '2026-10-22 14:14'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ci'
   - 'area:upstream'
@@ -15,6 +15,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:issue'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -37,6 +41,8 @@ Fixed on antalya-26.6 by `0c9c89743cc` (PR #2349, closes #2299): the correction 
 cas-gc-rebuild still has `MemoryTracker::updateAllocated(resident, ...)` (`src/Common/MemoryWorker.cpp:913-916`) and is 137 commits behind antalya.
 
 Provenance: BACKLOG/testing-and-ci.md#asan-memory-tracker-snap, candidate (a); verified 2026-09-26 against 8b87aa15d21 and 8d62c314ec1.
+
+Update 2026-11-21: The MemoryWorker fix is present on the 26.8 line (src/Common/MemoryWorker.cpp:583 in the checked branch), so AC1 holds for the code CAS now ships from. Remaining scope: decide whether cas-gc-rebuild still needs the cherry-pick (it lacks it), and record one ASan CAS stateless run with no MemoryTracking jump and no memory-limit failures (AC2).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -64,3 +70,13 @@ PR #2384 (merged into antalya-26.6 as `2f4f092bb58`, CI only) caps RustFS's bloc
 
 2026-10-22 correction: the note above is wrong for antalya-26.8. #2349 is already cherry-picked there (`61da1843e13` + `a10547bddcd`, 2026-10-08; `src/Common/MemoryWorker.cpp:583`, `:1008-1019`), so PR 2579's base and `feature/cas-disk-transactions` carry the fix without a separate PR. Only cas-gc-rebuild still lacks it (0 matches for `__sanitizer_get_current_allocated_bytes`; last touch `7f4da0e22ae`).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1 (26.8 line) src/Common/MemoryWorker.cpp:583 uses __sanitizer_get_current_allocated_bytes, so the fix is on the code the project now targets; task text still names cas-gc-rebuild, which the 2026-10-22 note says still lacks it. Changes: description: Update paragraph appended. Size: XS. Would settle it: whether cas-gc-rebuild is still a delivery target; an ASan CAS stateless run showing no MemoryTracking jump and no memory-limit failures (AC2); the CAS-432 ASan cas-s3 lane red is a separate matter.
+---
+<!-- COMMENTS:END -->

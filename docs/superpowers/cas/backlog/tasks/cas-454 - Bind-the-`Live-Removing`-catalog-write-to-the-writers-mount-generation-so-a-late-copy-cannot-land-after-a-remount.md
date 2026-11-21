@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 16:16'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:ref-ledger'
   - 'complexity:large'
@@ -14,6 +14,9 @@ labels:
   - 'touches:format'
   - 'needs:decision'
   - 'origin:late-request-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 priority: low
 type: bug
@@ -52,3 +55,13 @@ CAS-487 does not deliver this task: Part B was split off. When Part B lands, the
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) keeps `removal_write_may_land` and adds `removing_observed` (c821aece830). A `beginRemoving` that lands after a remount leaves the row `Removing` under an open lane until a restart, a remount, a retried `DROP` or the GC leader's next round (accepted residual, d0e2d1a80bd). fc82bf0d80b latches a `Removing` row at the recovery confirmation.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.h:1001 removal_write_may_land is still the in-memory flag; task note 2026-11-17: PR 2831 keeps it and accepts the residual (d0e2d1a80bd); CAS-487 Part B does not deliver binding to the mount generation. Changes: none. Links: residual is documented in docs/en/antalya/cas/architecture/namespaces.md; related CAS-487 Part B, CAS-367. Owner question: Bind the Live->Removing write to the mount generation with a versioned catalog change, or keep the documented residual?
+---
+<!-- COMMENTS:END -->

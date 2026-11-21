@@ -6,11 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 10:25'
-updated_date: '2026-11-15 14:38'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'origin:noclock-audit'
+  - 'area:mounts'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:plausible'
+  - 'impact:data-loss'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: design
 ordinal: 479000
 ---
 
@@ -45,3 +56,13 @@ Inputs for the paused mount-lease series (docs/superpowers/cas/2026-10-12-mount-
 
 Accepted residual from CAS-487: a superseded writer whose `CLOCK_BOOTTIME` undercounts can acknowledge an append into a slot that GC has reclaimed. The mount lease is the only fence. No test characterizes it.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task text and notes only: a collection task whose listed residuals are accepted-and-documented races; the 2026-11-15 note adds a further accepted residual. Changes: area set to mounts; size unset -> medium (M): decide per entry: accept or close by design; risk set to medium; confidence set to plausible; impact:data-loss; label needs:decision; type unset -> design: decisions per residual, no code. Size: M. Would settle it: Whether the paused mount-lease series (docs/superpowers/cas/2026-10-12-mount-lease-series-state/README.md) has resumed; the task is input to it. Owner question: For each listed late-request residual, accept and document it, or close it by design in the lease redesign?
+---
+<!-- COMMENTS:END -->

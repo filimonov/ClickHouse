@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-02'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -72,3 +77,13 @@ First recorded: 2026-07-02 (c6ed3162fa0, by 'GC round progress observability')
 
 Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 grep for unaccounted / current_phase / round_in_progress / phase_started in StorageSystemContentAddressedMounts.cpp and ContentAddressedGarbageCollectionLog.cpp finds nothing: no in-flight round columns, no unaccounted_ms. Changes: impact:operability. Links: blocks CAS-289.3 (task note). Would settle it: AC#3 (progress log line per interval) and AC#4 (abort record naming the phase) were not searched for..
+---
+<!-- COMMENTS:END -->

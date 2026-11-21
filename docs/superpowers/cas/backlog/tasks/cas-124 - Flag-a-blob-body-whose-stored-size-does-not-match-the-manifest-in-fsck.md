@@ -4,13 +4,16 @@ title: Flag a blob body whose stored size does not match the manifest in fsck
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -54,3 +57,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `Reachable` is 2026-06-04 (0f24cea5ab2); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 CasFsck.h has no size-mismatch finding or field. Changes: none. Would settle it: CasFsck.cpp blob classification not read for a size comparison.
+---
+<!-- COMMENTS:END -->

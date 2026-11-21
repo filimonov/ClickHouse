@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -59,3 +62,13 @@ Provenance: BACKLOG/formats-and-storage.md#cas-format-version-floor, narrowed af
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (5345f6b693b, by 'cas-format-version-floor')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasFormat.cpp:106-113 checkCompatibility throws only above currentReadCeiling. Changes: none. Pointers stale: CasFormat.cpp:72-78 is now :106-113.
+---
+<!-- COMMENTS:END -->

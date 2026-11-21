@@ -4,7 +4,7 @@ title: Let GC rebuild find the newest fold seal by point read instead of a LIST
 status: To Do
 assignee: []
 created_date: '2026-07-28'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -12,6 +12,9 @@ labels:
   - 'touches:on-s3-format'
   - 'confidence:contested'
   - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/gc.md [REBUILD-SEAL-POINT-READ]; verified 2026-09-26 against
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-28 (c4e569f01ea, by 'REBUILD-SEAL-POINT-READ')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc::newestFoldSealRef still exists (Gc/CasGc.cpp:1839, caller :4881); decision-2 trusts a cold recovery LIST after the writer is fenced and forbids hot LISTs, so whether the rebuild LIST is cold depends on CAS-144 (rebuild vs live writers). Changes: none. Links: depends in effect on CAS-144 (rebuild safety against live writers); related CAS-141/CAS-142 (rebuild entry path). Pointers stale: CasGc.cpp:1463-1590 moved; newestFoldSealRef now at :1839. Would settle it: outcome of CAS-144: if rebuild is fenced, decision-2 makes this task unnecessary (obsolete); if it runs with live writers, the task stands. Owner question: Is a GC REBUILD LIST cold (writers fenced, so decision-2 trusts it) or hot? Same question as CAS-144.
+---
+<!-- COMMENTS:END -->

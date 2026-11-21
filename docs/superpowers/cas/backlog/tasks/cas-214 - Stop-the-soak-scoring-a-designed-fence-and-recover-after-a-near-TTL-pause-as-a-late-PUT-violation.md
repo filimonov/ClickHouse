@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:soak'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +61,13 @@ Provenance: BACKLOG/testing-and-ci.md#soak-harness-needsrecovery-after-near-ttl-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (69defeaac9e, by 'soak-harness-needsrecovery-after-near-ttl-pause')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/soak/chaos.py:16 PAUSE still 5..60 s; soak/signals.py:94-95 keeps CASRefNeedsRecovery in LATE_PUT_VIOLATION_NOTES; soak/run.py:941 still aborts with 'LATE-PUT FENCING VIOLATION' when it moves; no remount exemption found.. Changes: impact:operability; label quick-win. Pointers stale: signals.py:94 is now the tuple start at 94-95; run.py gate moved from :871 to ~:941. worktree has no utils/ca-soak; checked master tree..
+---
+<!-- COMMENTS:END -->

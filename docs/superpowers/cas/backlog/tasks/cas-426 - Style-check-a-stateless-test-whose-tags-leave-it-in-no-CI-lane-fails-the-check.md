@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-03 22:08'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ci'
   - 'area:testing'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'theme:ci-stabilization'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 type: chore
@@ -55,3 +60,13 @@ Origin: PR 2704 AI audit 2026-10-28 (finding 2, regression-test direction); http
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: no check_test_lanes.py under ci/jobs/scripts/check_style/ and no reference in ci/jobs/check_style.py. Changes: impact:operability. Pointers stale: clickhouse-test:3240 and :4620 and various_checks.sh:199-218 not re-checked.
+---
+<!-- COMMENTS:END -->

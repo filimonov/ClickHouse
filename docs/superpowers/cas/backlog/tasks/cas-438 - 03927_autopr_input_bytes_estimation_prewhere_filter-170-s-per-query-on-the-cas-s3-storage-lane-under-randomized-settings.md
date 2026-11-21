@@ -6,12 +6,23 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-21 08:22'
 labels:
   - cas
   - ci
   - 'theme:ci-stabilization'
+  - 'area:ci'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
+priority: low
+type: bug
 ordinal: 541000
 ---
 
@@ -36,3 +47,13 @@ PR 2805 @a2147e55697, Stateless tests (amd_binary, cas s3 storage, parallel): ti
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The fix is on the base branch. Close after the first antalya-26.8 run that shows the lane green.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 tests/queries/0_stateless/03927_autopr_input_bytes_estimation_prewhere_filter.sql line 1 carries no-random-settings (fix 8c26e8792eb merged with PR 2805). Changes: area set to ci; size unset -> small (S): A/B of plain s3 vs cas disk if the open question is pursued; risk set to low; confidence set to plausible; impact:operability; type unset -> bug: CI slowness under randomized settings; priority unset -> low: no priority set; test is tagged out of randomized settings. Size: S. Would settle it: The open question (does the CAS read path add cost over a plain S3 disk under those settings) was never A/B tested; the tag only hides it. A green antalya-26.8 lane run is also not recorded.
+---
+<!-- COMMENTS:END -->

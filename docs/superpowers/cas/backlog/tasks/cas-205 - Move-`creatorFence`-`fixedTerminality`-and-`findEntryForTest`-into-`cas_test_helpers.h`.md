@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-31'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:testing'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
 milestone: m-4
 dependencies: []
 references:
@@ -53,3 +56,13 @@ Provenance: BACKLOG/testing-and-ci.md#test-helper-third-copy; verified 2026-09-2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-31 (a577bfffcc6, by 'test-helper-third-copy')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: cas-pr1 src/Disks/tests: creatorFence, fixedTerminality and findEntryForTest are defined only in gtest_cas_ns_creation_lifecycle.cpp:33,41,46 and not referenced in gtest_cas_ref_ckpt_join.cpp or any header, so the duplication the task names is gone.. Changes: none. Pointers stale: gtest_cas_ref_ckpt_join.cpp:136,143,148 no longer hold these helpers.. Would settle it: Owner may still want the single copy moved into cas_test_helpers.h; that is not required by the stated problem..
+---
+<!-- COMMENTS:END -->

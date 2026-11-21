@@ -6,12 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:soak'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:ux'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/scenarios/cards/s28_s33_corner.py
@@ -44,3 +51,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#S31-20260713T174441-1 and #S31-20
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/cards/s28_s33_corner.py:15, :515 and :555 still state previewDeletes previews zeroInDegree only for target shard 0; :598 already calls that a misdiagnosis.. Changes: impact:ux; label quick-win. Pointers stale: CasGc.cpp:4629-4636 not rechecked..
+---
+<!-- COMMENTS:END -->

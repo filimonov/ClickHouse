@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -14,6 +14,9 @@ labels:
   - 'touches:on-s3-format'
   - 'confidence:solid'
   - 'needs:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - CA/Gc/CasGc.cpp
@@ -56,3 +59,13 @@ Provenance: BACKLOG/gc.md [REBUILD R4 residual — manifest-less blobs unreclaim
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (b8f5c9a8453, by 'REBUILD R4 residual — manifest-less blobs unreclaimable')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: gtest_cas_rebuild_condemn_nothing.cpp:254 OrphanBlobIsRetainedNotCondemned still pins the behaviour; no registry spec found in docs/superpowers/specs by name. Changes: none. Would settle it: whether the blob-intent records of this branch (branch name cas-blob-intents) already give the positive point-readable record this task asks for.
+---
+<!-- COMMENTS:END -->

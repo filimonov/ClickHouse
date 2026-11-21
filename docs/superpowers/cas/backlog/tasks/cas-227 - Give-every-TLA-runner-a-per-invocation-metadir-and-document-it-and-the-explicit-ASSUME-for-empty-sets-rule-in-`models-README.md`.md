@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/testing-and-ci.md#tla-runner-static-metadir (source's 'mostl
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (d0d73d46835, by 'empty-set-survey-residues')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: run_tlc.sh:83 derives `tlc-meta-${run_id}-${name}`; run_gclease.sh:27 and run_b140danglemerge.sh:29 still use `tlc-meta-${MODULE}-${name}` (static); models/README.md has no metadir or explicit-ASSUME convention (grep). Changes: none.
+---
+<!-- COMMENTS:END -->

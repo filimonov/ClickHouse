@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-01 17:03'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:issue'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -59,3 +64,13 @@ Provenance: BACKLOG/performance.md#cas-connection-churn-spike-redo; roadmap §2 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01: occurrence on PR #2463 (cas_selects release + aarch64): 2620/2632 'Cannot assign requested address' on S3 PUTs, fenced after 67 attempts; tmp/ci-2463/rca.md
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/IO/S3Defines.h:16 DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100 still the default; the redo is a measurement with no result recorded in the task. Changes: impact:operability. Pointers stale: S3Defines.h default is now at :16 (task says :13). Would settle it: a recorded non-loopback run at ~430 GET/s and the otel stand's effective http_keep_alive_max_requests.
+---
+<!-- COMMENTS:END -->

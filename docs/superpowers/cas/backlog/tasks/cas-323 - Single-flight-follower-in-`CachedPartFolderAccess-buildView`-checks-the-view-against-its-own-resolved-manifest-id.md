@@ -6,12 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 08:15'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2440#issuecomment-5867885153'
@@ -48,3 +52,13 @@ Provenance: AI audit comment on PR #2440, https://github.com/Altinity/ClickHouse
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Parts/PartFolderAccess.cpp:262-263 follower returns future.get() with no manifestId comparison; inflight map keyed by key.cacheKey() (:253). Changes: none. Links: CAS-182 is a duplicate of this task; keep this one.
+---
+<!-- COMMENTS:END -->

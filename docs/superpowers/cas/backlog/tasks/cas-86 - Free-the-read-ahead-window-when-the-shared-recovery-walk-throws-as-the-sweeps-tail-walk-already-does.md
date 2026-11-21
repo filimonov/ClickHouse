@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-358
@@ -58,3 +61,13 @@ Identifier trace: the earliest docs mention of `CORRUPTED_DATA` is 2026-06-03 (8
 
 2026-10-13: absorbed by CAS-358 §5: the sweep's OutstandingHintGuard moves into recoverRefTableDetailedFromAuthority because the fold's seed walk runs on the shared read-ahead reader. Keep open until that lands; AC unchanged.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: Pool/CasRefProtocol.cpp:914-921 discard_hints + SCOPE_EXIT_MEMORY_SAFE discards outstanding ref-log hints on any exit of the recovery walk (the CAS-358 absorption); OutstandingHintGuard no longer exists anywhere in ContentAddressed/; gtest_cas_ref_protocol.cpp:386 asserts reader.pending() == 0. Changes: none. Pointers stale: CasRefProtocol.cpp:1042/1075/1101 and CasOrphanManifestSweep.cpp:305-326 no longer match. Would settle it: not confirmed that the :386 test throws mid-window (AC #1) nor that a following namespace on the same page reads without extra misses (AC #2); not confirmed that the guarded function is the one recov….
+---
+<!-- COMMENTS:END -->

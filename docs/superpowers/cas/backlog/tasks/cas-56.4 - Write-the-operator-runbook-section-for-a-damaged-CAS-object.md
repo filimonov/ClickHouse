@@ -4,13 +4,16 @@ title: Write the operator runbook section for a damaged CAS object
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies:
   - CAS-56.1
@@ -59,3 +62,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `_pool_meta` is 2026-06-02 (cafc256906e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: debugging.md/troubleshooting.md in cas-pr1 have no damaged-object runbook section (only gc-bookkeeping-corrupt at debugging.md:113); depends on CAS-56.1, CAS-56.3, CAS-32 which are open. Changes: none. Would settle it: whether the repair commands (CAS-56.3, CAS-32) have landed; the section cannot be written before them.
+---
+<!-- COMMENTS:END -->

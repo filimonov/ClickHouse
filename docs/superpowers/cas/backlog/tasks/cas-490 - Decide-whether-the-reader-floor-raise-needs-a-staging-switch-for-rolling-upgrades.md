@@ -6,10 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-15 14:38'
-updated_date: '2026-11-17 20:02'
-labels: []
+updated_date: '2026-11-21 08:23'
+labels:
+  - 'area:formats'
+  - 'complexity:small'
+  - 'risk:high'
+  - 'confidence:plausible'
+  - 'impact:availability'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-487
+priority: medium
+type: design
 ordinal: 595000
 ---
 
@@ -34,3 +46,13 @@ OWNER DECISION. One writable mount of a generation 3 build, including `clickhous
 
 2026-11-17: PR 2831 body and docs/en/antalya/cas/operations/migration.md state: stop all older servers first. This task closes if the owner confirms "no rolling upgrade".
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task notes: owner decision pending; PR 2831 and docs/en/antalya/cas/operations/migration.md state stop all older servers first; closes if the owner confirms no rolling upgrade. Changes: area set to formats; size unset -> small (S): decision; a switch would be larger; risk set to high; confidence set to plausible; impact:availability; label needs:decision; type unset -> design: owner decision; priority unset -> medium: no priority set; decision unblocks release notes. Size: S. Links: Same decision family as CAS-410. Would settle it: The owner's answer. Owner question: Must a rolling upgrade to generation 3 work without stopping older servers first (staged reader-floor raise), or do we keep stop-all-first and close this?
+---
+<!-- COMMENTS:END -->

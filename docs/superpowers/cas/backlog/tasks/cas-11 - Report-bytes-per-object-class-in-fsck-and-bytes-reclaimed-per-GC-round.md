@@ -4,7 +4,7 @@ title: Report bytes per object class in fsck and bytes reclaimed per GC round
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-01 07:34'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -13,6 +13,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -65,3 +68,13 @@ Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-
 
 CAS-289.6 asks for the same per-class bytes (plus counts) on a per-round surface the dashboards can read.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 ContentAddressedGarbageCollectionLog.h has no bytes field; fsck bytes not rechecked beyond that. Changes: none. Would settle it: whether FsckReport now has per-class bytes; the kFsckFields list was not read in full.
+---
+<!-- COMMENTS:END -->

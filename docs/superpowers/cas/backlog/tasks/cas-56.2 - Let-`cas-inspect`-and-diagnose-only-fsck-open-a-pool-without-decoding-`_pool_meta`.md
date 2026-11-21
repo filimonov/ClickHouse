@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:tooling'
   - 'area:fsck'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -62,3 +65,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `cas-gc-rebuild` is 2026-07-03 (11681d28eba); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: programs/disks/CommandCaInspect.cpp:50 still opens through `ca->store()` then pool->openRequests()/layout(); CasPool.cpp:627 passes allow_mint=!read_only, so a missing or damaged `_pool_meta` still blocks the tool. Changes: none. Pointers stale: CasPool.cpp:537 cited; the createOrValidate call is now near :618-627.
+---
+<!-- COMMENTS:END -->

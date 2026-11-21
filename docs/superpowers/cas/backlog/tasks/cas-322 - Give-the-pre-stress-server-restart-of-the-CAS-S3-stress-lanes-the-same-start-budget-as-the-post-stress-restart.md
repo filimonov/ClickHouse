@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 07:43'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ci'
   - 'complexity:trivial'
@@ -15,6 +15,9 @@ labels:
   - 'origin:review'
   - 'touches:upstream-code'
   - 'theme:ci-stabilization'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -68,3 +71,13 @@ Same cost on the yardstick (`utils/cas-yardstick/reference/2026-09-30-647dbf9dfe
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a: the restart wait after a kill is about 47 s per disk (was 131 s at the 120 s lease).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 tests/docker_scripts/stress_runner.sh:309 restart uses start_server 10 (with a comment about ARM sanitizer + S3 + async_load_databases=false); lines :102 and :340 also use 10. Changes: none. Links: related: CAS-355 (arm_release stress restart budget), CAS-95.1. Pointers stale: stress_runner.sh :293 and :314 are now :309 and :340. Would settle it: AC2: Stress test (amd_asan_ubsan, cas s3 storage) and (amd_debug, cas s3 storage) green on a PR that draws async_load_databases=false; the 2026-11-13 note shows a stress restart budget still exceeded….
+---
+<!-- COMMENTS:END -->

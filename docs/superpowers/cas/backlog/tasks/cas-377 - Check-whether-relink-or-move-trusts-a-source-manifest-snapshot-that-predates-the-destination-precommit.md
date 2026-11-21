@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'area:gc'
@@ -14,6 +15,9 @@ labels:
   - 'risk:high'
   - 'needs:repro'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -41,3 +45,13 @@ Codex (inferred): the source resolve/manifest snapshot precedes the destination 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text only; AC1 verdict (interleaving or excluding happens-before) not recorded. Changes: none. Would settle it: the verdict on whether a source drop plus GC can precede the destination precommit.
+---
+<!-- COMMENTS:END -->

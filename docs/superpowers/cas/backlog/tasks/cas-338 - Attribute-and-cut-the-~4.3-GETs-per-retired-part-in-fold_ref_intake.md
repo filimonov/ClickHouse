@@ -4,10 +4,20 @@ title: Attribute and cut the ~4.3 GETs per retired part in fold_ref_intake
 status: To Do
 assignee: []
 created_date: '2026-10-01 12:20'
+updated_date: '2026-11-21 08:21'
 labels:
   - gc
   - performance
   - research
+  - 'area:gc'
+  - 'complexity:medium'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 ordinal: 431000
@@ -32,3 +42,13 @@ Measured 2026-10-01 on the CAS-29.9 A/B stand: the round after a DROP of 20k par
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: No report on the 86k-GET attribution found under docs/superpowers/reports (searched fold/intake names); task has no later note saying work started. Changes: area set to gc; size unset -> medium (M): attribution run on the stand plus a proposal; risk set to low; confidence set to plausible; impact:cost. Size: M. Links: Related to CAS-337 (same 20k-part DROP round). Would settle it: Whether the blob-intents GC changed the fold_ref_intake read pattern enough that the 4.3 GETs/part figure is stale.
+---
+<!-- COMMENTS:END -->

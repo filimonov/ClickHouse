@@ -4,13 +4,16 @@ title: Swap back the two doc blocks above `chainLinkFor` and `classifyRefLogOccu
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasRefLedger.cpp
@@ -47,3 +50,13 @@ Provenance: BACKLOG/ref-protocol.md#orphaned-adjudication-comment. Verified 2026
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (95d974072c4, by 'ORPHANED-ADJUDICATION-COMMENT')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: obsolete (high). Evidence: chainLinkFor no longer exists under ContentAddressed/ (grep empty); the adjudication comment now sits at Pool/CasRefLedger.cpp:157-168 directly above ClassifiedOccupant/classifyRefLogOccupant (:180), which is the code it describes. Changes: none.
+---
+<!-- COMMENTS:END -->

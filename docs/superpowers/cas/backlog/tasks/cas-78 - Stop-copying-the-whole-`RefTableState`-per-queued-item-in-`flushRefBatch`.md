@@ -4,13 +4,16 @@ title: Stop copying the whole `RefTableState` per queued item in `flushRefBatch`
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -51,3 +54,13 @@ First recorded: 2026-08-04 (0f266066bef, by 'ref-table-copy-commit-path')
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:3699 'RefTableState item_scratch = working;' and :3739 'RefTableState shape_check = working;' still copy per item. Changes: none. Pointers stale: CasRefLedger.cpp:3130 now :3699, :3170 now :3739.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:33'
-updated_date: '2026-10-09 05:44'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ref-ledger'
   - 'area:remount'
@@ -14,6 +14,9 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 priority: medium
 type: bug
@@ -46,3 +49,13 @@ During `tryRemountOnce`, step 1 (`setLiveWriterEpoch(E')`) lands before step 3 m
 <!-- SECTION:NOTES:BEGIN -->
 AC #3 checked against PR 15 (fix/antalya-26.6/cas-remove-remount-machine): the window survives, narrower. `flushRefBatch` re-checks `superseded_by_reacquire` and two statements later reads `live_epoch_fn()` with no lock held. The reacquire sets the flag in `CloseOldEpoch` and publishes E' in `StartRenewer`, several store round trips later, so the leader must be preempted between those two statements for the whole sequence. The fix sketch (read the epoch, then re-check the flag) closes it: the flag store happens-before the epoch store on the renewal thread. Not fixed in PR 15.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: Pool/CasRefLedger.cpp:3015-3038 flush now reads live_epoch_fn() first, then re-checks may_mutate and superseded_by_remount (comment 'The epoch first, then the flags'), the sketched fix; introduced by 4a06eabac6c (lazy epoch tombstone). Changes: none. Pointers stale: chainLinkFor no longer exists; the deposed-lane gate is now the chain_epoch > live_epoch branch at CasRefLedger.cpp:3046. Would settle it: a test running a flush between remount steps 1 and 3 (AC1), a check that CASRefAppendSealRejected stays flat (AC2), and the reacquire path (AC3); no such gtest found by name.
+---
+<!-- COMMENTS:END -->

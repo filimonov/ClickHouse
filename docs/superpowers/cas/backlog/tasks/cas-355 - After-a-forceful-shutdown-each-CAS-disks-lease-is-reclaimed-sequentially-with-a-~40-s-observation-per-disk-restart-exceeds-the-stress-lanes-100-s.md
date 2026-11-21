@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:lifecycle'
   - 'area:ci'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 priority: medium
 type: bug
@@ -62,3 +65,13 @@ CAS-487 requires a clean farewell to follow a lane drain. Option (a) of this tas
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a cuts the per-disk wait after a kill to about 47 s. Not measured with 3 or more CAS disks against the 100 s budget.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: feb86da1f4a (in branch) only changes the default lease to 40 s (ContentAddressedSettings.cpp); task note says not measured with 3+ disks. Changes: none. Links: Option (a) conflicts with CAS-487 (clean farewell must follow a lane drain); extends CAS-155. Would settle it: restart time with 3+ CAS disks after a forceful shutdown measured against the 100 s budget; whether lazy mounts are observed in parallel.
+---
+<!-- COMMENTS:END -->

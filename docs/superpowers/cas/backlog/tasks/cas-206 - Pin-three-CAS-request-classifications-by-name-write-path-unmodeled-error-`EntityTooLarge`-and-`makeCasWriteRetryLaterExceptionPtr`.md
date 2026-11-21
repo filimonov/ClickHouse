@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'area:backend'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +60,13 @@ Provenance: BACKLOG/testing-and-ci.md#request-control-classification-gaps; verif
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (229f9e617e8, by 'request-control-classification-gaps')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Disks/tests: makeCasWriteRetryLaterExceptionPtr has no hit in any gtest (item 3 open). EntityTooLarge now appears in gtest_cas_s3_bulk_delete_fallback.cpp:469-486 (a bulk-delete refusal test), so item 2 may be partly met; the request-refusal-chain test in gtest_cas_requests.cpp was not shown to exist.. Changes: impact:wrong-result. Pointers stale: gtest_cas_requests.cpp:2018 and CasRequests.cpp:240 line cites not rechecked.. Would settle it: Whether gtest_cas_requests.cpp pins EntityTooLarge through the CasRequests refusal chain and has the write-path unmodeled-error twin (items 1-2)..
+---
+<!-- COMMENTS:END -->

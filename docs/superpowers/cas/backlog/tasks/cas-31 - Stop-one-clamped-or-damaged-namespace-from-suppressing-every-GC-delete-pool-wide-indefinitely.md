@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-03'
-updated_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:review'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -72,3 +77,13 @@ so a missing body's edges cannot be enumerated. The known unwedge is `SYSTEM CAS
 refuses only on a live ref naming a missing body).
 Provenance: utils/ca-soak/scenarios/BACKLOG.md#GC-WEDGE-REMOVAL-FOLD-2026-07-10. Forensics (all 63 refs, shards, cursors): `utils/ca-soak/scenarios/gc_wedge_forensics_20260710.txt` at 97589860bc4, deleted in 13723e501a3.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.cpp:3658 suppressed_by_intake = anomalies || carried_holds || frontier_incomplete; :3697 result.suppress_destructive still pool-wide; no per-namespace blocking field found. Changes: label needs:decision. Pointers stale: CasGc.cpp:3203-3204 now :3658/:3697; CasGc.h:62-64 not re-checked. Owner question: Which delete families may proceed while one namespace is held (design needed, needs:spec)?
+---
+<!-- COMMENTS:END -->

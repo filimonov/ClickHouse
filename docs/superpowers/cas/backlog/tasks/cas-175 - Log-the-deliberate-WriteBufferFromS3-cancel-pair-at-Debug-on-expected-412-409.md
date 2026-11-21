@@ -4,7 +4,7 @@ title: Log the deliberate WriteBufferFromS3 cancel pair at Debug on expected 412
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:42'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:observability'
   - 'area:backend'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:solid'
   - 'origin:canary'
   - 'origin:otel-demo-audit'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies:
   - CAS-168
@@ -55,3 +60,13 @@ Provenance: umbrella-roadmap.md section 3 (log noise on conditional writes) + au
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/IO/WriteBufferFromS3.cpp:306-309 ("was canceled") and :491 ("Nothing to abort") both log at LOG_INFO, not Debug, with no distinction for a deliberate conditional-write cancel. Changes: impact:operability. Pointers stale: WriteBufferFromS3.cpp:475 is now :491. Would settle it: The task says Warning/Error lines; on this branch both are Info, so AC#1 (no Warning/Error) may already hold. Needs the otel.demo log level setting to know whether Info lines are the noise being repo….
+---
+<!-- COMMENTS:END -->

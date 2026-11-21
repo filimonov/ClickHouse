@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - docs/superpowers/cas/fable-review-triage.md
@@ -51,3 +56,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `meta_pool` is 2026-07-10 (2b205eb54e6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep in docs/superpowers/cas/fable-review-triage.md for 7a376f141d3, 7f932d31352 and GcMetaWriter: no hits, so the B1 closing note is not written. Changes: label quick-win.
+---
+<!-- COMMENTS:END -->

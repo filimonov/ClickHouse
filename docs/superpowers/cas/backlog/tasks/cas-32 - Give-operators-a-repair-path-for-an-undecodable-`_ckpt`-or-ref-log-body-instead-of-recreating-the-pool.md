@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -16,6 +16,9 @@ labels:
   - 'needs:decision'
   - 'origin:review'
   - 'confidence:contested'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -68,3 +71,13 @@ CAS-56 (diagnose, repair and runbook for a damaged CAS object) and its runbook s
 
 First recorded: 2026-07-29 (3815235b015, by 'CKPT-DAMAGE-NO-REPAIR-PATH')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 fsck repair is only --fix legacy-markers (CommandFsck.cpp:43, CasFsck.h:319); no _ckpt rebuild exists. Changes: none. Links: CAS-56.4 and CAS-56 depend on this.
+---
+<!-- COMMENTS:END -->

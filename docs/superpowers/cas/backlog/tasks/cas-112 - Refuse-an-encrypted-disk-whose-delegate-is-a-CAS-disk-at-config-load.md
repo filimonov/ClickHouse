@@ -4,13 +4,16 @@ title: Refuse an encrypted disk whose delegate is a CAS disk at config load
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-05 13:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +61,13 @@ Identifier trace: the earliest docs mention of `isContentAddressed` is 2026-06-0
 
 2026-11-05: the loud-failure half landed differently: https://github.com/Altinity/ClickHouse/pull/2773 (antalya-26.8, 95544a2caaf) refuses at the first blob part-file write with NOT_IMPLEMENTED, so an encrypted-over-CAS table can be created and fails on INSERT. The config-load refusal in AC#1 would move the failure to startup; weigh it against CAS-129.1 (support), which would remove both refusals.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: 95544a2caaf is in the branch (refuses at first blob part-file write, NOT_IMPLEMENTED); src/Disks/DiskEncrypted.cpp has no content-addressed/CAS reference, so no config-load refusal exists (AC1 open). Changes: none. Links: Alternative: CAS-129.1 (forward isContentAddressed) would remove both refusals; weigh before implementing.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:testing'
   - 'area:ci'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'theme:ci-stabilization'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2300'
@@ -56,3 +61,13 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#tiered-storage-cas-move-silent-failu
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (597753102a9, by 'tiered-storage-cas-move-silent-failure')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task text only; the regression suite lives in a separate repository, and the task records no local rerun since 2026-09-26.. Changes: impact:operability. Would settle it: A local `tiered_storage --only "/tiered storage/with cas/background move/*"` run with server logs, or a green tiered_storage_cas CI report after 2026-09-26 showing the failure no longer reproduces..
+---
+<!-- COMMENTS:END -->

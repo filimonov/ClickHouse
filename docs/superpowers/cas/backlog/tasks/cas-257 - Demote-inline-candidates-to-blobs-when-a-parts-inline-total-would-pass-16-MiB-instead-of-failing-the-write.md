@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'area:formats'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -60,3 +63,13 @@ Provenance: BACKLOG/formats-and-storage.md#manifest-inline-budget-no-spill (2031
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (bab19a3de54, by 'manifest-inline-budget-no-spill')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPartWriteTxn.cpp:59,637-639 still throws when inline_total exceeds kMaxManifestInlineBytesTotal; no demotion path found by grep. Changes: none. Links: related CAS-80 (allowlist shrinks exposure). Pointers stale: CasPartWriteTxn.cpp:57,:612-614 now :59,:637-639.
+---
+<!-- COMMENTS:END -->

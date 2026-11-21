@@ -6,11 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 03:02'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
+type: chore
 ordinal: 579000
 ---
 
@@ -27,3 +36,13 @@ The predicate 'lifecycle is not Live and remove_txn_id is set' is written seven 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Pool/CasRefProtocol.h:282 isTerminal() already is the terminal-removal predicate; CasRefLedger.cpp uses it twice and has one remaining raw lifecycle compare. Changes: size unset -> small (S): small refactor; risk set to low; confidence set to plausible; type unset -> chore: pure refactor. Size: S. Pointers stale: 'predicate written seven times in CasRefLedger.cpp' no longer matches: a helper exists. Would settle it: whether the shared constants for lease and window defaults still need doing (not checked).
+---
+<!-- COMMENTS:END -->

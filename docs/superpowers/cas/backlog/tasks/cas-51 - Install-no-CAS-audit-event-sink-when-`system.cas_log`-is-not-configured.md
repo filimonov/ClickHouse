@@ -4,13 +4,19 @@ title: Install no CAS audit-event sink when `system.cas_log` is not configured
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:cost'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +64,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-event-sink-installed-wh
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2583e3427aa, by 'cas-event-sink-installed-when-log-disabled')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedMetadataStorage.cpp:576-596: makeCasEventSink returns {} only for a null context; getContentAddressedLog() is checked inside the sink lambda (`if (!log) return;`), so hasEventSink stays true with the log disabled. Changes: impact:cost; label quick-win. Pointers stale: ContentAddressedMetadataStorage.cpp:570-574 and :587-589 are now ~:576-580 and ~:594-596.
+---
+<!-- COMMENTS:END -->

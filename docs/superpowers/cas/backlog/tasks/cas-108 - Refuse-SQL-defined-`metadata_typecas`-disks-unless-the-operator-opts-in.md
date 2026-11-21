@@ -4,7 +4,7 @@ title: Refuse SQL-defined `metadata_type=cas` disks unless the operator opts in
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -12,6 +12,11 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:security'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-0
 dependencies: []
 references:
@@ -60,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#dynamic-cas-disk-no-gate an
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (eff9336f676, by 'cas-custom-disk-privilege-bypass')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep finds no cas_allow_unsafe_dynamic_disks anywhere in src or docs/en; RegisterDiskObjectStorage.cpp:31-36 uses custom_disk only for the remote-host-filter check, no CAS gate. Changes: impact:security. Pointers stale: RegisterDiskObjectStorage.cpp:31-37 now names custom_disk (used for RemoteHostFilterCheck); factory line 219 not rechecked.
+---
+<!-- COMMENTS:END -->

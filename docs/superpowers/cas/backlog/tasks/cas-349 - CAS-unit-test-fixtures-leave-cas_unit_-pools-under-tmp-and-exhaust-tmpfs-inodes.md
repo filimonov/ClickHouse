@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 15:53'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-21 08:20'
 labels:
-  - 'area:tests'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:incident'
+  - 'area:testing'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 type: bug
@@ -45,3 +50,13 @@ ordinal: 443000
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-19: ported to fix/antalya-26.6/cas-unit-test-temp-roots-2 @c3e92a4c3b4a (base 8fefc27bd625, 2 commits); release CAS* 2665, ASan 2669, TMPDIR empty after both. Local, not pushed. Body tmp/lease-series/port/cas349/pr-body.md.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas_test_helpers.h:468 creates cas_unit_<n> under temp_directory_path with remove_all only before creation (:473); gtest_cas_backend_generation.cpp:90,120,158 and gtest_cas_upstream_slice.cpp:58 create the same way. The fix is on the 26.6 port branch (c3e92a4c3b4a, unpushed), not on this 26.8 branch. Changes: label area:tests -> area:testing; label quick-win. Links: fix ported only to fix/antalya-26.6/cas-unit-test-temp-roots-2 per task note; 26.8 branch still needs it.
+---
+<!-- COMMENTS:END -->

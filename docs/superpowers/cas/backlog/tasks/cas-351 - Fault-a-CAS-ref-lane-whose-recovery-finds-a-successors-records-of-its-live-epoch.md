@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:49'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 priority: medium
@@ -49,3 +52,13 @@ ordinal: 445000
 
 2026-10-19: ported together with PR 10 v2 to fix/antalya-26.6/cas-ref-lane-fault-latch-2 @d0480a861845 (base 8fefc27bd625, 4 commits); release CAS* per commit, ASan 2686. Model on local branch models/reflane-fault-latch-port (NoRecoveryOverSuccessor, run_reflane.sh 34/34), not yet on cas-gc-rebuild. Body tmp/lease-series/port/pr10/pr-body.md.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: fix commit 1556359b7ac is not in the checked branch (merge-base --is-ancestor: no); recovery in Pool/CasRefLedger.cpp:1190-1215 adjudicates retained attempts but no latch/CORRUPTED_DATA for a successor seal >= live epoch was found. Changes: none. Would settle it: whether the lazy-tombstone rework (4a06eabac6c) already covers the successor-seal case in runRecoveryWalkOnce.
+---
+<!-- COMMENTS:END -->

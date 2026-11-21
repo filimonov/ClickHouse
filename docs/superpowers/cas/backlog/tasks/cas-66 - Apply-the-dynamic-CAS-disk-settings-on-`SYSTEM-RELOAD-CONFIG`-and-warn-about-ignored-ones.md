@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -15,6 +15,11 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -65,3 +70,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-settings-not-reloadable
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (f4acc4f955d, by 'cas-settings-not-reloadable-silently')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep applyNewSettings under cas-pr1 ContentAddressed/ returns nothing: no override, base is still empty. Changes: impact:operability.
+---
+<!-- COMMENTS:END -->

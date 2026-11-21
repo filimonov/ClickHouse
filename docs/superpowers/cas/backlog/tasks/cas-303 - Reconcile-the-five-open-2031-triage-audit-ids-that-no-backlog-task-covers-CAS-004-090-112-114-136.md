@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/issues/2031'
@@ -46,3 +49,13 @@ Provenance: GitHub reconciliation 2026-09-26 (unit u17) and the #2031 edit histo
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: 2031-triage.md has verdict sections for CAS-004, 090, 112 (anchors #cas-004 etc.) but the task asks for a backlog task or a closure note with commit evidence and an issue #2031 update. Changes: none. Would settle it: state of issue #2031 and whether the ledger sections count as closure notes; not checkable from the worktree.
+---
+<!-- COMMENTS:END -->

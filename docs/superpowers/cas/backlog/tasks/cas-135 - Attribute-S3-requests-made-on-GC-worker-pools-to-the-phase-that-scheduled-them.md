@@ -4,7 +4,7 @@ title: Attribute S3 requests made on GC worker pools to the phase that scheduled
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-10-08 20:37'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies:
   - CAS-29.2
@@ -86,3 +91,13 @@ Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-
 
 2026-10-08: a third case since PR #2483: the namespace janitor's batch deletes run on the GC I/O pool (`Gc::removeWriteOnceOnIoPool`), so the `namespace_cleanup` row's `ProfileEvents` miss them too; the row carries a `delete_requests` phase metric as the workaround and `cas_gc_log.md` says so. Raised again by the distributed-systems audit of PR #2483 (item 3.1, https://github.com/Altinity/ClickHouse/pull/2483#issuecomment-6061665123).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/: grep ThreadGroup finds nothing; Gc/CasGcPhaseTimer.h:15-24 still documents that the delta is a thread snapshot diff that does not cover work handed to other threads. Changes: impact:operability. Links: blocks CAS-289.3 (task note). Pointers stale: CasGcPhaseTimer.h:42-65 and :22 comments moved; other pinned line numbers in the 2026-09-30 inventory (cas/gc-request-cuts @27436f2ae8c) not rechecked.
+---
+<!-- COMMENTS:END -->

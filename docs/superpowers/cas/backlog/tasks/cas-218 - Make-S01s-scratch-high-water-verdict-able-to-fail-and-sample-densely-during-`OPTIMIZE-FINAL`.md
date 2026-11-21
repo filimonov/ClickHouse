@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:soak'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -52,3 +58,13 @@ Provenance: BACKLOG/testing-and-ci.md [soak-harness-minors] (S01 sub-point); ver
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (5245fbc7a76, by 'soak-harness-minors')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/cards/s01_s02_huge_blob.py:173-174 Verdict('scratch high-water', ..., 'pass') is a literal; scenarios/framework/sampler.py:33 interval_s=30.0 default.. Changes: impact:operability; label quick-win.
+---
+<!-- COMMENTS:END -->

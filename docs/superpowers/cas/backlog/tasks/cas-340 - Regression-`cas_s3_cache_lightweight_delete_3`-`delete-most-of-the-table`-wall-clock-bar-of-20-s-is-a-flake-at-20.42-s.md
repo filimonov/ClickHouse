@@ -6,15 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:03'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:24'
 labels:
   - ci
   - tests
   - 'area:write-path'
   - 'area:ci'
   - 'theme:ci-stabilization'
+  - 'risk:low'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: bug
 ordinal: 433000
 ---
 
@@ -49,3 +56,13 @@ Observed 2026-10-01 on PR #2463 (release, x86): the scenario asserts execution_t
 2026-11-10: PR 2801 @3963b4f40ec, both lanes red: `cas` VersionedCollapsingMergeTree 21.9 s, GraphiteMergeTree 20.5 s; `cas-s3-cache` MergeTree 24.5 s, ReplacingMergeTree 22.8 s, VersionedCollapsingMergeTree 20.1 s. Not a 2 % margin. Per-engine DELETE time (raw.log `execution_time`, min–max over the 7 engines) across five runs of the same server code, cas / cas-s3-cache: 2801 @945b634 9.6–15.1 / 7.3–11.5; @083b575 8.2–13.1 / 7.5–14.4; @3963b4f 13.2–21.9 / 15.8–24.5; 2577 @02a2511 8.1–10.0 / 8.7–12.2; @74562b9 13.0–17.2 / 13.3–19.0. Same binary, 9 to 24 s: runner noise on top of a cost that already sits at the bar.
 Cost model from the cas-lane server log (clickhouse1, `mutation_110` on `table_56785b61_d9ef_11f1_8ca3_92000a6a0759`, 15:36:11–15:36:33): 100 parts (`PARTITION BY id`, 100k rows each), 16 background threads, per-part cycle on a thread p50 2.69 s / mean 3.18 / max 11.6. Inside: mutate compute 0.09 s; part files to S3 (filled checksums to rename) p50 0.80 s, p90 1.86; the rest (commit after rename) about 0.9 s p50. 100 x 2.7 s / 16 threads = 17 s against a 20 s bar. No S3 errors or conflicts in the window: the 159 AWS-SDK 'signature check failed' debug lines are the HEAD-before-PUT 404s, minio.log is empty. The acceptance bar (CAS-441) was red in the same run on both lanes. Logs: tmp/review_2801/regression/ (raw_*.log, ch1_cas_server.log, win_vcmt.log).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes 2026-11-08 and 2026-11-10: the scenario was red on PR 2806 and PR 2801 on both lanes with per-part cost ~2.7 s x 100 parts / 16 threads sitting at the 20 s bar; the fix lives in clickhouse-regression, not in this worktree. Changes: risk set to low; confidence set to solid; type unset -> bug: CI scenario red on both CAS lanes; no type was set. Links: related CAS-441 (acceptance bar), CAS-431 (LightweightDelete(3) hang). Would settle it: a recent CI run showing whether the lightweight_delete3 bar is still red after CAS-441 and the request-count work (AC2); the regression-repo bar cannot be checked here.
+---
+<!-- COMMENTS:END -->

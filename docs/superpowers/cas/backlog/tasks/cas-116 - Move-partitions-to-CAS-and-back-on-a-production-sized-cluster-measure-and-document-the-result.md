@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:docs'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/operability-and-introspection.md#b13-migration-path ([B13]);
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (4afa7f68ee1, by 'b13-migration-path')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/en/antalya/cas/operations/migration.md has no throughput or measured numbers (grep empty); AC1 run not recorded in the task. Changes: none. Would settle it: a recorded multi-TB move run.
+---
+<!-- COMMENTS:END -->

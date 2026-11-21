@@ -4,9 +4,15 @@ title: A superseded GC leader reports CORRUPTED_DATA for a run its successor del
 status: To Do
 assignee: []
 created_date: '2026-11-16 14:29'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 type: bug
@@ -26,3 +32,13 @@ Soak 2026-11-16 (evidence master/tmp/partb/soak/run2): ch1 was GC leader, its ro
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasBlobInDegree.cpp:418-421 openSourceEdgeRun still throws CORRUPTED_DATA 'CAS source-edge run: object {} is absent' on a null stream with no lease re-check or fenced-out outcome. Changes: impact:operability. Links: same family as CAS-372 (S8 deposed-leader false CORRUPTED_DATA, other throw site).
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'complexity:medium'
@@ -16,6 +16,11 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:review'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -60,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#b180-format-freeze (rollout
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'B180 / format-freeze')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: no max_content_addressable_pool_format / member-version roster identifier in cas-pr1 src/Disks nor a rollout spec under docs/superpowers/specs. Changes: impact:availability.
+---
+<!-- COMMENTS:END -->

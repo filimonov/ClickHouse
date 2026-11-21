@@ -6,13 +6,23 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-07 20:29'
+updated_date: '2026-11-21 08:20'
 labels:
   - cas
   - gc
   - docs
+  - 'area:gc'
+  - 'complexity:trivial'
+  - 'risk:low'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-30
 priority: low
+type: docs
 ordinal: 439000
 ---
 
@@ -38,3 +48,13 @@ The comment at `confirm_condemned_marker` and the test `GraduationReadAheadDecid
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: obsolete (high). Evidence: cas-pr1 src/Disks: grep finds no confirm_condemned_marker and no GraduationReadAheadDecidesOnTheFetchedValue; tests/gtest_cas_gc_read_ahead.cpp now holds only CASGCReadAhead.* tests (Hit/Miss/Duplicate/...); Gc/CasGc.cpp keeps only the CASGCRetiredGraduated counter (lines 52, 121). The commented code and test do not exist. Changes: area set to gc; size unset -> trivial (XS): n/a, subject gone; risk set to low; confidence set to solid; type unset -> docs: comment-only change. Size: XS. Links: CAS-334 (the fix this comment points to) is also obsolete on this branch.
+---
+<!-- COMMENTS:END -->

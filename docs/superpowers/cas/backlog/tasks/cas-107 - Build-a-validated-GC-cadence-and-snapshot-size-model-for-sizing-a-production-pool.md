@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-03'
-updated_date: '2026-11-11 23:41'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -16,6 +16,10 @@ labels:
   - 'needs:measurement'
   - 'origin:soak'
   - 'origin:otel-demo-audit'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-0
 dependencies: []
 references:
@@ -35,6 +39,8 @@ Operators have no way to predict GC round time, snapshot size or S3 request budg
 Data points: a live-AWS round took 30-40 s; audit F29 shows the GC snapshot run growing 11-12 MiB -> 125 MiB per round with the condemned backlog, rewritten every round.
 
 Provenance: BACKLOG/performance.md#scale-findings [Capacity model]. Verified 2026-09-26 against dd0ed2f263a.
+
+Update 2026-11-21: The round-time half of the model exists (notes 2026-11-11/12: T = rho*I/(1-rho), holds for rho up to about 0.5, checked on otel.demo and the stand). Remaining scope: snapshot-bytes and request-per-day terms (AC #1), a check against a soak run (AC #2), and operator sizing guidance in docs/en/antalya/cas (AC #3; none found).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -63,3 +69,13 @@ Merged from u19b-soak (merge into CAS-107): Cadence model shape from the soak le
 
 2026-11-12 defaults review: recalibration without the fault proxy: 11 INSERT/s gives 6-7 s rounds at 60 s (rho 0.10) and about 45 s at 300 s with budgets 0 (model predicts 33 s); the proxy inflated the per-log cost about 8 times, so the 7-18 ms per log of the earlier note is not a property of CAS or RustFS. The model holds for rho up to about 0.5; above that RustFS LIST degrades and rounds grow faster than the model. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Task notes 2026-11-11/12 record the model T = rho*I/(1-rho), checked on otel.demo and the stand (report docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review); grep rho|sizing|busy share in cas-pr1 docs/en/antalya/cas: no sizing guidance (only a quick-start pointer). Changes: description: Update paragraph appended. Would settle it: whether the model covers snapshot bytes and S3 requests per day (AC #1 asks for all three); a second check against a soak run (AC #2).
+---
+<!-- COMMENTS:END -->

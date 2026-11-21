@@ -4,14 +4,22 @@ title: Measure CompleteMultipartUpload over 30 s for large blobs on RustFS and M
 status: To Do
 assignee: []
 created_date: '2026-10-15 11:41'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:write-path'
   - 'area:backend'
   - 'needs:measurement'
   - 'complexity:small'
   - 'origin:review'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: task
 ordinal: 494000
 ---
 
@@ -35,3 +43,13 @@ Source: review of https://github.com/Altinity/ClickHouse/pull/2555 (tmp/pr2555/R
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: the publication retry loop with per-attempt logging still exists (Pool/CasPartWriteTxn.cpp:114-122); the task has no recorded measurement and no later note. Changes: risk set to low; confidence set to plausible; type unset -> task: a measurement run, no type was set. Links: related CAS-397 (90 s window around the same publish). Would settle it: a run of a large-blob Complete slower than 30 s on RustFS and MinIO with outcome and tail latency (AC1).
+---
+<!-- COMMENTS:END -->

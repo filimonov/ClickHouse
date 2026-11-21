@@ -4,7 +4,7 @@ title: Report a damaged control object in fsck by exact key and damage class
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'complexity:medium'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -60,3 +63,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `_pool_meta` is 2026-06-02 (cafc256906e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 CasFsck.h:56 still lumps an undecodable body into the unchecked bucket; no per-object damage class found in CasFsck.h/.cpp. Changes: none. Would settle it: full read of FsckClass list for a damage class.
+---
+<!-- COMMENTS:END -->

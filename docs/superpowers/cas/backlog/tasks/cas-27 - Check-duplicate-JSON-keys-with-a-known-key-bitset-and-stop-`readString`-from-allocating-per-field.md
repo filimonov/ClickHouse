@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-30'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:formats'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -54,3 +57,13 @@ Provenance: BACKLOG/performance.md#cas-decode-per-row-scratch (residual sub-issu
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-30 (1b10d70f51a, by 'cas-decode-per-row-scratch')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasTextFormat.cpp:223 std::find over seen_keys; CasTextFormat.h:256 String readString() by value. Changes: none. Pointers stale: CasTextFormat.cpp:224 is now :223.
+---
+<!-- COMMENTS:END -->

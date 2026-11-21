@@ -4,7 +4,7 @@ title: Record a matched before/after benchmark of the mandatory blob HEAD
 status: To Do
 assignee: []
 created_date: '2026-08-23'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-17
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/performance.md#mandatory-blob-head-cost. Verified 2026-09-26
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-23 (f8b6e8a3870, by 'mandatory-blob-head-cost')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: docs/superpowers/cas/2026-08-22-unconditional-blob-publication-performance.md frontmatter: 'Target-only S41 measurements and the blocked matched performance acceptance'; section 'Baseline provenance audit' rejects the available baseline binaries. Changes: none.
+---
+<!-- COMMENTS:END -->

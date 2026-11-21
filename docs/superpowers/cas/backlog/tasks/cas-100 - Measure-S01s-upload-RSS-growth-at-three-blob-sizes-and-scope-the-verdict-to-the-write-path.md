@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:write-path'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - utils/ca-soak/scenarios/cards/s01_s02_huge_blob.py
@@ -63,3 +66,13 @@ Merged from u19c-soak (Measure S01's upload RSS growth at three blob sizes and s
 At dev scale (64 MiB blob) growth was 51 MiB on 2026-07-11. Include ci in the three-size measurement and explain the spread.
 Provenance: utils/ca-soak/scenarios/BACKLOG.md#S01-20260717T033430-1.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: s01_s02_huge_blob.py:143-146 still verdicts on whole-server RSS growth; no three-size record in the task. Changes: none. Would settle it: the three-size measurement (ci, dev, full) and write-path share.
+---
+<!-- COMMENTS:END -->

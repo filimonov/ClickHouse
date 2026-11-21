@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - src/Storages/MergeTree/DataPartStorageOnDiskBase.cpp
@@ -54,3 +57,13 @@ Provenance: BACKLOG/replication.md#same-pool-move-reads-every-byte (2031-triage 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b9a1774ba4e, by 'same-pool-move-reads-every-byte')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: DataPartStorageOnDiskBase.cpp:776-790 clonePart to a CA disk still runs copyDirectoryContentIntoTransaction (read+write per file); no same-pool reference carry exists. Changes: none. Pointers stale: DataPartStorageOnDiskBase.cpp:790-813,:637-661 now ~:770-800,~:725+. Would settle it: the S37 CA-to-CA leg result on ca_local3 (AC1: does the target ref collide with the source ref), not recorded in the task.
+---
+<!-- COMMENTS:END -->

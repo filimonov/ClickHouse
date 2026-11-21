@@ -4,13 +4,19 @@ title: Weigh part-folder views by their decoded body so the 64 MiB cache budget 
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:cost'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -51,3 +57,13 @@ Provenance: BACKLOG/performance.md#part-folder-cache-weight-always-256 (2031-tri
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (c2af49103dc, by 'part-folder-cache-weight-always-256')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasRefLedger.cpp:429 and :464 still build the resolve result with .manifest_size = 0; Parts/PartFolderAccess.cpp:141 weighs a view 256 + manifest_size. Changes: impact:cost; label quick-win. Pointers stale: PartFolderAccess.cpp:132-136 is now :139-141; CasRefLedger.cpp:353,:385 are now :429,:464.
+---
+<!-- COMMENTS:END -->

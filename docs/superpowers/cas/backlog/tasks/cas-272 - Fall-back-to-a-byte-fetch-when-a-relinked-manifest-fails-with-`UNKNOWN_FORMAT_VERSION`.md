@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'area:formats'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -56,3 +61,13 @@ Provenance: BACKLOG/replication.md#relink-fallback-unknown-format-version (2031-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (3ff0301f261, by 'relink-fallback-unknown-format-version')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedMetadataStorage.cpp:2479-2481 catch still rethrows unless code == CORRUPTED_DATA. Changes: label quick-win. Links: should land before CAS-117; note the fallback conflicts with the avoid-fallbacks rule only if it acts on unverified data (byte fetch re-verifies). Pointers stale: prepareAdoptFromManifest moved from :2344 to :2430.
+---
+<!-- COMMENTS:END -->

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 22:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:read-path'
   - 'area:write-path'
@@ -15,6 +16,9 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'needs:repro'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 priority: high
 ordinal: 397000
@@ -40,3 +44,13 @@ Probe 2026-09-27 (docs/superpowers/reports/2026-09-27-cas-non-mergetree-engines-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Parts/PartPathParser.cpp:187-198 takes the first component after the table uuid as the part component unless isReservedTableSubdir (PartPathParser.h:77: only deduplication_logs and partition exports), so tmp/<n>.bin is still a part component; no Join/Set CAS test found. Changes: none. Pointers stale: PartPathParser.cpp:188-197 is now :187-198. Would settle it: a run of INSERT into a persistent Join/Set on the current branch (not run: no builds allowed).
+---
+<!-- COMMENTS:END -->

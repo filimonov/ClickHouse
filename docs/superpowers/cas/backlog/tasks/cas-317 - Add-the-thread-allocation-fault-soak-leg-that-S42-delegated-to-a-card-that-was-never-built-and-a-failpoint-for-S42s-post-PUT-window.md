@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:47'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -14,6 +15,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +62,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md:3012 {#s42-allocation-fault-soak}
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cannot_allocate_thread_fault_injection appears under utils/ca-soak only in cards/s42_alloc_faults.py (docstring) and scenarios/BACKLOG.md; src/Common/FailPoint.cpp (cas-pr1) has no CAS failpoint; CasPool.h:1136 setInstallRegionProbeForTest is still the gtest-only seam.. Changes: impact:operability. Pointers stale: CasPool.h:1055-1056 is now :1135-1136 in the cas-pr1 branch..
+---
+<!-- COMMENTS:END -->

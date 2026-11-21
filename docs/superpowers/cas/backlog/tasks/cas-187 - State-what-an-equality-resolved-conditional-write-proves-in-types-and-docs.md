@@ -4,7 +4,7 @@ title: 'State what an equality-resolved conditional write proves, in types and d
 status: To Do
 assignee: []
 created_date: '2026-08-20'
-updated_date: '2026-10-13 14:21'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'impact:ux'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/issues/2207'
@@ -59,3 +64,13 @@ First recorded: 2026-08-20 (99031303637, by 'cas-021-followups')
 
 2026-10-13: the member-lifecycle spec (docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md, D4) adds `owner_nonce` to every owner write, so an equality-resolved owner write becomes decidable (no two writes share bytes). The ownership-decidability table this task asks for gets the owner-anchor row as "decidable since owner_nonce". Owner decision 2026-10-13: not done in the lifecycle PRs; stays here.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1: resolved_by_read still exists as a flag (CasRequests.h:463, CasServerRoot.h:58); backend.md has no equality-resolved trust-model paragraph; no owner decision reverses the task. Changes: impact:ux. Pointers stale: R/Backend/CasWriteResult.h:42 and CasRequests.cpp:1069 not re-checked; resolved_by_read now also appears in Pool/CasServerRoot.*. Would settle it: whether the type-level split (AC1) or the ladder doc block exists in CasRequests.cpp.
+---
+<!-- COMMENTS:END -->

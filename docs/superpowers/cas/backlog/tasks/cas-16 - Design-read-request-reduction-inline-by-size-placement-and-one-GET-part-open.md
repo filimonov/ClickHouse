@@ -4,7 +4,7 @@ title: 'Design read-request reduction: inline-by-size placement and one-GET part
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:read-path'
   - 'complexity:large'
@@ -13,15 +13,18 @@ labels:
   - 'needs:spec'
   - 'needs:measurement'
   - 'origin:review'
-  - '>-'
-  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f9
-  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
   - 'theme:parity'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f9
+  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
 priority: medium
@@ -61,3 +64,13 @@ Provenance: BACKLOG/performance.md#read-write [B121/B202/one-GET-open] + #writep
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (0bf85b2d3ee, by 'B121/B202/one-GET-open')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedTransaction.cpp:73 partFileMustStayBlob (file-type predicate) and :112 constexpr INLINE_CAP = 1 MiB are still in place; no size-based placement or setting found. Changes: removed non-label '>-'; label 'docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget…' moved to references; label 'docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget…' moved to references; impact:cost. Links: related: audit F9, F15/F16, issue 2439; decision-4 governs format compatibility. Pointers stale: ContentAddressedTransaction.cpp:67 and :100 are now :73 and :112.
+---
+<!-- COMMENTS:END -->

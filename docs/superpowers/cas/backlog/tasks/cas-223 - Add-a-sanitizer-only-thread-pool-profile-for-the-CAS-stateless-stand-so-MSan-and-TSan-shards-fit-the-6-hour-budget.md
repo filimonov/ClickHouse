@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ci'
   - 'complexity:small'
@@ -17,6 +17,11 @@ labels:
   - 'confidence:contested'
   - 'theme:parity'
   - 'theme:ci-stabilization'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -41,6 +46,8 @@ Proposed keys: `threadpool_writer_pool_size` 500 to 64-100, `background_schedule
 The same profile is candidate (c) for the ASan RSS ceiling (threads times fake stacks).
 
 Provenance: BACKLOG/testing-and-ci.md#sanitizer-cas-thread-pool-profile, plus candidate (c) of #asan-memory-tracker-snap; verified 2026-09-26 against 8b87aa15d21. Related: CAS-29.2, CAS-85.
+
+Update 2026-11-21: The title, description and AC1 (a sanitizer-only thread-pool profile) were rejected on 2026-09-28; ignore them. Open scope is what the 2026-11-13 RCA names: make the MSan and TSan cas s3 stateless shards finish inside the job budget. Cheapest experiments listed there: 3 TSan shards, 6 MSan shards, a memory and swap sampler in the job log, and a test-run limit of about 12000 s so a timed-out job still uploads server logs and CAS dumps. As of CI run 44084349150 (2026-11-17) all five MSan/TSan cas s3 shards still hit the time limit.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -85,3 +92,13 @@ Issue #2298 (assigned filimonov): the ASan half is resolved on antalya-26.6 (tes
 
 2026-11-17: CI run 44084349150 on 44fc40023c1 (PR 2831, upload pool 64, RustFS 1.0.6 in the base): MSan 1-3/3 and TSan 1-2/2 `cas s3 storage` shards still end at the job time limit (~3 h 38 min, empty report). Both ASan shards passed (135 and 163 min).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: task note 2026-09-28 (owner review): the thread-pool-profile proposal is rejected as knob-turning; later notes through 2026-11-17 show MSan 1-3/3 and TSan 1-2/2 cas s3 shards still end at the job time limit; RCA 2026-11-13 recommends more shards (3 TSan, 6 MSan), a memory/swap sampler and a test-run limit of ~12000 s. Changes: impact:operability; description: Update paragraph appended.
+---
+<!-- COMMENTS:END -->

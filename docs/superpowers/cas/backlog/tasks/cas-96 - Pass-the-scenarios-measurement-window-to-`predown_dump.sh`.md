@@ -4,7 +4,7 @@ title: Pass the scenario's measurement window to `predown_dump.sh`
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/scenarios/framework/cluster_boot.py
@@ -50,3 +55,13 @@ Provenance: BACKLOG/performance.md#s23-idle-rss-growth item 3. Verified 2026-09-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (27654231df2, by 's23-idle-rss-growth item 3')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: scenarios/framework/cluster_boot.py:287 predown_dump(label, *, log_fn, timeout) has no window argument. Changes: label quick-win. Pointers stale: cluster_boot.py:255/:271 moved to :287.
+---
+<!-- COMMENTS:END -->

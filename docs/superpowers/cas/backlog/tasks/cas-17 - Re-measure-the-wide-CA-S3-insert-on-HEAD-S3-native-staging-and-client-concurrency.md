@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-24'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - >-
@@ -64,3 +67,13 @@ Source: utils/ca-soak/scenarios/BACKLOG.md:2891.
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 9fbdefb5711 sets `cas_blob_upload_pool_size` to 64: the first data point for criterion 3 (16 threads were saturated on a part of 62,000 blobs).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no wide-insert CA vs plain S3 baseline report found under docs/superpowers/cas or reports (name search empty); the task says the stage-1 reports were deleted. Changes: none. Would settle it: a content grep of reports for a 10M-row 30-column 500-part insert measurement on current HEAD.
+---
+<!-- COMMENTS:END -->

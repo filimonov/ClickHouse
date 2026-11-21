@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-12'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:upstream'
   - 'complexity:large'
@@ -14,6 +14,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-5
 dependencies: []
 references:
@@ -55,3 +59,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactor-group-g; importer: parent CAS-6
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-12 (e1e76106f40, by 'Group G')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: umbrella over CAS-232.1, CAS-232.2 and CAS-61, all still open; GOOG4Signer.h and GCSConditionalDialect.h still exist in src/IO/S3 here; public searches for S3 conditional-write and GCS ifGenerationMatch PRs returned nothing. Changes: none. Links: parent of CAS-232.1 and CAS-232.2; related CAS-61. Would settle it: upstream Client.cpp contains 'PreconditionFailed' (2 hits), so the 412 predicate may be partly upstream: needs a read before the carve. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

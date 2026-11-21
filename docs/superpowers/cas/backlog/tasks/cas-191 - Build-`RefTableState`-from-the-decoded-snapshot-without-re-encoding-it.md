@@ -4,7 +4,7 @@ title: Build `RefTableState` from the decoded snapshot without re-encoding it
 status: To Do
 assignee: []
 created_date: '2026-07-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'area:gc'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasRefProtocol.cpp
@@ -50,3 +53,13 @@ Provenance: BACKLOG/ref-protocol.md#ref-ledger-consult-followups-2026-07-21 (cod
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-21 (cf79e86b970, by 'ref-ledger-consult-followups-2026-07-21')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefProtocol.cpp:504-507 stateFromSnapshot still calls encodeRefTableSnapshot then decodeRefTableSnapshot. Changes: none. Pointers stale: CasRefProtocol.cpp:431-434 now :504-507; benchmark path is ContentAddressed/benchmarks/benchmark_cas_ref_protocol.cpp, not R/benchmarks.
+---
+<!-- COMMENTS:END -->

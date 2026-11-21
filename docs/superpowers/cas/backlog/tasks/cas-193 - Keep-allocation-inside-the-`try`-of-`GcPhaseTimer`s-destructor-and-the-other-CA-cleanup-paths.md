@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:18'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - R/Gc/CasGcPhaseTimer.h
@@ -52,3 +57,13 @@ Provenance: BACKLOG/ref-protocol.md#noexcept-allocation-hardening residual (2031
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (d8c5e8de79a, by 'noexcept-allocation-hardening')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:18
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGcPhaseTimer.h:54-75: ~GcPhaseTimer still builds GcPhaseRecord, moves the map and emplaces Strings outside the try, which wraps only sink(rec). Changes: impact:availability.
+---
+<!-- COMMENTS:END -->

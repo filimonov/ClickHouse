@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:36'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -13,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -47,3 +53,13 @@ Provenance: utils/ca-soak/scenarios/RUN_HISTORY.md:714-717 (no BACKLOG.md entry 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: utils/ca-soak/scenarios/RUN_HISTORY.md: S06 passes after 36789e7bbe0 (lines 643, 651, 697 dev; 711 ci, all b92bd24789c9, 2026-11-19). AC#1 met. The three September reds are no longer in the file (no 2026-09 rows at all).. Changes: impact:operability. Pointers stale: RUN_HISTORY.md rows 714-717 no longer exist.. Would settle it: AC#2 (one-line cause for the three September reds) cannot be met if the rows were dropped from RUN_HISTORY.md; owner should confirm that is intended and close..
+---
+<!-- COMMENTS:END -->

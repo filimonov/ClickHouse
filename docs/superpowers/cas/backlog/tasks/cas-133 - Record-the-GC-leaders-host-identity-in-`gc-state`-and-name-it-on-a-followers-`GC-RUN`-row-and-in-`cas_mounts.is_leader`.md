@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@k-morozov'
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -17,6 +17,11 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:issue'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies:
   - CAS-132
@@ -76,3 +81,13 @@ First recorded: 2026-08-21 (50fa0d52a9f, by 'issue-2211-gc-run-follower-noop')
 
 Issue #2211 is assigned to k-morozov (2026-09-26).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasGcStateFormat.h:15-19: GcLease is still {owner, seq} with no hostname/server_uuid/pid; depends on CAS-132 per its dependencies field. Changes: impact:operability. Pointers stale: CasGcStateFormat.h:15-19 matches; StorageSystemContentAddressedMounts.cpp:52,203-210 not rechecked.
+---
+<!-- COMMENTS:END -->

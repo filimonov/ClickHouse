@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:replication'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - src/Storages/MergeTree/MergeTreePartsMover.cpp
@@ -59,3 +62,13 @@ Provenance: BACKLOG/replication.md#zero-copy-parity-audit; verified 2026-09-26 a
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (9be5befc3ec, by 'zero-copy-parity-audit')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/en/antalya/cas has no parity table (zero-copy named only in roadmap.md, index.md, design-history.md); AC1 table absent. Changes: none. Would settle it: a table with one row per site is not found; location outside docs/en/antalya/cas not searched.
+---
+<!-- COMMENTS:END -->

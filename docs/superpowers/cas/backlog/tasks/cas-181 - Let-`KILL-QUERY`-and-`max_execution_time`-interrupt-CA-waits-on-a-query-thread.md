@@ -4,7 +4,7 @@ title: Let `KILL QUERY` and `max_execution_time` interrupt CA waits on a query t
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'area:ref-ledger'
@@ -12,6 +12,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -51,3 +56,13 @@ Provenance: BACKLOG/ref-protocol.md#no-query-cancellation-checks (2031-triage CA
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (7fd5127203d, by 'no-query-cancellation-checks')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -rnE 'isCancelled|QueryStatus|checkTimeLimit|checkCancelled|isKilled' over ContentAddressed/ on the checked branch returns nothing. Changes: impact:availability.
+---
+<!-- COMMENTS:END -->

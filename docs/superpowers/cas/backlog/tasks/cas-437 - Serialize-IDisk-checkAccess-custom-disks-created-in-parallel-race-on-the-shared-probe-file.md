@@ -6,12 +6,21 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 15:26'
-updated_date: '2026-11-12 11:20'
+updated_date: '2026-11-21 08:22'
 labels:
   - cas
   - ci
   - bug
   - 'theme:ci-stabilization'
+  - 'area:ci'
+  - 'complexity:trivial'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 540000
@@ -46,3 +55,13 @@ Fix committed on port/antalya-26.8/cas-from-26.6 as 086efc95363 (NOT pushed): st
 
 2026-11-12: review of PR 2805 (mkmkme, non-blocking): 086efc95363 on antalya-26.8 is byte-identical to the head of https://github.com/Altinity/ClickHouse/pull/2812 (bb9bf738a0c, still open, review required). If the review of 2812 changes the fix, antalya-26.8 needs the same change as a follow-up PR. Check on merge of 2812: `git diff bb9bf738a0c <merged head> -- src/Disks/IDisk.cpp src/Disks/tests/gtest_disk_access_check.cpp` must be empty, otherwise port the delta.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 src/Disks/IDisk.cpp:252-253 static std::mutex probe_mutex around the probe; commit 086efc95363 is an ancestor of the checked branch. Changes: area set to ci; size unset -> trivial (XS): only verification left; risk set to low; confidence set to solid; impact:availability. Size: XS. Links: Related: PR 2812 (antalya-26.6) must carry the same change; check its merged head per the 2026-11-12 note. Would settle it: Not proven: the antalya-26.6 copy (PR 2812, open per the notes) and a green antalya-26.8 lane run after the fix; the task itself says close after that run.
+---
+<!-- COMMENTS:END -->

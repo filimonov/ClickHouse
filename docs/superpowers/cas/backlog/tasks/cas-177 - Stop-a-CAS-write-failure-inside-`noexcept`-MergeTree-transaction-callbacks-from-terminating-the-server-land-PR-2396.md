@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -16,6 +16,11 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'upstream:fixed-master'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -23,6 +28,7 @@ references:
   - 'https://github.com/Altinity/ClickHouse/issues/2344'
   - src/Interpreters/MergeTreeTransaction.cpp
   - R/ContentAddressedTransaction.cpp
+  - 'https://github.com/ClickHouse/ClickHouse/pull/123134'
 documentation:
   - >-
     docs/superpowers/specs/2026-09-16-transaction-metadata-store-best-effort-design.md
@@ -67,3 +73,13 @@ Provenance: BACKLOG/ref-protocol.md#cas-txn-commit-inside-noexcept-aftercommit. 
 
 2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2396 merged as a782c4c589a (antalya-26.6, 2026-10-05). Stays In Progress for the upstream port https://github.com/ClickHouse/ClickHouse/pull/123134 (open).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 (26.8 base) has retryMetadataStore in src/Interpreters/MergeTreeTransaction.cpp:56,354-372 and tests/queries/0_stateless/05053_transaction_metadata_store_retry.sh; Altinity PR 2396 merged as a782c4c589a (26.6, per task notes, not an ancestor of the checked 26.8 branch); upstream PR 123134 is merged. Changes: upstream reference added. Pointers stale: R/ContentAddressedTransaction.cpp:413 (26.6 line). Would settle it: AC2 concerns antalya-26.6's publishStaging abandon call and AC3's forced-refusal run; both live on the 26.6 branch and cannot be verified from the 26.8 worktree. Status In Progress is stale: the upst…. Upstream: fixed-master (https://github.com/ClickHouse/ClickHouse/pull/123134); already here.
+---
+<!-- COMMENTS:END -->

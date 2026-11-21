@@ -6,12 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 23:11'
-updated_date: '2026-11-11 21:22'
+updated_date: '2026-11-21 08:24'
 labels:
-  - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - 'risk:low'
+  - 'confidence:plausible'
 dependencies: []
 priority: high
 type: bug
@@ -52,3 +58,19 @@ Approach: run shard 3 locally against the cas-s3-cache disk config with the Test
 
 2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). Release `cas_s3_cache_lightweight_delete_3` was cancelled after 5 h 05 min inside the suite step (10:09 to 15:14 UTC). GitHub returns 404 for the job log, so the hang site is not known from this run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes through 2026-11-11 show shard 3 still cancelled after about 5 h on PRs 2812 and 2805; no 'cancelled()' or 'always()' step found in .github/workflows/regression.yml of the worktree. Changes: label area:tests -> area:testing. Links: CAS-444's notes name CAS-340 for the same two lanes (not read).. Would settle it: a CI run after 2026-11-11 on antalya-26.8 showing whether shard 3 still hangs, and where the regression workflow's log-upload step lives.
+---
+
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21 (addendum): added risk:low, confidence:plausible.
+---
+<!-- COMMENTS:END -->

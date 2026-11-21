@@ -6,11 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 22:02'
-updated_date: '2026-11-13 22:38'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:lease'
   - 'area:backend'
   - 'origin:review'
+  - 'impact:data-loss'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 591000
@@ -35,3 +41,13 @@ The mount fence admits a request when its attempt envelope (`attempt_timeout_ms`
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-13: DUPLICATE in substance of CAS-343 (per-attempt wall-clock deadline; redirects, client-internal repeats, trickling responses, throttler, credential fetch: High, open since 2026-10-02) and CAS-188 (region redirect re-sign). The controller filed this without searching the backlog first. The only new item here is the multipart case: `conditionalWriteSettings` forces a single PUT only on generation-token stores (`CA/Backend/CasObjectStorageBackend.cpp:810-814`), so on an ETag store a conditional write above `max_single_part_upload_size` (default 32 MiB; CAS mutable objects are kilobytes, so this needs a misconfigured limit or a huge catalog) runs as create, parts, conditional complete without a fence check in between. Fix for that item alone: force single-part for every conditional CAS write (one line). Close this task when the multipart item is moved under CAS-343.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasObjectStorageBackend.cpp:~815-822 conditionalWriteSettings forces s3_force_single_part_upload only when native_token_type == Dialect::Generation, so ETag-store conditional writes can still go multipart past the fence; no per-call absolute deadline added. Changes: impact:data-loss; label needs:decision. Pointers stale: CasObjectStorageBackend.cpp:814 (now ~:817). Owner question: Which direction: absolute per-call deadline in the transport, forced single-part for every conditional CAS write, or a fence check before multipart completion?
+---
+<!-- COMMENTS:END -->

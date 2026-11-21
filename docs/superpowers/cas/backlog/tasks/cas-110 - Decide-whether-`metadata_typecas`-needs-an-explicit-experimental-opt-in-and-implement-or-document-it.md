@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'area:docs'
@@ -16,6 +16,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies:
   - CAS-109
@@ -58,3 +61,13 @@ Provenance: BACKLOG/operability-and-introspection.md#no-experimental-gate (opus 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (8b9cd77b94e, by 'no-experimental-gate')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no allow_experimental_cas / gate setting in src or docs/en (same grep as CAS-108); decision still owner's. Changes: none. Links: Related CAS-108 (dynamic SQL path gate). Would settle it: owner decision (gate vs docs only) and whether docs/en/antalya/cas/index.md Status now names the config line as the opt-in. Owner question: Is the static storage_configuration line the experimental opt-in (document it), or add a setting / loud warning?
+---
+<!-- COMMENTS:END -->

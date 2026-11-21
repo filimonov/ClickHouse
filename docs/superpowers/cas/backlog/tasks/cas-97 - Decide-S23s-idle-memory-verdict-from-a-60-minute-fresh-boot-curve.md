@@ -4,7 +4,7 @@ title: Decide S23's idle-memory verdict from a 60-minute fresh-boot curve
 status: To Do
 assignee: []
 created_date: '2026-08-31'
-updated_date: '2026-09-26 12:44'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-96
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/performance.md#s23-idle-rss-growth (alias s23-idle-baseline-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-31 (b34ad0c9597, by 's23-idle-baseline-measures-telemetry')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: s23_s27_misc.py:~230 still gates on MemoryTracking; no 60-minute fresh-boot curve or reclassification recorded in the task. Changes: none. Would settle it: the 60-minute fresh-boot run itself.
+---
+<!-- COMMENTS:END -->

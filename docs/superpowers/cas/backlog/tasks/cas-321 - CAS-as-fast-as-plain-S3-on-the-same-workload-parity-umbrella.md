@@ -4,7 +4,7 @@ title: CAS as fast as plain S3 on the same workload (parity umbrella)
 status: To Do
 assignee: []
 created_date: '2026-09-28 16:46'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'theme:parity'
   - 'area:write-path'
@@ -13,6 +13,9 @@ labels:
   - 'origin:review'
   - 'confidence:solid'
   - 'complexity:large'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-77
   - CAS-85
@@ -68,3 +71,13 @@ CAS-487 acknowledges an append with no `_ckpt` write. The recorded rule "the cli
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) delivers the per-append and promote request cuts: a lone INSERT 25 -> 14 store requests, 22.2 -> 11.6 ms on a local RustFS stand. Children: CAS-176.1 and CAS-176.3 landed (176.1 keeps one open test criterion), CAS-176.2 and CAS-167 closed as obsolete, CAS-85 partly (a shard killed by the job time limit uploads no dump), CAS-79 and CAS-223 open. Upload pool default is 64 (9fbdefb5711).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: umbrella with open dependencies (CAS-79, CAS-83, CAS-176.4, CAS-286, CAS-287, CAS-223 among them); task notes of 2026-11-17 record the partial delivery by PR 2831 (lone INSERT 25 -> 14 requests) and the parity gates are not met. Changes: none. Would settle it: a current yardstick run (AC1) against the 26.8 code; the stage-3 'no _ckpt per append' gate is already met and the stage text and the restated frozen-frontier argument (see notes) need re-planning by….
+---
+<!-- COMMENTS:END -->

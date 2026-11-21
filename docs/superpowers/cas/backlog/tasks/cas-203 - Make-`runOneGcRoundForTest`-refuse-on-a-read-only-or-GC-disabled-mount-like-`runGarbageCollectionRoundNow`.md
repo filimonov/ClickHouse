@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'area:testing'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -53,3 +56,13 @@ Provenance: BACKLOG/testing-and-ci.md#gc-round-test-seam-drops-two-gates; verifi
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2583e3427aa, by 'gc-round-test-seam-drops-two-gates')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedMetadataStorage.cpp:367-440: runOneGcRoundForTest has no checkNotReadOnly or gc_enabled check (only checkOpAdmitted Admin); runGarbageCollectionRoundNow has both at :623-626. Changes: none.
+---
+<!-- COMMENTS:END -->

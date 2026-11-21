@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:replication'
   - 'complexity:medium'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +63,13 @@ Provenance: BACKLOG/replication.md#killed-mid-move-partition; verified 2026-09-2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (0f266066bef, by 'killed-mid-move-partition')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text; AC1 deterministic repro not recorded in the task. Changes: impact:wrong-result. Would settle it: a deterministic repro (failpoint between per-part moves) and a non-CA two-disk comparison.
+---
+<!-- COMMENTS:END -->

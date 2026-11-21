@@ -4,11 +4,15 @@ title: 'Use one GC lease probe for the janitor, fold and ref cleanup'
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:18'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'origin:review'
   - 'complexity:small'
   - 'risk:low'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-29.8
 priority: low
@@ -36,3 +40,13 @@ ordinal: 562000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:~4287-4289 cleanupRefObjects compares current_state.lease.owner/seq against adopted_lease inline, while refreshAuthority (:5394) holds the other copy of the comparison. Changes: none.
+---
+<!-- COMMENTS:END -->

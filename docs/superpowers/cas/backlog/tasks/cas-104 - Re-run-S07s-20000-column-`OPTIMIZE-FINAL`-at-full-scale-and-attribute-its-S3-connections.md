@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'area:soak'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-74
   - CAS-75
@@ -58,3 +61,13 @@ First recorded: 2026-07-06 (4abf5b743ed, by 'wide-part O')
 
 Merged from u19b-soak (merge into CAS-104): From the soak ledger's wide-part entry (2026-07-06, S07 full, 20000 columns): `OPTIMIZE FINAL` sat at progress 0 for over 4 minutes; the server log showed `Cannot assign requested address` (errno 99) to RustFS, the S3 client at retry attempt 7 of 501, and about 5 PutObject per 5 s. The part itself committed at INSERT; only the merge stalled. Two fix directions CAS-104 does not name: batch the per-column HEAD/GET/PUT of one part, and note that `.bin`, mark files and `primary.idx` always take the blob route regardless of size, so 20000 tiny columns become about 40000 objects (inline-by-size placement is CAS-16). Deployment note to carry into the docs if the re-run still exhausts ports: widen `net.ipv4.ip_local_port_range` and cap S3 connections for very wide tables.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: RUN_HISTORY.md rows for S07 through 2026-11-19 are dev/ci inconclusive manifest-cap runs, no full-scale 20000-column run; deps CAS-74 and CAS-75 still To Do. Changes: none. Pointers stale: task says last S07 rows were 2026-08-31/09-01; newer dev/ci rows exist (to 2026-11-19), none at full scale. Would settle it: whether any full-scale 20000-column run exists outside RUN_HISTORY.md.
+---
+<!-- COMMENTS:END -->

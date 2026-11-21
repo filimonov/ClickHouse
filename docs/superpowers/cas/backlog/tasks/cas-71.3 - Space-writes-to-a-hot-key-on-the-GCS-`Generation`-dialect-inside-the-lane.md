@@ -4,7 +4,7 @@ title: Space writes to a hot key on the GCS `Generation` dialect inside the lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gcs'
   - 'complexity:medium'
@@ -13,6 +13,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'needs:decision'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-6
 dependencies:
   - CAS-167
@@ -61,3 +66,13 @@ First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 2')
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds. This task applies to the catalog and `gc/state` keys.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: write_spacing_ms and last_write_end_ms absent from Backend/CasHotKeys.* and Pool/*.cpp (grep empty); the gate measurement still needs a real GCS run (CAS-172 family). Changes: impact:availability. Owner question: Is the 429 gate on the GCS catalog key a go (measure over the parallel stateless suite on the gcs lane), or is a narrower _ckpt coalescing (BACKLOG gcs.md A1) preferred?
+---
+<!-- COMMENTS:END -->

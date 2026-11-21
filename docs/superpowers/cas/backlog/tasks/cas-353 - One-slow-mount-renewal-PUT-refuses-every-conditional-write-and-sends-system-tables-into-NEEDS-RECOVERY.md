@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:lease'
   - 'area:ux'
@@ -15,6 +15,10 @@ labels:
   - 'confidence:solid'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 type: bug
@@ -31,6 +35,8 @@ Evidence for the deferred series items 17b/18 (admission by request deadline): w
 Options: widen the slack (renew earlier, or reserve one envelope for the renewal's own lane), or change the message to name the write reserve rather than the deadline. Related: docs/superpowers/specs/2026-10-02-cas-mount-lease-settings-ux-notes.md, #2431.
 
 Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 1); PR https://github.com/Altinity/ClickHouse/pull/2513 and https://github.com/Altinity/ClickHouse/pull/2512.
+
+Update 2026-11-21: The default mount lease TTL is now 40 s (feb86da1f4a, ContentAddressedSettings.cpp:80), so the defaults leave about 14 s between a due renewal and the write cutoff instead of the 4 s described above; a single stalled renewal PUT shorter than the 10 s period no longer refuses writes under defaults. Remaining scope to confirm: the 'gave up at the lease deadline' message wording and the mount-time print and docs of the reserve/slack relation (AC#2).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,3 +64,13 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 1); PR https://github.c
 
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1 commit feb86da1f4a 'Default the CAS mount lease to 40 s'; ContentAddressedSettings.cpp:80-81,:94 now ttl 40000, period 10000, margin 2000, so the default slack is about 14 s, not 4 s; grep for a printed write-reserve line at mount finds none. Changes: description: Update paragraph appended. Pointers stale: TTL 30 s and 4 s slack in the description (default is now 40 s). Would settle it: whether the 'lease deadline' refusal message was reworded and whether the reserve/slack relation is printed at mount (AC#2) on current code.
+---
+<!-- COMMENTS:END -->

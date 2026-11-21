@@ -4,7 +4,7 @@ title: Run or descope every unrun arm of the GCS live release gate
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gcs'
   - 'area:testing'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-6
 dependencies: []
 references:
@@ -53,3 +56,13 @@ Provenance: BACKLOG/gcs.md#gate [gcs-live-gate-oauth-and-ambiguity] and #gcs-con
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-02 (9f87032fde6, by 'gcs-live-gate-oauth-and-ambiguity')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/superpowers/cas/2026-09-02-gcs-live-validation-ledger.md:18-19,:42-43 (file last modified 2026-09-26): gcp_oauth groups skip for lack of credentials, ambiguity arms need a TLS-terminating fault driver; children CAS-172.1, .2, .3 are the open work. Changes: none. Would settle it: status of children CAS-172.1/.2/.3 (separate tasks). Owner question: Run the gcp_oauth and TLS-ambiguity arms against real GCS (needs credentials and the fault driver) or descope them with a stated reason?
+---
+<!-- COMMENTS:END -->

@@ -4,9 +4,21 @@ title: 'Packed parts on CAS: observability, docs and the missing cross-replica t
 status: To Do
 assignee: []
 created_date: '2026-10-23 01:50'
+updated_date: '2026-11-21 08:21'
 labels:
   - cas
+  - 'area:testing'
+  - 'complexity:large'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
+priority: low
+type: task
 ordinal: 524000
 ---
 
@@ -31,3 +43,13 @@ From the packed-parts review (tmp/review3/REPORT.md items 8 and 10). Observabili
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: docs/en/antalya/cas/configuration.md:98 and :164 still describe cas_allow_packed_parts as written in the task; tests/integration has test_packed_io only, none named for cross-replica packed. Changes: area set to testing; size unset -> large (L): log/column, doc edit, two-node integration test, stateless matrix; risk set to low; confidence set to plausible; impact:operability; type unset -> task: mixed docs, tests and a small observability change; priority unset -> low: no priority set; gaps in coverage, no failure observed. Size: L. Links: Related to CAS-419 (same review, items 5 and 9) and CAS-420; split into observability+docs and tests before work. Would settle it: Which of the four acceptance groups already exist; the task mixes observability code, docs and two test suites.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 13:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -15,6 +15,9 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-2
 dependencies: []
 documentation:
@@ -59,3 +62,13 @@ First recorded: 2026-09-26 (83949645ce7, by 'audit F8')
 
 2026-09-30, likely answer. otel.demo (26.6.4.20001.altinityantalya), `system.cas_log` of both replicas, 6 hours before 2026-09-30 13:40 UTC: besides the 50,774 `ref_repoint` events there are 101,548 `build_publish` events on `delete_tmp_*` refs, two per removed part (the rename to `delete_tmp_<part>` publishes a new manifest, then the removal marks publish another through a repoint). That is about 406k manifest PUTs per day from the removal flow against about 204k real part publishes. The trace of one part is in the notes of CAS-83. Check against `system.blob_storage_log` before closing.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task note 2026-09-30 gives a likely answer (two build_publish per removed part on delete_tmp_ refs, ~406k PUTs/day) but the AC1 split summing within 5% is not recorded. Changes: none. Links: related CAS-83, CAS-176. Would settle it: the cas_log split per cause summing to CASManifestPut within 5% (and the blob_storage_log cross-check the note asks for); the stand now runs 26.6, where 26.8's Move rename (see CAS-83) changes the an….
+---
+<!-- COMMENTS:END -->

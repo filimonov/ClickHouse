@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@filimonov'
 created_date: '2026-07-31'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -13,15 +13,17 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:canary'
-  - '>-'
-  - 'https://github.com/Altinity/ClickHouse/issues/2343'
-  - docs/superpowers/cas/umbrella-roadmap.md
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.cpp
   - 'https://github.com/Altinity/ClickHouse/issues/2343'
+  - docs/superpowers/cas/umbrella-roadmap.md
 documentation:
   - docs/superpowers/cas/umbrella-roadmap.md
 priority: high
@@ -61,3 +63,13 @@ First recorded: 2026-07-31 (eac244a685e, by 'ref-catalog-write-hotspot')
 
 Issue #2343 (assigned filimonov), re-read 2026-09-25: on 26.6.4 with `background_common_pool_size=32` the attach part-3 failure was an ~80 s RustFS stall (5 s timeout × 13 attempts = the 90 s policy). The catalog grew 89 KB → 1.37 MB in 2.5 h (`Removing` rows pruned only by GC), each namespace birth is 3 GETs + 2 conditional PUTs, and one node lost 6,796 conditional catalog PUTs to 412 during the run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no report on ref_catalog size/rewrite rate vs churn found under docs/superpowers/reports (name search 'catalog'); task text carries the open questions. Changes: removed non-label '>-'; label 'https://github.com/Altinity/ClickHouse/issues/2343' moved to references; label 'docs/superpowers/cas/umbrella-roadmap.md' moved to references. Links: status: assignee @filimonov; no sign of work since 2026-09-28 (task update date). Would settle it: a churn-workload measurement of catalog bytes and rewrites per minute (AC1).
+---
+<!-- COMMENTS:END -->

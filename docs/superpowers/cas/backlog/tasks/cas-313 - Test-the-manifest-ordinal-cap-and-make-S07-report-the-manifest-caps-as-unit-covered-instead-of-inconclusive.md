@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:testing'
   - 'area:soak'
@@ -14,6 +15,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -51,3 +55,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#S07 manifest-cap fail-close (comm
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: kMaxManifestOrdinal is checked at Pool/CasPartWriteTxn.cpp:644; no gtest under src/Disks/tests references it for stageManifest (only gtest_cas_gc_shard_plan.cpp:235 uses it as a modulus). Changes: none. Pointers stale: task cites CasPartWriteTxn.cpp:619-621; the check is now at :644-646.
+---
+<!-- COMMENTS:END -->

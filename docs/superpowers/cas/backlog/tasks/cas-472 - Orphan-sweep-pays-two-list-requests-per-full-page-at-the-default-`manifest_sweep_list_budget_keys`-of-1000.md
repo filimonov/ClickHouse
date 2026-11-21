@@ -6,9 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 01:20'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'origin:review'
+  - 'impact:cost'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
 ordinal: 577000
@@ -27,3 +34,13 @@ The orphan sweep passes the user setting manifest_sweep_list_budget_keys (defaul
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedSettings.cpp:68 manifest_sweep_list_budget_keys default still 1000; Gc/CasGc.cpp:3793-3798 passes it to the sweep as its list budget, while CasOperation::kCasListPageKeys (999) is used by the other walks. Changes: impact:cost; label needs:decision. Owner question: Default manifest_sweep_list_budget_keys to 999, or keep 1000 and cap the sweep page at 999 inside the sweep?
+---
+<!-- COMMENTS:END -->

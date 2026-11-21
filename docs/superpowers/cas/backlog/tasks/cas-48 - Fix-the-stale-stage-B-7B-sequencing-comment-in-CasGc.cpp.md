@@ -4,7 +4,7 @@ title: Fix the stale stage-B-7B sequencing comment in CasGc.cpp
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
@@ -47,3 +50,13 @@ Provenance: BACKLOG/gc.md [STAGE-B-7B-SEQUENCING] stale-comment residue; deferre
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: grep -i 'stage.B|7B|stage-B' and 'advisory|until stage|stage [A-C]' in Gc/CasGc.cpp of cas-pr1: no hits; the only stage-B mention is Gc/CasGc.h:689 (about narrowing the gate, not the old handoff order). Changes: none. Pointers stale: CasGc.cpp:2877-2878 no longer holds a stage-B comment. Would settle it: the original wording of the stale comment is unknown, so removal is inferred from absence of any stage-B comment; AC #1 asks for a git log -S proof or an in-place fix.
+---
+<!-- COMMENTS:END -->

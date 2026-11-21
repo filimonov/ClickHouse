@@ -6,11 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 21:59'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-11-21 08:19'
 labels:
   - cas
   - gc
   - 'origin:noclock-audit'
+  - 'area:gc'
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:plausible'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-30
 priority: high
@@ -49,3 +57,13 @@ Fix: the publisher never turns `Condemned` into `Clean`, on both paths of `recon
 
 Wave 2 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-gc.md finding 1, inferred): the conflict-retry RMW in `reconcileMetaClean` clears a newly observed `Condemned` without republishing; after namespace removal cancels the task, GC condemns the body, the resumed task clears the marker, another writer adopts, exact deletion removes its body. Guard: never clear a newly observed `Condemned` without republishing afterwards; propagate cancellation into task admission. Deferred marker delete is CAS-360.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: cas-pr1: no reconcileMetaClean anywhere under src; Pool/CasPartWriteTxn.cpp PartWriteTxn::ensureBlobPresent (line 310) has no Condemned/Clean handling; MetaState is referenced only by Formats/CasBlobMetaFormat.* and Tools/CasMigratePool.cpp. Changes: area set to gc; size unset -> medium (M): if the premise survived: one fix plus model cfgs and tests; risk set to high; confidence set to plausible. Size: M. Links: Overlaps CAS-345 (comment-only follow-up that points here) and CAS-30; both cite the marker-based publisher path that this branch no longer has. Pointers stale: reconcileMetaClean, readModifyWrite fallback W1 in PartWriteTxn::ensureBlobPresent: not present in cas-pr1. Would settle it: Confirm the blob-intents work removed the publisher's .meta marker writes entirely (no other writer turns Condemned into Clean) and that CAS-30 residuals L1b/L2/extdrop have no equivalent in the inte….
+---
+<!-- COMMENTS:END -->

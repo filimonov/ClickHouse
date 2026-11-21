@@ -4,7 +4,7 @@ title: Remove or reroute the eleven `CASServer*` ProfileEvents that can never mo
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:observability'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'origin:review'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -64,3 +67,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `Server` is 2026-06-07 (e46642b3237); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Backend/CasInstrumentedBackend.cpp:114 still has the Server row of cas_event_table and 11 CASServer* events remain in src/Common/ProfileEvents.cpp. Changes: none. Pointers stale: CasInstrumentedBackend.cpp:109-112 is now :114; ProfileEvents.cpp:886-896 not rechecked. Owner question: Option A (delete the Server row and the eleven events) or option B (classify /gc/server-roots/ as Server, moving mount traffic out of CASGC*)?
+---
+<!-- COMMENTS:END -->

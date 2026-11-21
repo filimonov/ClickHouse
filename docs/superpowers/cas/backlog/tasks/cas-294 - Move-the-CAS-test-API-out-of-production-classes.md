@@ -4,13 +4,16 @@ title: Move the CAS test API out of production classes
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'area:tooling'
   - 'complexity:epic'
   - 'risk:medium'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -57,3 +60,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `PoolConfig` is 2026-06-11 (99466809c92); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasPool.h has 131 and Pool/CasRefLedger.h 103 ForTest/_for_test mentions (task: 99 and 88); the test API is still inside the production headers.. Changes: none. Pointers stale: counts have grown since the task was written; 556 total is now higher..
+---
+<!-- COMMENTS:END -->

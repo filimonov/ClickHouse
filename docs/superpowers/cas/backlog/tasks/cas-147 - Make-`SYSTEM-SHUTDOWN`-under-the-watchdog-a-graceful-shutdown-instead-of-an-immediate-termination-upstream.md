@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:upstream'
   - 'area:mounts'
@@ -16,6 +16,10 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-5
 dependencies: []
 references:
@@ -65,3 +69,13 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F17, one of the 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (83949645ce7, by 'audit F17')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Interpreters/InterpreterSystemQuery.cpp:422 still calls kill(0, SIGTERM); upstream master has the same (InterpreterSystemQuery.cpp:475); no upstream PR found. Changes: none. Pointers stale: cited :419 is now :422; BaseDaemon.cpp:673-679 not re-checked. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

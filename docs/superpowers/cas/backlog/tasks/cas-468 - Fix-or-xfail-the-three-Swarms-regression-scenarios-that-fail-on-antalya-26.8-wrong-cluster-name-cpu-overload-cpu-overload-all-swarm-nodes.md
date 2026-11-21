@@ -6,12 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-12 21:36'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
+type: bug
 ordinal: 573000
 ---
 
@@ -28,3 +38,13 @@ Not CAS: the jobs mount no CAS disk. Scenarios: /swarms/feature/cluster discover
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes: the same three Swarms scenarios fail on base antalya-26.8 runs 43246617309 and 43091569224; CAS-450 note 2026-11-13 says CAS-468 did not recur in run 43379266824. Changes: size unset -> small (S): fix or xfail of three scenarios; cause not investigated; risk set to low; confidence set to plausible; impact:operability; type unset -> bug: scenarios fail on the base branch, not CAS. Size: S. Would settle it: a current antalya-26.8 run showing whether the three scenarios still fail (they did not recur on 2026-11-13); a public issue link (CAS-450 AC7).
+---
+<!-- COMMENTS:END -->

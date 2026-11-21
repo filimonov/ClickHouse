@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -16,6 +16,9 @@ labels:
   - 'needs:spec'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-29.10
 references:
@@ -60,3 +63,13 @@ Provenance: BACKLOG/gc.md#gc-snapshot-log-structured-runs. Roadmap §2 GC 'Log-s
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (b4420fe512a, by 'gc-snapshot-log-structured-runs')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no spec on log-structured / incremental in-degree runs in docs/superpowers/specs (ls | grep log-structured|incremental|in-degree: empty); the fold still rewrites the whole shard run each round (CasBlobInDegree.cpp:977, see CAS-88). Changes: none. Links: depends on CAS-29.10 (already stated); related CAS-88 (same run-rewrite cost). Would settle it: task text and the file listing only; not checked whether any worklog or report holds a draft design.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-03 23:23'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
   - 'confidence:plausible'
   - 'risk:low'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -52,3 +55,13 @@ Only disk-root paths land in `roots/<srid>/`; the real writer is upstream `IDisk
 
 2026-11-04: the PR #2567 audit (https://github.com/Altinity/ClickHouse/pull/2567#issuecomment-6362597801, Low) found the same ETag ABA from the decommission side: an in-flight drain delete under `roots/<srid>/` (`deleteListedPrefix` in `Tools/CasDecommission.cpp`) removes a rejoined member's object with identical bytes, e.g. its access probe. Pinned by `CASDecommission.InFlightDeleteAfterRejoinHitsOnlyIdenticalRootsBytes`. Kept out of #2567 by owner decision; fix options: refuse the late delete unless the slot still holds the admin's farewell, or an epoch-scoped key (format change).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no probe-vanished detector or roots/ fsck check found (grep access_check in ContentAddressed shows only skip_access_check); the pinning test CASDecommission.InFlightDeleteAfterRejoinHitsOnlyIdenticalRootsBytes exists in gtest_cas_decommission.cpp. Changes: none. Links: RS4 listed in CAS-385; same ETag ABA from the decommission side (note 2026-11-04). Would settle it: direct read of fsck sources for a roots/ debris report.
+---
+<!-- COMMENTS:END -->

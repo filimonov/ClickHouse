@@ -6,15 +6,24 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:22'
 labels:
   - cas
   - ci
   - regression
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
-type: bug
+type: task
 ordinal: 544000
 ---
 
@@ -42,3 +51,13 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASLightweightDelete (3)`, s
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-10: PR 2801 @3963b4f40ec: both lanes red on all three `delete_query_N/acceptance delete execution time` scenarios together with the `immediate removal` bar (CAS-340); the two earlier runs of the same PR (@945b634, @083b575, same server code) were green on both. Slow-runner correlation; the per-part S3 cost model is recorded in CAS-340.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task text only: 5.9 s against the 2 s limit on PR 2577; the 2026-11-10 note shows the scenarios failing together with the immediate removal bar on slow runners. Changes: area set to testing; size unset -> small (S): measure, then decide on a CAS-specific budget; risk set to low; confidence set to plausible; impact:operability; type bug -> task: a measurement that decides a budget. Size: S. Links: Related to CAS-340 (per-part S3 cost model). Would settle it: DELETE latency distribution on a CAS disk in the regression environment (acceptance criterion 1).
+---
+<!-- COMMENTS:END -->

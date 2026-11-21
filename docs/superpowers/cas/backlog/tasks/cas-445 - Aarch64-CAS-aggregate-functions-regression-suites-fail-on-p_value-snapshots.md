@@ -4,12 +4,16 @@ title: Aarch64 CAS aggregate-functions regression suites fail on p_value snapsho
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-13 12:56'
+updated_date: '2026-11-21 08:21'
 labels:
-  - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 type: bug
@@ -41,3 +45,13 @@ RegressionTestsAarch64 / CASAggregateFunctions (1-3) and CASS3CacheAggregateFunc
 
 2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824 (triage tmp/prbundle/wave1/ci2/triage.md): jobs 131784880435, 131784880188, 131784879717, 131784880464 (3 failed scenarios each, totals equal to base).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes: red on PRs 2805 and 2831 and on base runs (MasterCI 39839856866, 43246617309); non-CAS aarch64 AggregateFunctions jobs red on the same base run, snapshots live in the regression repo. Changes: label area:tests -> area:testing. Links: cause is outside CAS (aarch64 floating-point last digit vs x86 snapshot); fix belongs in the regression repo snapshots or test tolerance. Would settle it: a run newer than 2026-11-13 showing the six aarch64 jobs still red, or a regression-repo snapshot change.
+---
+<!-- COMMENTS:END -->

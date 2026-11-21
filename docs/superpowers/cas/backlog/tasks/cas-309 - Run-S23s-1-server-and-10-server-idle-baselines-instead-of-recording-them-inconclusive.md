@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -13,6 +14,11 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/scenarios/cards/s23_s27_misc.py
@@ -46,3 +52,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#NEXT-TASK-scenario-infra-and-inco
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: utils/ca-soak/scenarios/cards/s23_s27_misc.py:62-80 now loops over 1-, 2- and 10-server variants with cluster_boot.reset_cluster (no 'compose is fixed at 2 servers' text left); RUN_HISTORY.md lines 705 and 722 show S23 pass at dev and ci scale (b92bd24789c9, 2026-11-19).. Changes: impact:operability. Pointers stale: s23_s27_misc.py:64-73 hard-coded-inconclusive premise no longer present.. Would settle it: Not checked that the report carries idle S3 requests per minute and memory for each of the three server counts (AC#1), nor a full-scale row..
+---
+<!-- COMMENTS:END -->

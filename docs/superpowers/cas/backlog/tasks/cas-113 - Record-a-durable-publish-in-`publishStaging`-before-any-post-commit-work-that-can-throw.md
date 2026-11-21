@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-26'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/operability-and-introspection.md#partb-review-findings (2026
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-26 (ba45217f307, by 'partb-review-findings')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Parts/PartFolderAccess.cpp:318-333 eraseView still runs after the no-alloc region and can throw; ContentAddressedTransaction.cpp:627 calls promoteBuild without a commit_recorded argument. Changes: none. Pointers stale: PartFolderAccess.cpp:297-330 now ~:303-333; ContentAddressedTransaction.cpp:473-474 now ~:627.
+---
+<!-- COMMENTS:END -->

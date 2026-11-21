@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 03:02'
-updated_date: '2026-11-17 20:03'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:lease'
   - 'origin:review'
   - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: task
 ordinal: 580000
 ---
 
@@ -35,3 +40,13 @@ Builds before v26.6.8.20003 (and antalya-26.8 builds before PR 2805) wait only t
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s. The mixed-lease case to test is 30 s with 40 s.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 docs/en/antalya/cas/configuration.md:325-345 documents the mixed-pool exposure and the pin to 30000 from code reading; no stand result (SIGSTOP scenario) in docs or tests/integration/test_cas_* (grep SIGSTOP empty). Changes: type unset -> task: a stand run. Pointers stale: the description's 120 s lease (the default is 40 s, per the title and configuration.md). Would settle it: a stand run record of the old-build-leader plus new-build-holder scenario.
+---
+<!-- COMMENTS:END -->

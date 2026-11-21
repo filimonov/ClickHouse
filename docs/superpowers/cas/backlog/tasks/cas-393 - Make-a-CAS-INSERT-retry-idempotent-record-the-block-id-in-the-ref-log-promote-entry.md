@@ -6,11 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-15 08:43'
-updated_date: '2026-11-04 00:34'
+updated_date: '2026-11-21 08:19'
 labels:
-  - 'area:refs'
+  - 'area:ref-ledger'
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:solid'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: bug
 ordinal: 491000
 ---
 
@@ -40,3 +49,13 @@ Reproduction and analysis: tmp/dupcheck/REPORT.md (CAS base fef96d50e69).
 
 2026-11-04: the #2577 audit (https://github.com/Altinity/ClickHouse/pull/2577, alsugiliazova 2026-10-23, Medium) names the loss case: with non_replicated_deduplication_window > 0, MergeTreeSink::commitPart records the block id before the CAS commit and keeps it when the commit throws, so a client retry is reported as a duplicate and writes nothing, also when nothing was durable. Owner decision: not fixed in #2577; covered by this task (block id written in the same ref-log transaction).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no block id in the ref-log promote entry in Pool/CasRefLedger.h or Formats on the checked branch; task notes 2026-11-04 record the owner decision to cover the dedup loss here. Changes: label area:refs -> area:ref-ledger; size unset -> medium (M): format-carrying entry plus parser compatibility question plus tests; risk set to high; confidence set to solid; impact:wrong-result; type unset -> bug: retry duplicates or is wrongly reported as duplicate. Size: M. Would settle it: direct read of the promote entry schema.
+---
+<!-- COMMENTS:END -->

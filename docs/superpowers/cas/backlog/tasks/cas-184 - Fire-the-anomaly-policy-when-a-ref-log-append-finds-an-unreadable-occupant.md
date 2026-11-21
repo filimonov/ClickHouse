@@ -4,13 +4,17 @@ title: Fire the anomaly policy when a ref-log append finds an unreadable occupan
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -27,6 +31,8 @@ The "occupant unreadable" arm sets the lane `Faulted` and counts `CASRefAppendOc
 The sibling foreign-occupant arm does (`:3868-3874`), which triggers the automatic remount. The unreadable arm alone leaves a `Faulted` lane that needs an operator.
 
 Provenance: BACKLOG/ref-protocol.md#lane-residuals-2031-cas-017 residual 2. Verified 2026-09-26 against b1c34d03479 and 0dbbd797792 (counter at :3777 there).
+
+Update 2026-11-21: The arm no longer sets `Faulted`: it wedges the lane (`CasRefLedger.cpp:3208-3213`, `:4306-4311`) and the next attempt's read decides. The open question is whether a persistently unreadable occupant ever reaches `on_impossible_interference`; the task needs that restated before work.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -53,3 +59,13 @@ First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
 
 2026-11-17: PR 2831 commit 4a06eabac6c faults the lane on an undecodable tombstone occupant only. Whether the append-id occupant path reaches `on_impossible_interference` was not checked.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Pool/CasRefLedger.cpp:3208-3213 and :4306-4311: the unreadable-occupant arm now wedges the lane (not Faulted), counts CASRefAppendOccupantUnreadable and fails the chunk as outcome-unknown; the comment at :4300-4305 calls the arm quiet by construction and does not call on_impossible_interference. Changes: description: Update paragraph appended. Pointers stale: the premise 'sets the lane Faulted' is gone: the arm wedges; CasRefLedger.cpp:3814-3818 moved to :3208-3213 / :4306. Would settle it: whether a later settling read still escalates a persistently unreadable occupant to on_impossible_interference.
+---
+<!-- COMMENTS:END -->

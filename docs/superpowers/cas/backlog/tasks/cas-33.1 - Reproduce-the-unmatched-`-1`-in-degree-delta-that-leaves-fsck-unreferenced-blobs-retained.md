@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-25'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'area:fsck'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/gc.md#fsck-gc-indegree-disagreement-2026-07-25; verified 202
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-25 (51455d6b521, by 'fsck-gc-indegree-disagreement-2026-07-25')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: CASGCUnmatchedRemoveDeltas still incremented at Gc/CasBlobInDegree.cpp:937; task is an open repro request. Changes: none. Pointers stale: CasBlobInDegree.cpp:652 moved to :937. Would settle it: whether the in-degree model changes of the blob-intents branch still produce an unmatched -1 (no repro attempted).
+---
+<!-- COMMENTS:END -->

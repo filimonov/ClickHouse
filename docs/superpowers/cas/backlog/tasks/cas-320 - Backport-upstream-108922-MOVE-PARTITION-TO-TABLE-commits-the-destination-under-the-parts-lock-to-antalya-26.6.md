@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-28 15:50'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:upstream'
   - 'touches:upstream-code'
@@ -13,8 +14,15 @@ labels:
   - 'complexity:small'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:fixed-master'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-5
 dependencies: []
+references:
+  - 'https://github.com/ClickHouse/ClickHouse/pull/108922'
 priority: high
 ordinal: 399000
 ---
@@ -38,3 +46,13 @@ On antalya-26.6 StorageMergeTree::movePartitionToTable inserts the moved parts i
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: upstream PR 108922 'Fix move partition intersecting parts' merged 2026-07-03 and is in this 26.8 branch (2135a0d7aa8); `git log --grep` on altinity/antalya-26.6 finds no cherry-pick. Changes: upstream reference added. Would settle it: whether antalya-26.6 carries the fix under a different commit message (check the destination commit in StorageMergeTree::movePartitionToTable on that branch). Upstream: fixed-master (https://github.com/ClickHouse/ClickHouse/pull/108922); already here for antalya-26.8; antalya-26.6 needs a backport.
+---
+<!-- COMMENTS:END -->

@@ -4,13 +4,18 @@ title: Add the HTTP `/ping` healthcheck to `ch2` in the ca-soak compose files
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/docker-compose.yml
@@ -51,3 +56,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `docker-compose-asan.yml` is 2026-08-04 (6cbeec21537); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -c healthcheck: docker-compose-asan.yml 0, docker-compose-tsan.yml 0; other compose files have one. Changes: label quick-win.
+---
+<!-- COMMENTS:END -->

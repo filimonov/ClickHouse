@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:duplicate'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Parts/PartFolderAccess.cpp
@@ -51,3 +54,13 @@ Provenance: BACKLOG/ref-protocol.md#part-folder-single-flight-manifest-keying (2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (d8c5e8de79a, by 'part-folder-single-flight-manifest-keying')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: duplicate (high). Evidence: Parts/PartFolderAccess.cpp:252-263 follower returns future.get() keyed by cacheKey only, no manifestId check: the same defect and the same fix as CAS-323, which also asks for the read-your-writes audit and the gtest. Changes: none. Links: Duplicate of CAS-323 (newer, superset: adds the repoint-then-CachedForLoad audit). Defect itself still present..
+---
+<!-- COMMENTS:END -->

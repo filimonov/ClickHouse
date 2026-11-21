@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +61,13 @@ Provenance: BACKLOG/gc.md#gc-dryrun-silent-on-damaged-state (2031-triage CAS-095
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-095')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.cpp:5305-5325 previewDeletes still comment-documents 'Absent seal => no candidates' and returns an empty preview when readFoldSeal finds none; the CLI (programs/disks/CommandCaGcDryRun.cpp:47-54) prints refused_shards but has no healthy / no-baseline / seal-missing status. Changes: none. Links: same function as CAS-12. Pointers stale: CasGc.cpp:4613-4627 moved to ~:5305-5325; a refused_shards field now exists (CasGc.h:496) for run-read refusals only, which narrows the gap but does not cover a missing seal.
+---
+<!-- COMMENTS:END -->

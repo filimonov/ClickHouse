@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:ref-ledger'
   - 'complexity:epic'
@@ -14,6 +14,11 @@ labels:
   - 'touches:protocol'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-70.3
 references:
@@ -58,3 +63,13 @@ First recorded: 2026-09-04 (879aadde73a, by 'hot-key-lane-phase-b')
 
 Issue #2343 evidence: `CAS ref catalog 'data/cas/ref_catalog' update: gave up at the policy deadline after zero attempt(s)` — the lane starts the caller's 90 s deadline before queueing (`Backend/CasHotKeys.cpp:62-142`, per the issue), so a waiter behind a stuck holder expires without sending a request. The replication-queue `num_tries` amplifier (charged before `trySchedule`, `ReplicatedMergeTreeQueue.cpp:2019`, unchanged on antalya-26.6) is tracked upstream as https://github.com/ClickHouse/ClickHouse/issues/122106.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: epic: children CAS-71.1 to 71.5 all To Do; CasHotKeys.h has no combining or clamp-deadline support; gate dependency CAS-70.3 still To Do. Changes: label needs:decision. Links: children CAS-71.1 .. CAS-71.5; gated on CAS-70.3. Owner question: Phase B was deferred by the owner on 2026-09-04: does it stay deferred, or is a measurement (CAS-70.3) to decide it now?
+---
+<!-- COMMENTS:END -->

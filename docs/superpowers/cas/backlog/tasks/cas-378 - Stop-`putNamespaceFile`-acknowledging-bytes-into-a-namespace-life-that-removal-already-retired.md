@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 11:52'
-updated_date: '2026-10-14 20:52'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -15,6 +15,9 @@ labels:
   - 'risk:high'
   - 'needs:repro'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +58,13 @@ A cold reader observes the catalog row `Live`; removal and drain retire that lif
 
 2026-10-14: PR https://github.com/Altinity/ClickHouse/pull/2570 (branch fix/antalya-26.6/cas-378-retired-life-republish @19b5df85a66): retirement count in RefNameSlot, cold paths capture it before the first catalog read and the insertion refuses if it moved; warm namespaceLife refuses a terminal life. No TLA model covers the in-memory runtime slot; evidence is the gtests (red on base) and two codex reviews.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: CasRefLedger.h:1053-1063 RefNameSlot.retirements and ColdAdmission capture in CasRefLedger.cpp:755,821,973 match the described fix; gtest_cas_ns_file_incarnation.cpp / gtest_cas_ref_writer.cpp reference them. Changes: none. Would settle it: that the warm namespaceLife refusal of a terminal life and the red-on-base gtest of the cold-read/insert interleaving exist on this branch; PR 2570 head 19b5df85a66 is not an ancestor (ported under o….
+---
+<!-- COMMENTS:END -->

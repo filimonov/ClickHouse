@@ -6,9 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:03'
-updated_date: '2026-10-01 19:29'
+updated_date: '2026-11-21 08:21'
 labels:
   - ci
+  - 'area:ci'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
 ordinal: 432000
@@ -39,3 +48,13 @@ Observed 2026-10-01 on PR #2463 (also any PR on antalya-26.6 after 05:10Z): cas_
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01 owner: not ours — the clickhouse-regression maintainers own the release ref; the reds disappear once PR #2398 (uniqApacheHLL) merges. Kept only as the explanation for cas_aggregate_functions_* reds on antalya-26.6 PRs in the meantime.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: The task's own note: reds vanish once the uniqApacheHLL PR merges; src/AggregateFunctions/AggregateFunctionUniqApacheHLL.cpp exists on cas-pr1 (26.8 line). Regression checkout ref comes from inputs.ref (.github/workflows/regression-reusable-suite.yml:123-124). Changes: area set to ci; size unset -> small (S): pin the ref in the caller; risk set to low; confidence set to solid; impact:operability. Size: S. Would settle it: Whether the uniqApacheHLL PR is merged into antalya-26.6 (cannot be checked from the 26.8 worktree).
+---
+<!-- COMMENTS:END -->

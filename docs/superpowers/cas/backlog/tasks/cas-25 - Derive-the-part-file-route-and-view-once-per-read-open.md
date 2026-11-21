@@ -4,18 +4,19 @@ title: Derive the part-file route and view once per read open
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
-  - CAS-16
-  - src/Disks/DiskObjectStorage/DiskObjectStorage.cpp
-  - '>-'
-  - docs/superpowers/cas/2031-triage.md#cas-118
   - 'theme:parity'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-16
 references:
@@ -57,3 +58,13 @@ Provenance: BACKLOG/performance.md#read-path-repeated-view-lookup-per-open (2031
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b9a1774ba4e, by 'read-path-repeated-view-lookup-per-open')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:896-898 still calls prepareInManifestRead(path, ...) and then getBlobViewPlan(path) as two separate path-taking calls. Changes: removed non-label 'CAS-16'; label 'src/Disks/DiskObjectStorage/DiskObjectStorage.cpp' moved to references; removed non-label '>-'; label 'docs/superpowers/cas/2031-triage.md#cas-118' moved to references; impact:cost. Links: depends on CAS-16 per its dependencies field. Pointers stale: DiskObjectStorage.cpp:812 and :826-829 are now :896-898. Would settle it: Did not count path parses and view lookups inside the two callees to confirm the repeat still happens..
+---
+<!-- COMMENTS:END -->

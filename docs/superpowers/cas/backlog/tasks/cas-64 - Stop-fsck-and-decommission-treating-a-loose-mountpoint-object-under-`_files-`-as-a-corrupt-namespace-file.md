@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:formats'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +61,13 @@ Provenance: BACKLOG/operability-and-introspection.md#loose-mountpoint-object-as-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (d0f195fbaa7, by 'loose-mountpoint-object-as-corrupt-namespace-file')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasLayout.h:361-367 mountpointObjectKey checks only a clean relative path, no _files reservation. Changes: none. Pointers stale: CasLayout.h:312-316 is now :361-367.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:canary'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies: []
 references:
@@ -69,3 +74,13 @@ First recorded: 2026-09-04 (afbff0a95d3, by 'gc-condemn-head-read-ahead-pinned-w
 - One round per 300 s: the rule RAISES the HEAD requests a round issues by 15-34% of takes (totals 21063 / 19532 without it, 25443 / 24319 with it, about +4.4k per run); about 3.6-4.1k inline HEADs move to read-ahead; `fold_reduce` -5% without latency, inside the spread with 20 ms per request. Source: `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/04-leak-verdict-rca-and-head-window.md`, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/03-long-rounds-and-latency.md`.
 - Reopen only with a workload where inline HEADs dominate a round, and with a rule that does not hint candidates it then discards.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: Task note 2026-09-30: implemented, measured (+15-34% HEADs per round at 300 s, no gain at 10 s) and removed (aa51587b5c1); owner decision on CAS-29 note: A2 rejected by measurement. topUpHeadHints still exists at CasGc.cpp:2200 without the discard rule.. Changes: label needs:decision. Would settle it: owner confirmation to close as rejected-by-measurement (note says reopen only with a workload where inline HEADs dominate). Owner question: Close CAS-29.5 as rejected by measurement?
+---
+<!-- COMMENTS:END -->

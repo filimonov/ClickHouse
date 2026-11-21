@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-15 23:53'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:soak'
   - 'area:mounts'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -60,3 +63,13 @@ First recorded: 2026-09-26 (5245fbc7a76, by 'b200-decommission-under-load')
 
 2026-10-16: scenario S47 (utils/ca-soak, commits b42fb74e1d7 proxy hold/trace, dd2eafbf984 card, 8a836721c45 harness fixes) run against the PR C binary (92af2241fca): full5 131/132 PASS — decommission under load, kill after each of steps 1-6 (proxy-parked request), rerun per migration.md#rejoin-rerun-rule converges, mid-retirement start refused then cleared, rejoin same uuid (7 cycles) and new uuid, oracle PHASE3 OK, fsck dangling=0. The one red: the NoWait refusal text does not name terminated/fenced — that text lives in PR A (#2566), not on the PR C branch; re-run S47 after A and C are merged together. Not covered: late tombstone over a running member, late drain write after rejoin, cas-drop-member CLI (CAS-213.1), ASan/TSan, more seeds. Results: tmp/soak213/RESULTS.md.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: scenario S47 exists: utils/ca-soak/scenarios/cards/s47_decommission_under_load.py (commits 8a836721c45, e62f4adcaf9, d32aee88053, last 2026-10-17); 2026-10-16 note records full5 131/132 PASS covering AC#1-#3. Changes: none. Links: status looks stale since 2026-10-17 (last S47 commit); the description's 'no scenario uses SYSTEM CAS DROP POOL MEMBER' is stale, S47 does.. Would settle it: S47 re-run with PR A (NoWait refusal text, #2566) and PR C merged together; the cas-drop-member CLI case (CAS-213.1) is not covered.
+---
+<!-- COMMENTS:END -->

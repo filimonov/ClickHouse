@@ -4,13 +4,16 @@ title: Document that the bucket credential is the whole trust boundary of a CAS 
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-0
 dependencies: []
 references:
@@ -55,3 +58,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#pool-trust-boundary-undocumented (2031-t
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (47c403ae0ab, by 'pool-trust-boundary-undocumented')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep for trust boundary/model under cas-pr1 docs/en/antalya/cas finds only read-path.md:70 (cache) and design-history; no pool trust section. Changes: none.
+---
+<!-- COMMENTS:END -->

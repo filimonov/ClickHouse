@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - R/Pool/CasRefProtocol.h
@@ -51,3 +54,13 @@ Provenance: BACKLOG/ref-protocol.md#ref-ledger-consult-followups-2026-07-21 (pre
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-21 (cf79e86b970, by 'ref-ledger-consult-followups-2026-07-21')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Pool/CasRefProtocol.h:321 precommits is still a plain std::set; benchmarks/benchmark_cas_ref_protocol.cpp:151-178 builds a synthetic snapshot with one precommit, no precommit-count sweep seen in grep. Changes: none. Links: feeds CAS-78 (copy-on-write option needs this number). Pointers stale: CasRefProtocol.h:254 now :321; benchmark moved to ContentAddressed/benchmarks/. Would settle it: whether the benchmark has a precommit-count sweep under a name not matching 'precommit' (grep was case-insensitive on that word only).
+---
+<!-- COMMENTS:END -->

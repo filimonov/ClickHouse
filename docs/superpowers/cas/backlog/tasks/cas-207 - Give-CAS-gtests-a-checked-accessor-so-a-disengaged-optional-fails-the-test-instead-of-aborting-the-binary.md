@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'area:ci'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +63,13 @@ Provenance: BACKLOG/testing-and-ci.md#cas-tests-unchecked-optional-deref; counts
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (55a6903535b, by 'cas-tests-unchecked-optional-deref')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Disks/tests/cas_test_helpers.h has no checked optional accessor (only an ASSERT_TRUE(got.has_value()) inside one helper at :449); gtest_cas_orphan_nomination.cpp:174 and :178 still use EXPECT_TRUE(x.has_value()) before dereferencing.. Changes: label quick-win. Pointers stale: orphan_nomination sites :184/:188 are now :174/:178..
+---
+<!-- COMMENTS:END -->

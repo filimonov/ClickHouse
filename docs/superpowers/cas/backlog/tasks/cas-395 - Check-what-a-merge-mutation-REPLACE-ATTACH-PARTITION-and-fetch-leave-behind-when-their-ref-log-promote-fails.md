@@ -6,10 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-15 08:43'
+updated_date: '2026-11-21 08:20'
 labels:
-  - 'area:refs'
+  - 'area:ref-ledger'
+  - 'complexity:medium'
+  - 'risk:low'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: research
 ordinal: 493000
 ---
 
@@ -27,3 +36,13 @@ Reproduction and analysis: tmp/dupcheck/REPORT.md (CAS base fef96d50e69).
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text and its tmp/dupcheck reproduction; per CAS-394 note the NeedsRecovery and Wedged promote windows remain after the checkpoint change. Changes: label area:refs -> area:ref-ledger; size unset -> medium (M): several operations to reproduce with the stall proxy; risk set to low; confidence set to solid; type unset -> research: reproduce each operation and state the outcome. Size: M. Links: absorbs the residual window of CAS-394. Would settle it: per-operation outcome table (merge, mutation, REPLACE/ATTACH, fetch) not produced.
+---
+<!-- COMMENTS:END -->

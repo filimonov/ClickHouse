@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:mounts'
   - 'area:soak'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -66,3 +69,13 @@ Issue #2431 (open, 2026-09-24) reproduces a renewal giving up with budget left a
 
 2026-10-08: the full-scale S03 rerun is the acceptance run of 17b and is deferred with it (owner decision).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task note: full-scale S03 rerun deferred as acceptance run (2026-10-08); issue 2431 reproduces fence-with-budget-left at dev scale; AC1 run not recorded. Changes: none. Links: may close into the u17 task renewal-fences-with-budget-left. Would settle it: whether a full-scale S03 run on current HEAD exists in RUN_HISTORY.md (not found in utils/ca-soak of the checked trees).
+---
+<!-- COMMENTS:END -->

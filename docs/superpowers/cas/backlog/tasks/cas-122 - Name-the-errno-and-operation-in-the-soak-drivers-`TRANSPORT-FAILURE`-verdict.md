@@ -4,13 +4,16 @@ title: Name the errno and operation in the soak driver's `TRANSPORT FAILURE` ver
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - utils/ca-soak/soak/run.py
@@ -52,3 +55,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `OSError` is 2026-08-03 (19c3018767a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: soak/run.py:1813 and :2154 still set kind = "TRANSPORT FAILURE". Changes: none. Pointers stale: run.py:1720-1729 and :2026-2035 moved to :1813 and :2154. Would settle it: whether the verdict text now names errno, replica and operation; the phase-1 health wait not re-read.
+---
+<!-- COMMENTS:END -->

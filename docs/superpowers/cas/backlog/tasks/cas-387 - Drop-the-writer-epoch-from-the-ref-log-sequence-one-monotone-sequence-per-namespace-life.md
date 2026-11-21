@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 20:55'
-updated_date: '2026-11-15 14:38'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:ref-ledger'
   - 'touches:format'
@@ -16,8 +16,15 @@ labels:
   - 'confidence:plausible'
   - 'needs:decision'
   - 'origin:review'
+  - 'impact:cost'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: enhancement
 ordinal: 482000
 ---
 
@@ -57,3 +64,13 @@ Not a fix for the orphan sweep's second read of the ref history (CAS-358): that 
 <!-- SECTION:NOTES:BEGIN -->
 CAS-487 keeps the writer epoch in the log key, adds the `!next_epoch` chain link and bumps the header to generation 3. Its lazy tombstone already meets AC #3 (a first touch writes at most one tombstone, not one seal per skipped epoch). A later CAS-387 would be generation 4 on top of that.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: prev_epoch_seal / crossEpochFromSeal still present (46 occurrences under ContentAddressed/ on the checked branch); task notes say CAS-487 (generation 3) keeps the writer epoch in the key. Changes: impact:cost; impact:operability; type unset -> enhancement: improves an existing mechanism; design spec is AC1. Links: overlaps CAS-487 (lazy tombstone meets AC3); sequence after CAS-358; direction (d) of CAS-305. Would settle it: whether CAS-487 landed on this branch and changes the remaining scope. Owner question: Which transition: (a) format v2 for new lives, (b) pinned epoch constant, or (c) rebirth at first touch?
+---
+<!-- COMMENTS:END -->

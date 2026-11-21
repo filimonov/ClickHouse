@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 18:48'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -15,6 +15,9 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-83
@@ -82,3 +85,13 @@ Ledger of what was measured (reports 01-08 under docs/superpowers/reports/2026-0
 
 What remains (D): re-measure on a binary that carries CAS-83 (PR #2452) plus the memo - S11 ci and the gc-ab stand with 20 ms latency (`utils/ca-soak/gc-ab`). Most repeated reads were the `delete_tmp_` publish+drop pairs CAS-83 removes; expected hit rate drops sharply. Accept only if the round time moves on a realistic scenario (CAS-321.8); if the hit rate falls below ~15%, close as rejected by measurement.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task note 2026-09-30: owner decision not shipped, parked pending re-measure after CAS-83; Gc/CasGc.cpp:1643 foldManifestEdges has no memo (no manifest memo hit in grep). Changes: none. Pointers stale: CasGc.cpp:1265-1284 moved; foldManifestEdges now at :1643. Would settle it: re-measurement on a binary with CAS-83 (the task's own acceptance rule: close as rejected if hit rate < ~15%).
+---
+<!-- COMMENTS:END -->

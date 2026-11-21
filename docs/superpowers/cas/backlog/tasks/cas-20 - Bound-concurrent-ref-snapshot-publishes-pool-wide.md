@@ -4,13 +4,16 @@ title: Bound concurrent ref-snapshot publishes pool-wide
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -51,3 +54,13 @@ Provenance: BACKLOG/performance.md#snapshot-publish-fanout-unbounded (2031-triag
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b2a38f0b611, by 'snapshot-publish-fanout-unbounded')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:4624 admitSnapshotPublishUnderStateLock still gates per runtime only; no pool-wide limiter or setting found for snapshot publishes. Changes: none. Pointers stale: CasRefLedger.cpp:4140 now :4624.
+---
+<!-- COMMENTS:END -->

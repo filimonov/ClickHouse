@@ -4,13 +4,16 @@ title: 'Index `PartStaging::entries` by path'
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -49,3 +52,13 @@ Provenance: BACKLOG/performance.md#staging-vector-quadratic-path-scans (2031-tri
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (10bf7f7162f, by 'staging-vector-quadratic-path-scans')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedTransaction.h:147 `std::vector<Cas::ManifestEntry> entries`; ContentAddressedTransaction.cpp:257 still upserts with std::erase_if over it. Changes: none. Pointers stale: ContentAddressedTransaction.h:139 is :147; erase_if sites :766/:999/:1644 not re-checked (one seen at :257).
+---
+<!-- COMMENTS:END -->

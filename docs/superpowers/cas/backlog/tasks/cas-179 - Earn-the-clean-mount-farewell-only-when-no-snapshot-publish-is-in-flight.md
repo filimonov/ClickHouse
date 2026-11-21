@@ -4,7 +4,7 @@ title: Earn the clean mount farewell only when no snapshot publish is in flight
 status: To Do
 assignee: []
 created_date: '2026-08-24'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ref-ledger'
   - 'area:mounts'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'origin:review'
   - 'origin:noclock-audit'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -63,3 +68,13 @@ PR 15 (fix/antalya-26.6/cas-remove-remount-machine) keeps `quiesceRefTablesForRe
 
 Wave 2 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md finding 3, verified): a timed-out snapshot/checkpoint publish returns unresolved, the task count reaches zero, drain permits the farewell, the request lands afterwards; `NoLandingAfterFarewell` is unsupported. Conditional checkpoint rules limit the damage.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:2173 drainRefLanesForShutdown waits on pending and leader_active only (no pending_snapshot_publishes); callers CasPool.cpp:1225 and :1380 still earn the farewell from that drain. Changes: impact:data-loss. Pointers stale: CasRefLedger.cpp:1979-2037 now ~:2173; CasPool.cpp:1026/:1181-1190 now ~:1225/:1380; the unbounded publish wait at :2030-2038 is the reacquire quiesce, not the shutdown drain.
+---
+<!-- COMMENTS:END -->

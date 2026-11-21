@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:testing'
   - 'complexity:medium'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:2031-triage'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -62,3 +67,13 @@ First recorded: 2026-09-26 (5245fbc7a76, by 'review-14-coverage-gaps')
 
 2031-triage CAS-065: item 1 (no `Mode::Native` contract-suite row) is the audit's remaining residual. Its other half, a GCS-generation lane, is closed by `4c1916e1a89`: `tests/integration/test_cas_gcs` (24 tests against a fake GCS with disjoint generation and ETag domains, OAuth and HMAC disks), present on both branches.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Disks/tests: grep for RealProvider|ProviderContract returns no gtest file (item 1); the only DiskObjectStorageTransaction mention in gtest_ca*/gtest_cas* is a comment at gtest_ca_wiring.cpp:932 (item 2).. Changes: impact:wrong-result. Would settle it: Item 3 (truncated local blob body refused by the size check) not searched..
+---
+<!-- COMMENTS:END -->

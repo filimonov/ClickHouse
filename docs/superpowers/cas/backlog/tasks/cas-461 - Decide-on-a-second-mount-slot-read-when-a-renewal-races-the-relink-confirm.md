@@ -4,16 +4,20 @@ title: Decide on a second mount-slot read when a renewal races the relink confir
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:33'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
   - 'complexity:small'
   - 'risk:low'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-365
 priority: low
-type: feature
+type: task
 ordinal: 565000
 ---
 
@@ -46,3 +50,13 @@ Measured 2026-11-12 on `fa1b89d1529` (branch `fix/antalya-26.8/cas-late-request-
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Rate data on the late-request bundle head: `CASRelinkConfirmRefusedSlotMoved` 0 of 21 and 0 of 160. Not repeated on `44fc40023c1`; no decision yet.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: CASRelinkConfirmRefusedSlotMoved exists (Pool/CasPool.cpp, gtest_cas_confirm_exact_ref.cpp); task notes record 0/21 and 0/160 confirms and AC1 and AC2 still open. Changes: type feature -> task: a measurement plus a recorded decision, no code change decided. Links: first data point 2026-11-12 on fa1b89d1529; not repeated on 44fc40023c1; overlap-load run not done.
+---
+<!-- COMMENTS:END -->

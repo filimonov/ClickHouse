@@ -6,14 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-18 21:13'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:mounts'
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:speculative'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-406
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2517'
 priority: low
-type: task
+type: research
 ordinal: 510000
 ---
 
@@ -36,3 +44,13 @@ Review simplification 6 of https://github.com/Altinity/ClickHouse/pull/2517: the
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text; CAS-406 (declared dependency) not complete: renewUntilDefinitive still in CasMountRuntime.cpp; no model result recorded. Changes: size unset -> medium (M): model run plus a behaviour-changing refactor; risk set to high; confidence set to speculative; type task -> research: first deliverable is a model check, code only if it passes. Size: M. Would settle it: model result for AC1 (CaMountRenewRetryCore / CaRenewalDriver on one plane).
+---
+<!-- COMMENTS:END -->

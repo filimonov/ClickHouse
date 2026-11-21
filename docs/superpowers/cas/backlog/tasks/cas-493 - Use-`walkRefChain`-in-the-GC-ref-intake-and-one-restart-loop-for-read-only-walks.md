@@ -6,10 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-15 14:38'
-updated_date: '2026-11-15 16:36'
-labels: []
+updated_date: '2026-11-21 08:23'
+labels:
+  - 'area:gc'
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-487
+priority: low
+type: chore
 ordinal: 598000
 ---
 
@@ -32,3 +42,13 @@ The GC ref intake has its own chain walk instead of `walkRefChain`. The read-onl
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-15: treat together with CAS-492 as one refactor (shared durable-write window; walkRefChain in the GC ref intake; one restart loop for read-only walks; one recording KeyReader). No behaviour change in either.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: walkRefChain callers are Pool/CasRefProtocol.cpp:1268 and Gc/CasOrphanManifestSweep.cpp:356 only; Gc/CasGc.cpp has no walkRefChain call, so the GC ref intake still has its own walk. Changes: area set to gc; size unset -> medium (M): refactor of the GC intake walk under safety care, plus two other dedups; risk set to high; confidence set to solid; type unset -> chore: duplicate removal, no behaviour change; priority unset -> low: no priority set; refactor. Size: M. Links: Treat with CAS-492 as one refactor.
+---
+<!-- COMMENTS:END -->

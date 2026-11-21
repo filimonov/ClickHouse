@@ -4,13 +4,18 @@ title: Record a sanitizer run of the hot-key lane death-test twin
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:testing'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Disks/tests/gtest_cas_ref_catalog.cpp
@@ -54,3 +59,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `CASRefCatalog` is 2026-08-03 (0f7b755bb16); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: The death test still exists at src/Disks/tests/gtest_cas_ref_catalog.cpp:2961 (cas-pr1); no sanitizer-run record found in the task or plan.. Changes: impact:operability. Pointers stale: gtest_cas_ref_catalog.cpp:2516 is now :2961.. Would settle it: A CI unit-test report (asan_ubsan job) listing CASRefCatalogDeathTest.AStaleHintCasAdmitEntryAdmitsWhenTheStoreHasRoomAborts as passed; not searched here..
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:read-path'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#orphan-triage-2026-08-04 [partpathparser
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'partpathparser-duplicated-path-constants')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Parts/PartPathParser.h:25 still hardcodes kDetachedDirName = "detached"; no DETACHED_DIR_NAME/MOVING_DIR_NAME use or static_assert under ContentAddressed/. Changes: none. Pointers stale: PartPathParser.h:41 kMovingDirName now near :34-40.
+---
+<!-- COMMENTS:END -->

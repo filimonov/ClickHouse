@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -17,6 +17,9 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-2
 dependencies:
   - CAS-176
@@ -72,3 +75,13 @@ Identifier trace: the earliest docs mention of `flushRefBatch` is 2026-07-12 (e1
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit 18be198c7ab: an append is one `_log` create; `_ckpt` is written only at creation and by snapshot publication. The premise "an append is 4 requests" no longer holds. Re-measure the combine window against a one-PUT append.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no combine window in Pool/CasRefLedger.cpp (flushRefBatch still carves all pending at once); task notes 2026-11-14/17 record the 26.8 numbers (queue wait 8.5 -> 15.5 ms) and that an append is now one _log PUT (18be198c7ab, PR 2831). Changes: none. Links: dependencies CAS-176 and CAS-83 are partly delivered; related CAS-487. Pointers stale: CasRefLedger.cpp:2059,:2753 line cites; 'two round trips' premise now one PUT per append. Would settle it: the window-vs-no-window measurement (AC1) against the one-PUT append; the task's premise of a four-request flush is stale.
+---
+<!-- COMMENTS:END -->

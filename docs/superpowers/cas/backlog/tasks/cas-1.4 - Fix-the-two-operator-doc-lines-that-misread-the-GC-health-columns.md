@@ -4,7 +4,7 @@ title: Fix the two operator-doc lines that misread the GC-health columns
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'area:observability'
@@ -12,6 +12,10 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -35,6 +39,8 @@ GC-health columns are NULL on every peer row by design (`docs/en/antalya/cas/arc
 renewing; GC success and lease renewal are unrelated clocks. Prose-only: batch with the deferred docs pass.
 
 Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous item 4; verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild).
+
+Update 2026-11-21: Only AC #2 remains: migration.md no longer mentions last_success_age_seconds (AC #1 holds); troubleshooting.md:20 still cites it as lease-renewal evidence.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,3 +64,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `expires_at` is 2026-06-28 (2243419abe5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: cas-pr1 docs/en/antalya/cas/operations/migration.md has no last_success_age_seconds any more; troubleshooting.md:20 still says 'last_success_age_seconds not climbing' as lease-renewal evidence. Changes: description: Update paragraph appended. Size: XS. Pointers stale: migration.md:206 no longer mentions last_success_age_seconds; the troubleshooting line is now :20 inside the 'Writes slow down' row.
+---
+<!-- COMMENTS:END -->

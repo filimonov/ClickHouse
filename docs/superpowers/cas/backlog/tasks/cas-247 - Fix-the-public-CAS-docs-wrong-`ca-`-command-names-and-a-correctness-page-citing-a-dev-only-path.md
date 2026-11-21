@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#public-docs-accuracy-m12 (umbrella revie
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (3c7cd13190e, by 'public-docs-accuracy-m12')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 docs/en/antalya/cas: grep for unregistered ca-<cmd> names finds none (only utils/ca-soak and ca-pool example prefix); correctness.md has no docs/superpowers citation. Changes: none. Pointers stale: the 15 ca-* occurrences and correctness.md:21,25 citations are gone. Would settle it: correctness.md:47,57 still cite utils/ca-soak/ (in-repo dev path); whether AC #2 allows that is a judgement call.
+---
+<!-- COMMENTS:END -->

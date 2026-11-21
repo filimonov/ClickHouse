@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-10 22:56'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:write-path'
   - 'area:mounts'
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -39,6 +44,8 @@ Two defects and one open question:
 1. Message. `Pool/CasPartWriteTxn.cpp:682` maps every `GaveUp` to "UNCERTAIN (retry budget exhausted)" and ignores `why`, `deadline_source` and `sent_any`. Here nothing was sent (the fence refused before the first attempt), so the outcome is certain and the cause is the lease, not the retry policy. Same pattern at `Tools/CasDecommission.cpp:492`.
 2. A process stall of 10 s or more under a 30 s lease is a client-visible INSERT failure. CAS-405.3 (120 s lease, 40 s renew) absorbs this one; CAS-185 is the wait-for-remount design question.
 3. What stalls the TSan stateless server for 18 s is not visible from inside the process; the sanitizer lane profile is CAS-223.
+
+Update 2026-11-21: Remaining scope after PR 2831 (0aa837e942e): (1) decommission tombstone give-up text from the give-up facts, including the pause age; (2) re-decide the client-visible failure on a process stall at the 40 s default lease (CAS-405.3 vs CAS-185). The part-manifest text is done (06f74c43a1f).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -68,3 +75,13 @@ Two defects and one open question:
 
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s. The decision "CAS-405.3 closes the 18 s stall" assumed 120 s; it must be taken again.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: 06f74c43a1f is an ancestor of the checked branch and its gtests exist (src/Disks/tests/gtest_cas_part_write.cpp: StageManifestNotSentUnderDrainedLeaseSaysNotSent), so AC1 is done for the part-manifest PUT; the decommission tombstone text and the AC2 decision (default lease is now 40 s, not 120 s) remain open per the task notes. Changes: label needs:decision; description: Update paragraph appended. Links: related CAS-405.3, CAS-185, CAS-480, CAS-223. Would settle it: whether the decommission tombstone write still reports by sent_any only (Tools/CasDecommission.cpp) and the owner's re-decision between CAS-405.3 and CAS-185 at the 40 s default. Owner question: At the 40 s default lease the write window is 14 s: does a process stall of 10 s or more stay a client-visible INSERT failure (accept), or does CAS-185 (wait-for-remount) close it?
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-31'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:soak'
   - 'area:gc'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -60,3 +66,13 @@ Provenance: BACKLOG/testing-and-ci.md#s27-list-anomaly-aimed-at-a-retired-path (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-31 (a4390780578, by 's27-list-anomaly-aimed-at-a-retired-path')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/cards/s23_s27_misc.py:681,695 still arms list_anomaly only on list_prefix cas/ns/stream/; the not-vacuous check (:711) is for that prefix only; no janitor or orphan-sweep prefix in the card.. Changes: impact:operability; label quick-win. Pointers stale: card lines moved from :584-589,:649 to ~:616-713. worktree has no utils/ca-soak; checked master tree..
+---
+<!-- COMMENTS:END -->

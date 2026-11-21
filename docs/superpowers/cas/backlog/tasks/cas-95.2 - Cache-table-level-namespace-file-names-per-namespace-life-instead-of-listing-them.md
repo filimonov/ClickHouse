@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-27 06:24'
+updated_date: '2026-11-21 08:27'
 labels:
   - 'area:read-path'
   - 'complexity:high'
@@ -16,6 +16,11 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'origin:issue'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -82,3 +87,13 @@ Reopen only with a decision on challenge 3 and, preferably, sealed table-level f
 
 2026-09-27 CANDIDATE (user): invalidate-on-write cache instead of write-through. Per life: names of the last LIST + valid flag + counter, in Pool under a plain mutex (no I/O under it). listDirectory/existsDirectory(TableSubdir) answer from memory while valid; otherwise LIST, install, set valid. putNamespaceFile/removeNamespaceFile bump the counter at START and at SETTLE (success or exception) and clear the flag; a LIST installs only if the counter is unchanged between its start and the install (a LIST overlapping any part of a write is dropped, not installed). Hits need fence admission (rev.7 rule); table cleared on lease loss; entry erased on dropNamespace; rebirth is a new key; predecessor stragglers covered by the lease protocol (accepted assumption). Removes everything rounds 2-8 fought over (callback order, runtime ABA, mount population, drain, shared_mutex, catalog cut, birth hook). Cost: one LIST after every _files/ write of that table, so deduplicating tables (a segment per insert) keep today's per-minute LIST; the saving is on tables without table-level writes between scans. Not yet reviewed by codex; the spec is narrowed to 95.1 (rev.10).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1: listNamespaceFiles still LISTs (Pool/CasPlainObjects.h:48, callers in ContentAddressedTransaction.cpp:1362,:1499), so the 155 LIST per 10 min cost remains; the task's own 2026-09-27 notes record a user verdict 'doubtful, cure worse than the disease', 8 codex rounds and a reopen condition (sealed table-level files, format generation 2); an untested invalidate-on-write candidate is describ…. Changes: impact:cost. Links: parent CAS-95; decision-4 governs the format-change variant. Would settle it: The owner has not chosen between keeping it parked and trying the invalidate-on-write candidate (not yet reviewed by codex).. Owner question: Keep this parked until sealed table-level files exist, or review and try the invalidate-on-write cache candidate now?
+---
+<!-- COMMENTS:END -->

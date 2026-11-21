@@ -4,11 +4,18 @@ title: Make the remaining permanent self-remount refusals terminal
 status: To Do
 assignee: []
 created_date: '2026-11-04 00:09'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:mounts'
   - 'complexity:small'
   - 'risk:low'
   - 'origin:review'
+  - 'confidence:solid'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
 type: bug
@@ -34,3 +41,13 @@ A self-remount ends in IdentityLost for a foreign, retired or rewritten owner (P
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPool.cpp:1685-1692 a ForeignOwner claim in self-remount logs 'will retry' and returns false (not IdentityLost). Changes: confidence set to solid; impact:availability. Pointers stale: absent-owner-over-data branch (claimOwnerOrThrow) not rechecked.
+---
+<!-- COMMENTS:END -->

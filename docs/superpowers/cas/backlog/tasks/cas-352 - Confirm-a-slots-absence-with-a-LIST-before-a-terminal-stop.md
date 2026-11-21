@@ -4,13 +4,16 @@ title: Confirm a slot's absence with a LIST before a terminal stop
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:49'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 priority: medium
@@ -44,3 +47,13 @@ PR 6 of the lease series (absence only on a named `NoSuchKey`) was withdrawn by 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-14: add the new absence-based decisions to the site list: claim recheck with owner absent, rejoin with epoch or mount missing, admin with absent counter.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: ProvenAbsent exists only as a write-attempt Observation (Backend/CasWriteResult.h:35, CasRequests.cpp:814,843); no GET-404-plus-LIST confirmation of slot absence found; original series PR withdrawn. Changes: none. Would settle it: read of slot_absent / pool_identity_lost decision sites to confirm they still stop on a bare GET 404.
+---
+<!-- COMMENTS:END -->

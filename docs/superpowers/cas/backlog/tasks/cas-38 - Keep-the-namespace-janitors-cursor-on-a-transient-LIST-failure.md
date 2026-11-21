@@ -4,13 +4,17 @@ title: Keep the namespace janitor's cursor on a transient LIST failure
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-05 15:50'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -32,6 +36,8 @@ Not loss. Fix: keep the cursor on a transient failure; reset only on a determini
 failures. Spec B4 changes the pacing knobs, not this.
 
 Provenance: BACKLOG/gc.md#janitor-cursor-rewind-on-list-error (2031-triage CAS-078); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+
+Update 2026-11-21: Remaining scope is the first page of a pass only: it still resets the cursor on any LIST failure (CasNamespaceJanitor.cpp:77-82). Later pages already keep the cursor.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -55,3 +61,13 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-078')
 
 2026-10-05: partly covered by draft PR #2483. A `LIST` failure on a page after the first of a pass keeps the cursor the previous page published (`CASNamespaceJanitorBatches.ListFailureAfterTheFirstPageKeepsTheCursor`). The first page of a pass still resets the cursor on any `LIST` failure, transient or not, so AC #1 holds only for later pages and AC #2 is unchanged.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasNamespaceJanitor.cpp:77-82: on any LIST exception the first page of a pass still writes GcMaintenanceState{} (cursor reset), transient or not; later pages keep the cursor (test ListFailureAfterTheFirstPageKeepsTheCursor in gtest_cas_namespace_janitor_batches.cpp). Changes: description: Update paragraph appended. Pointers stale: CasNamespaceJanitor.cpp:38-46 moved to :77-82.
+---
+<!-- COMMENTS:END -->

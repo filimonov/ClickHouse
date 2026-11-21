@@ -4,13 +4,16 @@ title: 'Reject `.` and `..` segments in `Layout::checkNamespace`'
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -51,3 +54,13 @@ Provenance: BACKLOG/formats-and-storage.md#checknamespace-admits-dot-segments (2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (5b3f6c38a57, by 'checknamespace-admits-dot-segments')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasLayout.cpp has no "." or ".." comparison anywhere; checkNamespace (near :399) rejects only _files segments among reserved names. Changes: none. Pointers stale: CasLayout.cpp:322-342 moved to about :390-405.
+---
+<!-- COMMENTS:END -->

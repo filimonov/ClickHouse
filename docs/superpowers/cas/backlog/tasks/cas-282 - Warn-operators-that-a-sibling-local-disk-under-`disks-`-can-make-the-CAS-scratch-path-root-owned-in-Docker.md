@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 documentation:
   - docs/en/antalya/cas/configuration.md
@@ -50,3 +53,13 @@ Provenance: BACKLOG/formats-and-storage.md#ca-scratch-path-docker-entrypoint; re
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (b4420fe512a, by 'ca-scratch-path-docker-entrypoint')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 configuration.md:93 documents cas_scratch_path with no Docker/disks-ownership warning. Changes: none.
+---
+<!-- COMMENTS:END -->

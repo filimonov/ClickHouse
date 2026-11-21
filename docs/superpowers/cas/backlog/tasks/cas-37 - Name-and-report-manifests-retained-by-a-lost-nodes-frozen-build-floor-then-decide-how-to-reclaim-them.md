@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'area:fsck'
@@ -17,6 +17,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -60,3 +63,13 @@ Provenance: BACKLOG/gc.md#dead-member-frozen-build-floor (2031-triage CAS-077); 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-077')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Tools/CasFsck.cpp:1748-1751 still labels floor-eligible manifests in-flight-pre-precommit with no distinct dead-member class; no frozen-floor class found in fsck. Changes: none. Pointers stale: CasFsck.cpp:1121 moved to :1751; the same CasFsck code at :1748 now calls buildPrefixEligibleUnderFloor (renamed from prefixEligibleUnder). Owner question: Reclaim manifests of a lost node's frozen floor by decommission only, or by an automatic rule?
+---
+<!-- COMMENTS:END -->

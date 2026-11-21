@@ -6,14 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 20:18'
-updated_date: '2026-10-22 23:27'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
-  - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:probable'
   - 'origin:review'
+  - 'complexity:small'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies:
   - CAS-346
@@ -50,3 +55,13 @@ Pin the facts: what the sweep horizon is (epoch change? time? GC round?), whethe
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-23 (third umbrella review, needs-verification): a committed stale `tmp_merge_<part>` / `tmp_mut_<part>` ref left by a crash can become the `base_manifest_ref` of a new build of the same temporary name before the temp-dir cleaner runs (plain MergeTree clears at startup, `StorageMergeTree.cpp:312`; the replicated startup path is untraced). Same family as the leaked precommit: a stale durable binding under a name a new build reuses.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Parts/PartFolderAccess.cpp:667-670 still refuses a destination with a live precommit (CAS_OWNERSHIP_CONFLICT); no gtest for a Move onto a leaked precommit found. Changes: size medium -> small (S): state the horizon, one gtest, one decision; impact:availability. Size: S. Pointers stale: moveRefIfMatches no longer exists; the check is in moveRefExact (PartFolderAccess.cpp:667).
+---
+<!-- COMMENTS:END -->

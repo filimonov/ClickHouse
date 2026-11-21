@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-11-11 17:18'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -71,3 +74,13 @@ First recorded: 2026-08-04 (967849c785b, by 's3cache-config-comment-stale')
 
 2026-11-11: one more false comment. `CA/Pool/CasRefLedger.h`, comment above `publishCkptContribution`, bullet on `runRecoveryWalkOnce`: "it is the only writer that mints seals, so it is the only writer that can record where the chain now ends". False: the commit path in `CA/Pool/CasRefLedger.cpp` (the contribution built with `.last_epoch_seal = refLogTxnIsEpochSeal(txn) ...`) also contributes an epoch seal's id when the committed transaction is a seal. Truth to state: both the recovery walk and the commit of a seal transaction contribute `last_epoch_seal`. The line predates the ref cleanup bundle branch (`fix/antalya-26.8/cas-ref-cleanup-per-life-licence`), which left it untouched.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: still present in cas-pr1: recoverRefTable in Gc/CasOrphanManifestSweep.cpp:35 and Gc/CasGc.cpp:183; CasRequestControl in src/Disks/tests/gtest_ca_wiring.cpp:2299; NOT_IMPLEMENTED claim in utils/ca-soak/configs/storage_conf_s3cache_ch1.xml:7. The 'Task 2 review' text in CasRefCatalog.cpp is no longer found, so that bullet is already done. Changes: none. Pointers stale: gtest_ca_wiring.cpp:2160 now :2299; CasGc.cpp:84 now :183; CasRefCatalog.cpp:655 bullet already fixed.
+---
+<!-- COMMENTS:END -->

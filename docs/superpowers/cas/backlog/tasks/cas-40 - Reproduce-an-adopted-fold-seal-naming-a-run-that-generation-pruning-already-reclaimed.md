@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-25'
-updated_date: '2026-10-13 19:15'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +58,13 @@ First recorded: 2026-07-25 (30134ea3224, by 'adopted-seal-pruned-run-2026-07-25'
 
 2026-10-13: CAS-386 files the sharper case of this family: with keep=1 and an all-carry adopted generation G, the pre-CAS prune deletes gc/gen/G/ itself, fold seal included, and a lost CAS leaves the pool needing SYSTEM CAS GC REBUILD (CasGc.cpp:1791). Found by the codex review of the CAS-358 spec. Fix both with one rule: the adopted generation is always in referenced_generations.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc/CasGc.cpp:1330-1345: referenced_generations built from fold_seal.blob_target_runs and parent_seal_runs, then pruneSupersededGenerations; no two-leader handover test for adopted-seal-vs-prune found by name. Changes: none. Links: related CAS-386 (sharper all-carry case, same rule: adopted generation always referenced). Pointers stale: CasGc.cpp:966-980 moved to :1330-1345. Would settle it: a gtest driving two leaders across a lease handover (AC #1); not searched for under another name.
+---
+<!-- COMMENTS:END -->

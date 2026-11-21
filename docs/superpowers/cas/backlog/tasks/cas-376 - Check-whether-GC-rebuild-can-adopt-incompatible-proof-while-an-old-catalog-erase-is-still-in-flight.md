@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'area:ref-ledger'
@@ -14,6 +15,9 @@ labels:
   - 'risk:medium'
   - 'needs:repro'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-low'
 milestone: m-8
 dependencies: []
 references:
@@ -42,3 +46,13 @@ Codex (inferred): an old GC keeps a catalog erase in flight; authority becomes u
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (low). Evidence: docs/superpowers/models/CaRefPreFoldDrainCore_RESULTS.md:82-90 covers the takeover variant (sab_stale_delete_after_successor_hold fails DeleteUsesCurrentAdoptedProof); the rebuild-after-lost-authority variant stays excluded by construction in LoseAuthority (CaRefPreFoldDrainCore.tla:666), as the task says. Changes: none. Would settle it: a model run with a late landing allowed after LoseAuthority + RebuildAuthorityOnly, or the code happens-before that fences the old erase.
+---
+<!-- COMMENTS:END -->

@@ -4,7 +4,7 @@ title: Expose the remaining CAS pacing and budget knobs as disk settings
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-11 23:41'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies:
   - CAS-66
@@ -62,3 +65,13 @@ First recorded: 2026-08-21 (2583e3427aa, by 'pool-pacing-knobs-no-config-surface
 
 2026-11-12 defaults review: `snapshot_log_count_threshold` (256) now has a measured pool-wide effect: it sets the number of ref-log keys every GC round lists per table (see the CAS-29.1 note of today). Expose it; do not change the value before CAS-29.1. Report v2: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (f9ec0861aff); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep in ContentAddressedSettings.cpp finds none of snapshot_log_count_threshold, recovery_retry_budget_ms, gc_fold_threshold, rebuild_edge_budget. Changes: none. Pointers stale: CasPool.h:290-309/:160-170 line numbers not rechecked.
+---
+<!-- COMMENTS:END -->

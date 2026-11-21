@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@k-morozov'
 created_date: '2026-08-21'
-updated_date: '2026-10-16 04:43'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -15,6 +15,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'impact:operability'
+  - 'impact:ux'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -67,3 +73,13 @@ Issue #2211 is assigned to k-morozov (2026-09-26).
 
 2026-10-16: raised. Soak CAS-213 (S47) hit it: SYSTEM CAS GC RUN sent to a non-leader silently did nothing and the harness waited in vain; operators are told to run it in the rejoin / decommission rerun guidance (PR #2574 docs now say: run it on the leader, is_leader = 1).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Interpreters/InterpreterSystemQuery.cpp:2543-2544 result schema still has acquired_lease and deferred and no outcome column. Changes: impact:operability; impact:ux. Pointers stale: InterpreterSystemQuery.cpp:2358-2383 is now ~:2540-2560.
+---
+<!-- COMMENTS:END -->

@@ -4,7 +4,7 @@ title: Let `SYSTEM CAS GC STOP` and `SYSTEM CAS FORGET` stop a GC round in fligh
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -12,6 +12,9 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -64,3 +67,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `CasGcScheduler` is 2026-06-14 (169f255b9a5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGcScheduler.cpp:139-153 stop() sets state, notifies, then joins the thread; grep for stop_token/cancel in CasGcScheduler.{cpp,h}: no round-scoped stop token. Changes: none. Pointers stale: CasGcScheduler.cpp:101-119 moved to :139-153; depends in effect on the stage C1 deadline (CAS-29.10) for natural cut points.
+---
+<!-- COMMENTS:END -->

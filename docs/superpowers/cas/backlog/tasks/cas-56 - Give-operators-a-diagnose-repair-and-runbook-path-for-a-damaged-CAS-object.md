@@ -4,7 +4,7 @@ title: 'Give operators a diagnose, repair and runbook path for a damaged CAS obj
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:tooling'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies:
   - CAS-32
@@ -65,3 +68,13 @@ First recorded: 2026-08-04 (84fc63e9511, by 'damaged-object-diagnose-and-repair'
 
 2031-triage CAS-061: label added.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: parent task; blocked by CAS-32 (valid, no _ckpt repair in fsck) and child CAS-56.1 (valid), CAS-56.4 (valid). Changes: none. Would settle it: children CAS-56.1..56.4 are open; AC #2 scenario not found.
+---
+<!-- COMMENTS:END -->

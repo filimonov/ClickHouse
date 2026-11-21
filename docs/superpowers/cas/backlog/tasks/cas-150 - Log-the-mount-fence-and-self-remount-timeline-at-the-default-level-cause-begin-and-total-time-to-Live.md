@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-28'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -16,6 +16,9 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -76,3 +79,13 @@ Correction: issue #2421 was closed on 2026-09-26 as not reproducible. Its one re
 
 2026-11-07 audit: renewal progress columns merged in https://github.com/Altinity/ClickHouse/pull/2513 as c147de3f55e (2026-10-15). Pause/resume log lines are still on an unpushed branch.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: note 2026-11-07: only the renewal progress columns merged (c147de3f55e); pause/resume log lines on an unpushed branch; grep of Pool/*.cpp finds no fence-armed / remount-begin / remount-complete Information lines. Changes: none. Links: status In Progress: last note 2026-11-07, within 30 days. Would settle it: the unpushed 9b branch content: whether it carries the three lines and the DNS wording.
+---
+<!-- COMMENTS:END -->

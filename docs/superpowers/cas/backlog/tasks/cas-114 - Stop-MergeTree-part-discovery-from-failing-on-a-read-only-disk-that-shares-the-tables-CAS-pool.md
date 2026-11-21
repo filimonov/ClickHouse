@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -59,3 +62,13 @@ Provenance: BACKLOG/operability-and-introspection.md#f1-prod-ca-ro-shadow-disk (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'F1-prod')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: MergeTreeData.cpp:2867-2870 isDiskEligibleForOrphanedPartsSearch checks only isBroken/isCustomDisk/mode, not read-only or same pool. Changes: none. Pointers stale: MergeTreeData.cpp:2405-2412 is now :2867-2874.
+---
+<!-- COMMENTS:END -->

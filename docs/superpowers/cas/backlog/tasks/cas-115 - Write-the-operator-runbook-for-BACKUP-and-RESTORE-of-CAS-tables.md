@@ -5,13 +5,17 @@ status: In Progress
 assignee:
   - '@k-morozov'
 created_date: '2026-09-26'
-updated_date: '2026-11-04 23:30'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-3
 dependencies: []
 references:
@@ -33,6 +37,8 @@ monitoring and troubleshooting, and `roadmap.md:94` describes the unimplemented 
 called operationally supported without it.
 
 Provenance: BACKLOG/operability-and-introspection.md#b198-backup-restore-runbook ([B198]); verified 2026-09-26 against dd0ed2f263a.
+
+Update 2026-11-21: The page now exists as operations/backup.md. Remaining: clickhouse-backup embedded mode is not covered there, and AC #2 (commands copied from a run on a current build) is unproven.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -59,3 +65,13 @@ PR #2415 (draft), branch cas/backup-native-copy-bug, adds `docs/en/antalya/cas/o
 
 2026-11-04: https://github.com/Altinity/ClickHouse/pull/2508 merged docs/en/antalya/cas/operations/backup.md (BACKUP to S3 on the pool's endpoint, ranged copy, GCS note, what is unsupported). Check AC#1 (clickhouse-backup embedded mode, restore onto a non-CAS policy) and AC#2 (commands copied from a run) against that page before closing.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1 docs/en/antalya/cas/operations/backup.md exists (commits a845af9d496, 95105285fea) with supported/restore/limitations sections; no mention of clickhouse-backup in it. Changes: description: Update paragraph appended. Would settle it: whether each procedure was run against a current build (AC #2) and whether backup to S3 and to a disk both appear.
+---
+<!-- COMMENTS:END -->

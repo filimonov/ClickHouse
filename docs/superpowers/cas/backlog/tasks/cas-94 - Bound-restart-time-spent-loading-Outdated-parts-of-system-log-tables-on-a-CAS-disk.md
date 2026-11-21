@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -15,6 +15,9 @@ labels:
   - 'needs:measurement'
   - 'origin:soak'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -59,3 +62,13 @@ Provenance: BACKLOG/gc.md#ca-log-tables-restart-cost; also cited by operability-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (e614330d78f, by 'CA-LOG-TABLES-RESTART-COST')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: grep of docs/en/antalya/cas configuration.md and operations/*.md finds no recommendation of a storage policy for system log tables; no measurement recorded in the task. Changes: none. Would settle it: whether any restart-time split by table/part state exists in reports (AC1) or whether a code change landed.
+---
+<!-- COMMENTS:END -->

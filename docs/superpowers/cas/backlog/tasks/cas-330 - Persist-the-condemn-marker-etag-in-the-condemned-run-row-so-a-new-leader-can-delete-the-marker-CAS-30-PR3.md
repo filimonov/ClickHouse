@@ -6,11 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 18:58'
-updated_date: '2026-09-30 20:29'
+updated_date: '2026-11-21 08:27'
 labels:
   - cas
   - gc
   - format
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-30
   - CAS-328
@@ -46,3 +49,13 @@ Blocked until a release whose readers skip unknown keys in `cas_run` rows (CAS-3
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30: only needed under V1 (pinned delete). Owner decision keeps PR1 without pins; this task is relevant only if CAS-329 later adopts V1. Kept as Low.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: the task's own note (2026-09-30) says it matters only if CAS-329 adopts variant V1 (pinned marker delete); CAS-329 is obsolete because the condemn-marker GC chain is gone from ContentAddressed/Gc/ (no condemn hit); only format files still mention Condemned. Changes: none. Links: depends on obsolete CAS-329 chain; CAS-328 (strict readers). Would settle it: whether any live 'condemned' run-row or orphan-marker case remains in the current GC (a grep of Formats/CasRecordStreamFormat.cpp for the Condemned row would settle it).
+---
+<!-- COMMENTS:END -->

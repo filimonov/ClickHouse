@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'area:gcs'
@@ -14,12 +14,16 @@ labels:
   - 'risk:low'
   - 'confidence:speculative'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - R/Backend/CasEtag.h
   - R/Backend/CasEtag.cpp
 priority: low
-type: spike
+type: research
 ordinal: 254000
 ---
 
@@ -32,6 +36,8 @@ Questions: does each store return the same quoting on HEAD, GET and PUT response
 Persisted tokens are on-S3 format: a normalization change falls under decision-4.
 
 Provenance: BACKLOG/ref-protocol.md#entity-tag-grammar-compat-watch (from random/todo.md item 14). Verified 2026-09-26 against b1c34d03479 and 0dbbd797792.
+
+Update 2026-11-21: CasEtag.cpp now handles quoting and the W/ prefix (see CasEtag.cpp:49-129), so the premise that nothing normalizes them is out of date. Re-scope to the remaining question: record per backend the etag form on HEAD, GET, PUT and If-Match responses (S3, GCS HMAC, GCS OAuth) and check the new parser against each.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -53,3 +59,13 @@ Provenance: BACKLOG/ref-protocol.md#entity-tag-grammar-compat-watch (from random
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (cdbde71edf2, by 'entity-tag-grammar-compat-watch')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1 Backend/CasEtag.cpp:49-129 now parses quoted strong ETags, rejects a leading W/ as weak and quotes a tag that starts with W/; the premise 'nothing normalizes quotes or W/' is stale. Changes: type spike -> research: an investigation with a recorded note as output; description: Update paragraph appended. Pointers stale: CasEtag.h:85-88 and CasEtag.cpp:10-27 (isIncarnationValue) no longer match: the file was reworked to parse strong ETags. Would settle it: the per-backend note of HEAD/GET/PUT/If-Match etag forms (AC1) was not found; unclear how much of the grammar question the rework covers.
+---
+<!-- COMMENTS:END -->

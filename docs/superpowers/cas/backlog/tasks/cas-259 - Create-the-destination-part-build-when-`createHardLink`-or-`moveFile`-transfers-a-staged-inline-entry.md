@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/formats-and-storage.md#staged-inline-hardlink-no-dst-buildtx
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (a41aaca7e24, by 'staged-inline-hardlink-no-dst-buildtxn')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedTransaction.cpp:1385-1411 createHardLink staged-source Inline arm still pushes the entry via putEntry with no buildFor (only the Blob arm calls it at :1403). Changes: none. Pointers stale: CA/ContentAddressedTransaction.cpp:1219-1231,:1563-1575,:445 now ~:1385-1411,~:1692+ (moveFile), publishStaging elsewhere; moveFile arm not rechecked.
+---
+<!-- COMMENTS:END -->

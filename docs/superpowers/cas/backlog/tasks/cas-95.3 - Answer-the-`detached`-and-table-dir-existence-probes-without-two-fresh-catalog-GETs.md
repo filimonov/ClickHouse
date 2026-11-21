@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-176
 references:
@@ -57,3 +60,13 @@ Provenance: audit #f21 via BACKLOG/performance.md#scale-findings [startup O(refs
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:880-925 acquireReadableRefTableRuntime: cold path does CasRefCatalog::read, then a second revalidating GET; hasAnyRefWithPrefix (CasRefLedger.cpp:470) goes through it. Changes: none. Pointers stale: ContentAddressedMetadataStorage.cpp:1686-1688 now ~1715-1772; CasRefLedger.cpp:391 now :470.
+---
+<!-- COMMENTS:END -->

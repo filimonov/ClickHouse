@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -15,6 +15,10 @@ labels:
   - 'confidence:solid'
   - 'touches:gc-safety'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-2
 dependencies: []
 references:
@@ -36,6 +40,8 @@ Decision (owner, 2026-10-12): the floor needs no catalog. The key carries the na
 Cost: one extra lease GET per rowless namespace per page, already cached in `floor_by_ns`.
 
 Provenance: BACKLOG/gc.md#orphan-sweep-absent-catalog-row-window (2031-triage CAS-022), reframed 2026-09-26 as a proof task, reframed again 2026-10-12 as a fix after PR #2528. Verified 2026-10-12 against e98f1286 (PR #2528 head on antalya-26.6): floor block at `:761-775`, rowless nomination at `:885-920`.
+
+Update 2026-11-21: Core fix (floor for every listed manifest, no catalog_entry guard) is in the branch via PR 2528. Remaining scope: AC #6 (`gc_fenced` counts as retired: not in the floor predicate at Gc/CasOrphanManifestSweep.cpp:559), AC #7 (series doc amendment), plus whichever of AC #1/#3/#5 the PR left out (farewell and lower-epoch tests, why-comment, prepass before the catalog read). Re-plan against current code.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -104,3 +110,13 @@ CAS-358 reshapes the same function and depends on this task: its owner view (fol
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commits 7ab340235e7, 5d2af6db3a1, d383d7d79c4, 1810fb2fef3 carry the part-manifest encoder checks of PR 2794; the 64 KiB cap is checked at encode time. Not the `gc/state` line cap of CAS-268.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Core fix is in the branch: Gc/CasOrphanManifestSweep.cpp:100 mountLeaseForNamespace floor read per manifest, :806 catalog_entry no longer gates the floor; gtests CursorPageRetainsRowlessBody* exist in gtest_cas_orphan_manifest_sweep.cpp (3 hits). gc_fenced is not mentioned in the floor predicate (CasOrphanManifestSweep.cpp:559 handles only the farewell sentinel), so AC #6 is open. Changes: description: Update paragraph appended. Pointers stale: prefixEligibleUnder/floorForNamespace renamed (isBuildPrefixCoveredByFloor/buildPrefixEligibleUnderFloor, mountLeaseForNamespace); title and ACs use the old names. Would settle it: whether AC #1 prepass-before-catalog-read ordering, AC #3 farewell/lower-epoch tests, AC #5 comment and AC #7 series-doc amendment landed (PR 2528 notes list them as not in the PR).
+---
+<!-- COMMENTS:END -->

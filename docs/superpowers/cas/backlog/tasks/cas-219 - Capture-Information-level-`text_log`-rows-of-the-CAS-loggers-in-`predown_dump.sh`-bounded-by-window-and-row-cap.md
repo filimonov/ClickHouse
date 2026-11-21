@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -54,3 +60,13 @@ Provenance: BACKLOG/testing-and-ci.md#soak-predown-textlog-scope; verified 2026-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (3039d720dcf, by 'soak-predown-textlog-scope')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scripts/predown_dump.sh:164-177 still selects only level IN ('Error','Fatal') from system.text_log (shape roll-up, LIMIT 200); no Information-level query in the script.. Changes: impact:operability; label quick-win. Pointers stale: same lines as cited..
+---
+<!-- COMMENTS:END -->

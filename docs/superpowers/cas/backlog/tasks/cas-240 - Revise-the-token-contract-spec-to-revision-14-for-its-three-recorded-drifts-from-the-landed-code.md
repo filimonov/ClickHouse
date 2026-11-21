@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'area:backend'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md
@@ -59,3 +62,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor (spec drift ensureBlobPresent, spe
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (f51cf398a1f, by 'spec-drift-ref-lane-once')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: spec still at Revision 13 (line 12) and names isAccessTokenExpiredError at :514, :521, :771. Changes: none. Pointers stale: ensureBlobPresent :711 and ref-lane :716 rows not rechecked.
+---
+<!-- COMMENTS:END -->

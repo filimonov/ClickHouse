@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -61,3 +64,13 @@ u03-gc-c merged the hand-off single-crash leak here (no separate task).
 
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-074')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:1397,1417 still say fsck is the backstop; Tools/CasFsck.cpp has no gc/gen listing. Changes: none. Pointers stale: CasGc.cpp comment lines moved (1031-1072 -> about 1397-1417).
+---
+<!-- COMMENTS:END -->

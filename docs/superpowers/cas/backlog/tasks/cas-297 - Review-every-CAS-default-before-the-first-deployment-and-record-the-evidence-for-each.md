@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 23:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'area:gc'
@@ -17,6 +17,9 @@ labels:
   - 'needs:decision'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -77,3 +80,13 @@ Identifier trace: the earliest docs mention of `mount_lease_ttl_ms` is 2026-07-0
 
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): the report proposes six default changes, not five: add `cas_gc_round_handoff_prefix_wholesale_budget` 5000 -> 0, because `PoolConfig` defaults it to unbounded with the note that a cap on this one-shot reclaim leaks objects (`Pool/CasPool.h`); not exercised in any run. `PoolConfig` defaults graduation, redelete, outcome and hand-off to 0 and ref-cleanup to 5000; the disk-setting layer says 5000 for all five. The proposed defaults do not fully meet the 90 s target: a 90 s fault still costs 1-4 client errors until CAS-405.6.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: ContentAddressedSettings.cpp:71,76,80 shows the budgets already 0 and mount_lease_ttl_ms 40000 (not the proposed 120000); report with the per-setting table is on branch cas-297-defaults-review, not in the checked tree; AC2/AC3 need owner decision. Changes: none. Links: Inputs: CAS-405.3 (lease 120 s), CAS-405.6, CAS-22, CAS-452, CAS-128. Pointers stale: Task text lists budgets 5000 and ttl 30000; code now has budgets 0 and ttl 40000. Would settle it: owner decision on the six proposed default changes (ttl 120 s still pending; see CAS-405.3) and whether configuration.md states change guidance per setting. Owner question: Approve the proposed default changes (lease TTL 120 s and the remaining budgets) from the defaults-review report?
+---
+<!-- COMMENTS:END -->

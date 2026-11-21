@@ -4,7 +4,7 @@ title: Re-measure the 256-partition INSERT after the zero-GET part publish
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-2
 dependencies:
   - CAS-176
@@ -55,3 +58,13 @@ First recorded: 2026-07-06 (4abf5b743ed, by 'partitioned-INSERT O')
 
 Merged from u19b-soak (merge into CAS-105): From the soak ledger's partitioned-INSERT entry (2026-07-06, S11 full, 256 buckets): 4-5 INSERTs per minute. Fix direction recorded then: when the parts of one INSERT share a namespace, publish them in one combined flush; check whether the ref-lane combine window (CAS-287) already covers multi-partition INSERTs before reopening stage 2.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: the prerequisite landed (PR 2831, 0aa837e942e, ancestor of the checked branch; CAS-176 notes: no catalog/_ckpt/manifest read on a lone INSERT); no 256-partition measurement is recorded in the task or in docs/superpowers/reports. Changes: none. Links: related CAS-287 (ref-lane combine window); prerequisite CAS-176 is partly delivered, its 'no GET' part is merged. Pointers stale: AC1 asks for a 'before' number; the pre-2831 baseline must come from the 10 s / 40 ms-per-part figure in the description. Would settle it: the before/after wall time and per-part publish latency of a 256-partition INSERT on the post-2831 code (nothing recorded yet).
+---
+<!-- COMMENTS:END -->

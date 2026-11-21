@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -14,6 +14,10 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -36,6 +40,8 @@ Attempt numbering comes from the per-shard flush count (`:4561-4563`), not from 
 A performed rebuild emits a `GcRebuild` `cas_log` event (`:4588`) but no `cas_gc_log` row, and a refusal records nothing.
 
 Provenance: BACKLOG/gc.md#rebuild-refusal-leaves-run-and-seal-residue (2031-triage CAS-094) and [gc-rebuild follow-ups] part (a), no gc-round-log row for `rebuildBaseline`. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+
+Update 2026-11-21: The header comment no longer claims a refused rebuild writes nothing (ContentAddressedMetadataStorage.h:220-222). Remaining scope to confirm: an audit record for refused rebuilds (AC #2) and attempt numbering from the lease rather than the per-shard flush count (AC #3).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,3 +64,13 @@ Provenance: BACKLOG/gc.md#rebuild-refusal-leaves-run-and-seal-residue (2031-tria
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'gc-rebuild follow-ups')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: ContentAddressedMetadataStorage.h:220-222 now says a refused rebuild 'installs no baseline' (the 'writes nothing' claim is gone, AC #1 looks done); Gc/CasGc.cpp:5270-5276 still sets rep.refusal for the lost gc/state CAS and the GcRebuild cas_log event is emitted at :5287. Changes: description: Update paragraph appended. Pointers stale: CasGc.cpp:4561-4588 moved (rebuild now ~:5270-5290). Would settle it: whether a refused rebuild now leaves an audit record (AC #2) and whether attempt numbers come from lease.seq (AC #3); neither was traced.
+---
+<!-- COMMENTS:END -->

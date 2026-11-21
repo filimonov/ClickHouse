@@ -4,13 +4,16 @@ title: Move `CasInMemoryBackend` out of the production `dbms` target
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-4
 dependencies: []
 references:
@@ -52,3 +55,13 @@ Provenance: BACKLOG/operability-and-introspection.md#in-memory-backend-ships-unu
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (8b9cd77b94e, by 'in-memory-backend-ships-unused')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Backend/CasInMemoryBackend.{h,cpp} still sit under ContentAddressed/Backend/ and src/CMakeLists.txt uses add_headers_and_sources(dbms ...) directory globs for Disks/DiskObjectStorage/MetadataStorages/*. Changes: none. Pointers stale: src/CMakeLists.txt:138 glob line not matched exactly; CA subtree is globbed from a parent entry. Would settle it: the exact add_headers_and_sources line that globs ContentAddressed/Backend into dbms.
+---
+<!-- COMMENTS:END -->

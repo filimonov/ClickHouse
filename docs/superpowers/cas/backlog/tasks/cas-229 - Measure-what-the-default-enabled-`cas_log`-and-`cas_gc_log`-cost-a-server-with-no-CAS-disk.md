@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -52,3 +57,13 @@ Provenance: BACKLOG/testing-and-ci.md [cas-log-zero-overhead-verify]; verified 2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'cas-log-zero-overhead-verify')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 programs/server/config.xml:1229-1241 and :1353-1362 still enable both logs by default; grep of master docs/superpowers/reports for a no-CAS-disk overhead measurement finds none. Changes: impact:cost. Pointers stale: config.xml:1201 and :1321 are now :1229 and :1353. Would settle it: Absence of a measurement was checked only in docs/superpowers/reports; no run was made (read-only pass)..
+---
+<!-- COMMENTS:END -->

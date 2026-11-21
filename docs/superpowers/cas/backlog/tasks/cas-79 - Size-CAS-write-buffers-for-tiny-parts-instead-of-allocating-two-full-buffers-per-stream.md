@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -15,13 +15,16 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
-  - '>-'
-  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f18
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp
+  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f18
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f18
 priority: high
@@ -67,3 +70,13 @@ First recorded: 2026-08-04 (0f266066bef, by 'write-path-alloc-audit')
 
 2026-11-17: PR 2831 merged as 0aa837e942e without the upload-buffer fix. This task stays open until ac144e848aa merges in the follow-up PR promised in https://github.com/Altinity/ClickHouse/pull/2831#issuecomment-6959088982.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedTransaction.cpp:2087-2113 local-temp ctor still builds an outer buffer plus a second WriteBufferFromFile spill sink per stream; blobTransferBufferSize exists in Backend/CasBackend.h:101 (upload stage done); acceptance criterion 1 measurement not recorded. Changes: removed non-label '>-'; label 'docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget…' moved to references. Pointers stale: R/ContentAddressedTransaction.cpp:1854-1880 is now :2087-2113.
+---
+<!-- COMMENTS:END -->

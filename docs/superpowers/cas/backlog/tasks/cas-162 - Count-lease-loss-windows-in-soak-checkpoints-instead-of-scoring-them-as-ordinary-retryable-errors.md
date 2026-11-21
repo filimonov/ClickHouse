@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-20'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -15,6 +15,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#issue-2243-port-exhaustion-lease (ho
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-20 (d61e8ac938c, by 'issue-2243-port-exhaustion-lease')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no TransientNotLive / lease-loss window counter under utils/ca-soak/soak (grep found only a comment at cluster.py:211). Changes: none. Would settle it: checkpoint code not read in full.
+---
+<!-- COMMENTS:END -->

@@ -4,12 +4,15 @@ title: Make `fsck` tail revalidation sound against the dead-life janitor
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:18'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:gc'
   - 'origin:review'
   - 'risk:low'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-448
 priority: low
@@ -43,3 +46,13 @@ After CAS-448 `checkRefStream` rereads `_ckpt` when a tail log is absent and rep
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-17: CAS-448 is done: the `_ckpt` re-read of 4848f49e21f (PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e)) covers the base and the tail. The catalog-row re-read of criterion 2 is not done.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task note 2026-11-17: CAS-448 done, catalog-row re-read of criterion 2 not done; no catalog-row reread found in cas-pr1 CasFsck.cpp near the tail revalidation. Changes: none. Would settle it: janitor delete order (AC #1 trace) not read; a tested _ckpt-first requirement may already exist.
+---
+<!-- COMMENTS:END -->

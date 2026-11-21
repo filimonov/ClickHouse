@@ -4,7 +4,7 @@ title: Share the S3 client's retryable-error slowdown with its single-attempt cl
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:18'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -12,6 +12,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - src/IO/S3/Client.h
@@ -51,3 +55,13 @@ Provenance: BACKLOG/performance.md#conditional-write-retry-pacing-and-jitter res
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b9a1774ba4e, by 'conditional-write-retry-pacing-and-jitter')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:18
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/IO/S3/Client.h:364 still a per-client mutable std::atomic<UInt64>, used at Client.cpp:980-1001; not a shared state. Changes: none. Pointers stale: none. Upstream: unverified.
+---
+<!-- COMMENTS:END -->

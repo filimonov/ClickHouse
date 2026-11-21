@@ -4,7 +4,7 @@ title: Port the CAS S3 keep-alive recommendation to altinity/antalya-26.6
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -15,6 +15,9 @@ labels:
   - 'origin:issue'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `test_cas_*` is 2026-06-16 (518d2a1e67d); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: git grep on altinity/antalya-26.6: docs/en/antalya/cas/configuration.md mentions http_keep_alive_max_requests 5 times, and 19 files under tests/integration/test_cas_*/configs/tests/config set it; 05e7fc2bdee itself is not an ancestor, so it arrived by another route. Changes: none. Links: CAS-74 decides whether the recommendation becomes a code default. Would settle it: that every S3-backed CAS disk definition (including the stateless-lane CAS storage policy) on altinity/antalya-26.6 sets both http_keep_alive_timeout and http_keep_alive_max_requests (AC2); the grep ….
+---
+<!-- COMMENTS:END -->

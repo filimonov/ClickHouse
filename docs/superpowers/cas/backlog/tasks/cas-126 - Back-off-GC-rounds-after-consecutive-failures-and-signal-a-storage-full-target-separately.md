@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 13:00'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-46
@@ -61,3 +64,13 @@ Identifier trace: the earliest docs mention of `interval` is 2026-06-02 (019f825
 
 2026-11-11 defaults review: in every 60-120 s outage run one round failed (Aborted) and the next succeeded unaided; at a 60 s interval the plain retry is harmless. Backoff matters only once rounds run back to back (CAS-29.10). Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc/CasGcScheduler.cpp:371-461: consecutive_backoffs only counts follower (lease held elsewhere) ticks and is logged; no failure backoff or storage-full event found by grep. Changes: none. Links: depends on CAS-46 (already stated); 2026-11-11 note: plain retry is harmless until rounds run back to back (CAS-29.10). Pointers stale: CasGcScheduler.cpp:303/377-386/390 moved (backoff counter now :371-461). Would settle it: not checked whether a storage-full ProfileEvent exists under another name.
+---
+<!-- COMMENTS:END -->

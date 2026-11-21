@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ci'
   - 'area:gc'
@@ -13,6 +14,11 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -47,3 +53,13 @@ Provenance: GitHub reconciliation 2026-09-26 (unit u17); no backlog task tracked
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: CAS code now ships from antalya-26.6 and its 26.8 port: CAS-436 notes show 26.6 CAS PRs ported to antalya-26.8 (db0431e95cd) and CAS-222 notes show #2349 already on 26.8; the checked 26.8 branch has the MemoryWorker fix (src/Common/MemoryWorker.cpp:583); project history says CAS code branches from antalya, not cas-gc-rebuild. Changes: label needs:decision. Links: superseded in practice by CAS-436 (26.6 to 26.8 port); related CAS-222, CAS-166. Would settle it: owner confirmation that cas-gc-rebuild is no longer a code delivery branch (it still carries specs and docs); AC3 (a one-line drift check) could be kept as a separate small task for 26.6 vs 26.8. Owner question: Is cas-gc-rebuild retired as a code branch, so this sync can be closed?
+---
+<!-- COMMENTS:END -->

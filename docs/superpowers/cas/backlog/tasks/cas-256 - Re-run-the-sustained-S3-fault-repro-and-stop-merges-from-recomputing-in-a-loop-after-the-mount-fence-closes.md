@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-10-18 20:25'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -69,3 +72,13 @@ Reviewer note (PR 8 review): the claim that the loop also runs on the base is un
 
 Reproduced 2026-10-18 (tmp/cas405/REPORT.md): the node cut off from the store for 120 s re-ran merges 127-397 times with NETWORK_ERROR (210); 264-397 with GC every 10 s, 22 with a 180 s lease. Part of the CAS-405 goal (disk that tolerates a temporary loss of connectivity).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task note: reproduced 2026-10-18, 127-397 merge re-runs during a 120 s store cut-off; AC2 and AC3 unchecked. Changes: none. Links: overlaps CAS-405.1; part of the CAS-405 goal. Pointers stale: CasRequests.cpp:105-117, CasPool.cpp:741/766, CasServerRoot.cpp:667/1423 not re-checked. Would settle it: whether CAS-405.1 (pause busy-loop) or later commits changed the loop on the current branch.
+---
+<!-- COMMENTS:END -->

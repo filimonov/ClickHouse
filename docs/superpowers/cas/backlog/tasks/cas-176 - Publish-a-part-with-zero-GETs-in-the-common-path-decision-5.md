@@ -4,7 +4,7 @@ title: Publish a part with zero GETs in the common path (decision-5)
 status: To Do
 assignee: []
 created_date: '2026-08-03'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -14,8 +14,14 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-2
-dependencies: []
+dependencies:
+  - CAS-176.4
 references:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f31
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f30
@@ -70,3 +76,13 @@ CAS-487 delivers part of this task: two of the four reads are gone (the `_ckpt` 
 
 2026-11-17: Children after PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) : CAS-176.1 and CAS-176.3 landed, CAS-176.2 closed as obsolete, CAS-176.4 open.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes: PR 2831 (0aa837e942e, ancestor of the checked branch) delivers AC1-AC3; child CAS-176.4 is still open and AC4 (fallback-read gtests) awaits a decision. Changes: label needs:decision; depends on CAS-176.4. Would settle it: owner decision on AC4 (the listed fallback reads mostly no longer exist) and the outcome of CAS-176.4; the task cannot close while that child is open. Owner question: AC4 lists fallback reads (412 on _ckpt, Unresolved staging PUT) that mostly no longer exist after PR 2831: drop AC4 or keep it for the remaining ones?
+---
+<!-- COMMENTS:END -->

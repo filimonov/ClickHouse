@@ -4,13 +4,18 @@ title: Give the ca-soak fsck wait helpers honest timeouts and current finding la
 status: To Do
 assignee: []
 created_date: '2026-07-26'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/soak/run.py
@@ -50,3 +55,13 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-large-pool-fixed (a), 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-26 (a285b399be6, by 'fsck-large-pool-fixed')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/soak/run.py:1067 and :1149 still default timeout_s=180.0; soak/checker.py:108,292,545 still label the residual B140. Changes: label quick-win. Pointers stale: run.py:997/:1079 moved to :1067/:1149.
+---
+<!-- COMMENTS:END -->

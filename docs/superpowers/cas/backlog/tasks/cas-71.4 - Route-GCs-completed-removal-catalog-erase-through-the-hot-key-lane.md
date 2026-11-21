@@ -4,13 +4,16 @@ title: Route GC's completed-removal catalog erase through the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 19:20'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:gc'
   - 'complexity:medium'
   - 'risk:high'
   - 'touches:protocol'
   - 'confidence:plausible'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies:
   - CAS-71.1
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 4')
 
 2026-11-11 defaults review: the catalog erase outside the lane stops GC completely under steady CREATE/DROP (12 of 13 rounds aborted in run `ddl16`); see the new bug task filed today for the numbers.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefCatalog.cpp:532 deleteCompletedRemovingAtSnapshot (defined :459) still writes via op.replace(layout.refCatalogKey(), ...); the hot-key lane submit is used only at :192. Changes: none. Links: depends on CAS-71.1 (already stated); the 2026-11-11 note refers to a new bug task for GC aborts under CREATE/DROP. Pointers stale: CasRefCatalog.cpp:516 moved to :532.
+---
+<!-- COMMENTS:END -->

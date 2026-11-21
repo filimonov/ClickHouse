@@ -6,12 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 19:14'
-updated_date: '2026-10-13 20:10'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:gc'
   - 'risk:high'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 481000
@@ -43,3 +48,13 @@ pruneSupersededGenerations (Gc/CasGc.cpp:3766) runs before the round's gc/state 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13: sibling CAS-40 (adopted seal naming a run that prune reclaimed, losing leader's pre-CAS prune vs a winner's newer seal) is the same prune-before-CAS family; this task is the sharper case where the ADOPTED generation's own prefix, fold seal included, is the victim. One fix likely closes both: include state.snap_generation in referenced_generations.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/CasGc.cpp:1330-1345 referenced_generations holds only key_generation of fold_seal.blob_target_runs and parent_seal_runs; prune_floor = generation - keep (pruneSupersededGenerations) so keep=1 reaches the previously adopted G; state.snap_generation is never inserted explicitly. Changes: impact:availability. Pointers stale: CasGc.cpp:3766, :971-979, :1791 (now ~:1345, :1330-1340). Would settle it: whether the prune loop body skips the adopted generation by another test (loop body past the 'LIVE adopted seal still ...' comment not read).
+---
+<!-- COMMENTS:END -->

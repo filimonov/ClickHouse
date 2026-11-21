@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 10:15'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ci'
   - 'area:testing'
   - 'origin:ci'
   - 'complexity:epic'
   - 'theme:ci-stabilization'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-432
   - CAS-223
@@ -48,9 +53,14 @@ dependencies:
   - CAS-464
   - CAS-465
   - CAS-466
+  - CAS-468
+  - CAS-469
+  - CAS-470
+  - CAS-471
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2805'
 priority: high
+type: task
 ordinal: 553000
 ---
 
@@ -162,3 +172,13 @@ Open decisions
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) closes CAS-434, CAS-443, CAS-354, CAS-466, CAS-480, CAS-481. CI run 44084349150 on 44fc40023c1: hard-restart regression jobs green on both architectures with the 40 s lease; both ASan `cas s3 storage` shards green (one run; CAS-432 needs a second); five MSan/TSan `cas s3 storage` shards ended at the job time limit (CAS-223); `03770_min_columns_to_activate_adaptive_write_buffer` red on `cas s3 storage` until the upload-buffer follow-up merges (CAS-79).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: umbrella still open per notes of 2026-11-17: five MSan/TSan cas s3 shards end at the job time limit (CAS-223), ASan cas s3 green once (CAS-432 needs a second run); task text only for the rest. Changes: impact:operability; type unset -> task: umbrella with no type set; it tracks a CI-green goal, not a single change; depends on CAS-468, CAS-469, CAS-470, CAS-471. Size: XL. Links: notes of 2026-11-12 say CAS-468..471 are not yet in the dependency list; 2026-11-17 note says PR 2831 closed CAS-434, 443, 354, 466, 480, 481, so the list needs a prune of Done items. Would settle it: a current CI run on antalya-26.8 showing which umbrella children are still red (last reading 2026-11-17, run 44084349150).
+---
+<!-- COMMENTS:END -->

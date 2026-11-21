@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 05:58'
-updated_date: '2026-11-13 22:38'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'area:requests'
@@ -16,6 +16,11 @@ labels:
   - 'needs:repro'
   - 'origin:review'
   - 'origin:noclock-audit'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 priority: high
@@ -71,3 +76,13 @@ Study: `tmp/issue-2431/ux/q2-request-deadline.md` (phase table with file, functi
 
 2026-11-13: re-found independently by the codex review of the self-fence spec (master/tmp/prbundle/wave2/review/sf-r1-codex.out, findings 1-2); see CAS-486 for one case not listed here: a conditional write that goes multipart on an ETag store (`CasObjectStorageBackend.cpp:810-814` forces single-part only for generation-token stores). The self-fence design (docs/superpowers/specs/2026-11-13-cas-mount-self-fence-short-wait-design.md) no longer depends on the envelope: its marker is certified by an observed zero of in-flight mount-plane mutations.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep finds no cas_request_deadline_ms and no SendAfterDeadline counter in src; task notes record the owner deferred the transport deadline 2026-10-08 and the 2026-10-12 audit found the attempt unbounded. Changes: impact:data-loss.
+---
+<!-- COMMENTS:END -->

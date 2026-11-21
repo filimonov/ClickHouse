@@ -4,7 +4,7 @@ title: Answer CAS directory probes without an S3 LIST or catalog reads (#2439)
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-30 07:50'
+updated_date: '2026-11-21 08:27'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -13,6 +13,12 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'origin:issue'
+  - 'impact:availability'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-0
 dependencies: []
 references:
@@ -35,6 +41,8 @@ Three call chains, one per subtask: part-file `existsDirectory` (audit F15), tab
 Open on both branches. Priority is above the roadmap's "next" because the restart burst grows with the part count and fails ref-lane writes.
 
 Provenance: BACKLOG/performance.md#scale-findings [startup O(refs)] (deleted in the source as superseded by audit F15/F16/F21 and #2439, which no backlog item carried); roadmap §2 'No LIST on directory probes'. Verified 2026-09-26 against dd0ed2f263a and 0dbbd797792.
+
+Update 2026-11-21: Part-file probes landed in 2243045e8ed (PR 2440, in the cas-blob-intents tree). Remaining scope of this parent: CAS-95.3 (detached and table-dir probes), the restart measurement for AC#1, and the before/after numbers that close issue 2439. CAS-95.2 was closed on 2026-09-27 (see note).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -63,3 +71,13 @@ Spec rev.1 (2026-09-26) for 95.1+95.2: docs/superpowers/specs/2026-09-26-cas-dir
 
 2026-09-30, CI evidence from PR #2396 (Stress test amd_asan_ubsan, cas s3 storage, head dd44241da88f): the pre-stress restart with async_load_databases=false issued 23,739 S3 requests in the first 40 s of synchronous table loading for 106 parts on cas_s3; 18,692 of them (79%) are LISTs of `cas/ns/state/<ns>/_files/`, over only 24 distinct prefixes (one prefix listed 3,681 times, median 300), about 176 LISTs per part. The rest: 1,567 manifest GETs (~15 per part), 1,279 ref-log, 1,084 blob, 782 ns/state, 287 ref_catalog. The server reached 94.7% of loading when the stress script gave up after ~75 s (CAS-322). Same signature as the otel-demo restart. Parsed log: lane-g/tmp/pr2396/h3/stress_asan_cas/sync_load.log.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1: merge 2243045e8ed (PR 2440, fix/antalya-26.6/cas-part-file-probes-no-list) is an ancestor of work/antalya-26.8/cas-blob-intents, so the part-file probe subtask (CAS-95.1) landed; CAS-95.3 (detached / table-dir probes) is still a separate open task. Changes: impact:availability; impact:cost; description: Update paragraph appended. Links: children CAS-95.1, CAS-95.2, CAS-95.3. Would settle it: No before/after S3ListObjects and CASOtherGet numbers for issue 2439 (AC#3) and no restart measurement showing LIST count independent of part count (AC#1) were found..
+---
+<!-- COMMENTS:END -->

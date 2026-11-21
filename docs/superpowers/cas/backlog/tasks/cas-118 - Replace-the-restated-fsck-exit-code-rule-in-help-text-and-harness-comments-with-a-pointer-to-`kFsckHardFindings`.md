@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:fsck'
   - 'area:docs'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +58,13 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-rule-restated-in-unfen
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (f836fd80c40, by 'fsck-rule-restated-in-unfenceable-prose')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 utils/ca-soak/soak/fsck.py:74 still enumerates dangling, chain_broken, corrupted_runs, lifeless_keys; CommandFsck.cpp description (:27-29) no longer has the wrong dangling-only sentence. Changes: none. Pointers stale: fsck.py:194 and CommandFsck.cpp:26 statements have moved or been reworded; remaining restatement is fsck.py:74. Would settle it: whether any other help text under programs/disks still restates the exit set.
+---
+<!-- COMMENTS:END -->

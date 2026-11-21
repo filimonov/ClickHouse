@@ -6,13 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
-  - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'complexity:trivial'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -55,3 +59,13 @@ Provenance: BACKLOG/formats-and-storage.md#manifest-encoded-cap-checked-after-ma
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e4494ebdf39, by 'manifest-encoded-cap-checked-after-materialization')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/CasPartWriteTxn.cpp:665 fitsObjectCap(encoded_text.size(), 0, ...) runs on the already-encoded text. Changes: size small -> trivial (XS): one reservation before encode plus a gtest. Size: XS. Pointers stale: CasPartWriteTxn.cpp:636-638 is now :665.
+---
+<!-- COMMENTS:END -->

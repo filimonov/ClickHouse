@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -15,6 +15,9 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'theme:parity'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-2
 dependencies: []
 references:
@@ -74,3 +77,13 @@ Provenance: BACKLOG/gc.md [PART-REMOVAL-REPOINT] and #drop-path-head-of-line-and
 
 2026-11-07 audit: related merges: https://github.com/Altinity/ClickHouse/pull/2452 (41824f955e7, antalya-26.6, 2026-10-01), https://github.com/Altinity/ClickHouse/pull/2579 (003a998407b) and https://github.com/Altinity/ClickHouse/pull/2647 (d8d64d936e2) on antalya-26.8. Remaining: re-measure after the 26.8 rollout.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes 2026-10-22/11-07: on 26.8 (PRs 2579 003a998407b and 2647 d8d64d936e2, both ancestors of the checked branch) the delete_tmp_ rename is one ref-log Move with no manifest PUT; the 26.6 one-drop fix 2452 (41824f955e7) is not in this branch. Changes: none. Pointers stale: AC1 and the description describe the 26.6 repoint (manifest PUT, _ckpt write); on 26.8 the cost is one Move append. Would settle it: otel.demo or soak re-measure of per-removal Move appends after the 26.8 rollout, to decide whether any elision work remains and what AC1 should say (it still demands no ref-log append).
+---
+<!-- COMMENTS:END -->

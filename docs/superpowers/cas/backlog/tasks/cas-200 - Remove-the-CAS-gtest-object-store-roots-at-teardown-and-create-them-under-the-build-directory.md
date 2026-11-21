@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:testing'
   - 'area:ci'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -52,3 +58,13 @@ Provenance: BACKLOG/testing-and-ci.md#ca-gtest-tmp-scratch-leak; verified 2026-0
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (294a3efc23a, by 'ca-gtest-tmp-scratch-leak')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Disks/tests/cas_test_helpers.h:468 still roots stores at std::filesystem::temp_directory_path()/cas_unit_<unique>; the only remove_all (:473) runs before creation. No teardown removal seen in that helper.. Changes: impact:operability; label quick-win. Pointers stale: cas_test_helpers.h :319/:323/:328 are now :468/:468/:473.. Would settle it: Did not check whether a fixture elsewhere removes the roots at teardown..
+---
+<!-- COMMENTS:END -->

@@ -6,15 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-28 08:34'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:backend'
-  - 'complexity:medium'
   - 'risk:high'
   - 'touches:protocol'
   - 'touches:settings'
   - 'confidence:plausible'
   - 'needs:spec'
   - 'needs:decision'
+  - 'complexity:large'
+  - 'impact:availability'
+  - roadmap
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-6
 dependencies: []
 references:
@@ -69,3 +76,13 @@ Protocol-adjacent: the step sequence is unchanged, but the primitive's enforceme
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasObjectStorageBackend.h:58 Mode is still { Native, EmulatedSingleProcess }; no Keeper-serialized mode. Changes: size medium -> large (L): new backend mode, Keeper fence, spec with adversarial review, probe changes; complexity:medium looks low; impact:availability; label roadmap. Size: L. Owner question: Which S3-compatible stores (MinIO/Ceph RGW versions) are in scope? That decides whether the task is worth doing.
+---
+<!-- COMMENTS:END -->

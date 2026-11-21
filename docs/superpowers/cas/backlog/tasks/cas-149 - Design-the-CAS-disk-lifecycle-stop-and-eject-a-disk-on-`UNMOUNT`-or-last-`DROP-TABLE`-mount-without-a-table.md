@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-23'
-updated_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:mounts'
   - 'complexity:epic'
@@ -14,6 +14,9 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'needs:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -75,3 +78,13 @@ being observed" every tick for such a disk (`CA/Gc/CasGc.cpp:4748`); the CAS no-
 before removing the directory (`tests/queries/0_stateless/04295_cas_mutation_no_leftovers.sh:117-129`).
 Provenance: utils/ca-soak/scenarios/BACKLOG.md#PRODUCT BUG (custom CAS disk objects are never torn down on DROP TABLE/DATABASE).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Parsers/ASTSystemQuery.h:172-178 lists CAS_GC_RUN/REBUILD/DROP_POOL_MEMBER/FSCK/FORGET/GC_STOP/GC_START only: no CAS_MOUNT/CAS_UNMOUNT, so the lifecycle verbs and ejection do not exist. Changes: none. Links: CAS-296.1 implements the verbs on this design; CAS-67 same shape.
+---
+<!-- COMMENTS:END -->

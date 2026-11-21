@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-12 16:55'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -15,6 +15,11 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'origin:noclock-audit'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies:
   - CAS-30
@@ -78,3 +83,13 @@ Identifier trace: the earliest docs mention of `CasBlobInDegree` is 2026-07-01 (
 
 2026-11-12, checked at `fa1b89d1529` (antalya-26.8 with both bundles). The premise does not hold: `settleEntry` (`Gc/CasBlobInDegree.cpp:561-581`) checks the graduation budget BEFORE the gate, so a refused row is carried without a marker read, and a confirmed marker graduates in the same call. The state 'confirmed, then budget exhausted' cannot occur. The gate (`Gc/CasGc.cpp:2253-2275`) reads the marker at every graduation and no code reads `marker_confirmed` for a decision (pin: `CASThreeCursorMerge.MarkerConfirmedBitDoesNotSkipTheGate`). A persisted bit would save no GET; making the gate read it reverses section 5.5 of `docs/superpowers/specs/2026-09-30-cas-gc-meta-delete-names-its-condemnation-design.md` and depends on CAS-30. Dropped from wave 1 of the 26.8 bundle. Correction of the 2026-10-12 note: `v26.6.2.20001` and `v26.6.4.20001` DO read the bit (`if (e.marker_confirmed || ...)` in `settleEntry`) and skip the marker read; the 26.6.8 tags and later do not. Owner decision open: supersede the task, or keep it blocked on CAS-30.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: Task's own 2026-11-12 note: settleEntry checks the budget before the gate so 'confirmed then budget exhausted' cannot occur; cas-pr1 Gc/*.cpp has no decision reading marker_confirmed (only copies at CasBlobInDegree.cpp:385, writes false at :544). Changes: label needs:decision. Links: depends on CAS-30 (already stated). Would settle it: owner choice: supersede, or keep blocked on CAS-30. Owner question: Supersede CAS-29.3 (premise false: no confirmed-then-budget-exhausted state), or keep it blocked on CAS-30?
+---
+<!-- COMMENTS:END -->

@@ -6,9 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-15 08:43'
-updated_date: '2026-11-15 14:38'
+updated_date: '2026-11-21 08:20'
 labels:
-  - 'area:refs'
+  - 'area:ref-ledger'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 492000
@@ -38,3 +43,13 @@ Reproduction and analysis: tmp/dupcheck/REPORT.md (CAS base fef96d50e69).
 
 After CAS-487 merges the trigger of this task is gone: no `_ckpt` publish follows the promote ref-log `PUT`, so it cannot fail after `Committed`. The same window (durable, not acknowledged, part rolled back) remains for `NeedsRecovery` and `Wedged` appends. That residual belongs with CAS-395.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: task note: after CAS-487 no _ckpt publish follows the promote PUT; Formats/CasRefLogFormat.cpp:31 `!next_epoch` shows CAS-487 generation 3 is on the checked branch. Changes: label area:refs -> area:ref-ledger; impact:wrong-result. Links: residual window belongs to CAS-395; related CAS-393. Would settle it: that the promote path on this branch no longer publishes a _ckpt after Committed (CasRefCkpt.cpp still exists); residual NeedsRecovery/Wedged window is tracked by CAS-395.
+---
+<!-- COMMENTS:END -->

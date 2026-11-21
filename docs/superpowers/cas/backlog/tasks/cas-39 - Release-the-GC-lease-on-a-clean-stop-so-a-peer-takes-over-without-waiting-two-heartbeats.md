@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/gc.md#gc-lease-not-released-on-clean-stop (2031-triage CAS-0
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-099')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: grep for resign, farewell, releaseLease in Gc/ and ContentAddressedMetadataStorage.cpp finds only the mount-side farewell in Gc/CasOrphanManifestSweep.*; no gc/state resign on scheduler stop. Changes: none. Pointers stale: CA/ prefix means ContentAddressed/; CasGcScheduler.h:122-126 moved (stop comment now near :128).. Would settle it: body of GcScheduler::stop not read: confirm it does not write gc/state. Owner question: Approve a durable resign write to gc/state on clean GC stop (new protocol step, no correctness gain, saves about two heartbeats)?
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - docs/superpowers/models/CaRelinkConfirmCore.tla
@@ -58,3 +61,13 @@ Provenance: BACKLOG/gcs.md#relink-confirm-lane-livelock [relink-confirm-model-pr
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-02 (12e81e7871c, by 'relink-confirm-model-prose')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/superpowers/models/CaRelinkConfirmCore_sab_touchblind.cfg still contains "With only two admitted shapes". Changes: none. Would settle it: other four texts not individually checked.
+---
+<!-- COMMENTS:END -->

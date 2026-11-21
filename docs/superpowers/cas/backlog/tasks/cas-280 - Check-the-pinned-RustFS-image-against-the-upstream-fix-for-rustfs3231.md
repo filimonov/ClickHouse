@@ -4,7 +4,7 @@ title: Check the pinned RustFS image against the upstream fix for rustfs#3231
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-11-17 09:56'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -12,6 +12,12 @@ labels:
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:soak'
+  - 'impact:operability'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak
@@ -30,6 +36,8 @@ configs still pin `rustfs/rustfs:1.0.0-rc.3` (ten pins under `utils/ca-soak`), n
 The ~400x physical-footprint figure blamed on it holds only for many-tiny-object soaks; do not generalise it.
 
 Provenance: BACKLOG/formats-and-storage.md [F2 / rustfs#3231]; absorbs u06's dropped [physical-footprint amplification]. Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild).
+
+Update 2026-11-21: The ten ca-soak pins are already on rustfs/rustfs:1.0.6. Remaining scope: compare 1.0.6 with the fix for rustfs#3231, record it in RUN_HISTORY.md, run one full-scale merge-heavy soak on 1.0.6, retire or wire the orphan reaper accordingly.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -55,3 +63,13 @@ Merged from u19b-soak (merge into CAS-280): While the pinned RustFS still retain
 
 2026-11-17: https://github.com/Altinity/ClickHouse/pull/2876 (merged into antalya-26.8, 2026-11-17, by k-morozov) moves CI from RustFS 1.0.0-rc.3 to the stable 1.0.6: the CAS-over-S3 stateless tests and the RustFS-backed integration tests. Verified there: archive checksum, server start in the CI environment, object writes and reads, conditional delete with a matching and a mismatching ETag; the full suites were not run locally. Not covered by that PR and still open here: the pins under utils/ca-soak (cas-gc-rebuild) still name rustfs/rustfs:1.0.0-rc.3; whether 1.0.6 carries the fix for rustfs#3231 (false 404 under load, retained overwritten versions) is not checked; no full-scale merge-heavy soak has run on 1.0.6. Next step: move the ca-soak pins to 1.0.6, run the soak, record the result in RUN_HISTORY.md.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak (master tree): all 10 rustfs/rustfs: pins now read 1.0.6, not 1.0.0-rc.3. What remains is unchanged: whether 1.0.6 carries the fix for rustfs#3231 is not recorded anywhere, no full-scale merge-heavy soak on 1.0.6 is in RUN_HISTORY.md, and run_24h.sh still does not launch orphan_reaper (per task note).. Changes: impact:operability; description: Update paragraph appended. Pointers stale: Description says the ca-soak configs pin rc.3 (ten pins): they now pin 1.0.6. Task note of 2026-11-17 says the pins still name rc.3: also out of date.. Upstream: unverified.
+---
+<!-- COMMENTS:END -->

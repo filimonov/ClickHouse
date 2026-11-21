@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -17,6 +17,12 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
   - 'theme:parity'
+  - 'impact:cost'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-2
 dependencies: []
 references:
@@ -72,3 +78,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `CasManifestReader` is 2026-07-15 (416c982b5d6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedSettings.cpp:88 default still 128ULL << 20; no ManifestDecodeCache ProfileEvents in src/Common/ProfileEvents.cpp. Changes: impact:cost; impact:operability. Pointers stale: ContentAddressedSettings.cpp:80 now :88.
+---
+<!-- COMMENTS:END -->

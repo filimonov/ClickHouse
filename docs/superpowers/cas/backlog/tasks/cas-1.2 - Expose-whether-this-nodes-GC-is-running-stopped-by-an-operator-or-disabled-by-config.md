@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:solid'
   - 'origin:2031-triage'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -68,3 +73,13 @@ Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-
 
 Expose the state through system.metrics (CurrentMetrics), not asynchronous metrics: the transition is exact and cheap (user decision 2026-09-30, same reasoning as CAS-289.4).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: StorageSystemContentAddressedMounts.cpp:50-54 lists gc_fenced, is_leader, pending_reclaim, last_success_age_seconds and no running/stopped/disabled column; CasGcScheduler.h and ContentAddressedMetadataStorage.h gcStop keep the scheduler (stop-in-place). Changes: impact:operability. Pointers stale: CA/ path prefix means ContentAddressed/; ContentAddressedMetadataStorage.cpp:1090 and :909, InterpreterSystemQuery.cpp:2681 and ContentAddressedSettings.cpp:57 not rechecked. AC#2 says asynchronous m….
+---
+<!-- COMMENTS:END -->

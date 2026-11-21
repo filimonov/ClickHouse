@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:soak'
   - 'complexity:large'
@@ -14,6 +14,12 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:soak'
+  - 'impact:availability'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-0
 dependencies:
   - CAS-140
@@ -65,3 +71,13 @@ First recorded: 2026-09-26 (5245fbc7a76, by '4h-continuous-chaos-soak')
 
 Merged from u19b-soak (merge into CAS-221): Third non-CAS blocker from the 2026-07-07 4h chaos run, still open: the pool budget cannot be held. `_THROTTLE_MAX = 1.0` s per insert (`utils/ca-soak/soak/run.py:1166`) is the heaviest pacing and never stalls inserts, RustFS does no background compaction, and merge and mutation write amplification outpaced insert pacing (pool reached 187 GB in 4 h). Options recorded: a compacting store on the stand, a lower object-count scale, or a throttle that fully stalls inserts over budget. The run's other two blockers are handled: the TTL-band abort by `4501cc8415c`, fsck at scale by CAS-140. CAS correctness held through that run: replica agreement and `dangling=0` while fsck completed.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/RUN_HISTORY.md: the only SOAK-4h-chaos rows are 2026-06-27/28 (lines 67-70, last one failed at ~106 min); no later 4 h run recorded.. Changes: impact:availability; impact:operability.
+---
+<!-- COMMENTS:END -->

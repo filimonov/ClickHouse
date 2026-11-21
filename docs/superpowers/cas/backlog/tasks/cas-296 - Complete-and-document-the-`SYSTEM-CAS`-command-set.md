@@ -4,13 +4,16 @@ title: Complete and document the `SYSTEM CAS` command set
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'area:docs'
   - 'complexity:epic'
   - 'risk:medium'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `ASTSystemQuery` is 2026-06-17 (27eef9df8fc); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Parsers/ASTSystemQuery.h:172-178 has CAS_GC_RUN/REBUILD/DROP_POOL_MEMBER/FSCK/FORGET/GC_STOP/GC_START and no CAS_MOUNT/CAS_UNMOUNT (AC1 open). Changes: none. Links: Child CAS-296.1 carries MOUNT/UNMOUNT; AC2 docs page not checked.
+---
+<!-- COMMENTS:END -->

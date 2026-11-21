@@ -4,7 +4,7 @@ title: Make one replica merge and the others relink on a shared CAS pool
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:replication'
   - 'complexity:medium'
@@ -13,13 +13,18 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-251
 references:
   - src/Storages/MergeTree/MergeFromLogEntryTask.cpp
   - src/Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.cpp
 priority: medium
-type: enhancement
+type: task
 ordinal: 141000
 ---
 
@@ -52,3 +57,13 @@ Provenance: BACKLOG/performance.md#scale-findings [replicated double-spill] (+ o
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'replicated double-spill')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: docs/en/antalya/cas/index.md is the only CAS file naming execute_merges_on_single_replica_time_threshold; no integration test sets it; AC1 measurement not recorded in the task. Changes: impact:cost; type enhancement -> task: measurement then a recorded decision. Would settle it: the two-replica run of AC1.
+---
+<!-- COMMENTS:END -->

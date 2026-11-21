@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-29.2
@@ -65,3 +68,13 @@ Provenance: BACKLOG/gc.md#gc-reduce-confirm-marker-read-ahead. Verified 2026-09-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (db5bb3485c8, by 'gc-reduce-confirm-marker-read-ahead')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: grep in cas-pr1 ContentAddressed/: confirm_condemned_marker and CASGCCondemnMarkerUnconfirmedCarry have no hits; the fold now reads decision HEADs via reads.takeHead (CasGc.cpp:2260) and standing rows use blob intents; the per-row meta marker gate this task speeds up is gone. Changes: none. Links: depends on CAS-29.2 and CAS-29.3 (29.3 itself looks obsolete). Would settle it: whether the replacement path still has a serial per-carried-row read on restart.
+---
+<!-- COMMENTS:END -->

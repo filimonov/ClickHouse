@@ -6,12 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 17:27'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:lease'
   - 'area:docs'
   - 'origin:review'
+  - 'impact:ux'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: docs
 ordinal: 589000
 ---
 
@@ -28,3 +35,13 @@ docs/en/antalya/cas/configuration.md:114 says the unsafe remount knob is 'not a 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 docs/en/antalya/cas/configuration.md:113 still says 'That is not a data hazard ... The exposure is availability, not data'; the same wording is in the setting description ContentAddressedSettings.cpp:82. Changes: impact:ux; type unset -> docs: first deliverable is correcting the documented claim; R1/R2 code decision follows. Pointers stale: configuration.md:114 (now :113).
+---
+<!-- COMMENTS:END -->

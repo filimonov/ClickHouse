@@ -4,7 +4,7 @@ title: Close the relink-confirm liveness item (F11) on its own gate
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:replication'
   - 'area:gcs'
@@ -13,6 +13,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -59,3 +62,13 @@ Provenance: BACKLOG/gcs.md#relink-confirm-lane-livelock. Design and plan deleted
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-02 (d1c0b90c697, by 'relink-confirm-lane-livelock')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: AC1 is 'every subtask Done'; children CAS-170.1, 170.2 are To Do (also 170.3, 170.4 exist). Changes: none. Links: parent of CAS-170.1, 170.2, 170.3, 170.4.
+---
+<!-- COMMENTS:END -->

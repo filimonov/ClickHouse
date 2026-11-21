@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:backend'
   - 'area:write-path'
@@ -14,6 +15,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-6
 dependencies: []
 references:
@@ -57,3 +63,13 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-090 (2031-triage CAS-090; th
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1: no copy-source SSE-C header anywhere in src, no SSE-C guard or doc mention under ContentAddressed/ or docs/en/antalya/cas (grep -i 'sse.c|customer_key' hits are unrelated 'lookup key' lines). Changes: impact:operability. Pointers stale: CasObjectStorageBackend.cpp:930, ContentAddressedMetadataStorage.cpp:859-869 and S3ObjectStorage.cpp:777-782 not re-checked.
+---
+<!-- COMMENTS:END -->

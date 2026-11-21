@@ -6,12 +6,15 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-10-22 06:09'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-4
 dependencies: []
 references:
@@ -52,3 +55,13 @@ First recorded: 2026-07-15 (6e02e1f77e3, by 'repointRef non-resolving-key audit 
 
 2026-10-22: subsumed by CAS-409 (required expected manifest removes the unresolved branch). On `feature/cas-disk-transactions` @ 7a16106160c the branch is still present (`PartFolderAccess.cpp:709-717`, warning level) and still unreachable from production.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: Parts/PartFolderAccess.cpp:727-728: a key that does not resolve (or resolves to another manifest) throws throwCasOwnershipConflict before the CASRefRepoint increment at :741; task note says CAS-409 subsumes it. Changes: none. Pointers stale: PartFolderAccess.cpp:527,545 now around :727-741. Would settle it: confirm this function is the renamed repointRef and that a gtest covers the unresolved-key throw.
+---
+<!-- COMMENTS:END -->

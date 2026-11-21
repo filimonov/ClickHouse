@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:observability'
   - 'area:docs'
@@ -14,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:plausible'
   - 'needs:decision'
+  - 'impact:ux'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -63,3 +69,13 @@ Identifier trace: the earliest docs mention of `ContentAddressedGarbageCollectio
 
 2026-10-14: the planned rename of the `state` / `gc_fenced` columns must account for the new `retired` state (PR C, CAS-388.3).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 StorageSystemContentAddressedMounts.cpp:46-50 still has renewal_sequence, min_active_build_sequence, gc_fenced; the file's column declarations are now more than the 20 the task counts (grep counts 26 make_shared type expressions). Changes: impact:ux; impact:operability. Pointers stale: column counts (20 / 29 / 19) are out of date: cas_mounts has grown. Owner question: Which columns of system.cas_mounts, cas_gc_log and cas_log are kept, renamed or dropped (proposal for owner approval)?
+---
+<!-- COMMENTS:END -->

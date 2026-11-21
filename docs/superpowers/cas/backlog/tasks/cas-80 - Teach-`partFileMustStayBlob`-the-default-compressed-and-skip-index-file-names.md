@@ -4,13 +4,16 @@ title: Teach `partFileMustStayBlob` the default compressed and skip-index file n
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -50,3 +53,13 @@ Provenance: BACKLOG/performance.md#part-file-suffix-allowlist-memory (2031-triag
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (693ed9cc5be, by 'part-file-suffix-allowlist-memory')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedTransaction.cpp:73-87 partFileMustStayBlob still lacks primary.cidx, .mrk4/.cmrk4 and skip-index .idx/.idx2. Changes: none. Pointers stale: R/ContentAddressedTransaction.cpp:67-75 is now :73-87.
+---
+<!-- COMMENTS:END -->

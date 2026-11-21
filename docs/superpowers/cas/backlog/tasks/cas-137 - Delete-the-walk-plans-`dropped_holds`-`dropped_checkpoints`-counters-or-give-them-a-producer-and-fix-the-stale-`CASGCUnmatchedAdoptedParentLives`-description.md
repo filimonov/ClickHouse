@@ -7,14 +7,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:gc'
   - 'area:observability'
-  - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'complexity:trivial'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -37,6 +41,8 @@ The `CASGCUnmatchedAdoptedParentLives` description (`src/Common/ProfileEvents.cp
 life id". `4d40d453347` removed that warning, and the code comment says "counted, not narrated" (`CasGc.cpp:216-225`).
 
 Provenance: BACKLOG/gc.md#refplan-dead-drop-counters (2031-triage CAS-096). `4d40d453347` is on cas-gc-rebuild only; on altinity/antalya-26.6 check whether the warning is still there before editing the description. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+
+Update 2026-11-21: The dropped_holds/dropped_checkpoints counters are already gone from the branch. Remaining scope: correct the CASGCUnmatchedAdoptedParentLives description (Common/ProfileEvents.cpp:986) to say the drop is counted, not logged (one-line edit).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -58,3 +64,13 @@ Provenance: BACKLOG/gc.md#refplan-dead-drop-counters (2031-triage CAS-096). `4d4
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-096')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: grep dropped_holds|dropped_checkpoints in cas-pr1 src: no hits (counters removed, AC #1 done). Common/ProfileEvents.cpp:986 CASGCUnmatchedAdoptedParentLives still says each occurrence 'is logged with its exact physical life id', while Gc/CasGc.cpp:316 says 'counted, not narrated' (AC #2 open). Changes: size small -> trivial (XS): one description string remains; description: Update paragraph appended. Size: XS. Pointers stale: CasGc.cpp:242-260, CasGc.h:239-240/322-339 and ProfileEvents.cpp:927 moved or removed.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ref-ledger'
   - 'area:read-path'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +62,13 @@ First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) keeps `removal_write_may_land` and adds `removing_observed` (c821aece830). A `beginRemoving` that lands after a remount leaves the row `Removing` under an open lane until a restart, a remount, a retried `DROP` or the GC leader's next round (accepted residual, d0e2d1a80bd). fc82bf0d80b latches a `Removing` row at the recovery confirmation.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:893-895 acquireReadableRefTableRuntime returns nullptr when removal_admission_closed; resolveRefOnRuntime (:359-373) turns a null runtime into nullopt (absent) with no distinction from an unnamed namespace. Changes: impact:availability. Pointers stale: CasRefLedger.cpp:621-623 and :293-299 moved to :893 and :372.
+---
+<!-- COMMENTS:END -->

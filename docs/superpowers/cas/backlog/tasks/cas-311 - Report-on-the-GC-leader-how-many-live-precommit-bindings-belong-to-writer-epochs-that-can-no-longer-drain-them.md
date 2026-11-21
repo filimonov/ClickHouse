@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:44'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -14,6 +15,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:spec'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +64,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#S13-20260713T172032-3 (triage .su
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/: CasOrphanManifestSweep.cpp:316 still reads getPrecommits() only to keep manifests active; grep for stale_precommit / dead_epoch / precommit_bindings in Gc/*.cpp finds no GC-side count of dead-epoch bindings. Changes: impact:operability. Pointers stale: CasOrphanManifestSweep.cpp:217-218 (precommit handling now at :316 and :657). Would settle it: Not checked whether the blob-intent rework changed the precommit model (the task's premise that bindings keep a manifest active at CasOrphanManifestSweep.cpp:217-218) or whether a counter exists outs….
+---
+<!-- COMMENTS:END -->

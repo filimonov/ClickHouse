@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:write-path'
   - 'area:fsck'
@@ -14,6 +15,9 @@ labels:
   - 'risk:medium'
   - 'needs:decision'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -48,3 +52,13 @@ Now: detector (~100–150 lines) — `_files` keys whose LastModified (store clo
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: no zombie-write detector or fsck _files check found (no 'zombie' hit in Pool/CasPlainObjects.cpp or Tools/ of cas-pr1); the task text carries an open decision and no later note. Changes: none. Would settle it: owner choice between the detector-only step and the files-as-refs move; the second needs a new pool format version with a compatibility path, which decision-4 allows but does not grant. Owner question: Land the ~100-150 line detector plus fsck check now and defer files-as-refs, or commit to files-as-refs (new pool format version with a compatibility path, decision-4)?
+---
+<!-- COMMENTS:END -->

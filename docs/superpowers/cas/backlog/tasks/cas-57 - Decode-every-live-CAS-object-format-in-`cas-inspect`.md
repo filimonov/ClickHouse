@@ -4,13 +4,16 @@ title: Decode every live CAS object format in `cas-inspect`
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-inspect-format-coverage
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (9e105470c4a, by 'cas-inspect-format-coverage-and-hold')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Tools/CasInspect.cpp has no reference to PoolMeta, RefCatalog or GcMaintenanceState decoders (grep empty); the dispatcher still ends in BAD_ARGUMENTS (:496, :513). Changes: none. Pointers stale: caInspectToJson line range :484-548 has moved (dispatch now around :491-522).
+---
+<!-- COMMENTS:END -->

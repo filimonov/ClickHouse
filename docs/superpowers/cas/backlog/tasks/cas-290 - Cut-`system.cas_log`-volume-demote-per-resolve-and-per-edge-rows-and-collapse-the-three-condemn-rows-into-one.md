@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:observability'
   - 'complexity:medium'
@@ -14,6 +14,12 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:cost'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -69,3 +75,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `ref_resolve` is 2026-06-18 (b3564a10c11); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1: RefResolve still emitted at Parts/PartFolderAccess.cpp:230 and Pool/CasRefLedger.cpp:414, RootAdd/RootRemove at Gc/CasGc.cpp:1711, GcRetireObserve at :2263; no opt-in level or counter substitute found at those sites. Changes: impact:cost; impact:operability. Pointers stale: CasRefLedger.cpp:339, PartFolderAccess.cpp:225, CasGc.cpp:1333/:1855/:1871 moved to :414, :230, :1711, :2263. Would settle it: Not checked whether the blob-intent rework changed the three condemn rows (indegree_zero, gc_retire_observe, blob_retire) that the task wants collapsed..
+---
+<!-- COMMENTS:END -->

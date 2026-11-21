@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'area:ref-ledger'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -57,3 +62,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `standard` is 2026-06-07 (996d156fdfb); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 CasRetry.h:53 conflictBackoff() = backoff(1), still the flat pace used by pauseForConflict (CasRequests.cpp:947, call sites :1228 :1285); no measurement test found. Changes: impact:cost. Pointers stale: readModifyWrite call sites now at CasRequests.cpp:1228 and :1285. Would settle it: the N>8 writers request-count measurement (AC1) has not been run.
+---
+<!-- COMMENTS:END -->

@@ -6,12 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-05 09:45'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:mounts'
   - 'area:gc'
   - 'area:docs'
   - 'needs:spec'
   - 'needs:decision'
+  - 'risk:high'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies:
   - CAS-149
@@ -57,3 +64,13 @@ Related: CAS-149 (`UNMOUNT` and disk eject, the per-node half of the teardown), 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: no cas-drop-pool tool or SYSTEM CAS DROP POOL verb in src (ASTSystemQuery.h lists only DROP_POOL_MEMBER); only docs/en/operations/system-tables/cas_mounts.md matched the grep. Changes: risk set to high; confidence set to solid. Links: Depends on CAS-149; related CAS-296.1, CAS-156/157/158. Owner question: Is the final pool delete a new verb (clickhouse-disks cas-drop-pool / SYSTEM CAS DROP POOL) or a documented operator procedure over existing tooling?
+---
+<!-- COMMENTS:END -->

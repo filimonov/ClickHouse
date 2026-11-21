@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - utils/ca-soak/soak/checker.py
@@ -50,3 +55,13 @@ Provenance: BACKLOG/gc.md [gc-checkpoint-timeout-tsan] and the AWS data point in
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (b4420fe512a, by 'gc-checkpoint-timeout-tsan')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: soak/checker.py:119 fixpoint_timeout_s still has floor_s=300.0 and no sanitizer multiplier (grep for sanitizer/multiplier/asan/tsan in checker.py empty). Changes: label quick-win.
+---
+<!-- COMMENTS:END -->

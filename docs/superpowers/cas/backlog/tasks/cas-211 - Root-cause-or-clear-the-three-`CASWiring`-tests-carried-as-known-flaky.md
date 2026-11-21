@@ -4,7 +4,7 @@ title: Root-cause or clear the three `CASWiring` tests carried as 'known flaky'
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'complexity:small'
@@ -12,6 +12,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -50,3 +55,13 @@ Provenance: BACKLOG/testing-and-ci.md [ca-s3-stateless-lane] (the '3 pre-existin
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (5d9bb3ec707, by 'ca-s3-stateless-lane')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: The three tests still exist in cas-pr1 src/Disks/tests/gtest_ca_wiring.cpp (:1579, :1661, :1718); no repeated-run or RCA record is in the task, which itself says they passed the strict gate of 2026-08-24.. Changes: impact:operability. Pointers stale: gtest_ca_wiring.cpp :1440/:1522/:1579 are now :1579/:1661/:1718.. Would settle it: A 50-run Debug and ASan result for the three tests, or an RCA..
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:backend'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - src/IO/S3/Client.cpp
@@ -51,3 +54,13 @@ Provenance: BACKLOG/ref-protocol.md#ref-protocol-rev6 [timeout-retry RFC residua
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'timeout-retry RFC residuals')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Client.cpp:335 detect_region still set for AWS global endpoints and copied to clones (:356, max_redirects :359); grep detect_region under ContentAddressed/ finds no guard. Changes: none. Pointers stale: Client.cpp redirect-loop and detect_region lines moved (now :335, :396 vs task :334, :730-787).
+---
+<!-- COMMENTS:END -->

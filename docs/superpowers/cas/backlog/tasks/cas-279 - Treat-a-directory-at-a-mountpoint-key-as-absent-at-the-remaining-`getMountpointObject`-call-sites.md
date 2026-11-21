@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-23'
-updated_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:backend'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -55,3 +58,13 @@ First recorded: 2026-07-23 (1989155d7e4, by 'STATELESS-04286 EISDIR')
 
 Merged from u19b-soak (merge into CAS-279): Soak ledger entry STATELESS-04286-getmountpoint-eisdir is already carried by CAS-279; no new facts.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 ContentAddressedTransaction.cpp:1057,1749,1752,1926 and ContentAddressedMetadataStorage.cpp:1832 still call getMountpointObject unguarded; only existsFile/getStorageObjects use mountpointObjectExists (:1573, :2052). Changes: none. Links: retired by CAS-276 if Mode::Posix lands. Pointers stale: call sites moved: ContentAddressedTransaction.cpp now :1057 :1749 :1752 :1926, MetadataStorage.cpp :1832 (task :880 :1524 :1527 :1693 :1749).
+---
+<!-- COMMENTS:END -->

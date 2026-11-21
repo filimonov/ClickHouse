@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'area:formats'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -58,3 +61,13 @@ Provenance: BACKLOG/formats-and-storage.md#outcome-log-oc-not-required and #gc-s
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (bab19a3de54, by 'gc-state-encode-no-line-cap')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Formats/CasGcOutcomesFormat.cpp:~110-118 kind/outcome set only when key present, no required check; Formats/CasGcStateFormat.cpp has line_cap only on the decode path (:75), none on encode. Changes: none. Pointers stale: CasGcOutcomesFormat.cpp:105-111 now ~:110-118; CasGcStateFormat.cpp:37-48 not rechecked.
+---
+<!-- COMMENTS:END -->

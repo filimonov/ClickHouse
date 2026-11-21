@@ -4,13 +4,16 @@ title: Refuse a second `precommitAdd` on the same `PartWriteTxn`
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasPartWriteTxn.cpp
@@ -50,3 +53,13 @@ Provenance: BACKLOG/ref-protocol.md#precommit-add-single-slot-guard (2031-triage
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2a29781641d, by 'precommit-add-single-slot-guard')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPartWriteTxn.cpp:742-787 precommitAdd checks only requireAlive and namespace match, then overwrites precommit_target_ns/final_ref/manifest/state with no NotAttempted guard. Changes: none. Pointers stale: R/Pool/CasPartWriteTxn.cpp:702,:742-745,:801 now :742,:783-787,:843; CasPartWriteTxn.h:378-380 not rechecked.
+---
+<!-- COMMENTS:END -->

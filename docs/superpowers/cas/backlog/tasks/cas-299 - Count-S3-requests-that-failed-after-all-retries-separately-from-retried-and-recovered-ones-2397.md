@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:observability'
   - 'area:upstream'
@@ -16,6 +16,12 @@ labels:
   - 'confidence:solid'
   - 'origin:issue'
   - 'origin:canary'
+  - 'impact:operability'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -63,3 +69,13 @@ Provenance: GitHub issue #2397 requests 1-2 (open), reconciled by u17-github-cas
 <!-- SECTION:NOTES:BEGIN -->
 Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/Common/ProfileEvents.cpp has no counter for S3 requests failed after retries (only S3SingleAttemptRetryConsultations at :1041 among the relevant names); upstream search for ReadBufferFromS3RequestsErrors found two unrelated open PRs (125329, 116257). Changes: impact:operability. Links: blocks CAS-289.3; related CAS-168, CAS-175; GitHub issue 2397. Would settle it: Not checked whether an existing upstream or fork event already counts exhausted-retry failures under a name that does not contain 'Fail'; a grep for the retry strategy's give-up path in src/IO/S3 wou…. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

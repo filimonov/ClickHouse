@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -14,6 +14,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -39,6 +43,8 @@ Five small nits, most in fork patches to shared files, so they ship with the Gro
 - `05011_cas_gc_rebuild_access.sh` is tagged `no-parallel` only because of a fixed user name; suffix it with the database.
 
 Provenance: BACKLOG/docs-and-cleanup.md#minor [Ring-2 comment/convention nits]; dropped sub-nits: `_ms` column (columns are `started_at`/`expires_at`), `GC REBUILD` spelling (no spelled-out sibling), `poc/` (untracked local dir); ProfileEvents fragment merged into CAS-2.2. Verified 2026-09-26 against 6eb16e1cc56 and 8d62c314ec1.
+
+Update 2026-11-21: Nit 3 (`projection_uses_parent_transaction` in global_ctx) no longer applies: the member is not in MergeTask.h. Nits 2 and 4 are still present; nits 1 and 5 not re-checked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -60,3 +66,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor [Ring-2 comment/convention nits]; 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'Ring-2 comment/convention nits')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: on cas-blob-intents: no static_assert on DEFAULT_EXPECT_CONTINUE_MIN_BYTES in S3Defines.h (constant at :46); cas_part_folder_cache_* members still at ContentAddressedMetadataStorage.cpp:312-313; but `projection_uses_parent_transaction` is no longer in MergeTask.h. Changes: description: Update paragraph appended. Pointers stale: S3Defines.h:43 now :46; ContentAddressedMetadataStorage.cpp:307-309 now :312-313; MergeTask.h:225 member gone (nit 3 already done or removed). Would settle it: state of the S3Common.h comment nit and the 05011 no-parallel tag.
+---
+<!-- COMMENTS:END -->

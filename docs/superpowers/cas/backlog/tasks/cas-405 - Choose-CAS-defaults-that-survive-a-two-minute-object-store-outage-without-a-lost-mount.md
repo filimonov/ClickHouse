@@ -6,11 +6,18 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-18 13:52'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:mounts'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: task
 ordinal: 503000
 ---
 
@@ -42,3 +49,13 @@ Experiments done 2026-10-18: tmp/cas405/REPORT.md (20 runs, base vs #2517). #251
 
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s. The parent goal (a 120 s outage without a client error) is not met by this default.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: ContentAddressedSettings.cpp:80 default lease 40000 (note 2026-11-17: 120 s outage goal not met by it); request_window_ms already a setting at :93 with default 120000. Changes: risk set to medium; confidence set to solid; type unset -> task: type missing; parent of measured default choices. Links: Children CAS-405.1 to .6; status In Progress, last note 2026-11-17. Would settle it: a 120 s fault-proxy run on current defaults, and the state of children .2 .4 .6.
+---
+<!-- COMMENTS:END -->

@@ -6,11 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 23:41'
-updated_date: '2026-11-11 23:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:soak'
   - 'area:testing'
   - 'area:tooling'
+  - 'impact:operability'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: low
 type: task
@@ -41,3 +47,13 @@ ordinal: 571000
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): figures in the description: 201 INSERT/s is the best minute of the direct run, the run average is 173 INSERT/s; the count of 502 answers is about 11000 lines in one server error log, not an exact proxy counter. The inflation of latency and per-log GC cost through the proxy is 10-15 times.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/proxy/s3_fault_proxy.py:251 still opens a fresh http.client.HTTPConnection(UPSTREAM) per request inside a ThreadingMixIn server (:446); no connection reuse or pool.. Changes: impact:operability; label needs:decision. Owner question: Keep-alive plus process pool in the Python proxy, toxiproxy for hang/latency faults, or have latency-reporting scenarios bypass the proxy?
+---
+<!-- COMMENTS:END -->

@@ -6,12 +6,15 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 10:16'
+updated_date: '2026-11-21 08:25'
 labels:
   - cas
   - ci
   - 'area:write-path'
   - 'theme:ci-stabilization'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 priority: medium
 type: bug
@@ -38,3 +41,13 @@ ordinal: 542000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 src/IO/S3/PocoHTTPClient.cpp:741 still logs an unexpected 404 at LOG_ERROR irrespective of request kind; WriteBufferFromS3.cpp:832-835 still retries NO_SUCH_KEY on PUT; the task records a single occurrence (23 reruns passed). Changes: none. Links: related to the S3 retry shared code in src/IO/S3 (touches upstream code; no upstream query: no safe search term beyond the file names). Would settle it: whether the failure recurred on later CI runs of the cas s3 lane (one occurrence on PR 2577 only); and whether upstream ClickHouse changed that HTTP-client log level, which would make a CAS-side chan….
+---
+<!-- COMMENTS:END -->

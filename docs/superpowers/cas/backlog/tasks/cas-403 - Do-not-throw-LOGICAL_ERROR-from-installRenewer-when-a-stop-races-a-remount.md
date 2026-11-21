@@ -4,11 +4,20 @@ title: Do not throw LOGICAL_ERROR from installRenewer when a stop races a remoun
 status: To Do
 assignee: []
 created_date: '2026-10-16 00:29'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:mounts'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: bug
 ordinal: 501000
 ---
 
@@ -40,3 +49,13 @@ Found by the TLA run for PR #2517 (model CaRenewalDriver, config finding_install
 
 2026-10-18: fix on fix/antalya-26.6/cas-403-install-renewer-during-stop @84c1b5f43982 (ABORTED instead of LOGICAL_ERROR); release 2669, ASan 2673. Needs #2517 and PR B. Local, not pushed. Review and body tmp/small-fixes/cas-403/.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasMountRuntime.cpp:446-452 installRenewer still throws LOGICAL_ERROR unless the driver is Dormant or Parked; fix 84c1b5f43982 is on an unpushed 26.6 branch, not here. Changes: size unset -> small (S): one throw site plus a gtest with death split; risk set to low; confidence set to solid; impact:availability; type unset -> bug: type missing; behaviour wrong today. Size: S.
+---
+<!-- COMMENTS:END -->

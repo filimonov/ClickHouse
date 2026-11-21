@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -59,3 +62,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `ContentAddressedTransaction` is 2026-06-03 (4fb3336fdf3); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep of ContentAddressed/ in cas-pr1: local_scratch_path used only as a path (ContentAddressedMetadataStorage.cpp:292, .h:412,652); no statvfs, free-space check or mount-time scratch sweep. Changes: none. Links: attribution half is CAS-101; docs sizing half is CAS-102; related CAS-264 (S3 staging debris). Pointers stale: CA/ContentAddressedTransaction.cpp:1010,:1865 now ~:1185,:2087+.
+---
+<!-- COMMENTS:END -->

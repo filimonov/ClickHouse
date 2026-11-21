@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-03'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:gc'
   - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:cost'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-1
 dependencies: []
 references:
@@ -59,3 +64,13 @@ First recorded: 2026-08-03 (d63e0d1f5b3, by 'gc-mf-cleanup-durable-retry')
 
 2026-10-13: relation to CAS-358. An owner-removed manifest whose post-CAS delete failed is outside the owned set, but the sweep's rule (1) retains it until its build epoch closes (next remount), so the sweep is the eventual reclaimer, not a timely retry. The durable retry here is still needed.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.cpp:1469-1500 manifest_deletes phase has no deadline check (deadline_ms appears only at :434/:451 janitor and :2488/:2960 intake); intake cursor still commits in the round's gc/state CAS before the phase. Changes: impact:cost. Pointers stale: CA/Gc/CasGc.cpp:1094-1100 is now the manifest_deletes phase at about :1469..
+---
+<!-- COMMENTS:END -->

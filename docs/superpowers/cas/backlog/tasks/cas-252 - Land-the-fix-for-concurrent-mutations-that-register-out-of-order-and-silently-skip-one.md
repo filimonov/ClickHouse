@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -14,6 +14,12 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'theme:ci-stabilization'
+  - 'impact:wrong-result'
+  - 'upstream:open-pr'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-5
 dependencies: []
 references:
@@ -21,6 +27,7 @@ references:
   - >-
     https://github.com/Altinity/ClickHouse/tree/feature/antalya-26.6/fix-mutation-registration-race
   - 'https://github.com/Altinity/ClickHouse/pull/2300'
+  - 'https://github.com/ClickHouse/ClickHouse/pull/122934'
 priority: high
 type: bug
 ordinal: 317000
@@ -71,3 +78,13 @@ Provenance: BACKLOG/replication.md#mutation-registration-race; observed in CI as
 
 2026-11-17: CI run 44084349150 on 44fc40023c1: `RegressionTestsAarch64 / CASS3CacheLightweightDelete (4)` failed on one leaf, `/lightweight delete/concurrent delete/VersionedCollapsingMergeTree/concurrent delete without overlap`; Release and non-cache twins green. Looks like this class; the mutation order was not read from the logs.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: EARLIER_MUTATION_NOT_REGISTERED and mt_pause_before_mutation_registration are absent from src/ of the 26.8 worktree; fix commits were reverted (c8d14a95d3a, a04846cfdeb); StorageMergeTree::prepareMutationEntry still at StorageMergeTree.cpp:997. Changes: impact:wrong-result; upstream reference added. Pointers stale: StorageMergeTree.cpp:889, :927, :1775 moved (prepareMutationEntry now :997); 05027_mutations_register_out_of_order.sh does not exist in this tree and the 05027 prefix is taken by other tests.. Upstream: open-pr (https://github.com/ClickHouse/ClickHouse/pull/122934).
+---
+<!-- COMMENTS:END -->

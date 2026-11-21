@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -16,6 +16,10 @@ labels:
   - 'origin:2031-triage'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -65,3 +69,19 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (20329364650, by 'gc-health-zero-is-ambiguous')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: AC1 needs all four subtasks; child CAS-1.3 is still open (pending_reclaim still a process-local counter, Gc/CasGcScheduler.cpp:319,548); children 1.1, 1.2, 1.4 states not checked. Changes: type enhancement -> task: umbrella of four subtasks; the work is in the children. Links: Children CAS-1.1 to CAS-1.4.
+---
+
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21 (correction by the controller): the type was changed enhancement -> task without a stated reason; restored to enhancement.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,21 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-14 17:25'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:writer'
   - 'complexity:low'
   - 'risk:medium'
   - 'origin:review'
+  - 'confidence:plausible'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: bug
 ordinal: 489000
 ---
 
@@ -52,3 +60,13 @@ One comparison at append, in `appendRefOpsOnRuntime` or in the precommit closure
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPartWriteTxn.cpp:742-845 precommitAdd and its append closure carry no comparison of the manifest's writer epoch with the runtime's (only requireAlive at the top, :238 message); Tools/CasFsck.cpp has no AddPrecommit epoch check. Changes: confidence set to plausible; impact:data-loss; type unset -> bug: an AddPrecommit of an older epoch can be minted after a self-remount; no type was set. Pointers stale: CasPartWriteTxn.cpp:186 now :238 area; CasRefLedger.cpp:2050, CasPool.cpp:1504, CasRefProtocol.cpp:245 not rechecked.
+---
+<!-- COMMENTS:END -->

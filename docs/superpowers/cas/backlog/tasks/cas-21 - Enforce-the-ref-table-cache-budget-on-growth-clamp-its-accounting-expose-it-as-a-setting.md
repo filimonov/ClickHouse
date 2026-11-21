@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -14,6 +14,11 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +61,13 @@ Provenance: BACKLOG/performance.md#ref-table-cache-budget-admission-only (2031-t
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (bd7d31868cb, by 'ref-table-cache-budget-admission-only')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp:1826 is the only enforceRefTableCacheBudget call; :2001 'total -= c.weight' still unclamped; ref_table_cache_bytes only in Pool/CasPool.h:330, not in ContentAddressedSettings.cpp. Changes: impact:cost. Pointers stale: CasRefLedger.cpp:1675 now :1826, :1807 now :2001, CasPool.h:321 now :330.
+---
+<!-- COMMENTS:END -->

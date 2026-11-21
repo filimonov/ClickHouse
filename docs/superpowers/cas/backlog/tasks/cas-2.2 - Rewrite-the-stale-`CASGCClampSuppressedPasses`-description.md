@@ -4,13 +4,16 @@ title: Rewrite the stale `CASGCClampSuppressedPasses` description
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +58,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `system.events` is 2026-06-15 (6e28ecaaed5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 src/Common/ProfileEvents.cpp:887 now lists anomaly / held namespace / unproven frontier / unconfirmed gc/state HEAD and says a healthy round does not count; introduced in f600bbd63ab. Changes: none. Pointers stale: ProfileEvents.cpp:842 is now line 887; CasGc.cpp:3203-3204 not rechecked. Would settle it: AC#2 asks to keep the pointer to the fold seal hold set and tables_held; the new text points to suppress_destructive, frontier_complete, parent_unconfirmed instead and does not mention tables_held. O….
+---
+<!-- COMMENTS:END -->

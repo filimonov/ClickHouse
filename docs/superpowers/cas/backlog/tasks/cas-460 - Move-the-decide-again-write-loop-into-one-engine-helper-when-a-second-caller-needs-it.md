@@ -6,15 +6,20 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:18'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'origin:review'
   - 'complexity:small'
   - 'risk:low'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies:
   - CAS-368
 priority: low
-type: feature
+type: chore
 ordinal: 564000
 ---
 
@@ -38,3 +43,13 @@ ordinal: 564000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: the trigger has not fired: the decide-again loop (attempts_already_sent accumulation, Pool/CasRefCatalog.cpp:185-197) is still reached only through casUpdateImpl, and the only other resend_unresolved=false setter (CasRefCatalog.cpp:337) goes through casUpdateImpl too; pauseBeforeRedecide still at Backend/CasRequests.cpp:491. Changes: type feature -> chore: deferred refactor with no behaviour change; 'feature' does not fit. Links: waits for a second caller such as casAdmitEntry; depends on CAS-368.
+---
+<!-- COMMENTS:END -->

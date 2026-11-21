@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-25'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -14,6 +14,11 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:ux'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -60,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-config-prefix-window (l
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-25 (c2fd57cb32a, by 'cas-config-prefix-window')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Disks/tests/gtest_cas_settings.cpp:387 and :427 still pin the legacy spelling loading; blocked on the external regression-suite migration (not checkable here). Changes: impact:ux. Pointers stale: gtest_cas_settings.cpp tests now at :387 and :427 (task says :248, :256).
+---
+<!-- COMMENTS:END -->

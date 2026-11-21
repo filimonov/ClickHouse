@@ -4,13 +4,18 @@ title: 'GC lease: heartbeat progress does not invalidate a contender''s steal'
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
-updated_date: '2026-11-11 23:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'complexity:small'
   - 'confidence:solid'
   - 'risk:low'
   - 'origin:noclock-audit'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -47,3 +52,13 @@ A contender reads a frozen heartbeat, the incumbent pulses, the contender's `gc/
 
 2026-11-12 correction after an independent check of the report against run data (docs/superpowers/reports/2026-11-11-cas-defaults-review.check.md.txt, a49f8a8e45f): the note of 2026-11-11 said the leader was 129 s into its round at the steal. It was about 25 s in (leader round started 04:24:25, thief's round 04:24:50); 129 s is the leader's total duration when it aborted at commit. Thirteen earlier rounds of the same run were longer than the 20 s window and were not stolen, so the heartbeat protects the leader normally and failed once. One event in one run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:5494-5530 acquireOrRenewLease reads the gc heartbeat object inside the update callback, then CASes only gc/state; a pulse between the read and the CAS does not fail the steal. Model rule hbAdvanced at CaGcLeaseCore.tla:149 is stricter. Changes: impact:availability.
+---
+<!-- COMMENTS:END -->

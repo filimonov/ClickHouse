@@ -4,15 +4,19 @@ title: Decide on a deadline for the local waits of a namespace drop
 status: To Do
 assignee: []
 created_date: '2026-11-11 17:47'
-updated_date: '2026-11-12 01:08'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:ref-ledger'
   - 'origin:review'
   - 'complexity:small'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-69
 priority: low
-type: feature
+type: design
 ordinal: 566000
 ---
 
@@ -41,3 +45,13 @@ A namespace drop has waits with no deadline. `dropNamespaceImpl` waits for the w
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-12: input from the final review of the late-request bundle. The drop freezes one 90 s policy at entry, and `ensureRefTableRecovered` plus the lane-drain wait run inside that window. The first `DROP` of a cold table with a long unfolded ref log can therefore end with retry-later on elapsed time alone, with nothing sent; the lane reopens and the retry succeeds because recovery is then resident. `AWaitLongerThanTheWindowEndsTheDropAndLeavesTheLaneOpen` pins the wait case; no test pins the recovery case. The review proposed starting the window after recovery. Declined in the bundle: the behaviour self-heals and the choice belongs to this decision. Measure real recovery time on a long log before deciding.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: publish_settle_cv wait still present (CasRefLedger.h:965, .cpp:1003); task note 2026-11-12 states no deadline decision yet. Changes: type feature -> design: decision on deadlines plus a test or written reason. Would settle it: direct read of the three wait sites for a deadline.
+---
+<!-- COMMENTS:END -->

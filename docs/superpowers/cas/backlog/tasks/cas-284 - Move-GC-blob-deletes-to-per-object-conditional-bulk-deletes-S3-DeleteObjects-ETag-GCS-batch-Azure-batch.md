@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'area:backend'
@@ -16,6 +16,9 @@ labels:
   - 'confidence:solid'
   - 'origin:canary'
   - 'origin:otel-demo-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-1
 dependencies: []
 references:
@@ -66,3 +69,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `DELETE` is 2026-06-02 (019f825a59a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasBackend.h:292: only removeManyWriteOnce is a bulk delete in the backend interface; no conditional bulk-delete method in Backend/*.h or Gc/CasGc.cpp; git log -S SetETag over CA and src/IO/S3 empty. Decision-7 (2026-09-26) authorises the direction. Changes: none. Pointers stale: CasObjectStorageBackend.cpp:964, CasGc.cpp:1132/:3692 not rechecked.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:upstream'
   - 'complexity:trivial'
@@ -14,6 +14,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-5
 dependencies: []
 references:
@@ -55,3 +59,13 @@ Provenance: BACKLOG/operability-and-introspection.md#delete-files-from-s3-generi
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (2b987d9c55e, by 'delete-files-from-s3-generic-error-classification')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/IO/S3/deleteFileFromS3.cpp:203 still maps per-key errors with S3ErrorMapper::GetErrorForName only; upstream master has the same single-mapper call (deleteFileFromS3.cpp:294), no CoreErrorsMapper. Changes: none. Pointers stale: deleteFileFromS3.cpp:201 is now :203. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

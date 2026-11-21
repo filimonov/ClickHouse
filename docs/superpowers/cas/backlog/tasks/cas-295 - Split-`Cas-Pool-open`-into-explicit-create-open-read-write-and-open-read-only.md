@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'touches:settings'
   - 'confidence:plausible'
   - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -63,3 +66,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `_pool_meta` is 2026-06-02 (cafc256906e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: CasPool.h:436 single static Pool::open plus openForDecommission :442 and openForMigration :445; no separate create entry point found. Changes: none. Pointers stale: CasPool.cpp:383 / CasPool.h:224,426 moved (open now CasPool.h:436). Owner question: How is pool creation requested: a disk setting, a SYSTEM CAS verb, or first-mount only with an explicit flag?
+---
+<!-- COMMENTS:END -->

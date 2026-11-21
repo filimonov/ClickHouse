@@ -6,12 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-04 16:13'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:21'
 labels:
-  - 'area:tests'
   - 'area:gcs'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 ordinal: 533000
 ---
@@ -48,3 +52,13 @@ Fix in the test, not in the product (lazy per-profile clones are bounded and int
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `97123265e03`. Open: confirm the restart variant of AC3.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: tests/integration/test_cas_gcs/test.py:1207 docstring names the warm-up round before the counter reset; PR 2831 merged as 0aa837e942e (task note); AC #1, #2 delivered. Changes: label area:tests -> area:testing. Would settle it: AC #3: a recorded run of the restart variant (node.restart_clickhouse() at test start) passing after the fix.
+---
+<!-- COMMENTS:END -->

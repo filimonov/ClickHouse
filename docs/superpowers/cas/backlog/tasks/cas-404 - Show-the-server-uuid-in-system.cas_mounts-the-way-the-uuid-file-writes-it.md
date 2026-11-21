@@ -4,11 +4,21 @@ title: Show the server uuid in system.cas_mounts the way the uuid file writes it
 status: To Do
 assignee: []
 created_date: '2026-10-17 03:43'
-updated_date: '2026-10-19 09:50'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:mounts'
+  - 'complexity:trivial'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: bug
 ordinal: 502000
 ---
 
@@ -38,3 +48,13 @@ Found by soak S47 on PR #2574: system.cas_mounts.server_uuid shows the uuid with
 
 2026-10-19: rebuilt as one commit 42985cb11ac2 on 8fefc27bd625. Dropped Cas::u128ToUUID; the column parses u128ToHex with parseFromString<UUID>, the same text codec as toString(ServerUUID::get()). Release CAS* 2666 green, ASan CASListMounts* green, 05295 x2 OK. Local, not pushed. Body tmp/small-fixes/cas-404/pr-body.md.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: StorageSystemContentAddressedMounts.cpp:205 still inserts UUID(m.lease.server_uuid); fix 42985cb11ac2 is on an unpushed 26.6 branch. Changes: size unset -> trivial (XS): one conversion plus an asymmetric-uuid test; fix already written; risk set to low; confidence set to solid; impact:operability; label quick-win; type unset -> bug: type missing; column shows a wrong value. Size: XS.
+---
+<!-- COMMENTS:END -->

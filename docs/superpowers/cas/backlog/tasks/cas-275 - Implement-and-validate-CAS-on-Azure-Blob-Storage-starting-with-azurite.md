@@ -4,7 +4,7 @@ title: 'Implement and validate CAS on Azure Blob Storage, starting with azurite'
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:backend'
   - 'complexity:epic'
@@ -12,6 +12,12 @@ labels:
   - 'touches:protocol'
   - 'confidence:solid'
   - 'needs:decision'
+  - 'impact:cost'
+  - roadmap
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-6
 dependencies: []
 references:
@@ -58,3 +64,13 @@ Provenance: BACKLOG/formats-and-storage.md [GATE #1: Azure]; verified 2026-09-26
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'GATE #1: Azure')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -i azure under cas-pr1 ContentAddressed/ finds only Backend/CasBackend.h and Primitives/CasTypes.h (enum/mention); no Azure backend implementation. Changes: impact:cost; label roadmap. Size: XL. Owner question: Build the provider-neutral conditional-operations layer first (proposal 2026-08-21) and is Azure the next backend?
+---
+<!-- COMMENTS:END -->

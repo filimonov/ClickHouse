@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:upstream'
   - 'area:backend'
@@ -15,6 +15,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-5
 dependencies: []
 references:
@@ -60,3 +64,13 @@ Provenance: BACKLOG/issue-2310.md#open-items [s3-empty-file-multipart-retry]; ve
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (840b86dd228, by 's3-empty-file-multipart-retry')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/IO/S3/copyS3File.cpp:351 still throws the empty-file LOGICAL_ERROR and the fallbacks call performMultipartUpload unconditionally (:515, :537); upstream master has the same (copyS3File.cpp:368, :515, :537); no upstream PR found. Changes: none. Pointers stale: copyS3File.cpp:328, :526, :751 have moved (:351, :515/:537, :898). Upstream: not-found.
+---
+<!-- COMMENTS:END -->

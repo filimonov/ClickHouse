@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies:
   - CAS-59
@@ -54,3 +57,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `cas-gc-rebuild` is 2026-07-03 (11681d28eba); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 docs/concepts/features/tools-and-utilities/clickhouse-disks.mdx has 0 matches for 'cas-' or 'exit code'. Changes: none. Pointers stale: docs/en/operations/utilities/clickhouse-disks.md does not exist on this branch; the page is docs/concepts/features/tools-and-utilities/clickhouse-disks.mdx.
+---
+<!-- COMMENTS:END -->

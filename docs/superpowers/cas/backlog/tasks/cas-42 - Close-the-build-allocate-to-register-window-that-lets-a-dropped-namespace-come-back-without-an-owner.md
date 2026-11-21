@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-18'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:write-path'
   - 'area:gc'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/gc.md [codex-11]; verified 2026-09-26 against aefe80eba98 (c
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-18 (73d58405952, by 'codex-11')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Pool::beginPartWrite (CasPool.cpp:1953-1961) still allocates the build seq before registerInflightBuild; a SCOPE_EXIT retires the seq only if registration is skipped; no life check in this window. Changes: none. Pointers stale: CasPool.cpp:1729,1736 are now :1953,:1960. Would settle it: whether a drop in the window can still revive an ownerless Live ref table under incarnation-keyed lives (Pool::namespaceLife); needs a repro.
+---
+<!-- COMMENTS:END -->

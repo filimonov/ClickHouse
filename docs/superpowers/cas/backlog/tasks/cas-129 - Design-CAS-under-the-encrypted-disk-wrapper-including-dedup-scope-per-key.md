@@ -4,7 +4,7 @@ title: 'Design CAS under the encrypted disk wrapper, including dedup scope per k
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'area:write-path'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-6
 dependencies:
   - CAS-112
@@ -57,3 +60,13 @@ Provenance: BACKLOG/operability-and-introspection.md#b17-encryption-at-rest ([B1
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (4afa7f68ee1, by 'b17-encryption-at-rest')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: design question stands (no spec found); cas-pr1 DiskEncrypted.h:333 now forwards isContentAddressed, so the second half of the premise (wrapper hides it) is stale. Changes: none. Links: CAS-129.1 covered the forwarding. Pointers stale: DiskEncrypted.h:333 forwards isContentAddressed; task text says wrapper hides it. Would settle it: whether the random-IV rewrite at DiskEncryptedTransaction.cpp:106-111 is unchanged.
+---
+<!-- COMMENTS:END -->

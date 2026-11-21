@@ -4,7 +4,7 @@ title: 'Attribute S05''s 1,200 standalone `repointRef` calls at 10,000 tables'
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 12:44'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:write-path'
   - 'area:soak'
@@ -13,6 +13,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-83
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/performance.md#s05-standalone-repoints. Verified 2026-09-26 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-01 (9deed66b471, by 's05-standalone-repoints')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: CASRefRepoint still incremented at Parts/PartFolderAccess.cpp:741 and still asserted 0 by the S05 card (s03_s05_scale.py:179-186); no attribution recorded in the task. Changes: none. Pointers stale: R/Parts/PartFolderAccess.cpp:545 is now :741; CachedPartFolderAccess.cpp name in the card comment. Would settle it: a full-scale S05 re-run on the 26.8 code, since a same-namespace rename is now a ref-log Move (see CAS-83 notes) and the delete_tmp_ hypothesis may no longer produce repoints.
+---
+<!-- COMMENTS:END -->

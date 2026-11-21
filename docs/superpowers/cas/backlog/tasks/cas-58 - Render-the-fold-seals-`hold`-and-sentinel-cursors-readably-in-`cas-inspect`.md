@@ -4,13 +4,16 @@ title: Render the fold seal's `hold` and sentinel cursors readably in `cas-inspe
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:tooling'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +58,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `classification` is 2026-06-10 (5624e67d61e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -n 'hold' Tools/CasInspect.cpp returns nothing: renderRefCoverage still omits RefCoverage::hold. Changes: none. Pointers stale: renderRefCoverage :309-315 and renderRefTxnIdObj :124-129 not re-checked by line.
+---
+<!-- COMMENTS:END -->

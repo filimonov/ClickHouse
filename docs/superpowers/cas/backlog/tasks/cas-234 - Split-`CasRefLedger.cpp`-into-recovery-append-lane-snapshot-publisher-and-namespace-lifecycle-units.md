@@ -6,13 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
-  - 'complexity:large'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - 'complexity:epic'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -57,3 +61,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `CasRefLedger` is 2026-07-15 (416c982b5d6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasRefLedger.cpp is one file of 6002 lines (task said 5353); no CasRefLedger split units in Pool/. Changes: size large -> epic (XL): 6000-line safety-core file split under equivalence fences must be split into per-unit subtasks before work. Size: XL. Pointers stale: file is now 6002 lines.
+---
+<!-- COMMENTS:END -->

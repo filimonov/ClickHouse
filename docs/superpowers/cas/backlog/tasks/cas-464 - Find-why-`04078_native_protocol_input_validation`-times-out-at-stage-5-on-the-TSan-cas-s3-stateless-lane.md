@@ -6,18 +6,24 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-11 21:18'
+updated_date: '2026-11-21 08:25'
 labels:
   - cas
   - ci
   - 'area:ci'
   - 'origin:ci'
   - 'theme:ci-stabilization'
+  - 'confidence:speculative'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2805'
   - 'https://github.com/Altinity/ClickHouse/actions/runs/42999688750'
-priority: medium
-type: bug
+priority: low
+type: research
 ordinal: 568000
 ---
 
@@ -46,3 +52,13 @@ PR 2805 head `2f89c5db182`, CI run 42999688750, job `Stateless tests (amd_tsan, 
 <!-- SECTION:NOTES:BEGIN -->
 Evidence: tmp/pr2805/run_42999688750/triage.md (NEW item 1); job log tmp/pr2805/run_42999688750/logs/stateless_tests_amd_tsan_cas_s3_storage_parallel_1_2.log. Listed under the umbrella CAS-450.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: tmp/prbundle/wave1/ci/triage.md (PR 2831 run 43248330323): 04078 shows only [ OK ] lines in seven logs; the only failure is the single occurrence in run 42999688750; no server log read, cause not established. Changes: confidence set to speculative; type bug -> research: task asks to find a cause; no defect is shown yet; priority medium -> low: one occurrence in run 42999688750, 94 praktika reruns pass, not seen in two later runs. Would settle it: the server log of run 42999688750 job amd_tsan cas s3 1/2 for the stage-5 packet (AC1); a second occurrence would raise confidence.
+---
+<!-- COMMENTS:END -->

@@ -5,13 +5,16 @@ status: To Do
 assignee:
   - '@k-morozov'
 created_date: '2026-07-13'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:gc'
   - 'complexity:large'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -60,3 +63,13 @@ PR #2286 (open), branch cas/separate_phase_during_round, base antalya-26.6, +278
 
 2026-11-07 audit: https://github.com/Altinity/ClickHouse/pull/2286 was closed unmerged on 2026-09-28; no open PR.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp is now 5663 lines (task says 4861); Gc/ has no phase units (scan/reachability/deletion/cursor/budget) split out. Changes: none. Pointers stale: 4861-line count (now 5663).
+---
+<!-- COMMENTS:END -->

@@ -6,12 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 12:20'
-updated_date: '2026-10-05 15:50'
+updated_date: '2026-11-21 08:21'
 labels:
   - gc
   - performance
+  - 'area:gc'
+  - 'complexity:medium'
+  - 'risk:high'
+  - 'confidence:solid'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: enhancement
 ordinal: 430000
 ---
 
@@ -41,3 +51,13 @@ Measured 2026-10-01 on the CAS-29.9 A/B stand (RustFS, support_batch_delete=fals
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-05: draft PR #2483 adds `Gc::removeWriteOnceOnIoPool` (split write-once keys across the GC I/O pool, one `removeChunkWriteOnceOrOneByOne` per job, leak-only failures) for the namespace janitor. Phases 15 and 17 can reuse it; their per-cohort accounting and `authorityHolds` read are not covered by it.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Gc/CasGc.cpp: Gc::removeWriteOnceOnIoPool exists (line 472, used by the janitor at 432); the per-cohort path near line 4384 still calls removeChunkWriteOnceOrOneByOne chunk by chunk (544-594), not on the I/O pool. Changes: area set to gc; size unset -> medium (M): reuse the janitor helper, plus cohort accounting, authorityHolds and A/B; risk set to high; confidence set to solid; impact:cost; type unset -> enhancement: faster existing delete phases. Size: M. Pointers stale: phase numbers 15 and 17 may have moved; helper is now Gc::removeWriteOnceOnIoPool, PR #2483 is merged. Would settle it: Confirm phases 15 and 17 are still the callers at CasGc.cpp:4384 after the phase renumbering, and the 20 ms no-batch A/B number after the change.
+---
+<!-- COMMENTS:END -->

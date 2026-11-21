@@ -6,12 +6,15 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:gc'
   - 'complexity:medium'
   - 'risk:medium'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies:
   - CAS-34
@@ -55,3 +58,13 @@ Provenance: BACKLOG/gc.md#suppressed-handoff-consumption; verified 2026-09-26 ag
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (113bb4e0966, by 'SUPPRESSED-HANDOFF-CONSUMPTION')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGc.cpp:1423-1424 handoff_candidates = suppress_destructive ? kNoRuns : parent_seal_runs; the comment at :1418-1421 accepts the permanent cost; inertness test still at gtest_cas_gc_frontier_gate.cpp:1842. Changes: none. Links: depends on CAS-34 (already stated). Pointers stale: CasGc.cpp:1057-1059 moved to :1423-1424.
+---
+<!-- COMMENTS:END -->

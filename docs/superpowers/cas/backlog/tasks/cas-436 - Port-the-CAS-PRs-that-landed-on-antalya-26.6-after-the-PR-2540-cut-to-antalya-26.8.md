@@ -6,12 +6,18 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-06 02:13'
-updated_date: '2026-11-12 10:35'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:backend'
   - 'area:ci'
+  - 'complexity:small'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: task
 ordinal: 539000
 ---
 
@@ -19,6 +25,8 @@ ordinal: 539000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 PR 2540 ported antalya-26.6 CAS as of 2026-10-14 (after PR 2437 plus 2509-2511). Missing on antalya-26.8 since then: 2512, 2552, 2513, 2516, 2555, 2517, 2566 (via the antalya-26.6-20261008 branch, PR 2644) and 2567, 2594, 2574, 2573 (2026-11-04). Verified by patch-id and by added-line presence (tmp/lanes/port_score.sh in the master worktree: 0-24% of each PR's added source lines exist on 26.8; the ported control PR 2483 scores 100%). Local branch port/antalya-26.8/cas-from-26.6 (worktree antalya-26.8-pr-2159) carries one cherry-pick per PR with the conflict notes in the commit messages; analysis in tmp/lanes/REPORT.md. Not ported on purpose: the EXPORT PART no-cas-storage tags (26.8 removed them in 5a1ffb222a5, see CAS-434). Open 26.6 PRs 2577 and 2570 follow once merged.
+
+Update 2026-11-21: AC1 is met in code: PR 2805 merged into antalya-26.8 as db0431e95cd (ancestor of the checked branch) with the eleven PRs and PR 2577. Remaining scope: port PR 2570 once it merges into antalya-26.6; the ASan cas-s3 2/2 lane red is tracked separately as CAS-432.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -60,3 +68,13 @@ CI of PR 2805 @a2147e55697 (2026-11-06): builds and unit gate green. Reds: (1) p
 
 2026-11-12: PR https://github.com/Altinity/ClickHouse/pull/2805 merged into antalya-26.8 as db0431e95cd (head 2f89c5db182, approved by mkmkme). The eleven PRs and PR 2577 are on antalya-26.8. Still open: PR 2570 is not merged into antalya-26.6 yet, so its port waits; the ASan cas-s3 2/2 shard is red on the merged head (CAS-432).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: db0431e95cd (PR 2805 merge, ports of the eleven PRs and 2577) is an ancestor of the checked branch; task notes of 2026-11-12 say only the 2570 port is outstanding and ASan cas-s3 2/2 red is tracked as CAS-432. Changes: size unset -> small (S): one remaining PR port, clean apply per 2026-11-06 notes; type unset -> task: a port run, not a code change of its own; description: Update paragraph appended. Size: S. Links: related: CAS-432 (ASan cas-s3 lane), CAS-435 (backport of 2730). Would settle it: whether PR 2570 has merged into antalya-26.6 (not checkable from the worktree); ASan cas-s3 lane status on a current head.
+---
+<!-- COMMENTS:END -->

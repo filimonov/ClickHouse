@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'area:backend'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-0
 dependencies: []
 references:
@@ -62,3 +65,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#bucket-requirements-lifecycle-worm-glaci
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (a41d42ffe45, by 'bucket-requirements-lifecycle-worm-glacier')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 bucket-requirements.md has no mention of Object Lock, replication, glacier or an exclusive prefix. Changes: none.
+---
+<!-- COMMENTS:END -->

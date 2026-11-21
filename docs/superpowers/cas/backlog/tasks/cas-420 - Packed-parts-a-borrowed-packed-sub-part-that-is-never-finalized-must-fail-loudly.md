@@ -6,9 +6,21 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-23 01:50'
+updated_date: '2026-11-21 08:21'
 labels:
   - cas
+  - 'area:write-path'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
+priority: low
+type: enhancement
 ordinal: 523000
 ---
 
@@ -31,3 +43,13 @@ From the packed-parts review (tmp/review3/REPORT.md item 7; deep #1, quality #2/
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Storages/MergeTree/DataPartStorageOnDiskPacked.cpp: beginTransaction (528) and the commit/undo paths (561, 596, 618) return early on has_shared_transaction; no destructor or unfinalized check in the file. Changes: area set to write-path; size unset -> small (S): one assertion or counter plus a gtest; risk set to low; confidence set to plausible; impact:data-loss; type unset -> enhancement: fail loudly on misuse of an existing storage; priority unset -> low: no priority set; every present caller finalizes. Size: S.
+---
+<!-- COMMENTS:END -->

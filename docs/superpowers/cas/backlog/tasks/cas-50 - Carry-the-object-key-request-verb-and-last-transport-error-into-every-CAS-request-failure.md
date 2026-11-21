@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:observability'
   - 'area:backend'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -44,6 +49,8 @@ Shape: record the last attempt's exception text in the loop state, put it into t
 with verb and key, and add a rate-limited log at classification (`logCasWriteRetryLater`, `:85-94`, is the existing limiter).
 
 Provenance: BACKLOG/operability-and-introspection.md#putifabsent-swallowed-attempt-cause (2031-triage CAS-068; `putIfAbsentControlled` deleted by c3f7b20f8ab) and #control-object-generic-s3-error; verified 2026-09-26 against 59494ebf366 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
+
+Update 2026-11-21: Partly done: the read/write give-up messages now name the verb and subject (`CasRequests.cpp:557`, `:390`, `:695`). Still missing at the time of this check: the last attempt's transport error in `GaveUp` and the message, and the per-attempt rate-limited log.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -68,3 +75,13 @@ Provenance: BACKLOG/operability-and-introspection.md#putifabsent-swallowed-attem
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2a29781641d, by 'putifabsent-swallowed-attempt-cause')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 Backend/CasRequests.cpp:557 give-up message now names verb, subject and attempt count, but GaveUp (Backend/CasWriteResult.h) still has no error text field and grep for last_error/last_exception in CasRequests.cpp finds nothing: the last transport error is still lost (AC#1, AC#3 open). Changes: impact:operability; description: Update paragraph appended. Pointers stale: CasRequests.cpp:753-793, :945-1005, :499; CasWriteResult.h:60-70; CasRequests.h:490-491 line numbers. Would settle it: Not checked: AC#2 (single-attempt control-object failure naming key and operation at CasRequests.h:490-491), AC#5 (CasRefCkpt.cpp message for GaveUp), and whether a rate-limited per-attempt log exist….
+---
+<!-- COMMENTS:END -->

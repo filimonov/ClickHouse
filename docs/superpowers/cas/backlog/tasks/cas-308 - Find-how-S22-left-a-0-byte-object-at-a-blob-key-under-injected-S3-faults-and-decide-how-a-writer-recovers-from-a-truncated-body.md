@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:38'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:write-path'
   - 'area:soak'
@@ -16,6 +17,9 @@ labels:
   - 'needs:decision'
   - 'origin:soak'
   - 'touches:protocol'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -55,3 +59,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#S22-20260707T064805-1. Related: C
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPartWriteTxn.cpp:390-405 ensureBlobPresent still throws CORRUPTED_DATA on a body below the envelope length and on a logical-size mismatch, with no repair; no origin finding in RUN_HISTORY.md. Changes: none. Pointers stale: CasPartWriteTxn.cpp:408-414 now :390-405. Owner question: When a writer finds a truncated body at its blob key: refuse and report (today), or re-publish over it (changes the blob publication protocol; decision-1 forbids optimising HEAD-before-PUT away, so this needs an explicit exception)?
+---
+<!-- COMMENTS:END -->

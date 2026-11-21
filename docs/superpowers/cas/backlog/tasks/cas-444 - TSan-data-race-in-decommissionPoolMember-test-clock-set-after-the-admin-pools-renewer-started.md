@@ -6,13 +6,19 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-10 22:23'
-updated_date: '2026-11-12 11:20'
+updated_date: '2026-11-21 08:25'
 labels:
-  - 'area:tests'
   - 'area:ci'
   - 'origin:ci'
   - 'touches:engine'
   - 'theme:ci-stabilization'
+  - 'area:testing'
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - 'risk:low'
+  - 'confidence:solid'
 dependencies: []
 priority: high
 type: bug
@@ -46,3 +52,19 @@ Unit tests (tsan) on PR 2805 @41d4a78eeb9 (run 42864462634, job unit_tests_tsan,
 
 2026-11-12: review of PR 2805 (mkmkme, https://github.com/Altinity/ClickHouse/pull/2805#pullrequestreview-5872933325, 2026-11-12T10:36Z, non-blocking): 2f89c5db182 exists only on antalya-26.8. antalya-26.6 (943249ecbb0) still has the adapter lambda in `openForDecommission` and the stale comments in CasRequests.h, CasPool.cpp, CasPool.h, Tools/CasDecommission.h. Open: pick 2f89c5db182 onto antalya-26.6 as its own PR (4 files, +23 -19, comments plus one setter reuse, no behaviour change). Do not close this task before that PR merges or is rejected with a reason.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: Tools/CasDecommission.cpp in the 26.8 worktree has no setCasRequestNowFnForTest call (PR 2805, db0431e95cd); 26.6 fix merged as 943249ecbb0. Changes: label area:tests -> area:testing. Would settle it: the antalya-26.6 follow-up PR (pick of 2f89c5db182: stale comments and one setter reuse) merged or rejected with a reason, and a green antalya-26.8 unit_tests_tsan run; the task says not to close bef….
+---
+
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21 (addendum): added risk:low, confidence:solid.
+---
+<!-- COMMENTS:END -->

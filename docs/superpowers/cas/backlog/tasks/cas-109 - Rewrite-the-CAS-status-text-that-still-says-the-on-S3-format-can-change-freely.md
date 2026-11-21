@@ -4,13 +4,16 @@ title: Rewrite the CAS status text that still says the on-S3 format can change f
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-0
 dependencies: []
 references:
@@ -53,3 +56,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `26.6.4.20001.altinityantalya` is 2026-09-16 (cbf3fe14e36); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 index.md:78-79 and roadmap.md:12,92 still say format can change cheaply / zero compatibility. Changes: none. Size: XS. Pointers stale: roadmap.md second pointer is now :92 (was :88); index.md :78-79.
+---
+<!-- COMMENTS:END -->

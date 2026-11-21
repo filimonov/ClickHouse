@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:upstream'
   - 'area:tooling'
@@ -15,6 +15,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:review'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-5
 dependencies:
   - CAS-232
@@ -64,3 +68,13 @@ Belongs to the Group G upstream carve-out parent CAS-232 (dependency link set; t
 
 First recorded: 2026-08-04 (0a17684b9d2, by 'disks-exit-code-upstream')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: upstream programs/disks/DisksApp.cpp has no `--query` exit-code propagation (no last_command_exit_code); the local branch has it from the cherry-pick of Altinity PR 2159 (c770be91e83). The multiple-of-256 truncation guard is already upstream (PR 82348), so the 'stable mapping' part of the carve shrinks. Changes: none. Pointers stale: DisksApp.cpp:622-623 cited; query exit path is now at :652-653. Would settle it: whether the stable-mapping scope (CAS-59 remainder) is still wanted in the carved PR. Upstream: not-found.
+---
+<!-- COMMENTS:END -->

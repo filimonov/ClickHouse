@@ -4,7 +4,7 @@ title: Stop a late or ambiguous `beginRemoving` wedging a live table in `Removin
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -12,6 +12,10 @@ labels:
   - 'risk:medium'
   - 'needs:decision'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -29,6 +33,8 @@ ordinal: 461000
 `beginRemoving` (`Pool/CasRefCatalog.cpp`) decides `Live → Removing` by comparing the row by value; a takeover does not change the row, so a zombie's late `DROP` lands on the successor's live table (Z7). `dropNamespaceImpl` also reopens the write lane after an ambiguous `beginRemoving` when one read still shows `Live`, so the same late landing happens without a zombie (A13, verified branch). Result: writes stop at the next append and the table refuses to open after restart; there is no `Removing → Live`. No silent loss: GC clears the row only after the terminal record is folded.
 
 Now: keep the lane closed after an ambiguous `beginRemoving` (~10 lines); detector for rows in `Removing` with no terminal record for N rounds. Next format: catalog revision plus `removal_by` on `Removing` rows (old readers reject loudly). Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/catalog.md (A-Z7, A13). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+
+Update 2026-11-21: Remaining scope: AC2 (stuck-`Removing` detector) and AC3 (decision on the catalog revision / `removal_by` format change). AC1 (lane stays closed after an ambiguous `beginRemoving`) landed in `7d814447cb1` and `c821aece830`, both in the branch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -59,3 +65,13 @@ CAS-487 does not deliver this task: Part B was split off. When Part B lands, not
 
 2026-11-17: PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) keeps `removal_write_may_land` and adds `removing_observed` (c821aece830). A `beginRemoving` that lands after a remount leaves the row `Removing` under an open lane until a restart, a remount, a retried `DROP` or the GC leader's next round (accepted residual, d0e2d1a80bd). fc82bf0d80b latches a `Removing` row at the recovery confirmation.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: 7d814447cb1 and c821aece830 are ancestors of the checked branch (lane closing delivered, AC1); open per the 2026-11-17 note: the stuck-Removing detector (AC2) and the written format decision (AC3). Changes: description: Update paragraph appended. Size: S. Owner question: Is the catalog revision plus removal_by format change wanted, or is the accepted residual enough?
+---
+<!-- COMMENTS:END -->

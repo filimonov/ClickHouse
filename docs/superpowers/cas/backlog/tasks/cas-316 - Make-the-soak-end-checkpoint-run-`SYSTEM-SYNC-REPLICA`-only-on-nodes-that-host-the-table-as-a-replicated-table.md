@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:47'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -13,6 +14,12 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -50,3 +57,13 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md S43 records at :3234, :3248, :326
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/scenarios/framework/lifecycle.py:128-146 still runs SYSTEM SYNC REPLICA per table on every node; no system.replicas lookup there. RUN_HISTORY.md:677 shows the S40 quiescence failure still occurring on 2026-11-19.. Changes: impact:operability; label quick-win. Links: Overlaps CAS-312 (S40 card-only fix).. Pointers stale: lifecycle.py :120-133 is now :128-146..
+---
+<!-- COMMENTS:END -->

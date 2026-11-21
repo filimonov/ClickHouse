@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -53,3 +56,13 @@ Provenance: BACKLOG/formats-and-storage.md#nonatomic-reserved-name-fold-no-refus
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (c459c34d897, by 'nonatomic-reserved-name-fold-no-refusal')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: known-ambiguity test still pinned (src/Disks/tests/gtest_ca_wiring.cpp:253) and findPartDirComponent still scans for the reserved component (Parts/PartPathParser.cpp:186); no refusal of a detached/moving-named table found in ContentAddressed/. Changes: none. Pointers stale: PartPathParser.cpp:205-221 now ~:186+; gtest_ca_wiring.cpp:247 now :253.
+---
+<!-- COMMENTS:END -->

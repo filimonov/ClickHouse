@@ -6,12 +6,17 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-13 16:28'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:lease'
   - 'origin:owner'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: design
 ordinal: 588000
 ---
 
@@ -34,3 +39,13 @@ Owner idea (2026-11-13). Today a starting server waits the full observation thre
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-17: The default mount lease is 40 s since PR 2831 (https://github.com/Altinity/ClickHouse/pull/2831, merged as 0aa837e942e) commit feb86da1f4a (30 s -> 120 s -> 40 s). Earlier notes that name 120 s no longer describe the default. At 40 s a restart after a kill waits about 47 s and the write window in a store outage is 14 s.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Pool/*.cpp and Backend/CasProbe.cpp: no use of Last-Modified or the response Date in the mount observation (grep empty), so the wait is still counted from the first sighting of the token. Changes: type unset -> design: the task says it needs its own short spec and the mount observation model first. Links: related CAS-482 (restart seconds after a kill, not covered here). Pointers stale: description assumes a 120 s lease (default now 40 s, feb86da1f4a).
+---
+<!-- COMMENTS:END -->

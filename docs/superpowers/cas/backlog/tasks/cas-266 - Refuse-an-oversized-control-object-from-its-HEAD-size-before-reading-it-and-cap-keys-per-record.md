@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:formats'
   - 'area:backend'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -60,3 +63,13 @@ Provenance: BACKLOG/formats-and-storage.md#control-object-read-precap-materializ
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (c2af49103dc, by 'control-object-read-precap-materialization')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasObjectStorageBackend.cpp:376 readStringUntilEOF before any cap; Formats/CasTextFormat.cpp:223 std::find over seen_keys. Changes: none. Links: overlaps CAS-27 (duplicate-key bitset). Pointers stale: backend :359 is now :376; CasTextFormat.cpp :224-226 is now :223.
+---
+<!-- COMMENTS:END -->

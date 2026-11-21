@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -54,3 +59,13 @@ Provenance: BACKLOG/testing-and-ci.md#poolconfig-hooks-capture-by-reference; cou
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (6cbfb916bcf, by 'poolconfig-hooks-capture-by-reference')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Disks/tests: grep -c '_fn = \[&' gives 20 in gtest_cas_pool.cpp and 15 in gtest_cas_mount.cpp (35 total, task says 36: 18+18); the pattern still exists at both files.. Changes: impact:availability. Pointers stale: counts 20+15 instead of 18+18; some sites may have moved or been fixed..
+---
+<!-- COMMENTS:END -->

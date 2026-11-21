@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:testing'
   - 'area:upstream'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:plausible'
   - 'origin:review'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -57,3 +62,13 @@ First recorded: 2026-08-04 (f08734d17df, by 'imetadatastorage-override-coverage-
 
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): `transactionIsStagingOverlay` is removed from `IMetadataStorage`; the series adds `appliesOperationsEagerly` (CAS answers true; MergeTree relies on it to commit after `finalize`). Update the virtual list in this task when it starts.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 IMetadataStorage.h: transactionIsStagingOverlay is gone; appliesOperationsEagerly (:340) replaced it, as the task's 2026-10-22 note says. The table-driven capability test is not shown to exist.. Changes: impact:wrong-result. Pointers stale: Virtual list is out of date: transactionIsStagingOverlay removed, appliesOperationsEagerly added; line numbers :125/:331/:335/:377 moved.. Would settle it: Did not grep gtests for a per-override capability table..
+---
+<!-- COMMENTS:END -->

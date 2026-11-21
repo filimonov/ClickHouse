@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - CA/Gc/CasOrphanManifestSweep.cpp
@@ -55,3 +58,13 @@ Provenance: BACKLOG/gc.md [orphan-sweep-byte-budget]. Verified 2026-09-26 agains
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'orphan-sweep-byte-budget')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasOrphanManifestSweep.cpp:705,772,787: nomination_budget is a count (candidates.size() >= nomination_budget); no byte cap in the grep. Changes: none. Pointers stale: CasOrphanManifestSweep.cpp:671,738 moved to :705/:772.
+---
+<!-- COMMENTS:END -->

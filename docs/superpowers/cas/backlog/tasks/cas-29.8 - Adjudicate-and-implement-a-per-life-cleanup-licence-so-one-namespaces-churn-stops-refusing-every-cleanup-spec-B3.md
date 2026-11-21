@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -16,6 +16,9 @@ labels:
   - 'needs:decision'
   - 'origin:review'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-29.7
@@ -84,3 +87,13 @@ Scratch TLC experiment (not committed, tmp/cas298/erase_epoch): `Erase` gated on
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `20e4b2fd7f3`: the licence depends on the namespace's own row and life and on the GC lease; a moved row or life skips that namespace only. Open: read `CASRefCleanup*` stop counters from a `cas s3` lane run.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: 20e4b2fd7f3 (per-namespace licence) is an ancestor of the branch; CasGc.cpp:4261 now computes catalog_etag_differs as a comparison, not a whole-pass refusal; AC #1 ticked. Changes: none. Would settle it: AC #4 (zero unchanged-row refusals on the ca-s3 lane) has no recorded run; task note says CASRefCleanup* counters still to be read from a cas s3 lane run; AC #2/#3 tests not individually verified.
+---
+<!-- COMMENTS:END -->

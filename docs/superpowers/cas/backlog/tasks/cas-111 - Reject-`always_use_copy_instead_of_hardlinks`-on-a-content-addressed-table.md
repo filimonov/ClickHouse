@@ -4,7 +4,7 @@ title: Reject `always_use_copy_instead_of_hardlinks` on a content-addressed tabl
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,6 +12,9 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/operability-and-introspection.md#always-copy-instead-of-hard
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b03f1c765f8, by 'always-copy-instead-of-hardlinks-no-gate')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep in cas-pr1/src: always_use_copy_instead_of_hardlinks is read only in StorageReplicatedMergeTree/MutateTask/StorageMergeTree paths, no CREATE/ALTER gate in MergeTreeData; generateObjectKeyForPath still notYet at ContentAddressedTransaction.cpp:732-735. Changes: none. Pointers stale: CA/ContentAddressedTransaction.cpp:578-581 is now :732-735.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:backend'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -54,3 +59,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `LocalObjectStorage` is 2026-06-11 (99466809c92); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 CasObjectStorageBackend.cpp:495-503 emuWrite still writes the final key via writeObject(Rewrite), no temp file and rename; only blobs use emuPublishBlobAtomically (:505). Changes: impact:wrong-result. Links: retired by CAS-276 if Mode::Posix lands. Pointers stale: emuWrite now at :495 (task :478), call site :881 (task :867), emuPublishBlobAtomically :505 (task :488).
+---
+<!-- COMMENTS:END -->

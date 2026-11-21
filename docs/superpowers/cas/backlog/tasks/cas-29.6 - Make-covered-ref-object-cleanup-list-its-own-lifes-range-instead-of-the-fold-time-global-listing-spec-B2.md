@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-1
 dependencies:
   - CAS-29.1
@@ -70,3 +73,13 @@ Identifier trace: the earliest docs mention of `Removing` is 2026-06-07 (996d156
 
 2026-10-13: CAS-358's seed (spec §4.3) relies on planRefCleanup's rule, a log is deletable only when below both the _snap base and the fold cursor, to reconstruct the owner set at the cursor from _snap plus logs. Keep the rule unchanged when the listing changes; add a test that a log above the fold cursor is never planned.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: planRefCleanup(const RefTableListing & listing, ...) at Pool/CasRefProtocol.cpp:863 still plans from the listing; cleanupRefObjects still called from the fold (CasGc.cpp:1563). Changes: none. Links: depends on CAS-29.1 (already stated); overlaps CAS-29.1 note on 2026-10-12 (listing consumers). Pointers stale: CasGc.cpp:3548 and CasRefProtocol.cpp:824 moved (now :863 for planRefCleanup). Would settle it: not traced whether a per-life range LIST was added inside cleanupRefObjects.
+---
+<!-- COMMENTS:END -->

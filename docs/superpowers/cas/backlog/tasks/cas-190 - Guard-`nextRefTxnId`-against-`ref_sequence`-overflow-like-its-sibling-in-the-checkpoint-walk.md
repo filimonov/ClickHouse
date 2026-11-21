@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:ref-ledger'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - R/Pool/CasRefProtocol.cpp
@@ -49,3 +52,13 @@ Provenance: BACKLOG/ref-protocol.md#ref-protocol-ledger [reftxnid-wraparound-gua
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (967849c785b, by 'reftxnid-wraparound-guard-missing')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: obsolete (high). Evidence: nextRefTxnId no longer exists (grep empty); its successors in Pool/CasRefProtocol.cpp:89-92 and :151-154 throw CORRUPTED_DATA at ref_sequence == UINT64_MAX before + 1. Changes: none.
+---
+<!-- COMMENTS:END -->

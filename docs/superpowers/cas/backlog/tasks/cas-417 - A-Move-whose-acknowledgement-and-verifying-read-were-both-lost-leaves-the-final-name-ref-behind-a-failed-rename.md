@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 23:27'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:write-path'
   - 'area:ref-ledger'
@@ -13,6 +14,11 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies:
   - CAS-346
@@ -42,3 +48,13 @@ A completion check inside `moveRefExact` (mirroring `republishRef`'s NETWORK_ERR
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Parts/PartFolderAccess.cpp:626 moveRefExact exists with no post-failure compensation visible; no transaction-level LandedThenLost Move test found in src/Disks/tests; task text records no later note. Changes: label needs:decision. Would settle it: a fault test (Mode::LandedThenLost on a Move at transaction level) showing the final-name ref survives the MergeTree rollback; none exists. Owner question: Which compensation: (a) the rename transaction's destructor runs dropRefIfMatches(dst, expected) once the lane recovers, (b) a ledger settlement call after an ambiguous append, or (c) MergeTree-side reconciliation against the part log?
+---
+<!-- COMMENTS:END -->

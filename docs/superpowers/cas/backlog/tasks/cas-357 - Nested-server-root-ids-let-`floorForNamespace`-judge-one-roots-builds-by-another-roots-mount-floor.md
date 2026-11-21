@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -15,6 +15,9 @@ labels:
   - 'needs:decision'
   - 'origin:review'
   - 'risk:high'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies:
   - CAS-157
@@ -74,3 +77,13 @@ The ban on nested ids was already proposed, not decided, in CAS-157 (2031-triage
 
 2026-10-14: partly addressed: new ids cannot nest (PR A https://github.com/Altinity/ClickHouse/pull/2566). Existing nested pools and the fsck part remain open.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: obsolete (high). Evidence: cas-pr1 Pool/CasServerRoot.h:84-101 validateServerRootId refuses any '/' in server_root_id (commit 43502bcc3e8 'refuse new nested server_root_id'), documented at docs/en/antalya/cas/configuration.md:92; option (a) of the task shipped, so one root can no longer be a prefix of another. Changes: none. Links: CAS-157 (same ban, decommission side) likely done by the same commit; AC#2 and AC#4 gtests for the unlisted-longer-prefix lookup were not looked for.
+---
+<!-- COMMENTS:END -->

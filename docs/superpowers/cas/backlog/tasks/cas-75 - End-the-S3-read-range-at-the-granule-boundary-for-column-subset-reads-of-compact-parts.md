@@ -8,7 +8,7 @@ assignee:
   - '@ilejn'
   - '@filimonov'
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:read-path'
   - 'area:upstream'
@@ -19,12 +19,19 @@ labels:
   - 'needs:measurement'
   - 'origin:issue'
   - 'theme:parity'
+  - 'impact:availability'
+  - 'upstream:not-found'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/issues/2332'
   - src/Storages/MergeTree/MergeTreeReaderStream.cpp
   - src/IO/ReadBufferFromS3.cpp
+  - 'https://github.com/ClickHouse/ClickHouse/issues/122103'
 documentation:
   - docs/superpowers/cas/2026-09-15-s3-drain-remainder-research.md
 priority: medium
@@ -65,3 +72,13 @@ First recorded: 2026-09-26 (597753102a9, by 's3-drain-remainder-read-range-fix')
 
 Issue #2332 is assigned to ilejn and filimonov. Upstream issue https://github.com/ClickHouse/ClickHouse/issues/122103. Candidate patch by filimonov: https://github.com/filimonov/ClickHouse/commit/3e0dd5e279dd29ccfbb242e71787e3cd25bef17d. Regression-suite workaround: `net.ipv4.tcp_tw_reuse=1` on the ClickHouse containers.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 src/Storages/MergeTree/MergeTreeReaderStream.cpp:246-270 adjustRightMark unchanged in shape (setReadUntilEnd / setReadUntilPosition(right_offset)); upstream issue 122103 is open and no upstream PR matches (two searches empty). Changes: impact:availability; upstream reference added. Links: upstream issue 122103 open; Altinity issue 2332. Pointers stale: MergeTreeReaderStream.cpp:246 and :270 are within a few lines of the current adjustRightMark; not exact. Upstream: not-found (https://github.com/ClickHouse/ClickHouse/issues/122103).
+---
+<!-- COMMENTS:END -->

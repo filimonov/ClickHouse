@@ -4,13 +4,17 @@ title: 'Extract the remount thread and the namespace listing from `Cas::Pool`'
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-10-09 05:44'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
-  - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'complexity:small'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -34,6 +38,8 @@ ordinal: 300000
 the mount protocol.
 
 Provenance: BACKLOG/docs-and-cleanup.md#refactoring [refactor: Store de-god-classing] (formerly [source-layout-casstore-followups]); verified 2026-09-26 against 6eb16e1cc56 and 8d62c314ec1.
+
+Update 2026-11-21: Remaining scope: the remount thread now lives in Pool/CasMountRuntime (remountLoop, CasMountRuntime.cpp:724); only listNamespaces / listMirroredChildren (CasPool.h:675) and reportImpossibleInterference still sit in CasPool. The 2026-10-09 note that the remount thread was deleted does not match this branch.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -57,3 +63,13 @@ First recorded: 2026-07-13 (45a6c8ee2b6, by 'refactor: Store de-god-classing')
 
 PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c64cf779b15) deleted the remount thread instead of moving it: `tryRemountOnce` and `remountLoop` are gone. Only the namespace listing half remains.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: rewrite (high). Evidence: remountLoop is in Pool/CasMountRuntime.h:491 / CasMountRuntime.cpp:724 (a separate unit, not CasPool.cpp), so the remount half is already extracted; listNamespaces is still declared in CasPool.h:675; CasPool.cpp+h are 3914 lines. Changes: size medium -> small (S): only the namespace listing (and reportImpossibleInterference) remains to move; description: Update paragraph appended. Size: S. Pointers stale: CasPool.h:618,624,933 moved (listNamespaces now :675); 3461 lines is now 3914 across .cpp+.h.
+---
+<!-- COMMENTS:END -->

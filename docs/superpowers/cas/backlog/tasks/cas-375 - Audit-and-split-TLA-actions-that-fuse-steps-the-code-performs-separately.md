@@ -4,13 +4,16 @@ title: Audit and split TLA+ actions that fuse steps the code performs separately
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 20:30'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:testing'
   - 'complexity:large'
   - 'confidence:solid'
   - 'risk:medium'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -50,3 +53,13 @@ Wave 2 done: docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/SUMMAR
 
 2026-10-12 progress: split and re-checked during the CAS-360/361/36 work — CaGcCondemnMarkerGate (WAdopt → WHead/WMetaRead/WBackfill; deferred and bounded marker delete; token recurrence; OldWriter; DeposedCut) 06e331ada7c, b483e4ea41c; CaBlobPublishCore (SdkResend, ObserveMeta split) 0acdf9c7939; CaGcRootLocalPartManifestCore (sweep split into 6 steps, admitted/unresolved requests, GFence, WRemount, blob edges, PR #2528 recheck shape) a385db56107, eae836fd008, d864fe01b7c. New models carry an 'Atomicity' table (action → code → one request) starting with CaEpochAllocCore (CAS-362/363). Not yet touched: CaMountObserveCore, CaMountRenewRetryCore, CaRefLaneCore, CaRefTableSnapshotLogCore, CaRefCatalogCore, CaRefDeltaIntakeCore, CaRelinkConfirmCore, CaDiskLifecycle and the wave-2 GC models; mount-plane models describe the unmerged lease series and must be checked against the release line separately.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task notes record wave 1 and part of wave 2 split (CaGcCondemnMarkerGate, CaBlobPublishCore, CaGcRootLocalPartManifestCore, CaEpochAllocCore); SUMMARY-w2 items (CaGcDestructiveGateCore, CaDiskLifecycle, CaRelinkLaneComposition, CaGcRoundDeferCore) are listed as to-add; no 'atomicity' rule found in docs/superpowers/models README (AC #2). Changes: none. Would settle it: per-model status of the wave-2 UNSOUND items (which are already split or argued).
+---
+<!-- COMMENTS:END -->

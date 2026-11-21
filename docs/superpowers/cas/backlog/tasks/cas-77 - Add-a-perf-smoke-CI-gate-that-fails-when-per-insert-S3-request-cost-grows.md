@@ -4,16 +4,19 @@ title: Add a perf-smoke CI gate that fails when per-insert S3 request cost grows
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:ci'
   - 'area:testing'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:plausible'
-  - CAS-17
-  - ci/defs/job_configs.py
   - 'theme:parity'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-17
 references:
@@ -51,3 +54,13 @@ Provenance: BACKLOG/performance.md#perf-smoke-cost-regression-gate (source doc r
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (93022c446eb, by 'perf-smoke-cost-regression-gate')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1: grep for a request-count perf gate in ci/, tests/integration/test_cas_* and utils/ca-soak finds only unrelated retry-budget fixtures; no per-insert request-cost job. Changes: removed non-label 'CAS-17'; label 'ci/defs/job_configs.py' moved to references; impact:cost. Would settle it: a check of ci/defs/job_configs.py for a job that records S3 requests per operation (not read).
+---
+<!-- COMMENTS:END -->

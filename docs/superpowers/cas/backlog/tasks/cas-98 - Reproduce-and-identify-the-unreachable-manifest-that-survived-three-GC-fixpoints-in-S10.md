@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-31'
-updated_date: '2026-09-26 12:44'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gc'
   - 'area:soak'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies:
   - CAS-7
 references:
@@ -56,3 +59,13 @@ Provenance: BACKLOG/performance.md#s10-manifest-residual. Verified 2026-09-26 ag
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-31 (c75b227db67, by 's10-manifest-residual')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: utils/ca-soak/scenarios/RUN_HISTORY.md: the only S10 --scale full run is 2026-08-31 (fail, line 595); later S10 runs (2026-11-18/19, lines 622/654/713) are dev/ci scale and pass; AC #1 (three full runs) not met. Changes: none. Would settle it: three full-scale S10 runs on current HEAD with the fsck residual recorded.
+---
+<!-- COMMENTS:END -->

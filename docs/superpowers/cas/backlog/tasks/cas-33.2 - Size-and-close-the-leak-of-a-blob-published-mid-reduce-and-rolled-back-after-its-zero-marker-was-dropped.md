@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'touches:on-s3-format'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +60,13 @@ Provenance: BACKLOG/gc.md#gc-reduce-zero-marker-dropped-on-carry; verified 2026-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (cd518660419, by 'gc-reduce-zero-marker-dropped-on-carry')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Gc/CasBlobInDegree.cpp:62 and :76 still state zero markers are per-generation and dropped on carry. Changes: none. Pointers stale: CasBlobInDegree.cpp:106 moved to :62/:76. Would settle it: no measurement of the shape's frequency and no check whether blob intents (rows.zero path in previewDeletes) now cover the rolled-back publication.
+---
+<!-- COMMENTS:END -->

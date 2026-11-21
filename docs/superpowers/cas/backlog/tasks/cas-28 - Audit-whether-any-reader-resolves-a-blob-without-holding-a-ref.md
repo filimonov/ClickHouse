@@ -4,7 +4,7 @@ title: Audit whether any reader resolves a blob without holding a ref
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:26'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -12,6 +12,11 @@ labels:
   - 'confidence:speculative'
   - 'needs:repro'
   - 'origin:review'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - >-
@@ -51,3 +56,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `DataPart` is 2026-06-02 (c0a7046a3a7); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:26
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: grep of docs/superpowers specs, reports and cas for 'ref-less reader' / 'ephemeral reader pin' finds only this task; the cited snapshot-pin spec exists (specs/2026-07-14-cas-readonly-replica-snapshot-pin-design.md) but no written enumeration of read entry points was found. Changes: impact:data-loss. Would settle it: The spec itself was not read, so an enumeration inside it under other wording is not excluded..
+---
+<!-- COMMENTS:END -->

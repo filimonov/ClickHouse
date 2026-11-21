@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:27'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:contested'
   - 'needs:decision'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -66,3 +69,13 @@ First recorded: 2026-08-04 (f08734d17df, by 'gc-rebuild-lease-interlock')
 
 2031-triage CAS-004: residual = offline `clickhouse-disks cas-gc-rebuild` has no mount-lease interlock against a live writer; the server-side `SYSTEM CAS GC REBUILD` holds the live GC lease and condemns nothing (ledger `docs/superpowers/cas/2031-triage.md#cas-004`).
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: programs/disks/CommandCaGcRebuild.cpp:23-57 still only requires a read-only-opened disk and relies on rebuildBaseline's own lease check; no foreign mount-lease check; no written argument or race test found (task has needs:decision, confidence:contested). Changes: none. Links: CAS-44 depends on this answer (cold vs hot LIST during rebuild). Would settle it: the reviewed safety argument (AC #1) or a rebuild-vs-publish race test; not searched for under another name. Owner question: Is GC REBUILD safe against concurrent publishes (argument + race test) or does it need a foreign-mount-lease interlock?
+---
+<!-- COMMENTS:END -->

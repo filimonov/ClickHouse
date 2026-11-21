@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-11-06 23:12'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'area:formats'
@@ -14,6 +14,10 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-4
 dependencies: []
 references:
@@ -39,6 +43,8 @@ Neither is a live defect; both fail loud or are inert.
   diagnostic.
 
 Provenance: BACKLOG/mounts-and-lifecycle.md#server-epoch-zero-and-dead-fence-identity; verified 2026-09-26 against b1c34d03479 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
+
+Update 2026-11-21: Remaining scope: AC2 only (remove MountFence::server_uuid and writer_epoch, CasMountRuntime.h:138-139); AC1 present at Formats/CasServerRootFormats.cpp:148.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -66,3 +72,13 @@ AC #2: PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c6f42bdaa32) deleted 
 
 2026-11-07 audit: AC #1 merged in https://github.com/Altinity/ClickHouse/pull/2512 (2a034cdb374). AC #2 unchecked: MountFence still has server_uuid and writer_epoch on antalya-26.6 (ae6e7493aba) and antalya-26.8 (92d84fc434c); the removal is on an unpushed branch.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: AC2 open: CasMountRuntime.h:136-139 MountFence still has server_uuid and writer_epoch; AC1 is in code: CasServerRootFormats.cpp:148 rejects next_writer_epoch == 0 (test not checked). Changes: description: Update paragraph appended. Pointers stale: CasMountRuntime.h:127-135 is now :136-144; decodeServerEpoch now has the zero check at :148. Would settle it: unit test for AC1 not checked.
+---
+<!-- COMMENTS:END -->

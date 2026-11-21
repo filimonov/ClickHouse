@@ -7,12 +7,21 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-06 22:01'
-updated_date: '2026-11-11 21:22'
+updated_date: '2026-11-21 08:22'
 labels:
   - cas
   - ci
   - regression
   - 'theme:ci-stabilization'
+  - 'area:read-path'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - 'impact:availability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
 type: bug
@@ -52,3 +61,13 @@ PR 2577 @74562b9f124, job `RegressionTestsRelease / CASS3CacheAlter (attach, 3)`
 
 2026-11-11: PR 2805 head `2f89c5db182`, CI run 42999688750 (triage: tmp/pr2805/run_42999688750/triage.md). Aarch64 `cas_s3_cache_alter_attach_3`: 19 leaf scenarios failed (2 in run 42921139681), all under `/alter/attach partition/part 3/`, same error: `Code: 210 ... CAS write could not be committed (read of 'data/cas/ref_catalog': gave up at the policy deadline after 14 attempt(s))`. Job wall time 2 h 17 min.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: Task text only: the notes record a root cause (RustFS 1.0.3 read-concurrency cap returns 503 for ~76 s; CAS read policy gives up after 13 attempts) and a failure on 2026-11-11 on PR 2805 head 2f89c5db182 with 19 scenarios. Changes: area set to read-path; size unset -> medium (M): bounded range reads or compose change, plus a fix for the frozen retry bound in completedRemovingDelete; risk set to medium; confidence set to solid; impact:availability. Size: M. Links: Related to CAS-341 (read retry gives up with a misleading 210). Would settle it: Whether a fix landed after 2026-11-11: RUSTFS_OBJECT_MAX_CONCURRENT_DISK_READS raised in the regression compose, or CAS reads bounded to the needed byte range.
+---
+<!-- COMMENTS:END -->

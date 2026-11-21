@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -14,6 +14,9 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-0
 dependencies: []
 references:
@@ -66,3 +69,13 @@ PR #2415 (draft) changes exactly this path: `DiskObjectStorage::copyFileImpl` re
 
 2031-triage CAS-020: the MOVE/TTL-move half of the audit's same-endpoint server-side copy finding (`getStorageObjects` returns the envelope key without the payload offset; inline files return an empty key). BACKUP half is CAS-300; the audit ranks it #2 in 'Where to start'.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: DiskObjectStorage.cpp:863 copy path now reads inline data via readInlineDataToString (the PR 2415 fix is present on the checked branch); tests/integration/test_cas_backup_s3_native_copy/test.py:402,575,587,623,704 run MOVE PARTITION ... TO DISK across disks. Changes: none. Pointers stale: DiskType.cpp:35-38 equality still ignores metadata_type (unchanged), fix went into the copy path instead. Would settle it: whether those MOVE tests go CAS -> plain s3 on the same endpoint and back with checksums (AC1), and whether any test covers a TTL move out of CAS (AC2).
+---
+<!-- COMMENTS:END -->

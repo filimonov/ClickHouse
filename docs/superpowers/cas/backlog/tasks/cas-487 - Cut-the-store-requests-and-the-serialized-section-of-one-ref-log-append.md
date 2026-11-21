@@ -4,13 +4,23 @@ title: Cut the store requests and the serialized section of one ref-log append
 status: To Do
 assignee: []
 created_date: '2026-11-14 10:18'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:23'
 labels:
   - cas
   - performance
   - ref-ledger
+  - 'area:ref-ledger'
+  - 'complexity:medium'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
+type: task
 ordinal: 592000
 ---
 
@@ -37,6 +47,8 @@ Where the time is serialized:
 Existing pieces this task ties together: CAS-176.1 (catalog GET), CAS-176.2 (optimistic `_ckpt` from a remembered body and token), CAS-287 (combine window on the lane), CAS-78 (state copy per queued item), CAS-473 (cold admission guard), CAS-167 and CAS-71.5 (`_ckpt` coalescing and the hot-key lane).
 
 Constraints: no on-store format change; no change to the upstream writer order; the `_ckpt` frontier still admits a transaction before any waiter wakes (variant Y of the report acknowledges above the frontier and is rejected).
+
+Update 2026-11-21: Part A is merged (0aa837e942e): an ordinary append is one create of `_log/{epoch,seq}`, `_ckpt` is written only at creation, snapshot publication and the generation 3 stamp. Remaining scope: AC #1 per-append timeline on S3 (queue wait, request time, DataPartsLock time), AC #3 decision on the promote manifest re-read, AC #4 A/B against 26.6. AC #2 is superseded by the delivered append (catalog GET: CAS-488). The 4-request description above is stale.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -156,3 +168,13 @@ Not in this change (Part B): the catalog `GET` of a positive append stays, so a 
 
 2026-11-17: Children after PR 2831: CAS-488 partly (one test criterion open), CAS-489 and CAS-494 done, CAS-495 partly; CAS-490 (rolling upgrade: an owner decision), CAS-491, CAS-492, CAS-493 open.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: Task notes: Part A merged 2026-11-17 as 0aa837e942e (PR 2831): an append is one create of _log/{epoch,seq}; INSERT 25 -> 14 requests. The description still describes the 4-request append. Changes: area set to ref-ledger; size unset -> medium (M): measurement on S3 and an A/B plus one decision; risk set to low; confidence set to solid; impact:cost; type unset -> task: remaining work is a measurement and a decision; description: Update paragraph appended. Size: M. Links: Children: CAS-488 (partly), CAS-489 and CAS-494 (done per notes), CAS-495, CAS-490, CAS-491, CAS-492, CAS-493. Would settle it: Which of AC #1-#4 remain: notes name the per-append timeline (queue wait, DataPartsLock time) and the A/B against 26.6 as open; the promote manifest re-read decision (AC #3) is not mentioned.
+---
+<!-- COMMENTS:END -->

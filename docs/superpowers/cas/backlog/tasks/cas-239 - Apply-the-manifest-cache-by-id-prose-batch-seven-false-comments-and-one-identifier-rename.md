@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:read-path'
   - 'area:docs'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -67,3 +70,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#manifest-cache-by-id-prose-batch points 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (77905eeca69, by 'manifest-cache-by-id-prose-batch')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedTransaction.h:196 still declares force_fresh_validated_refs (rename not done); 'promote re-proves' comment still in ContentAddressedTransaction.cpp:1415. Changes: none. Pointers stale: ContentAddressedTransaction.h:166 now :196; .cpp:1238 comment moved (promote re-proves now at :1415); the source section BACKLOG/docs-and-cleanup.md is deleted per task text, replacement strings are ….
+---
+<!-- COMMENTS:END -->

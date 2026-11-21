@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -14,6 +14,10 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-1
 dependencies: []
 references:
@@ -43,6 +47,8 @@ moved) plus planned-but-undeleted objects per round; one 60-90 min local ca-s3 s
 Relaxing the etag comparison is not allowed at this step.
 
 Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag plan steps 0-1. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (etag comparison identical).
+
+Update 2026-11-21: Counters (AC #1) are delivered by 28e4e4956a6 in the branch. Remaining scope: the written share of refusals with row and life unchanged (AC #2) and the step-2 justification statement (AC #3); the 2026-11-11 note already states etag-only refusals dominate and CAS-29.8 is justified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -73,3 +79,13 @@ Identifier trace: the earliest docs mention of `cleanupRefObjects` is 2026-07-12
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Counters delivered in PR 2831 by `28e4e4956a6`. The measurement reports are in `docs/superpowers/reports/2026-11-11-cas-pr1-ref-cleanup-bundle-measurements.md`. Open: the share of unchanged-row refusals.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: 28e4e4956a6 is in the branch; ProfileEvents CASRefCleanupStoppedLeaseMoved / StoppedAuthorityUnverified exist (Common/ProfileEvents.cpp:874-875); task note 2026-11-17 says counters delivered, open part is the share of unchanged-row refusals. Changes: description: Update paragraph appended. Would settle it: whether the written measurement result (AC #2/#3) exists in docs/superpowers/reports/2026-11-11-cas-pr1-ref-cleanup-bundle-measurements.md; the 2026-11-11 note already says step 2 (CAS-29.8) is justi….
+---
+<!-- COMMENTS:END -->

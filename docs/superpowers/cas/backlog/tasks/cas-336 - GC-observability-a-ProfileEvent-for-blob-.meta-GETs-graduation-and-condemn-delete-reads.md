@@ -6,11 +6,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 07:22'
+updated_date: '2026-11-21 08:20'
 labels:
   - gc
   - observability
+  - 'area:observability'
+  - 'complexity:small'
+  - 'risk:low'
+  - 'confidence:plausible'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies: []
 priority: medium
+type: enhancement
 ordinal: 428000
 ---
 
@@ -34,3 +45,13 @@ The CAS-30 gc-ab stand run (tmp/cas30/gc-ab/REPORT.md in the gc-request-cuts wor
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: cas-pr1: no CASGCMetaGet-style event in src/Common/ProfileEvents.cpp (only CASGCGet, line 942); the graduation gate (confirm_condemned_marker) is gone from src/Disks, only CASGCRetiredGraduated remains in Gc/CasGc.cpp. Changes: area set to observability; size unset -> small (S): one event, one log column, doc line; risk set to low; confidence set to plausible; impact:operability; type unset -> enhancement: better observability of an existing capability. Size: S. Pointers stale: graduation gate/read-ahead of .meta markers no longer exist; gc-ab t3.py and tmp/cas30 paths are in another worktree. Would settle it: Whether the condemn-delete job still GETs blob .meta markers in the blob-intents GC; if not, the task is obsolete.
+---
+<!-- COMMENTS:END -->

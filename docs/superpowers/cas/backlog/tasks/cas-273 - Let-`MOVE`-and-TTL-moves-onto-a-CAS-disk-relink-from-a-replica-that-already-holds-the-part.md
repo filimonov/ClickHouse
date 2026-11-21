@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'complexity:large'
@@ -14,6 +14,11 @@ labels:
   - 'touches:protocol'
   - 'confidence:plausible'
   - 'needs:spec'
+  - 'needs:decision'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 references:
   - src/Storages/MergeTree/MergeTreePartsMover.cpp
@@ -57,3 +62,13 @@ Provenance: BACKLOG/replication.md#move-to-ca-relink-from-replica; listed as kno
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (9be5befc3ec, by 'move-to-ca-relink-from-replica')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: MergeTreePartsMover.cpp:263 still calls only tryToFetchIfShared; no relink/CA hook in the mover on the checked branch. Changes: label needs:decision. Owner question: How does a mover find a replica holding the part, and is an upload stagger needed (AC1 design)?
+---
+<!-- COMMENTS:END -->

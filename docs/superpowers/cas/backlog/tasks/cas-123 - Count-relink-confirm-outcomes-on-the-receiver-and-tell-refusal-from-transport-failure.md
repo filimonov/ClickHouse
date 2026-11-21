@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:17'
 labels:
   - 'area:replication'
   - 'area:observability'
@@ -15,6 +15,12 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - grooming-20261121-changed
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +64,13 @@ Provenance: BACKLOG/operability-and-introspection.md#issue-2233-followups item (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (a7bb8510f36, by 'relink-confirm-busy-lane')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:09
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Common/ProfileEvents.cpp:854-860 holds only the sender-side CASRelinkConfirmRefused* events; no receiver-side proven or undelivered event exists. Changes: impact:operability; label quick-win. Size: S. Pointers stale: ProfileEvents.cpp:817-821 is now :854-860; DataPartsExchange.cpp:1611-1633, :294, :308 not rechecked..
+---
+<!-- COMMENTS:END -->

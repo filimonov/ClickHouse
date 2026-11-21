@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-7
 dependencies: []
 references:
@@ -53,3 +56,13 @@ Provenance: BACKLOG/operability-and-introspection.md#mpu-and-probe-debris-unacco
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b183da7ea36, by 'mpu-and-probe-debris-unaccounted')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: cas-pr1 bucket-requirements.md:57 recommends AbortIncompleteMultipartUpload lifecycle rule; configuration.md:114 too. Changes: none. Would settle it: AC #2: debugging.md:237 lists physical_bytes but no sentence found saying it counts committed objects only, not in-flight multipart parts; an example rule in AC #1 not verified.
+---
+<!-- COMMENTS:END -->

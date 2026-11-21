@@ -6,12 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 15:03'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:needs-measurement'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 dependencies: []
 references:
   - >-
@@ -41,3 +45,13 @@ Source: `docs/superpowers/reports/2026-09-30-cas-part-removal-flow/02-design-inp
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: question still open: ContentAddressedTransaction.cpp:1526-1531 handles the tmp_proj to .proj rename and gtest_ca_transaction.cpp:1157-1172 covers one rename, but no test or note inspects a manifest after a multi-level projection merge. Changes: none. Pointers stale: DataPartStorageOnDiskFull.cpp:63-72, DataPartStorageOnDiskBase.cpp:981-988 and MergeProjectionPartsTask.cpp:130-138 are 26.6 line cites, not rechecked. Would settle it: the manifest of a part whose projection came from a multi-level projection merge, listing whether .tmp_proj entries remain (AC1).
+---
+<!-- COMMENTS:END -->

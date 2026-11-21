@@ -4,7 +4,7 @@ title: 'Make fsck report which checks did not run, and fail `clean` on a partial
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -12,6 +12,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -62,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-clean-verdict-has-no-c
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'fsck-partial-degrade-false-consistency')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Tools/CasFsck.h:176-179,215-217 say unchecked/partial do not make a report unclean; CommandFsck.cpp keeps --partial. Changes: none. Pointers stale: CasFsck.h:252-258 clean() moved; fsck gained an unchecked counter (namespaces not checked) since filing, which covers part of the per-family marker idea.
+---
+<!-- COMMENTS:END -->

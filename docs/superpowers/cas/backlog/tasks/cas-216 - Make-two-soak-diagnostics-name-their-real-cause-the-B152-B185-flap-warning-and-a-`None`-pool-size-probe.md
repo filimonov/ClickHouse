@@ -6,13 +6,19 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:soak'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -54,3 +60,13 @@ Provenance: BACKLOG/testing-and-ci.md#soak-harness-bugs-2026-09-04 bullets 2-3; 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b33dee93897, by 'soak-harness-bugs-2026-09-04')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: utils/ca-soak/soak/pool.py:70-80: pool_size still returns (None, None) on empty stdout and in a bare `except Exception` with no log; soak/run.py:1119 still emits the 'WARNING [B152/B185] ... did not HOLD' text.. Changes: impact:operability; label quick-win. Pointers stale: pool.py :70-76 is now :72-80; run.py :1049-1054 is now ~:1119. worktree has no utils/ca-soak; checked master tree..
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-11-21 08:27'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-09-26 (391e4f95e92, by 'scheduler partial start')
 
 2031-triage CAS-050: `CasGcScheduler::stop` joins `thread`/`hb_thread` outside `mutex` on cas-gc-rebuild (`CA/Gc/CasGcScheduler.cpp:101-112`), reachable via `SYSTEM CAS DROP POOL MEMBER` concurrent with GC STOP/shutdown; `74c6f96c492` (PR #2326) is an ancestor of antalya-26.6 only.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:27
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: git log of src/Disks/tests/gtest_cas_gc_stop_start.cpp in cas-pr1 shows merge 71ce71a2504 of PR #2326 (the PR carrying 74c6f96c492); Gc/CasGcScheduler.cpp:102 and :141 take threads_mutex in start/stop. The two cited hashes themselves are not ancestors (merged under other hashes).. Changes: none. Would settle it: AC #2 start rollback of a partial start not read in code; AC #3 (the mounts-and-lifecycle items closed with the hash) not checked; CAS* gate result not recorded.
+---
+<!-- COMMENTS:END -->

@@ -4,13 +4,19 @@ title: Count every CAS retry-later throw in a `ProfileEvents` counter
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:observability'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - quick-win
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -55,3 +61,13 @@ Provenance: BACKLOG/docs-and-cleanup.md#retry-later-no-profile-event (umbrella r
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (3c7cd13190e, by 'retry-later-no-profile-event')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasRequests.cpp:88-110: logCasWriteRetryLater is a LogSeriesLimiter warning (1 per 30 s) and throwCasWriteRetryLater / makeCasWriteRetryLaterExceptionPtr call only it, no ProfileEvents increment. Changes: impact:operability; label quick-win. Pointers stale: CasRequests.cpp:85-100 is now :88-110; CASRequestGaveUp at :798 not rechecked.
+---
+<!-- COMMENTS:END -->

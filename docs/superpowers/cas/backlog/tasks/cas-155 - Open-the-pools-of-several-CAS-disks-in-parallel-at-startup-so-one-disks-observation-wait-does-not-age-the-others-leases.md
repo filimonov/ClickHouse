@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:mounts'
   - 'area:upstream'
@@ -15,6 +15,9 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'needs:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -58,3 +61,13 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#mount-protocols-serial-startup; veri
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (43b3a043935, by 'mount-protocols-serial-startup')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text only plus DiskSelector.cpp startup loop still serial per task 355 timings; no async/ThreadPool found in DiskSelector.cpp:100-130. Changes: none. Links: Extended by CAS-355 (option b: lazy mounts too). Would settle it: direct read of DiskSelector::initialize showing the serial disk->startup loop on the 26.8 branch.
+---
+<!-- COMMENTS:END -->

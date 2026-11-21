@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
-updated_date: '2026-10-12 22:55'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:mounts'
   - 'complexity:small'
   - 'confidence:solid'
   - 'risk:high'
   - 'origin:noclock-audit'
+  - 'impact:data-loss'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -49,3 +54,13 @@ Opening passes its check; another thread latches loss and trips the fence; armin
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13 recheck on 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): DIFFERENT SHAPE on the release line — a fence re-arm during FORGET: a `tryRemountOnce` already past its `isVanished()` gate calls `armMountFence` (sets `lost=false` without checking `vanished_intent`), `noteRemounted` publishes Live, and writes are admitted until FORGET's second trip. No loss shown, but FORGET's 'no durable writes after start' promise breaks. Fix: `armMountFence` refuses to clear `lost` once the intent is published (under `lockTerminalPublication`), or fold `vanished_intent` into `mayMutate`/`admit`. Gtest: extend `CASForget.ForgetReLatchesFenceAfterAReclaimReachesArmMountFence`.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasMountRuntime.cpp:222-237 armMountFence still stores lost=false unconditionally: no terminal-latch / vanished_intent check under a lock (only a fence_generation bump). Changes: impact:data-loss. Pointers stale: task text describes the pre-recheck shape; 2026-10-13 recheck note gives the release-line shape (FORGET re-arm).
+---
+<!-- COMMENTS:END -->

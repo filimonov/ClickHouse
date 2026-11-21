@@ -7,12 +7,22 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:57'
-updated_date: '2026-11-13 09:58'
+updated_date: '2026-11-21 08:21'
 labels:
   - gc
   - bug
   - ci
   - 'theme:ci-stabilization'
+  - 'area:read-path'
+  - 'complexity:medium'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - 'impact:availability'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 dependencies: []
 priority: high
 ordinal: 434000
@@ -55,3 +65,13 @@ The memory-tracker level is only in the exception text today; if no structured f
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-13: PR https://github.com/Altinity/ClickHouse/pull/2831 @a3967637843, run 43379266824, job 131765755569 (Stateless tests arm_binary, cas s3 storage, parallel): 04023_rollup_totals_memory_limit FAIL after 113 s: expected server error 241 but got 210, 'CAS write could not be committed (read of cas/manifests/.../000001.zst ... at the policy deadline after 51 attempt(s))'. The only failure of the job (13643 passed). With the request window at 120 s (was a fixed 90 s) the masked retry now runs longer before it gives up.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Backend/CasRequests.cpp: refreshAndClassifyReadFault (514) and giveUpReadDeadline (553) exist; no MEMORY_LIMIT_EXCEEDED or QUERY_WAS_CANCELLED handling in CasRequests.h/.cpp; the 2026-11-13 note shows 04023_rollup_totals_memory_limit still failing with 210 on PR 2831. Changes: area set to read-path; size unset -> medium (M): classify errors in two loops, MemoryTracker level field, gtests; risk set to medium; confidence set to solid; impact:availability; impact:operability. Size: M. Pointers stale: AC #1-#3 and #4-#8 overlap (duplicate gtest and 04023 criteria); not repaired.
+---
+<!-- COMMENTS:END -->

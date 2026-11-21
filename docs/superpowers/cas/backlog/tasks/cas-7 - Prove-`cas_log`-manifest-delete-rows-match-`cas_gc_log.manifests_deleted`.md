@@ -4,7 +4,7 @@ title: Prove `cas_log` manifest-delete rows match `cas_gc_log.manifests_deleted`
 status: To Do
 assignee: []
 created_date: '2026-08-31'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -14,6 +14,11 @@ labels:
   - 'confidence:plausible'
   - 'needs:repro'
   - 'origin:soak'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -56,3 +61,13 @@ Provenance: BACKLOG/operability-and-introspection.md#ca-event-log-loses-manifest
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-31 (d6986f799f4, by 'ca-event-log-loses-gc-manifest-deletes')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: cas-pr1 tests/integration/test_cas_gc_bulk_delete/test.py sums manifest_deletes phase rows of cas_gc_log (:46-115) but no integration test compares them with system.cas_log manifest_delete rows; gtests (gtest_cas_gc_manifest_bulk_delete.cpp) are unit level. Changes: impact:operability. Pointers stale: CasGc.cpp:1136-1150 not rechecked. Would settle it: Did not read gtest_cas_gc_manifest_bulk_delete.cpp to see whether it asserts event count equals deletions at unit level; AC#1 asks for an integration test through the real system log queue..
+---
+<!-- COMMENTS:END -->

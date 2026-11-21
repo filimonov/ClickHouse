@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
-updated_date: '2026-11-15 14:38'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:obsolete'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -70,3 +73,13 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-114 (2031-triage CAS-114; th
 
 After CAS-487 merges this task is obsolete: the lane tombstone is lazy. After a clean predecessor a first touch writes nothing. Otherwise it writes at most one tombstone, not one seal per skipped epoch. The durable "epochs ended clean" record of direction (b) is the `last_unclean_epoch` marker of CAS-487.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: obsolete (medium). Evidence: task note: obsolete once the lazy lane tombstone lands; Pool/CasRefLedger.cpp:1309-1324 now writes one tombstone and breaks (CASRefRecoveryEpochSealed once), and Formats/CasServerRootFormats.cpp:43 carries the last_unclean_epoch marker the note names. Changes: none. Links: CAS-487 (still To Do in the backlog though its code is in the branch), CAS-387, CAS-358. Would settle it: that recovery no longer loops over every skipped epoch for a table idle across N remounts (walk loop not read end to end).
+---
+<!-- COMMENTS:END -->

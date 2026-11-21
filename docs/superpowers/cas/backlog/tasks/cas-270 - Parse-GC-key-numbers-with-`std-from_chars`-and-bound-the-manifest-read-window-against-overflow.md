@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'area:read-path'
@@ -14,6 +14,11 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - 'impact:wrong-result'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -61,3 +66,13 @@ Provenance: BACKLOG/formats-and-storage.md#numeric-parse-and-window-wrap (2031-t
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (c2af49103dc, by 'numeric-parse-and-window-wrap')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 Gc/CasGc.cpp:1863, :1994, :5023 still use std::stoull; ContentAddressedMetadataStorage.cpp:2196/:2198/:2211 still form location.offset + location.length unchecked. Changes: impact:wrong-result. Pointers stale: CasGc.cpp:1487/:1619/:4291 (now :1863/:1994/:5023); ContentAddressedMetadataStorage.cpp:2116-2133 (now ~:2196-2211).
+---
+<!-- COMMENTS:END -->

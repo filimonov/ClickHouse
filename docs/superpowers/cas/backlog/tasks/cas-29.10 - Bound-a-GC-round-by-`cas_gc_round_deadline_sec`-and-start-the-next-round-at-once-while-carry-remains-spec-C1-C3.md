@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-11-15 14:38'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -15,6 +15,9 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-1
 dependencies:
   - CAS-29.2
@@ -82,3 +85,13 @@ CAS-487 makes the GC ref intake observe a time bound, and a namespace not walked
 
 The GC ref intake of CAS-487 uses a fixed time slice `kRefIntakeBudgetMs` (60 s), because no round deadline exists yet. Pass 1 (one read window per namespace) is not cut by it. After a GC leader change every cursor is resolved cold, with sequential `GET`s.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep cas_gc_round_deadline_sec over cas-pr1/src (done for CAS-29): no hits; deadline not implemented; task note says the intake still uses fixed kRefIntakeBudgetMs. Changes: none. Links: overlaps CAS-29.11 (C2); depends on CAS-29.4 which looks obsolete (see its grooming). Pointers stale: CasGc.cpp / ContentAddressedSettings.cpp:65-69 pointers not re-checked; C1 'never cut the intake' conflicts with the CAS-487 intake time slice (task note).
+---
+<!-- COMMENTS:END -->

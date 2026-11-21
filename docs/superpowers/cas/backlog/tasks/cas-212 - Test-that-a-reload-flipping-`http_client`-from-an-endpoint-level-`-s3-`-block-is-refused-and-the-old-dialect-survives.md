@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:25'
 labels:
   - 'area:gcs'
   - 'area:testing'
@@ -15,6 +15,9 @@ labels:
   - 'touches:protocol'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -60,3 +63,13 @@ Provenance: BACKLOG/testing-and-ci.md#gcs-endpoint-level-reload-regression; veri
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (43b918b4ed6, by 'gcs-endpoint-level-reload-regression')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:25
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: cas-pr1 tests/integration/test_cas_gcs/test.py:1412-1432 docstring still states the test flips only the disk-level http_client and the second ETag shape prerequisite is 'deliberately not done'. Changes: none. Pointers stale: test.py:1362 (now :1412).
+---
+<!-- COMMENTS:END -->

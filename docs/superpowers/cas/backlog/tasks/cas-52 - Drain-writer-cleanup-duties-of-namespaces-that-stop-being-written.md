@@ -4,7 +4,7 @@ title: Drain writer-cleanup duties of namespaces that stop being written
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:write-path'
   - 'area:gc'
@@ -12,6 +12,9 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -62,3 +65,13 @@ Provenance: BACKLOG/operability-and-introspection.md#writer-cleanup-single-drain
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (8b9cd77b94e, by 'writer-cleanup-single-drain')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Pool/CasPool.cpp:1867 drainWriterCleanupDuties is called only via mutateRefsAfterWriterCleanup (CasPool.cpp:2214-2379); no GC/mount/timer drain exists; CasMountRuntime.cpp:1270 shutdown warning still says 'unresolved write'. Changes: none. Pointers stale: CasPool.h:1163-1167 now ~1262-1271; CasPool.cpp:1990-2060 now ~1857-1880 and 2214+.
+---
+<!-- COMMENTS:END -->

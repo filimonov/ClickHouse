@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-30'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:docs'
   - 'area:testing'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-4
 dependencies: []
 references:
@@ -54,3 +57,13 @@ Provenance: BACKLOG/testing-and-ci.md#rule-no-chassert-over-handled-branch, #rul
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-30 (ef195461a7a, by 'rule-no-chassert-over-handled-branch')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: grep -i chassert docs/superpowers/cas/AGENTS.md returns nothing. Changes: none.
+---
+<!-- COMMENTS:END -->

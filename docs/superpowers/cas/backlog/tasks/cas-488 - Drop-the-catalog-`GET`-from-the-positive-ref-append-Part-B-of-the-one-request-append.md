@@ -6,10 +6,21 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-15 14:38'
-updated_date: '2026-11-17 20:02'
-labels: []
+updated_date: '2026-11-21 08:23'
+labels:
+  - 'area:ref-ledger'
+  - 'complexity:trivial'
+  - 'risk:medium'
+  - 'confidence:solid'
+  - 'impact:cost'
+  - groomed-20261121
+  - 'groom-20261121:done'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 dependencies:
   - CAS-487
+priority: medium
+type: enhancement
 ordinal: 593000
 ---
 
@@ -38,3 +49,13 @@ Part B of CAS-487 (spec `docs/superpowers/specs/2026-11-14-cas-one-request-ref-a
 <!-- SECTION:NOTES:BEGIN -->
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `d0e2d1a80bd` and `c821aece830`, except the named test: the own-DROP refusal is pinned by another test name; add a catalog-count assertion to a remount refusal test, then close.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: done (medium). Evidence: Task note: delivered in PR 2831 by d0e2d1a80bd and c821aece830 except the named test. cas-pr1 grep finds no test named PositiveAppendReadsNoCatalog under src/Disks/tests. Changes: area set to ref-ledger; size unset -> trivial (XS): one assertion in an existing test; risk set to medium; confidence set to solid; impact:cost; type unset -> enhancement: fewer requests per append; priority unset -> medium: no priority set; a request cut with one test left. Size: XS. Would settle it: The catalog-count assertion in a remount refusal test (AC #2 pin) is not present; I did not verify that d0e2d1a80bd and c821aece830 are ancestors or that a positive append issues no catalog GET.
+---
+<!-- COMMENTS:END -->

@@ -6,13 +6,18 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:testing'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
+  - grooming-20261121-changed
 milestone: m-8
 dependencies: []
 references:
@@ -57,3 +62,13 @@ Provenance: BACKLOG/testing-and-ci.md#cas-unit-test-mutation-battery; verified 2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (9add32a2e9f, by 'cas-unit-test-mutation-battery')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: No mutation-battery report found under master docs/superpowers/cas or docs/superpowers/reports (name search 'mutat' returns nothing); the task records the dynamic half as never run.. Changes: impact:operability. Would settle it: A search by content rather than by file name for a mutant table..
+---
+<!-- COMMENTS:END -->

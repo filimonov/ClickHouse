@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-23 02:30'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:testing'
   - 'area:replication'
@@ -14,6 +14,9 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:rewrite'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies:
   - CAS-346
@@ -63,3 +66,13 @@ Review 2026-10-23 (tmp/review2/REPORT.md): add a test with a throwing event sink
 
 Audit-sink test done on the draft branch: CASPartFolderAccess.AuditSinkFailureDoesNotFailTheDurableMoveOrDrop (a throwing sink; Move and drop still land; both events reach the sink). Note: Pool::emitEvent already swallows sink exceptions ('Content-addressed audit event sink threw; the event was dropped'); emitAuditBestEffort is the second layer that also covers event construction.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: rewrite (medium). Evidence: task notes: AC #5 delivered (05387 replicated OPTIMIZE oracle), audit-sink gtest delivered, AC #2 deprioritized by owner; in the 26.8 worktree tests/integration/test_cas_ref_move_compat has no test.py, test_cas_early_commit_restart has only the before-rename kill test. Changes: none. Pointers stale: tests/integration/test_cas_ref_move_compat/test.py does not exist in the cas-pr1 worktree (directory has no test.py). Would settle it: which of AC #1, #3, #4, #6, #7 are still open after the 2026-10-22/23 notes; AC #2 should be dropped or restated per the owner's deprioritization.
+---
+<!-- COMMENTS:END -->

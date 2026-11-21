@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-11-21 08:24'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -17,6 +17,11 @@ labels:
   - 'origin:2031-triage'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'impact:operability'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
+  - grooming-20261121-changed
 milestone: m-7
 dependencies: []
 references:
@@ -73,3 +78,13 @@ Identifier trace: the earliest docs mention of `spared` is 2026-06-02 (c0a7046a3
 
 Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:24
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: Gc/CasGcScheduler.cpp:319 pending_reclaim.fetch_add and :548 h.pending_reclaim = pending_reclaim.load: still a process-local atomic counter. Changes: impact:operability. Pointers stale: CasGcScheduler.cpp:248 is now :319.
+---
+<!-- COMMENTS:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -14,6 +14,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-7
 dependencies: []
 references:
@@ -58,3 +61,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `server_root_id` is 2026-06-28 (2243419abe5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: src/Disks/DiskSelector.cpp:225 still logs only the generic 'disappeared from configuration' line; no CAS/lease mention in lines 215-232; docs configuration.md:388 lists SYSTEM CAS FORGET but no removed-disk statement found. Changes: none. Links: Superseded if the disk-lifecycle redesign (CAS-149) lands first. Pointers stale: DiskSelector.cpp:217 is now :225.
+---
+<!-- COMMENTS:END -->

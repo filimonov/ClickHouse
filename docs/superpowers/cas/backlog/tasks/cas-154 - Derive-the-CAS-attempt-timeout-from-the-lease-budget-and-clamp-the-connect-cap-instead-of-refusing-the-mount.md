@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-11-11 13:00'
+updated_date: '2026-11-21 08:20'
 labels:
   - 'area:mounts'
   - 'complexity:small'
   - 'risk:low'
   - 'touches:settings'
   - 'confidence:solid'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-0
 dependencies: []
 references:
@@ -68,3 +71,13 @@ First recorded: 2026-09-26 (43b3a043935, by 'mount-lease-budget-derived-timeout'
 
 2026-11-11 defaults review: a larger attempt timeout makes outages worse through the reserve: 10 s instead of 5 s at 120/40 moved the first INSERT error from 84 s to 77 s and raised the count from 39 to 51 (`l120_att10_hang90`); 3 s at 30/10 changed nothing visible (`def_att3_hang30`). otel.demo: 14.7M PUTs in 7 days, max 3.1 s, none over 5 s. Report: docs/superpowers/reports/2026-11-11-cas-defaults-review.md on branch cas-297-defaults-review (worktree ~/workspace/ClickHouse/cas-297-defaults); run data master/tmp/cas297/runs; binary PR 2805 @41d4a78eeb9.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:20
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: ContentAddressedSettings.cpp:283-286 still rejects attempt_timeout_ms == 0 (must be >= 1), so no auto/derived mode; default 5000 at :92; note 2026-10-08 says the connect-cap clamp is not in 9b. Changes: none. Pointers stale: ContentAddressedSettings.cpp:84 and :245-248 are now :92 and :283-286.
+---
+<!-- COMMENTS:END -->

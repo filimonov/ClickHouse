@@ -4,7 +4,7 @@ title: Rewrite the three ack-floor soak cards for the current floor and run them
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 14:36'
+updated_date: '2026-11-21 08:23'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -13,6 +13,9 @@ labels:
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-0
 dependencies: []
 references:
@@ -62,3 +65,13 @@ The kill-mid-burst card can assert `RoundReport::fence_outs` (`CA/Gc/CasGc.h:167
 The request-budget card overlaps CAS-77 (perf-smoke CI gate on per-insert S3 cost) and the CAS-29 acceptance numbers; one per-round request-count guard can serve both.
 Source text: utils/ca-soak/scenarios/BACKLOG.md:674-709. The 2026-07-03 header sweep lists them as release-gate items.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:23
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: no card under utils/ca-soak/scenarios/cards asserts fence_out/FenceOut (grep empty); cards list stops at s48 with no ack-floor card; task notes say RUN_HISTORY has no entry. Changes: none.
+---
+<!-- COMMENTS:END -->

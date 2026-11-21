@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:22'
 labels:
   - 'area:replication'
   - 'area:upstream'
@@ -15,6 +15,10 @@ labels:
   - 'touches:upstream-code'
   - 'confidence:solid'
   - 'needs:repro'
+  - 'upstream:unverified'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 milestone: m-8
 dependencies: []
 references:
@@ -63,3 +67,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `ReplicatedMergeTreeQueue` is 2026-06-02 (019f825a59a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:22
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: StorageReplicatedMergeTree.cpp:4440-4449 on the checked branch: scheduleMergeMutateTask and scheduleCommonTask results are ignored and the function returns true. Changes: none. Pointers stale: StorageReplicatedMergeTree.cpp:4390-4432 moved to about 4440-4490. Would settle it: upstream search with function names returned no PRs (search was generic); no matching merged or open upstream change confirmed. Upstream: unverified.
+---
+<!-- COMMENTS:END -->

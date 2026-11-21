@@ -4,13 +4,16 @@ title: Reclaim blob bodies that GC never revisits because they have no edge
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:gc'
   - 'complexity:large'
   - 'risk:medium'
   - 'confidence:plausible'
   - 'needs:spec'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -54,3 +57,13 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 Identifier trace: the earliest docs mention of `unaccounted` is 2026-07-03 (a626a12021e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: task text only: umbrella over CAS-33.1/33.2/33.3, none of which is closed; no code lookup made. Changes: none. Would settle it: whether the three retention shapes still reproduce on the current branch (see the children).
+---
+<!-- COMMENTS:END -->

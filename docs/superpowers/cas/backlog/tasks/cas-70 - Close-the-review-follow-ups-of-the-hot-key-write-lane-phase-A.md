@@ -4,13 +4,16 @@ title: 'Close the review follow-ups of the hot-key write lane, phase A'
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-11-21 08:21'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-high'
 dependencies: []
 references:
   - >-
@@ -56,3 +59,13 @@ Correction (post-import review): the two task-1-review.md items previously calle
 
 First recorded: 2026-09-04 (16fd9bc01cd, by 'hot-key-lane-phase-a-followups')
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:21
+---
+Grooming 2026-11-21. Verdict: valid (high). Evidence: umbrella: children CAS-70.1 to 70.6 all exist and are To Do (grep of parent_task_id over tasks/ and completed/). Changes: none. Links: children CAS-70.1 .. CAS-70.6.
+---
+<!-- COMMENTS:END -->

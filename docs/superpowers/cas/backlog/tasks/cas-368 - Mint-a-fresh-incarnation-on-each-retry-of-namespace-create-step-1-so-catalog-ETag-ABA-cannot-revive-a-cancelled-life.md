@@ -6,13 +6,16 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-11-17 20:02'
+updated_date: '2026-11-21 08:19'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'confidence:plausible'
   - 'risk:medium'
   - 'origin:noclock-audit'
+  - groomed-20261121
+  - 'groom-20261121:valid'
+  - 'groom-20261121:certainty-medium'
 milestone: m-8
 dependencies: []
 references:
@@ -59,3 +62,13 @@ Implemented 2026-11-11 on branch `fix/antalya-26.8/cas-ref-cleanup-per-life-lice
 
 2026-11-17: Merged 2026-11-17 as 0aa837e942e into antalya-26.8 (https://github.com/Altinity/ClickHouse/pull/2831). Partly delivered; the task stays open. Delivered in PR 2831 by `531d7c293e0`. Open: the model of the catalog value and a late apply (AC2); CAS-456 holds the late-first-delivery premise.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: grooming-20261121
+created: 2026-11-21 08:19
+---
+Grooming 2026-11-21. Verdict: valid (medium). Evidence: 531d7c293e0 (AC1 fix) is an ancestor of the checked branch; task notes 2026-11-17 say AC2 (catalog-value model with late apply) is open. Changes: none. Links: CAS-456 holds the late-first-delivery premise; CAS-449 second scenario. Would settle it: model file for CaRefCatalogCore not located in src/Disks; AC2 state taken from the task notes.
+---
+<!-- COMMENTS:END -->
